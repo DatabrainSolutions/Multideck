@@ -2,11 +2,23 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   MAX_INVOICE_EVIDENCE_BLOCKS,
+  invoiceOcrDocument,
   MAX_INVOICE_EVIDENCE_BUDGET_CHARS,
   normalizeCommercialInvoiceAnnotation,
   normalizeFinancePurchaseAnnotation,
   normalizeInvoiceEvidencePages,
 } from "../functions/_shared/customs-invoice-ocr.ts"
+import { redactModelSecrets } from "../functions/_shared/model-gateway.ts"
+
+test("OCR document bytes survive gateway redaction without passing storage credentials", () => {
+  const bytes = Uint8Array.from({ length: 100_000 }, (_, index) => index % 256)
+  const document = invoiceOcrDocument(bytes)
+  const body = redactModelSecrets({ document })
+  assert.deepEqual(body.document, document)
+  assert.deepEqual(Buffer.from(body.document.document_url.split(",")[1], "base64"), Buffer.from(bytes))
+  const token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJleGFtcGxlIn0.abcdefghijklmnop"
+  assert.equal(redactModelSecrets(token), "[redacted token]")
+})
 
 test("normalizes Mistral document annotations without inventing customs data", () => {
   const annotation = JSON.stringify({

@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useLanguage } from "@/i18n/language-provider";
 import {
   duplicateSentDexterEmailDraft,
+  prepareDexterProviderDraftSend,
   refineDexterEmailDraft,
   refreshDexterPreparedEmailAction,
   recordDexterEmailDraftDelivery,
@@ -36,6 +37,7 @@ import {
   updateDexterEmailDraft,
   type DexterEmailDraft,
   type DexterEmailDraftAddress,
+  type DexterPendingAction,
 } from "@/lib/dexter-api";
 import {
   buildReplyRequest,
@@ -242,7 +244,7 @@ export function DexterEmailComposeCard({
   preparedActionId?: string | null;
   preparedActionPending?: boolean;
   preparedActionError?: string | null;
-  onPreparedActionDecision?: () => void;
+  onPreparedActionDecision?: (action?: DexterPendingAction) => void;
   onDraftChange?: (draft: DexterEmailDraft) => void;
 }) {
   const { direction, t } = useLanguage();
@@ -260,6 +262,7 @@ export function DexterEmailComposeCard({
   const [showBcc, setShowBcc] = useState(draft.bcc.length > 0);
   const [status, setStatus] = useState<DraftStatus>(draft.delivery.status);
   const [activeMessageId, setActiveMessageId] = useState(messageId);
+  const isPreparingMessage = !preview && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(activeMessageId);
   const [activeDraftId, setActiveDraftId] = useState(draft.id);
   const [isEditingCopy, setIsEditingCopy] = useState(false);
   const [isCreatingCopy, setIsCreatingCopy] = useState(false);
@@ -283,8 +286,8 @@ export function DexterEmailComposeCard({
     "to" | "cc" | "bcc" | "body" | "mailbox" | null
   >(null);
   const requestedAction =
-    draft.requestedAction === "create_draft" ? "create_draft" : "send";
-  const providerActionUnavailable = !preview && !preparedActionId &&
+    draft.delivery.status === "draft_created" ? "send" : draft.requestedAction === "create_draft" ? "create_draft" : "send";
+  const providerActionUnavailable = !preview && !isPreparingMessage && !preparedActionId &&
     status !== "sent" && status !== "draft_created";
   const idempotencyKey = useRef(createIdempotencyKey());
   const saveTimer = useRef<number | null>(null);
@@ -296,6 +299,13 @@ export function DexterEmailComposeCard({
   const refinementRequestId = useRef(0);
   const refinementInputRef = useRef<HTMLInputElement | null>(null);
   const bodyEditorRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!isEditingCopy && activeMessageId !== messageId) {
+      setActiveMessageId(messageId);
+      setSaveState("idle");
+    }
+  }, [messageId, activeMessageId, isEditingCopy]);
 
   useEffect(() => {
     if (preparedActionError) setError(preparedActionError);
@@ -335,7 +345,13 @@ export function DexterEmailComposeCard({
     draft.delivery.status === "sent" && activeMessageId === messageId;
   const isProviderDraftSource =
     draft.delivery.status === "draft_created" && activeMessageId === messageId;
+  const providerDraftNeedsRecipient = isProviderDraftSource &&
+    ![...draft.to, ...draft.cc, ...draft.bcc].some((recipient) => isLikelyEmailAddress(recipient.address));
+  const savedDraftHref = isProviderDraftSource && selectedMailbox && draft.delivery.threadId
+    ? `/inbox?${new URLSearchParams({ provider: selectedMailbox.provider, mailbox: selectedMailbox.id, thread: draft.delivery.threadId })}`
+    : null;
   const locked =
+    isPreparingMessage ||
     status === "sending" ||
     status === "creating_draft" ||
     status === "draft_created";
@@ -645,6 +661,7 @@ export function DexterEmailComposeCard({
   useEffect(() => {
     if (
       preview ||
+      isPreparingMessage ||
       hydratedDraftId.current !== draft.id ||
       isCreatingCopy ||
       copyFailed ||
@@ -677,6 +694,7 @@ export function DexterEmailComposeCard({
     ccText,
     copyFailed,
     isCreatingCopy,
+    isPreparingMessage,
     mailboxId,
     preview,
     status,
@@ -704,6 +722,20 @@ export function DexterEmailComposeCard({
   }, [draft.delivery.sendRequestId, draft.delivery.status, messageId, preview]);
 
   async function handleEmailAction() {
+    if (preview || preparedActionPending || saveState === "saving") return;
+    if (isProviderDraftSource && onPreparedActionDecision) {
+      setError(null);
+      setSaveState("saving");
+      try {
+        const action = await prepareDexterProviderDraftSend(activeMessageId);
+        setSaveState("saved");
+        onPreparedActionDecision(action);
+      } catch (sendError) {
+        setSaveState("failed");
+        setError(sendError instanceof Error ? sendError.message : t("Dexter could not prepare this saved draft for sending. Your draft is still in Inbox."));
+      }
+      return;
+    }
     if (
       preview ||
       isSentSource ||
@@ -889,8 +921,12 @@ export function DexterEmailComposeCard({
     }
   }
 
-  const statusText = statusCopy(status, error, t);
-  const visibleStatusText = isCreatingCopy
+  const statusText = providerDraftNeedsRecipient && !error
+    ? t("Draft saved without recipients. Add recipients and send it from your email provider.")
+    : statusCopy(status, error, t);
+  const visibleStatusText = isPreparingMessage
+    ? t("Preparing draft…")
+    : isCreatingCopy
     ? t("Creating editable copy…")
     : isRefining
       ? t("Refining draft…")
@@ -919,7 +955,7 @@ export function DexterEmailComposeCard({
     status === "sent"
       ? "Sent"
       : status === "draft_created"
-        ? "Draft created"
+        ? "Send email"
         : status === "queued"
           ? "Check status"
           : status === "sending"
@@ -937,7 +973,7 @@ export function DexterEmailComposeCard({
 
   return (
     <section
-      aria-label={t("Editable email draft")}
+      aria-label={t(isProviderDraftSource ? "Saved email draft" : "Editable email draft")}
       onPointerDownCapture={() => {
         if (draft.delivery.status === "sent" && activeMessageId === messageId)
           void beginEditableCopy();
@@ -1066,13 +1102,15 @@ export function DexterEmailComposeCard({
             </AnimatePresence>
           </motion.div>
         </div>
+        {savedDraftHref ? <a href={savedDraftHref} className="shrink-0 text-[12px] text-[var(--md-text)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]">{t("View in Inbox")}</a> : null}
         <Button
           type="button"
           disabled={
             preview ||
             isSentSource ||
-            isProviderDraftSource ||
-            locked ||
+            providerDraftNeedsRecipient ||
+            (isProviderDraftSource ? !onPreparedActionDecision : locked) ||
+            saveState === "saving" ||
             isCreatingCopy ||
             copyFailed ||
             preparedActionPending ||
@@ -1085,7 +1123,7 @@ export function DexterEmailComposeCard({
               : status === "sent"
                 ? "Sent"
                 : status === "draft_created"
-                  ? "Draft created"
+                  ? "Send email"
                   : requestedAction === "create_draft"
                     ? "Create draft"
                     : "Send email",
@@ -1096,7 +1134,7 @@ export function DexterEmailComposeCard({
               : status === "sent"
                 ? "Sent"
                 : status === "draft_created"
-                  ? "Draft created"
+                  ? "Send email"
                   : requestedAction === "create_draft"
                     ? "Create draft"
                     : "Send email",
@@ -1111,7 +1149,7 @@ export function DexterEmailComposeCard({
           </span>
           <span className="md-dexter-pill__contrast" aria-hidden="true" />
           <AnimatePresence initial={false} mode="popLayout">
-            {status === "sent" || status === "draft_created" ? (
+            {status === "sent" ? (
               <motion.span
                 key="sent"
                 className="relative z-10 inline-flex items-center gap-1.5"

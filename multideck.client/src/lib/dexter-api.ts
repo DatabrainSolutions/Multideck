@@ -24,8 +24,16 @@ export type DexterMessage = {
   role: "user" | "assistant" | "system" | "tool"
   content: string
   createdAt: string
+  model?: DexterModelId
   specialist?: string | null
   pendingAction?: DexterPendingAction | null
+  pendingActions?: DexterPendingAction[]
+  deferredWork?: { label: string; request: string; afterActionIds: string[] } | null
+  deferredWorkDismissed?: boolean
+  isActionDecision?: boolean
+  continuationMessageId?: string
+  recordTables?: DexterRecordTable[]
+  steeringInputs?: {input: string; responseId: string}[]
   reasoningSummary?: string | null
   responseToUserMessageId?: string | null
   responseVersion?: number | null
@@ -97,7 +105,19 @@ export type DexterFullAccessGrant = {
   expiresAt: string | null
 }
 
+export type DexterRecordTable = {
+  id: string
+  title: string
+  domain: string
+  columns: { key: string; label: string; kind?: "text" | "number" | "date" | "status"; required?: boolean }[]
+  rows: { id: string; url?: string; values: Record<string, string | number | null> }[]
+  retrievedAt: string
+}
+
 export type DexterPendingAction = {
+  target?: { id: string; label: string; url?: string }
+  status?: string
+  emailDraftId?: string
   id: string
   title: string
   description: string
@@ -228,7 +248,7 @@ export type DexterUploadedDocument = {
   fileName: string
   mimeType: string
   sizeBytes: number
-  /** Browser-only object URL for an image selected in this session. */
+  /** Browser-only object URL for a file selected in this session. */
   previewUrl?: string
 }
 
@@ -292,6 +312,7 @@ export type DexterAutomationProposal = {
 }
 
 export type SendDexterMessageInput = {
+  continuationMessageId?: string
   conversationId?: string | null
   retryMessageId?: string | null
   parentResponseMessageId?: string | null
@@ -344,12 +365,13 @@ export async function uploadDexterDocument(file: File) {
       Authorization: `Bearer ${session.access_token}`,
     },
     body: form,
+    signal: AbortSignal.timeout(120_000),
   })
   if (!response.ok) {
     const fallback = "Dexter could not upload that document."
     try {
       const body = await response.json() as DexterFunctionErrorBody
-      throw new DexterApiError(typeof body.message === "string" && body.message.trim() ? body.message : fallback)
+      throw new DexterApiError(typeof body.detail === "string" && body.detail.trim() ? body.detail : typeof body.message === "string" && body.message.trim() ? body.message : fallback)
     } catch (error) {
       if (error instanceof DexterApiError) throw error
       throw new DexterApiError(fallback)
@@ -361,6 +383,7 @@ export async function uploadDexterDocument(file: File) {
 }
 
 type DexterFunctionErrorBody = {
+  detail?: unknown
   code?: unknown
   message?: unknown
 }
@@ -519,6 +542,34 @@ export async function deleteDexterConversation(conversationId: string) {
   invalidateRegisterPages("dexter:conversation-list:")
 }
 
+export type DexterSteeringStatus = "pending" | "claimed" | "submitted" | "queued" | "incorporated" | "failed" | "unconfirmed"
+export type DexterActiveRun = {
+  id: string
+  status: "active" | "completed" | "failed" | "expired"
+  expiresAt: string
+  savedResult?: {conversationId: string; messageId: string} | null
+  inputs: {id: string; input: string; status: DexterSteeringStatus; response_id: string | null}[]
+}
+export type DexterSteeringEvent = {
+  runId: string
+  inputId: string
+  status: DexterSteeringStatus
+  responseId?: string
+}
+
+export async function steerDexter(input: {runId: string; clientSessionId: string; inputId: string; input: string}) {
+  const result = await invokeDexter<{run: DexterActiveRun}>(
+    {operation: "steer", ...input}, "Dexter could not accept this correction. Your text is kept.",
+  )
+  return result.run
+}
+export async function getDexterActiveRun(input: {runId: string; clientSessionId: string}) {
+  const result = await invokeDexter<{run: DexterActiveRun}>(
+    {operation: "active-run-status", ...input}, "Dexter could not check this request.",
+  )
+  return result.run
+}
+
 export async function setDexterAccessMode(input: {
   conversationId: string | null
   clientSessionId: string
@@ -628,6 +679,14 @@ export async function updateDexterEmailDraft(messageId: string, draft: DexterEma
   return data as DexterEmailDraft
 }
 
+export async function prepareDexterProviderDraftSend(messageId: string) {
+  const result = await invokeDexter<{ pendingAction: DexterPendingAction }>(
+    { operation: "prepare-provider-draft-send", messageId },
+    "Dexter could not prepare this saved draft for sending. Your draft is still in Inbox.",
+  )
+  return result.pendingAction
+}
+
 export async function refreshDexterPreparedEmailAction(messageId: string, preparedActionId: string) {
   await invokeDexter<{ refreshed: true }>(
     { operation: "refresh-prepared-email", messageId, preparedActionId },
@@ -700,9 +759,15 @@ export async function sendDexterMessage(input: SendDexterMessageInput) {
 export async function streamDexterMessage(
   input: SendDexterMessageInput,
   handlers: ((delta: string) => void) | {
+    onActiveRun?: (runId: string, canSteer: boolean) => void
+    onSteeringStatus?: (event: DexterSteeringEvent) => void
+    onAnswerReset?: () => void
     onAnswerDelta?: (delta: string) => void
     onReasoningDelta?: (delta: string) => void
+    onApprovalWithdrawn?: (approvalId: string) => void
     onPendingAction?: (action: DexterPendingAction) => void
+    onEmailDraft?: (draft: DexterEmailDraft) => void
+    onRecordTable?: (table: DexterRecordTable) => void
     onEmailAttachment?: (attachment: DexterEmailAttachment) => void
   },
   signal?: AbortSignal,
@@ -799,7 +864,17 @@ export async function streamDexterMessage(
       }
       if (typeof payload !== "object" || payload === null) return
 
-      if ("type" in payload && payload.type === "delta" && "delta" in payload && typeof payload.delta === "string") {
+      if ("type" in payload && payload.type === "active_run" && "runId" in payload && typeof payload.runId === "string") {
+        if (typeof handlers !== "function") handlers.onActiveRun?.(payload.runId, !("canSteer" in payload) || payload.canSteer !== false)
+      } else if ("type" in payload && payload.type === "steering_status" && "runId" in payload && typeof payload.runId === "string"
+        && "inputId" in payload && typeof payload.inputId === "string" && "status" in payload
+        && ["submitted", "queued", "incorporated", "failed", "unconfirmed"].includes(String(payload.status))) {
+        if (typeof handlers !== "function") handlers.onSteeringStatus?.(payload as DexterSteeringEvent)
+      } else if ("type" in payload && payload.type === "approval_withdrawn" && "approvalId" in payload && typeof payload.approvalId === "string") {
+        if (typeof handlers !== "function") handlers.onApprovalWithdrawn?.(payload.approvalId)
+      } else if ("type" in payload && payload.type === "answer_reset") {
+        if (typeof handlers !== "function") handlers.onAnswerReset?.()
+      } else if ("type" in payload && payload.type === "delta" && "delta" in payload && typeof payload.delta === "string") {
         onAnswerDelta?.(payload.delta)
       } else if ("type" in payload && payload.type === "reasoning_delta" && "delta" in payload && typeof payload.delta === "string") {
         onReasoningDelta?.(payload.delta)
@@ -821,6 +896,10 @@ export async function streamDexterMessage(
         const attachment = payload.attachment as DexterEmailAttachment
         streamedEmailAttachments.set(attachment.id, attachment)
         onEmailAttachment?.(attachment)
+      } else if ("type" in payload && payload.type === "email_draft" && "emailDraft" in payload) {
+        if (typeof handlers !== "function") handlers.onEmailDraft?.(payload.emailDraft as DexterEmailDraft)
+      } else if ("type" in payload && payload.type === "record_table" && "table" in payload) {
+        if (typeof handlers !== "function") handlers.onRecordTable?.(payload.table as DexterRecordTable)
       } else if ("type" in payload && payload.type === "complete" && "conversation" in payload) {
         completed = retainStreamedEmailAttachments(
           payload.conversation as DexterConversation,
@@ -868,4 +947,23 @@ export async function streamDexterMessage(
     window.clearTimeout(timeout)
     signal?.removeEventListener("abort", forwardAbort)
   }
+}
+
+
+export async function dismissDexterDeferredWork(conversationId: string, messageId: string) {
+ const result = await invokeDexter<{dismissed: boolean}>({operation:"dismiss-deferred-work",conversationId,messageId}, "Dexter could not dismiss the saved step.")
+ if (!result.dismissed) throw new DexterApiError("Dexter could not confirm that this step was dismissed.")
+}
+
+export async function previewDexterDocument(id: string, signal?: AbortSignal) {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new DexterApiError("Sign in again to preview this file.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new DexterApiError("File previews are not connected to this workspace.")
+  const response = await fetch(`${supabaseFunctionsUrl}/dexter-file-upload?id=${encodeURIComponent(id)}`, {
+    headers: {apikey: supabasePublicApiKey, Authorization: `Bearer ${session.access_token}`}, signal,
+  })
+  const body = await response.json()
+  if (!response.ok) throw new DexterApiError(typeof body.detail === "string" ? body.detail : "The file preview is unavailable. Try again.")
+  if (!body.preview?.signedUrl) throw new DexterApiError("The file preview is unavailable. Try again.")
+  return body.preview as import("./ticket-attachments").TicketAttachment
 }

@@ -75,6 +75,48 @@ export function readableWatchEvent(watch: DexterWatchCopyWatch, t: Translate) {
   const before = eventValue(event, "before")
   const after = eventValue(event, "after")
   const target = watch.targetLabel?.trim() || watch.title
+  if (watch.capability === "customers" && field === "contactEmails") {
+    return `${target}: ${t("Contact email details updated")}.`
+  }
+  if (watch.capability === "customers" && field === "contactEmployment") {
+    return `${target}: ${t("Contact employment updated")}.`
+  }
+  if (watch.capability === "customers" && field === "relatedPartyDefaults") {
+    return `${target}: ${t("Related-party defaults updated")}.`
+  }
+  if (watch.capability === "customers" && field === "responsibleOffices") {
+    return `${target}: ${t("Responsible offices updated")}.`
+  }
+  if (watch.capability === "customers" && field === "addresses") {
+    const readAddress = (text: string): Record<string, unknown> | null => {
+      try {
+        const value: unknown = JSON.parse(text)
+        return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
+      } catch { return null }
+    }
+    const previous = readAddress(before), current = readAddress(after)
+    if (!previous || !current) return `${target}: ${t("Address details changed")}.`
+    if (!Object.keys(previous).length) return `${target}: ${t("Address added")}.`
+    if (!Object.keys(current).length) return `${target}: ${t("Address removed")}.`
+    const labels: Record<string, string> = {
+      Org_NameOverride: "Address name", OrgAdd_Line1: "Address line 1", OrgAdd_Line2: "Address line 2",
+      OrgAdd_TownCity: "Town or city", OrgAdd_CountyState: "County or state", OrgAdd_PostZipCode: "Postcode",
+      OrgAdd_Country: "Country", OrgAdd_UNLOCODE: "Location code", OrgAdd_TimeZone: "Timezone",
+      OrgAdd_IsActive: "Active", OrgAdd_MainEmail: "Email", OrgAdd_MainPhone: "Phone",
+    }
+    const display = (value: unknown) => value === null || value === undefined || value === "" ? t("Not set")
+      : typeof value === "boolean" ? t(value ? "Yes" : "No") : typeof value === "string" ? value : t("Updated")
+    const changes = Object.entries(labels).filter(([key]) => previous[key] !== current[key])
+      .map(([key, label]) => `${t(label)} ${t("changed from")} ${display(previous[key])} ${t("to")} ${display(current[key])}`)
+    for (const [key, label] of [["purposes", "Address purposes updated"], ["weeklyHours", "Opening hours updated"], ["openingOverrides", "Dated opening exceptions updated"]]) {
+      if (JSON.stringify(previous[key] ?? []) !== JSON.stringify(current[key] ?? [])) changes.push(t(label))
+    }
+    return `${target}: ${changes.length ? changes.join("; ") : t("Address details changed")}.`
+  }
+  if (watch.capability === "customers" && ["accountCode", "scopeCode"].includes(field)) {
+    const label = field === "accountCode" ? "Company code" : "Scope"
+    return `${target}: ${t(label)} ${t("changed from")} ${before || t("Not set")} ${t("to")} ${after || t("Not set")}.`
+  }
   if (!before || !after) return event.body
 
   if (field === "stage") return `${target} ${t("moved from")} ${before} ${t("to")} ${after}.`

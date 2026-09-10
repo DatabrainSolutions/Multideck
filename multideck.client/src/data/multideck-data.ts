@@ -65,9 +65,9 @@ function visualizationUsageCode(componentName: string, kind: string) {
 export const galleryComponents = [
   {
     id: "conversation-attachments", name: "Conversation Attachments", category: "Controls",
-    description: "Compact image tiles and document previews for ticket messages, with quiet remove controls and a shared image viewer.",
+    description: "Compact image tiles and document previews for ticket messages and Dexter, with quiet remove controls and a shared image viewer.",
     details: "Use the picker and attachment list in a composer or beneath a sent message. Private files use short-lived links. Removal applies to unsent files only, with keyboard and touch access.",
-    foundOn: [{label:"Support conversation",route:"/settings?tab=support"},{label:"Components",route:"/components?component=conversation-attachments"}],
+    foundOn: [{label:"Dexter",route:"/agent-dexter"},{label:"Support conversation",route:"/settings?tab=support"},{label:"Components",route:"/components?component=conversation-attachments"}],
     componentCode: ticketAttachmentsSource,
     usageCode: `<TicketAttachmentPicker onAdd={draft.add} disabled={sending} />
 <TicketAttachmentList items={draft.items} onRemove={draft.remove} disabled={sending} />
@@ -1064,7 +1064,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Operations",
     description: "A full-page PDF reader that places white document sheets directly over the blurred application, with multipage scrolling, owned zoom controls, and an explicit download lifecycle.",
     details: "Use for private generated documents that operators need to inspect without losing their place. The first sheet fits completely inside the viewport, a restrained glass rail keeps zoom and download actions available, and Download moves through Downloading and Done while focus, Escape and reduced-motion behaviour remain intact.",
-    foundOn: [{ label: "Support conversation", route: "/settings?tab=support" }, { label: "Standalone export", route: "/customs/standalone/export" }, { label: "Standalone import", route: "/customs/standalone/import" }, { label: "Components", route: "/components?component=pdf-document-viewer-dialog" }],
+    foundOn: [{ label: "Dexter email attachments", route: "/agent-dexter" }, { label: "Support conversation", route: "/settings?tab=support" }, { label: "Standalone export", route: "/customs/standalone/export" }, { label: "Standalone import", route: "/customs/standalone/import" }, { label: "Components", route: "/components?component=pdf-document-viewer-dialog" }],
     componentCode: `export function PdfDocumentViewerDialog({ open, onOpenChange, blob, title, fileName, onDownload }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2205,10 +2205,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Prompt Composer",
     category: "Agent Dexter",
     description: "The central command box for Agent Dexter: @ mentions, attached context, slash commands, model and role choices, live context usage, plus explicit approval or full-access control.",
-    details: "Use on the Agent Dexter landing and conversation footer. The + button opens the computer file chooser, @ references workspace or email context, and / switches between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
+    details: "Use on the Agent Dexter landing and conversation footer. For an active steerable run, canUpdateRequest changes the send label to Update request; updatePending prevents duplicates and updateStatus announces progress without clearing unsent text. The + button opens the computer file chooser, @ references workspace or email context, and / switches between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
     componentCode: `export function DexterPromptComposer({ value, selectedSpecialistId, selectedModelId, accessMode, contextUsedTokens, contextMaxTokens, attachments, onChange, onOpenAttachments, onSelectSpecialist, onSelectModel, onAccessModeChange, onSend }) {\n  return (\n    <div className="md-composer md-composer-bloom relative overflow-hidden rounded-[26px]">\n      <span aria-hidden className="md-composer-bloom__shader">\n        <SpectralBloomShader shape="composer" />\n      </span>\n      <span aria-hidden className="md-composer-bloom__contrast" />\n      <div className="relative z-[2] flex h-[44px] items-center px-3">\n        <DexterRoleMenu selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />\n      </div>\n      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)]">\n        {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n        <textarea\n          value={value}\n          rows={1}\n          onChange={(event) => onChange(event.target.value)}\n          onKeyDown={(event) => {\n            if (event.key === "Enter" && !event.shiftKey) {\n              event.preventDefault()\n              if (value.trim()) onSend()\n            }\n          }}\n        />\n        <button onClick={onOpenAttachments}>Attach</button>\n        <DexterModelMenu selectedId={selectedModelId} onSelect={onSelectModel} />\n        <Context\n          usedTokens={contextUsedTokens}\n          maxTokens={contextMaxTokens}\n          label={t("Conversation context")}\n          description={t("How much of this chat Dexter can keep in mind.")}\n        >\n          <ContextTrigger />\n          <ContextContent><ContextContentHeader /></ContextContent>\n        </Context>\n        <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />\n        <DexterActionPill icon={ArrowUp} iconOnly disabled={!value.trim()} onClick={onSend} />\n      </div>\n    </div>\n  )\n}`,
-    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => computerFileInputRef.current?.click()}\n  attachmentActionLabel="Upload files"\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  onSend={startConversation}\n/>`,
+    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => computerFileInputRef.current?.click()}\n  attachmentActionLabel="Upload files"\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  isSending={isSending}\n  canUpdateRequest={Boolean(activeRunId)}\n  updatePending={isCorrectionPending}\n  updateStatus={correctionStatus}\n  onSend={activeRunId ? updateRequest : startConversation}\n/>`,
   },
   {
     id: "watch-mode-aurora",
@@ -2254,11 +2254,21 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `<DexterReasoningDisclosure\n  content={message.reasoningSummary ?? ""}\n  isStreaming={message.id === streamingMessageId}\n/>`,
   },
   {
+    id: "dexter-record-table",
+    name: "Dexter Record Table",
+    category: "Agent Dexter",
+    description: "A native Multideck table for verified records returned by Dexter, with sorting and links to the real records.",
+    details: "Use for leads, deals, companies, jobs and quotes. Values come from authorised query results. Choose fields relevant to the question. Keep explicitly requested empty fields visible, omit wholly empty optional columns, and show the saved snapshot count. Date-time fields include the time and zone. Accompany the table with a short explanation instead of repeating its rows as prose.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-record-table" }],
+    componentCode: `<DexterRecordTable table={recordTable} />`,
+    usageCode: `{message.recordTables?.map(table => <DexterRecordTable key={table.id} table={table} />)}`,
+  },
+  {
     id: "dexter-action-approval",
     name: "Dexter Action Approval",
     category: "Agent Dexter",
     description: "The explicit review checkpoint for a workspace change, with animated field-level before and after comparisons plus clear Approve and Deny actions.",
-    details: "Use only for a prepared allowlisted write. Show changed values as red previous and green proposed panels, identify additions and removals, keep the proposal visible while either decision is processing, and retain it with an inline error when the server cannot confirm the result.",
+    details: "Use only for a prepared allowlisted write. Identify the record with its authorised source link, show deadlines with an explicit time zone, and keep each action independently reviewable. Completed and denied actions retain their final state. Show changed values as red previous and green proposed panels, identify additions and removals, keep the proposal visible while either decision is processing, and retain it with an inline error when the server cannot confirm the result.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-action-approval" }],
     componentCode: `<DexterActionApproval\n  action={pendingAction}\n  pendingDecision={pendingDecision}\n  error={decisionError}\n  onDecision={handleActionDecision}\n/>`,
     usageCode: `{message.pendingAction ? (\n  <DexterActionApproval\n    action={message.pendingAction}\n    pendingDecision={pendingActionDecision}\n    error={actionDecisionError}\n    onDecision={(decision) => handleActionDecision(message.pendingAction, decision)}\n  />\n) : null}`,

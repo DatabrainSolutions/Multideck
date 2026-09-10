@@ -1,3 +1,5 @@
+import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
+import dexterRecordTableSource from "@/components/multideck/dexter-record-table.tsx?raw"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
@@ -341,7 +343,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Home",
@@ -2956,6 +2958,7 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "email-delivery-status" ? (
         <div className="flex w-full max-w-[520px] flex-wrap items-center justify-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <EmailDeliveryStatus delivery={{ status: "draft", sentAt: null, deliveredAt: null, openedAt: null, repliedAt: null, failedAt: null, bouncedAt: null, openTrackingEnabled: false, confidence: "none" }} />
           <EmailDeliveryStatus
             delivery={{
               status: "sent",
@@ -3823,16 +3826,21 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "dexter-record-table" ? <DexterRecordTable table={{
+        id: "gallery-leads", title: "Leads to follow up", domain: "leads", retrievedAt: "2026-09-09T12:00:00Z",
+        columns: [{ key: "companyName", label: "Lead" }, { key: "status", label: "Status", kind: "status" }, { key: "nextActionDueAt", label: "Next action due", kind: "date", required: true }, { key: "lastInteractionAt", label: "Last interaction", kind: "date", required: true }],
+        rows: [{ id: "gallery-1", url: "/crm/leads", values: { companyName: "Example Logistics", status: "qualified", nextActionDueAt: "2026-09-10T09:00:00Z", lastInteractionAt: null } }, { id: "gallery-2", url: "/crm/leads", values: { companyName: "Example Imports", status: "new", nextActionDueAt: null, lastInteractionAt: null } }],
+      }} /> : null}
       {id === "dexter-action-approval" ? (
         <div className="w-full max-w-[680px]">
           <DexterActionApproval
             action={{
               id: "preview-update-lead",
-              title: "Update Northwind Logistics",
-              description: "Change the lead status to Qualified and assign the next follow-up to 4 August.",
+              title: "Update lead",
+              target: { id: "preview-lead", label: "Northwind Logistics", url: "/crm/leads" },
+              description: "Set the next follow-up deadline for this lead.",
               changes: [
-                { field: "status", value: "Qualified", before: "New", after: "Qualified", beforeKnown: true, kind: "changed" },
-                { field: "next follow up", value: "4 August 2026", before: null, after: "4 August 2026", beforeKnown: true, kind: "added" },
+                { field: "next action due at", value: "2026-09-10T09:00:00Z", before: null, after: "2026-09-10T09:00:00Z", beforeKnown: true, kind: "added" },
               ],
             }}
             onDecision={(decision) => toast.success(decision === "approve" ? "Change approved" : "Change denied")}
@@ -4896,7 +4904,7 @@ export function ComponentsGalleryPage() {
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
-                <CopyButton value={selected.componentCode} />
+                <CopyButton value={(selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.componentCode)} />
                 <Button variant="ghost" size="icon" className="rounded-[var(--md-radius-lg)] bg-white/50 shadow-[var(--md-shadow-line)]" onClick={() => moveSelection(-1)}>
                   <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
                 </Button>
@@ -4927,7 +4935,7 @@ export function ComponentsGalleryPage() {
 
               <TabsContent value="code" id="code" className="mt-[var(--md-page-stack-gap)]">
                 <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-                  <CodeBlock code={selected.componentCode} />
+                  <CodeBlock code={(selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.componentCode)} />
                 </Surface>
               </TabsContent>
 

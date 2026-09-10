@@ -177,6 +177,7 @@ export type MailAttachment = {
 }
 
 export type InboxDeliveryStatus =
+  | "draft"
   | "sent"
   | "delivered"
   | "opened_estimated"
@@ -732,7 +733,7 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
   const direction = readText(pickField(record, "direction")).toLowerCase() === "outbound" ? "outbound" : "inbound"
   const rawDelivery = readRecord(pickField(record, "delivery"))
   const rawDeliveryStatus = readText(pickField(rawDelivery, "status"))
-  const deliveryStatus = ["sent", "delivered", "opened_estimated", "replied", "failed", "bounced", "no_open_signal"].includes(rawDeliveryStatus)
+  const deliveryStatus = ["draft", "sent", "delivered", "opened_estimated", "replied", "failed", "bounced", "no_open_signal"].includes(rawDeliveryStatus)
     ? rawDeliveryStatus as NonNullable<InboxMessage["delivery"]>["status"]
     : "sent"
 

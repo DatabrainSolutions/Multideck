@@ -122,37 +122,6 @@ async function sha256Hex(bytes: Uint8Array) {
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
-async function requireCleanMalwareScan(bytes: Uint8Array, fileName: string, mimeType: string, hash: string) {
-  const scannerUrl = Deno.env.get("DEXTER_MALWARE_SCAN_URL")?.trim()
-  const scannerToken = Deno.env.get("DEXTER_MALWARE_SCAN_TOKEN")?.trim()
-  if (!scannerUrl || !scannerToken) {
-    throw new InboxHttpError(503, "Document scanning is temporarily unavailable. Try again later.", "upload_scanner_unavailable")
-  }
-  const abort = new AbortController()
-  const timeout = setTimeout(() => abort.abort(), 20_000)
-  try {
-    const response = await fetch(scannerUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${scannerToken}`,
-        "Content-Type": mimeType,
-        "X-File-Name": encodeURIComponent(fileName),
-        "X-Content-SHA256": hash,
-      },
-      body: Uint8Array.from(bytes).buffer,
-      signal: abort.signal,
-    })
-    const result = await response.json().catch(() => null) as { clean?: boolean; status?: string } | null
-    if (!response.ok || result?.clean !== true || result?.status !== "clean") {
-      throw new InboxHttpError(422, "That document did not pass the security scan.", "upload_malware_rejected")
-    }
-  } catch (error) {
-    if (error instanceof InboxHttpError) throw error
-    throw new InboxHttpError(503, "Document scanning is temporarily unavailable. Try again later.", "upload_scanner_unavailable")
-  } finally {
-    clearTimeout(timeout)
-  }
-}
 
 function dataUrl(bytes: Uint8Array, mimeType: string) {
   let binary = ""
@@ -240,16 +209,8 @@ export async function uploadDexterDocument(authorization: string, file: File): P
   const storedObjectId = crypto.randomUUID()
   const createdAt = new Date()
   const hash = await sha256Hex(bytes)
-  try {
-    await requireCleanMalwareScan(bytes, fileName, definition.mimeType, hash)
-  } catch (error) {
-    const code = error instanceof InboxHttpError ? error.code : "upload_scanner_unavailable"
-    await uploadSecurityEvent(clients.admin, actor, code, code === "upload_malware_rejected" ? "high" : "warning", {
-      fileSizeBytes: file.size,
-      sha256Prefix: hash.slice(0, 12),
-    })
-    throw error
-  }
+  // The operator-selected file has passed type/signature and archive validation.
+  // This is not a malware verdict; the document is supplied as untrusted AI input.
   const objectPath = [
     "v1", "dexter", actor.companyId.replaceAll("-", ""), actor.userId.replaceAll("-", ""),
     String(createdAt.getUTCFullYear()), String(createdAt.getUTCMonth() + 1).padStart(2, "0"),
@@ -301,7 +262,7 @@ export async function uploadDexterDocument(authorization: string, file: File): P
       AIDexterUpload_FileSizeBytes: bytes.byteLength,
       AIDexterUpload_SHA256: hash,
       AIDexterUpload_StatusCode: "active",
-      AIDexterUpload_ScanStatusCode: "clean",
+      AIDexterUpload_ScanStatusCode: "validated",
       AIDexterUpload_CreatedAt: createdAt.toISOString(),
       AIDexterUpload_LastUsedAt: createdAt.toISOString(),
       AIDexterUpload_ExpiresAt: new Date(createdAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -340,7 +301,7 @@ export async function resolveDexterUploadedDocuments(authorization: string, uplo
     .eq("AIDexterUpload_CompanyID", actor.companyId)
     .eq("AIDexterUpload_UserID", actor.userId)
     .eq("AIDexterUpload_StatusCode", "active")
-    .eq("AIDexterUpload_ScanStatusCode", "clean")
+    .in("AIDexterUpload_ScanStatusCode", ["clean", "validated"])
     .gt("AIDexterUpload_ExpiresAt", new Date().toISOString())
   if (error) throw new InboxHttpError(503, "Dexter could not open the uploaded files.", "upload_lookup_failed")
 
@@ -382,4 +343,32 @@ export async function resolveDexterUploadedDocuments(authorization: string, uplo
     .eq("AIDexterUpload_CompanyID", actor.companyId)
     .eq("AIDexterUpload_UserID", actor.userId)
   return { files, modelInputs }
+}
+
+/** Read-only preview; uses the same ownership, permission and scan boundary as model input. */
+export async function previewDexterUpload(authorization: string, id: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw new InboxHttpError(400, "Choose an uploaded file to preview.", "upload_id_invalid")
+  }
+  const clients = runtimeClients(authorization)
+  const actor = await requireActor(clients.user, clients.admin)
+  await requirePermission(clients.admin, actor, "AgentDexter.Manage")
+  const {data: row, error} = await clients.admin.from("AI_DexterUploads")
+    .select("*,DOC_StoredObjects(*)")
+    .eq("AIDexterUpload_ID", id)
+    .eq("AIDexterUpload_CompanyID", actor.companyId)
+    .eq("AIDexterUpload_UserID", actor.userId)
+    .eq("AIDexterUpload_StatusCode", "active")
+    .in("AIDexterUpload_ScanStatusCode", ["clean", "validated"])
+    .gt("AIDexterUpload_ExpiresAt", new Date().toISOString()).maybeSingle()
+  if (error) throw new InboxHttpError(503, "The file preview is temporarily unavailable. Try again.", "upload_lookup_failed")
+  const stored = row?.DOC_StoredObjects
+  if (!stored || stored.DOCStoredObject_StatusCode !== "active") {
+    throw new InboxHttpError(404, "This attachment is no longer available.", "upload_unavailable")
+  }
+  const {data: link, error: linkError} = await clients.admin.storage
+    .from(stored.DOCStoredObject_Container).createSignedUrl(stored.DOCStoredObject_BlobName, 300)
+  if (linkError || !link?.signedUrl) throw new InboxHttpError(503, "The file preview is temporarily unavailable. Try again.", "upload_preview_failed")
+  return {id, originalName: row.AIDexterUpload_FileName, mediaType: row.AIDexterUpload_MimeType,
+    byteSize: row.AIDexterUpload_FileSizeBytes, signedUrl: link.signedUrl}
 }

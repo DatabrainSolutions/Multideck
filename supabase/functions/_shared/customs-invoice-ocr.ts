@@ -5,6 +5,16 @@ export const MISTRAL_OCR_MODEL = "mistral-ocr-latest"
 export const COMMERCIAL_INVOICE_SCHEMA_VERSION = 3
 export const MAX_COMMERCIAL_INVOICE_BYTES = 10 * 1024 * 1024
 
+// Send the already validated PDF as document content. Signed Storage URLs contain
+// JWTs which the model gateway correctly strips from untrusted text.
+export function invoiceOcrDocument(pdfBytes: Uint8Array) {
+  let binary = ""
+  for (let offset = 0; offset < pdfBytes.byteLength; offset += 32_768) {
+    binary += String.fromCharCode(...pdfBytes.subarray(offset, offset + 32_768))
+  }
+  return { type: "document_url", document_url: `data:application/pdf;base64,${btoa(binary)}` }
+}
+
 export const MAX_INVOICE_EVIDENCE_PAGES = 30
 export const MAX_INVOICE_EVIDENCE_BLOCKS = 320
 export const MAX_INVOICE_EVIDENCE_BUDGET_CHARS = 120_000

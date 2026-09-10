@@ -1,3 +1,10 @@
+import { TicketAttachmentList } from "@/components/multideck/ticket-attachments"
+import type { TicketAttachment } from "@/lib/ticket-attachments"
+import { previewDexterDocument } from "@/lib/dexter-api"
+import { deferredWorkState, deferredWorkPrompt } from "@/lib/dexter-deferred-work"
+import { readDexterRecovery, writeDexterRecovery, clearDexterRecovery, type DexterRecovery } from "@/lib/dexter-request-recovery"
+import { mergeSteeringStatus } from "@/lib/dexter-steering-status"
+import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
 import {
   useEffect,
   useLayoutEffect,
@@ -87,8 +94,13 @@ import {
   listDexterWatches,
   setDexterAccessMode,
   setDexterWatchStatus,
+  dismissDexterDeferredWork,
   sendDexterMessage,
   streamDexterMessage,
+  steerDexter,
+  getDexterActiveRun,
+  type DexterSteeringEvent,
+  type DexterSteeringStatus,
   uploadDexterDocument,
   type DexterUploadedDocument,
   type DexterConversation,
@@ -257,73 +269,18 @@ function HeaderAction({
   )
 }
 
-/**
- * Name and role, and nothing else – no bar, no border, no status chip. The band
- * behind it is the caller's progressive blur veil, so a reply scrolling past
- * loses its contrast and dissolves under the title rather than running into a
- * hard edge.
- *
- * The title crossfades on a blur rather than being replaced, because switching
- * conversations already moves the whole column and a snapping headline is the
- * one thing that would make that read as a page load.
- */
 function DexterConversationHeader({
-  title,
-  isWorking,
-  selectedSpecialistId,
   watchersOpen,
   onToggleWatchers,
 }: {
-  title: string
-  isWorking: boolean
-  selectedSpecialistId: DexterSpecialistId
   watchersOpen: boolean
   onToggleWatchers?: () => void
 }) {
   const { t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
-  const specialist = specialistById(selectedSpecialistId)
-  const RoleIcon = specialist.icon
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start gap-3 px-[var(--md-page-stack-gap)] pt-[18px]">
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <AnimatePresence initial={false}>
-            {isWorking ? (
-              <motion.span
-                key="dexter-live"
-                aria-hidden="true"
-                className="md-dexter-live-dot shrink-0"
-                initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.4, width: 0 }}
-                animate={{ opacity: 1, scale: 1, width: 6 }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.4, width: 0 }}
-                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
-              />
-            ) : null}
-          </AnimatePresence>
-          <span className="relative inline-grid min-w-0 flex-1">
-            <AnimatePresence mode="popLayout" initial={false}>
-              <motion.h1
-                key={title}
-                className="min-w-0 truncate text-[15px] font-medium leading-6 text-[var(--md-ink)]"
-                initial={shouldReduceMotion ? false : { opacity: 0, y: 5, filter: "blur(4px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0, y: -5, filter: "blur(4px)" }}
-                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.enter)}
-              >
-                {title}
-              </motion.h1>
-            </AnimatePresence>
-          </span>
-        </div>
-        <p className="mt-px flex min-w-0 items-center gap-1.5 text-[12px] leading-5 text-[var(--md-subtle)]">
-          <RoleIcon className="size-3 shrink-0" strokeWidth={1.5} />
-          <span className="truncate">{t(specialist.name)}</span>
-          <span className="sr-only">{isWorking ? t("Working") : t("Ready")}</span>
-        </p>
-      </div>
-      <div className="pointer-events-auto flex shrink-0 items-center gap-0.5">
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-end px-[var(--md-page-stack-gap)] pt-[18px]">
+      <div className="pointer-events-auto">
         <HeaderAction
           icon={Radar}
           label={t("Watchers")}
@@ -559,6 +516,10 @@ function readDexterMarkdownText(node: DexterMarkdownAstNode | undefined): string
   return (node.children ?? []).map((child) => readDexterMarkdownText(child)).join("").trim()
 }
 
+function dexterTableHasLinks(node: DexterMarkdownAstNode | undefined): boolean {
+  return node?.tagName === "a" || (node?.children ?? []).some(dexterTableHasLinks)
+}
+
 function readDexterTableCells(row: DexterMarkdownAstNode | undefined) {
   return (row?.children ?? [])
     .filter((child) => child.tagName === "th" || child.tagName === "td")
@@ -621,7 +582,8 @@ function DexterMarkdownTable({
     .map((row) => readDexterTableCells(row))
     .filter((row) => row.some(Boolean))
 
-  if (!headers.length || !rows.length) {
+  // Keep ReactMarkdown's safe, interactive links instead of flattening them into cell text.
+  if (!headers.length || !rows.length || dexterTableHasLinks(node)) {
     return (
       <div className="md-dexter-markdown__table-wrap my-4 w-full max-w-[1120px] overflow-hidden rounded-[var(--md-radius-lg)]">
         <div className="md-dexter-markdown__table-scroll md-scrollbar">
@@ -1178,6 +1140,9 @@ function ConversationStream({
   pendingActionDecision,
   actionDecisionError,
   onActionDecision,
+  onDismissDeferredWork,
+  onContinueRequest,
+  continuationDisabledReason,
   onRetryMessage,
   onRetryError,
   onDismissError,
@@ -1197,6 +1162,9 @@ function ConversationStream({
   pendingActionDecision: { actionId: string; decision: DexterActionDecision } | null
   actionDecisionError: { actionId: string; message: string } | null
   onActionDecision: (action: DexterPendingAction, decision: DexterActionDecision) => void
+  onDismissDeferredWork: (message: DexterMessage) => Promise<void>
+  onContinueRequest: (message: DexterMessage) => void
+  continuationDisabledReason?: string | null
   onRetryMessage?: (message: DexterMessage) => void
   onRetryError?: () => void
   onDismissError: () => void
@@ -1218,6 +1186,7 @@ function ConversationStream({
     () => conversationBranchFor(messages, selectedResponseMessageIds),
     [messages, selectedResponseMessageIds],
   )
+  const [deferredDismissError, setDeferredDismissError] = useState<{id:string;message:string} | null>(null)
   const latestMessageId = visibleMessages.at(-1)?.id
   const firstName = useMemo(() => {
     const displayName = currentUser?.name?.trim()
@@ -1337,12 +1306,18 @@ function ConversationStream({
               </motion.div>
             ) : null}
           </AnimatePresence>
+          {message.steeringInputs?.length ? <div className="mb-3 space-y-1 text-[13px] text-[var(--md-text)]" aria-label={t("Request corrections")}>
+            {message.steeringInputs.map((correction, index) => <p key={`${correction.responseId}-${index}`}>
+              <span className="font-medium">{t("Your correction")}: </span>{correction.input}
+            </p>)}
+          </div> : null}
           {message.content.trim() ? (
             <DexterMarkdown
               content={message.content}
               isStreaming={isStreamingMessage}
             />
           ) : null}
+          {message.recordTables?.map(table => <DexterRecordTable key={table.id} table={table} />)}
           {message.emailAttachments?.length ? (
             <div className="mt-3 grid gap-2" aria-label={t("Email attachments")}>
               {message.emailAttachments.map((attachment) => (
@@ -1351,40 +1326,59 @@ function ConversationStream({
             </div>
           ) : null}
           {message.emailDraft ? (
-            <div className="w-full lg:w-1/2">
+            <div className="w-full max-w-2xl">
               <DexterEmailComposeCard
+                key={`${message.emailDraft.id}:${message.emailDraft.delivery.status}`}
                 messageId={dexterMessageServerId(message)}
                 draft={message.emailDraft}
                 preparedActionId={message.pendingAction?.id ?? null}
-                preparedActionPending={pendingActionDecision?.actionId === message.pendingAction?.id}
+                preparedActionPending={isWorking || pendingActionDecision?.actionId === message.pendingAction?.id}
                 preparedActionError={actionDecisionError?.actionId === message.pendingAction?.id ? actionDecisionError?.message ?? null : null}
                 onPreparedActionDecision={message.pendingAction
-                  ? () => onActionDecision(message.pendingAction!, "approve")
+                  ? (action) => onActionDecision(action ?? message.pendingAction!, "approve")
                   : undefined}
                 onDraftChange={(draft) => onEmailDraftChange(message.id, draft)}
               />
             </div>
           ) : null}
           <AnimatePresence initial={false} mode="popLayout">
-            {message.pendingAction && !message.emailDraft && message.id === latestMessageId ? (
+            {(message.pendingActions ?? (message.pendingAction ? [message.pendingAction] : [])).filter(action => !action.emailDraftId && !(message.emailDraft && action.id === message.pendingAction?.id)).map(action => (
               <DexterActionApproval
-                key={message.pendingAction.id}
-                action={message.pendingAction}
+                key={action.id}
+                action={action}
                 isPreparing={isStreamingMessage}
-                pendingDecision={
-                  pendingActionDecision?.actionId === message.pendingAction.id
-                    ? pendingActionDecision.decision
-                    : null
-                }
-                error={
-                  actionDecisionError?.actionId === message.pendingAction.id
-                    ? actionDecisionError.message
-                    : null
-                }
-                onDecision={(decision) => onActionDecision(message.pendingAction!, decision)}
+                pendingDecision={pendingActionDecision?.actionId === action.id ? pendingActionDecision.decision : null}
+                error={actionDecisionError?.actionId === action.id ? actionDecisionError.message : null}
+                onDecision={decision => onActionDecision(action, decision)}
               />
-            ) : null}
+            ))}
           </AnimatePresence>
+          {message.deferredWork && deferredWorkState(message, visibleMessages) ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--md-line)] pt-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-[var(--md-ink)]">{message.deferredWork.label}</p>
+                <p className="mt-1 text-[12px] text-[var(--md-subtle)]" role="status">
+                  {t(deferredWorkState(message, visibleMessages) === "dismissed" ? "Remaining step dismissed." : deferredWorkState(message, visibleMessages) === "waiting" ? "Waiting for the approvals above."
+                    : deferredWorkState(message, visibleMessages) === "blocked" ? "A required change was not completed. Review it before continuing."
+                    : continuationDisabledReason || "Ready to prepare from current data.")}
+                </p>
+              </div>
+              {deferredDismissError?.id === message.id ? <p className="w-full text-[12px] text-[var(--md-danger)]" role="alert">{deferredDismissError.message}</p> : null}
+              <div className="flex flex-wrap items-center gap-2">
+              {deferredWorkState(message, visibleMessages) !== "dismissed" ? (
+                <Button type="button" variant="ghost" className="min-h-11" disabled={isWorking}
+                  onClick={() => {
+                    setDeferredDismissError(null)
+                    void onDismissDeferredWork(message).catch(cause => setDeferredDismissError({id:message.id,message:cause instanceof Error ? cause.message : t("Dexter could not dismiss this step.")}))
+                  }}>{t("Dismiss remaining step")}</Button>
+              ) : null}
+              {deferredWorkState(message, visibleMessages) === "ready" ? (
+                <Button type="button" variant="outline" className="min-h-11" disabled={isWorking || Boolean(continuationDisabledReason)}
+                  onClick={() => onContinueRequest(message)}>{t("Continue request")}</Button>
+              ) : null}
+              </div>
+            </div>
+          ) : null}
           {todoSuggestion && sourceMessageId ? <DexterTodoSuggestionAction suggestion={todoSuggestion} sourceMessageId={sourceMessageId} /> : null}
         </div>
       </motion.div>
@@ -1462,6 +1456,7 @@ function ConversationStream({
                     <div className="whitespace-pre-wrap text-[15px] leading-6 text-[var(--md-ink)]">
                       <DexterMentionText text={message.content} items={mentionItems} />
                     </div>
+                    <SentDexterFiles attachments={message.attachments ?? []} />
                     {responses.length > 1 && selectedResponseIndex >= 0 ? (
                       <motion.div
                         layout
@@ -1693,6 +1688,14 @@ export function AgentDexterPage({
   const [dexterMode, setDexterMode] = useState<"chat" | "watch">("chat")
   const [watches, setWatches] = useState<DexterWatch[]>([])
   const [isSending, setIsSending] = useState(false)
+  const recoveryBootOwnerRef = useRef<string | null>(null)
+  const recoveryRef = useRef<DexterRecovery | null>(null)
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
+  const [recoveryNeedsCheck, setRecoveryNeedsCheck] = useState(false)
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [steering, setSteering] = useState<{id: string; input: string; status: DexterSteeringStatus} | null>(null)
+  const steeringInFlightRef = useRef(false)
+  const steeringRequestRef = useRef<{id: string; input: string; runId: string} | null>(null)
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const [liveReasoning, setLiveReasoning] = useState("")
   const [isLoadingConversation, setIsLoadingConversation] = useState(Boolean(initialConversationIdRef.current))
@@ -1725,6 +1728,8 @@ export function AgentDexterPage({
   const [composerEmailAttachments, setComposerEmailAttachments] = useState<DexterEmailAttachment[]>([])
   const [composerEmailUpdates, setComposerEmailUpdates] = useState<DexterWatchEmailContext[]>([])
   const [composerUploadedDocuments, setComposerUploadedDocuments] = useState<DexterUploadedDocument[]>(homeHandoffRef.current?.uploadedDocuments ?? [])
+  const failedUploadFiles = useRef<File[]>([])
+  const [uploadingDocuments, setUploadingDocuments] = useState<DexterUploadedDocument[]>([])
   const [isUploadingDocument, setIsUploadingDocument] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [mentionItems, setMentionItems] = useState<DexterMentionItem[]>(defaultDexterMentionItems)
@@ -1737,11 +1742,11 @@ export function AgentDexterPage({
   const streamRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
   const computerFileInputRef = useRef<HTMLInputElement>(null)
+  const uploadingDocumentsRef = useRef(uploadingDocuments)
+  uploadingDocumentsRef.current = uploadingDocuments
   const composerUploadedDocumentsRef = useRef(composerUploadedDocuments)
   const stickToBottomRef = useRef(false)
   const pendingScrollToLatestRef = useRef(false)
-  const isScrollingToLatestRef = useRef(false)
-  const jumpScrollTimeoutRef = useRef<number | null>(null)
   const liveReasoningRef = useRef("")
   const actionDecisionInFlightRef = useRef<string | null>(null)
   // A full-access grant is issued against a client session, so a prompt that
@@ -1772,7 +1777,7 @@ export function AgentDexterPage({
   }, [composerUploadedDocuments])
 
   useEffect(() => () => {
-    composerUploadedDocumentsRef.current.forEach((document) => {
+    [...composerUploadedDocumentsRef.current, ...uploadingDocumentsRef.current].forEach((document) => {
       if (document.previewUrl) URL.revokeObjectURL(document.previewUrl)
     })
   }, [])
@@ -1820,7 +1825,7 @@ export function AgentDexterPage({
     void uploadDexterDocument(file)
       .then((document) => setComposerUploadedDocuments([{
         ...document,
-        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+        previewUrl: URL.createObjectURL(file),
       }]))
       .catch((handoffError) => setUploadError(handoffError instanceof Error ? handoffError.message : t("Dexter could not upload that document.")))
       .finally(() => setIsUploadingDocument(false))
@@ -1858,7 +1863,7 @@ export function AgentDexterPage({
       tone: "teal" as const,
       icon: Mail,
     })),
-    ...composerUploadedDocuments.map((document) => ({
+    ...[...composerUploadedDocuments, ...uploadingDocuments].map((document) => ({
       id: document.id,
       type: "uploaded_document" as const,
       title: document.fileName,
@@ -1866,8 +1871,10 @@ export function AgentDexterPage({
       tone: "teal" as const,
       icon: FileText,
       previewUrl: document.previewUrl,
+      mimeType: document.mimeType,
+      sizeBytes: document.sizeBytes,
     })),
-  ], [attachedItems, composerEmailAttachments, composerEmailUpdates, composerUploadedDocuments, t])
+  ], [attachedItems, composerEmailAttachments, composerEmailUpdates, composerUploadedDocuments, uploadingDocuments, t])
   const attachedContextItems = useMemo(
     () => [...composerAttachmentItems, ...composerMentions],
     [composerAttachmentItems, composerMentions],
@@ -2044,14 +2051,8 @@ export function AgentDexterPage({
     setShowJumpToLatest(false)
   }, [activeConversation?.id, activeConversation?.messages.length, stage])
 
-  useEffect(() => () => {
-    if (jumpScrollTimeoutRef.current !== null) {
-      window.clearTimeout(jumpScrollTimeoutRef.current)
-    }
-  }, [])
-
   function updateJumpToLatestVisibility(stream = streamRef.current) {
-    if (!stream || isScrollingToLatestRef.current) return
+    if (!stream) return
 
     const distanceFromLatest = Math.max(
       0,
@@ -2066,35 +2067,6 @@ export function AgentDexterPage({
 
   function handleConversationScroll(event: React.UIEvent<HTMLDivElement>) {
     updateJumpToLatestVisibility(event.currentTarget)
-  }
-
-  function scrollToLatest(animate = true) {
-    const stream = streamRef.current
-    setShowJumpToLatest(false)
-    stickToBottomRef.current = true
-
-    if (!stream) {
-      pendingScrollToLatestRef.current = true
-      return
-    }
-
-    if (!animate || shouldReduceMotion) {
-      isScrollingToLatestRef.current = false
-      stream.scrollTop = stream.scrollHeight
-      return
-    }
-
-    isScrollingToLatestRef.current = true
-    if (jumpScrollTimeoutRef.current !== null) {
-      window.clearTimeout(jumpScrollTimeoutRef.current)
-    }
-
-    stream.scrollTo({ top: stream.scrollHeight, behavior: "smooth" })
-    jumpScrollTimeoutRef.current = window.setTimeout(() => {
-      isScrollingToLatestRef.current = false
-      jumpScrollTimeoutRef.current = null
-      updateJumpToLatestVisibility()
-    }, 560)
   }
 
   function toggleAttachment(id: string) {
@@ -2220,17 +2192,22 @@ export function AgentDexterPage({
       setUploadError(t("You can attach up to three computer files to one request."))
       return
     }
+    files = [...new Set([...failedUploadFiles.current, ...files])]
+    uploadingDocuments.forEach(document => { if (document.previewUrl) URL.revokeObjectURL(document.previewUrl) })
+    failedUploadFiles.current = []
     const selected = files.slice(0, remaining)
     const selectionWasTruncated = files.length > remaining
     setIsUploadingDocument(true)
     setUploadError(selectionWasTruncated ? t("Only the first three files were selected.") : null)
+    const previews = selected.map(file => ({id: crypto.randomUUID(), fileName: file.name, mimeType: file.type, sizeBytes: file.size, previewUrl: URL.createObjectURL(file)}))
+    setUploadingDocuments(previews)
     const results = await Promise.allSettled(selected.map(async (file) => ({
       document: await uploadDexterDocument(file),
       file,
     })))
     const uploaded = results.flatMap((result) => result.status === "fulfilled" ? [{
       ...result.value.document,
-      previewUrl: result.value.file.type.startsWith("image/") ? URL.createObjectURL(result.value.file) : undefined,
+      previewUrl: previews[selected.indexOf(result.value.file)].previewUrl,
     }] : [])
     const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
     if (uploaded.length) {
@@ -2244,10 +2221,21 @@ export function AgentDexterPage({
     if (failed) {
       setUploadError(failed.reason instanceof Error ? failed.reason.message : t("Dexter could not upload that document."))
     }
+    failedUploadFiles.current = selected.filter((_, index) => results[index].status === "rejected")
+    setUploadingDocuments(previews.filter((_, index) => results[index].status === "rejected"))
     setIsUploadingDocument(false)
   }
 
   function removeComposerUploadedDocument(id: string) {
+    const failedIndex = uploadingDocuments.findIndex(document => document.id === id)
+    if (failedIndex >= 0) {
+      const preview = uploadingDocuments[failedIndex].previewUrl
+      if (preview) URL.revokeObjectURL(preview)
+      failedUploadFiles.current.splice(failedIndex, 1)
+      setUploadingDocuments(current => current.filter(document => document.id !== id))
+      if (uploadingDocuments.length === 1) setUploadError(null)
+      return
+    }
     setComposerUploadedDocuments((current) => current.filter((document) => {
       if (document.id !== id) return true
       if (document.previewUrl) URL.revokeObjectURL(document.previewUrl)
@@ -2265,7 +2253,91 @@ export function AgentDexterPage({
     setShowAttachments((value) => !value)
   }
 
+  function rememberRequest(runId: string, conversationId: string | null, prompt: string, model: DexterModelId) {
+    if (!currentUser?.id) return
+    const record: DexterRecovery = {runId, clientSessionId: dexterClientSessionIdRef.current,
+      conversationId: conversationId || null, prompt, model, createdAt: Date.now(), composerText: ""}
+    recoveryRef.current = record
+    writeDexterRecovery(currentUser.id, record)
+  }
+
+  function keepRecoveryText(text: string, correction = recoveryRef.current?.correction) {
+    if (!currentUser?.id || !recoveryRef.current) return
+    recoveryRef.current = {...recoveryRef.current, composerText: text.slice(0, 8000), correction}
+    writeDexterRecovery(currentUser.id, recoveryRef.current)
+  }
+
+  function forgetRequest() {
+    if (currentUser?.id && recoveryRef.current) clearDexterRecovery(currentUser.id, recoveryRef.current.runId)
+    recoveryRef.current = null
+    setRecoveryNeedsCheck(false)
+    setRecoveryNotice(null)
+  }
+
+  async function recoverRequest(record: DexterRecovery) {
+    if (!currentUser?.id) return
+    const intent = {id: record.conversationId, version: conversationIntentRef.current.version + 1}
+    conversationIntentRef.current = intent
+    recoveryRef.current = record
+    dexterClientSessionIdRef.current = record.clientSessionId
+    steeringRequestRef.current = record.correction ?? null
+    setActiveRunId(null)
+    setIsLoadingConversation(false)
+    setIsSending(true)
+    setStage("conversation")
+    setSelectedModelId(record.model)
+    setComposerValue(record.composerText)
+    setError(null)
+    setFailedPrompt(null)
+    setRecoveryNeedsCheck(false)
+    setRecoveryNotice("Recovering your previous request…")
+    const current = () => conversationIntentRef.current.version === intent.version
+    try {
+      if (record.conversationId) {
+        const conversation = await getDexterConversation(record.conversationId)
+        if (!current()) return
+        setActiveConversation(conversation)
+      }
+      const deadline = Date.now() + 180000
+      while (current() && Date.now() < deadline) {
+        const run = await getDexterActiveRun({runId: record.runId, clientSessionId: record.clientSessionId})
+        if (!current()) return
+        const correction = record.correction && run.inputs.find(item => item.id === record.correction?.id)
+        if (correction) receiveSteeringStatus({runId: record.runId, inputId: correction.id, status: correction.status})
+        else if (record.correction && run.status !== "active") receiveSteeringStatus({runId: record.runId, inputId: record.correction.id, status: "failed"})
+        if (run.savedResult) {
+          const conversation = await getDexterConversation(run.savedResult.conversationId)
+          if (!current()) return
+          if (!conversation.messages.some(message => message.id === run.savedResult?.messageId))
+            throw new Error("The saved reply could not be loaded. Check the request again.")
+          setActiveConversation(conversation)
+          conversationIntentRef.current = {...intent, id: conversation.id}
+          rememberOpenDexterConversation(conversation.id)
+          announceDexterConversationsChanged()
+          forgetRequest()
+          return
+        }
+        // The provider finishes before reply persistence; allow that save to settle.
+        if (run.status !== "active" && Date.now() > new Date(run.expiresAt).getTime() + 30000) {
+          setComposerValue(value => value.trim() ? value : record.prompt)
+          forgetRequest()
+          setError(`The previous request ended without a saved reply. Check any prepared changes before trying again; attached files may need to be selected again. Original request: ${record.prompt}`)
+          return
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 2000))
+      }
+      if (current()) throw new Error("Dexter could not yet confirm the previous request. Check again before sending it another time.")
+    } catch (error) {
+      if (!current()) return
+      setRecoveryNotice(error instanceof Error ? error.message : "Dexter could not check the previous request.")
+      setRecoveryNeedsCheck(true)
+    } finally {
+      if (current()) { setIsSending(false); setStreamingMessageId(null) }
+    }
+  }
+
   function handleComposerChange(value: string) {
+    keepRecoveryText(value)
     const command = value.trim().toLowerCase()
     const matchedCommand = slashCommands.find((item) => item.command.toLowerCase() === command)
     if (matchedCommand && !matchedCommand.disabled) {
@@ -2276,13 +2348,68 @@ export function AgentDexterPage({
     setComposerValue(value)
   }
 
+  function receiveSteeringStatus(event: DexterSteeringEvent) {
+    const submitted = steeringRequestRef.current
+    if (!submitted || submitted.id !== event.inputId || submitted.runId !== event.runId) return
+    setSteering(current => ({id: submitted.id, input: submitted.input, status: current?.id === submitted.id ? mergeSteeringStatus(current.status, event.status) : event.status}))
+    if (event.status === "incorporated") {
+      if (recoveryRef.current?.composerText.trim() === submitted.input) keepRecoveryText("")
+      setComposerValue(value => value.trim() === submitted.input ? "" : value)
+    }
+  }
+
+  async function updateActiveRequest(value?: string) {
+    const input = (value ?? composerValue).trim()
+    if (!activeRunId || !isSending || !input || steeringInFlightRef.current
+      || (steering && ["pending", "claimed", "submitted", "queued"].includes(steering.status))) return
+    if (input.length > 8000) { setError(t("Enter a correction of up to 8,000 characters.")); return }
+    const previous = steeringRequestRef.current
+    const submitted = previous?.runId === activeRunId && previous.input === input && steering?.status !== "incorporated"
+      ? previous : {id: crypto.randomUUID(), input, runId: activeRunId}
+    steeringRequestRef.current = submitted
+    keepRecoveryText(input, submitted)
+    steeringInFlightRef.current = true
+    setSteering({id: submitted.id, input, status: "pending"})
+    const applyRun = (run: Awaited<ReturnType<typeof getDexterActiveRun>>) => {
+      const saved = run.inputs.find(item => item.id === submitted.id)
+      if (saved) receiveSteeringStatus({runId: submitted.runId, inputId: submitted.id, status: saved.status})
+      return Boolean(saved)
+    }
+    try {
+      applyRun(await steerDexter({runId: submitted.runId, clientSessionId: dexterClientSessionIdRef.current, inputId: submitted.id, input}))
+    } catch {
+      try {
+        if (!applyRun(await getDexterActiveRun({runId: submitted.runId, clientSessionId: dexterClientSessionIdRef.current})))
+          receiveSteeringStatus({runId: submitted.runId, inputId: submitted.id, status: "failed"})
+      } catch { receiveSteeringStatus({runId: submitted.runId, inputId: submitted.id, status: "unconfirmed"}) }
+    } finally { steeringInFlightRef.current = false }
+  }
+
+  async function reconcileActiveCorrection() {
+      const submittedCorrection = steeringRequestRef.current
+      if (submittedCorrection) {
+        try {
+          const run = await getDexterActiveRun({runId: submittedCorrection.runId, clientSessionId: dexterClientSessionIdRef.current})
+          const saved = run.inputs.find(input => input.id === submittedCorrection.id)
+          if (saved) receiveSteeringStatus({runId: submittedCorrection.runId, inputId: submittedCorrection.id, status: saved.status})
+        } catch { receiveSteeringStatus({runId: submittedCorrection.runId, inputId: submittedCorrection.id, status: "unconfirmed"}) }
+      }
+  }
+
+  const steeringStatusText = steering ? ({
+    pending: "Queuing your correction…", claimed: "Submitting your correction…", submitted: "Submitting your correction…",
+    queued: "Correction queued", incorporated: "Correction applied",
+    failed: "Correction was not applied. Your text is kept.", unconfirmed: "Correction could not be confirmed. Check the conversation before retrying.",
+  } as const)[steering.status] : undefined
+
   async function submitPrompt(
     prompt = composerValue,
     specialistId = selectedSpecialistId,
     failedRetry?: FailedDexterPrompt,
+    continuationMessageId?: string,
   ) {
     const message = (failedRetry?.input.message ?? prompt).trim()
-    if (!message || isWorking || promptSubmissionInFlightRef.current) return
+    if (!message || isUploadingDocument || uploadingDocuments.length > 0 || isWorking || recoveryNeedsCheck || promptSubmissionInFlightRef.current) return
     const matchedCommand = failedRetry
       ? undefined
       : slashCommands.find((item) => item.command.toLowerCase() === message.toLowerCase())
@@ -2387,6 +2514,9 @@ export function AgentDexterPage({
       return
     }
 
+    setActiveRunId(null)
+    setSteering(null)
+    steeringRequestRef.current = null
     const submissionIntent = conversationIntentRef.current
     const retryConversation = failedRetry?.previousConversation?.id &&
       activeConversation?.id === failedRetry.previousConversation.id
@@ -2423,6 +2553,7 @@ export function AgentDexterPage({
       createdAt: new Date().toISOString(),
       specialist: specialistId,
       attachments: messageAttachments,
+      continuationMessageId: failedRetry?.input.continuationMessageId ?? continuationMessageId,
       parentResponseMessageId: parentResponseMessage
         ? persistedDexterMessageId(parentResponseMessage)
         : null,
@@ -2435,6 +2566,7 @@ export function AgentDexterPage({
       specialist: specialistId,
       responseToUserMessageId: pendingMessage.id,
       responseVersion: 1,
+      continuationMessageId: failedRetry?.input.continuationMessageId ?? continuationMessageId,
     }
     const pendingConversation: DexterConversation = previousConversation?.id
       ? {
@@ -2464,6 +2596,7 @@ export function AgentDexterPage({
             : null,
           historyMessageIds: persistedDexterMessageIds(previousBranchMessages),
           message,
+          ...(continuationMessageId ? {continuationMessageId} : {}),
           specialist: specialistId,
           model: selectedModelId,
           locale: language,
@@ -2498,6 +2631,22 @@ export function AgentDexterPage({
 
     try {
       const conversation = await streamDexterMessage(requestInput, {
+        onActiveRun: (runId, canSteer) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveRunId(canSteer ? runId : null)
+          rememberRequest(runId, requestInput.conversationId ?? null, requestInput.message, selectedModelId)
+          setSteering(null)
+          steeringRequestRef.current = null
+        },
+        onSteeringStatus: event => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          receiveSteeringStatus(event)
+        },
+        onAnswerReset: () => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? {...current, messages: current.messages.map(message =>
+            message.id === assistantStreamMessage.id ? {...message, content: ""} : message)} : current)
+        },
         onAnswerDelta: (delta) => {
           if (conversationIntentRef.current.version !== submissionIntent.version) return
           const stream = streamRef.current
@@ -2546,6 +2695,21 @@ export function AgentDexterPage({
             }
           })
         },
+        onEmailDraft: (emailDraft) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? { ...current, messages: current.messages.map(item => item.id === assistantStreamMessage.id ? { ...item, emailDraft } : item) } : current)
+        },
+        onRecordTable: (table) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? { ...current, messages: current.messages.map(item => item.id === assistantStreamMessage.id ? { ...item, recordTables: [...(item.recordTables ?? []).filter(value => value.id !== table.id), table] } : item) } : current)
+        },
+        onApprovalWithdrawn: (approvalId) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? {...current, messages: current.messages.map(item => ({...item,
+            pendingActions: item.pendingActions?.map(action => action.id === approvalId ? {...action, status: "superseded" as const} : action),
+            pendingAction: item.pendingAction?.id === approvalId ? {...item.pendingAction, status: "superseded" as const} : item.pendingAction,
+          }))} : current)
+        },
         onPendingAction: (pendingAction) => {
           if (conversationIntentRef.current.version !== submissionIntent.version) return
           setActiveConversation((current) => {
@@ -2553,7 +2717,7 @@ export function AgentDexterPage({
             return {
               ...base,
               messages: base.messages.map((item) =>
-                item.id === assistantStreamMessage.id ? { ...item, pendingAction } : item,
+                item.id === assistantStreamMessage.id ? { ...item, pendingActions: [...(item.pendingActions ?? []).filter(action => action.id !== pendingAction.id), pendingAction], ...(pendingAction.emailDraftId ? { pendingAction } : {}) } : item,
               ),
             }
           })
@@ -2562,6 +2726,7 @@ export function AgentDexterPage({
       if (conversationIntentRef.current.version !== submissionIntent.version) return
       conversationIntentRef.current = { id: conversation.id, version: submissionIntent.version }
       setActiveConversation(conversation)
+      forgetRequest()
       rememberOpenDexterConversation(conversation.id)
       announceDexterConversationsChanged()
       setFailedPrompt(null)
@@ -2607,6 +2772,12 @@ export function AgentDexterPage({
       setError(requestError instanceof Error ? requestError.message : t("Dexter could not answer this request."))
     } finally {
       if (activePromptAbortControllerRef.current !== requestController) return
+      await reconcileActiveCorrection()
+      if (recoveryRef.current) {
+        setRecoveryNeedsCheck(true)
+        setRecoveryNotice("Check the previous request before sending it again.")
+      }
+      setActiveRunId(null)
       activePromptAbortControllerRef.current = null
       promptSubmissionInFlightRef.current = false
       setIsSending(false)
@@ -2621,12 +2792,16 @@ export function AgentDexterPage({
       userMessage.role !== "user" ||
       !retryMessageId ||
       isWorking ||
+      recoveryNeedsCheck ||
       promptSubmissionInFlightRef.current
     ) {
       return
     }
 
     promptSubmissionInFlightRef.current = true
+    setActiveRunId(null)
+    setSteering(null)
+    steeringRequestRef.current = null
     const submissionIntent = conversationIntentRef.current
     const previousConversation = activeConversation
     const responses = responseGroupsFor(previousConversation.messages).responsesByUserId.get(userMessage.id) ?? []
@@ -2684,6 +2859,7 @@ export function AgentDexterPage({
       const conversation = await streamDexterMessage({
         conversationId: previousConversation.id,
         retryMessageId,
+        continuationMessageId: responses.find(response => response.id === previousSelectedResponseId)?.continuationMessageId,
         historyMessageIds: retryHistoryMessageIds,
         message: userMessage.content,
         specialist: specialistId,
@@ -2693,6 +2869,22 @@ export function AgentDexterPage({
         fullAccessGrantId,
         attachments: userMessage.attachments ?? [],
       }, {
+        onActiveRun: (runId, canSteer) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveRunId(canSteer ? runId : null)
+          rememberRequest(runId, previousConversation.id, userMessage.content, selectedModelId)
+          setSteering(null)
+          steeringRequestRef.current = null
+        },
+        onSteeringStatus: event => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          receiveSteeringStatus(event)
+        },
+        onAnswerReset: () => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? {...current, messages: current.messages.map(message =>
+            message.id === assistantStreamMessage.id ? {...message, content: ""} : message)} : current)
+        },
         onAnswerDelta: (delta) => {
           if (conversationIntentRef.current.version !== submissionIntent.version) return
           setActiveConversation((current) => {
@@ -2732,6 +2924,21 @@ export function AgentDexterPage({
             }
           })
         },
+        onEmailDraft: (emailDraft) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? { ...current, messages: current.messages.map(item => item.id === assistantStreamMessage.id ? { ...item, emailDraft } : item) } : current)
+        },
+        onRecordTable: (table) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? { ...current, messages: current.messages.map(item => item.id === assistantStreamMessage.id ? { ...item, recordTables: [...(item.recordTables ?? []).filter(value => value.id !== table.id), table] } : item) } : current)
+        },
+        onApprovalWithdrawn: (approvalId) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? {...current, messages: current.messages.map(item => ({...item,
+            pendingActions: item.pendingActions?.map(action => action.id === approvalId ? {...action, status: "superseded" as const} : action),
+            pendingAction: item.pendingAction?.id === approvalId ? {...item.pendingAction, status: "superseded" as const} : item.pendingAction,
+          }))} : current)
+        },
         onPendingAction: (pendingAction) => {
           if (conversationIntentRef.current.version !== submissionIntent.version) return
           setActiveConversation((current) => {
@@ -2739,7 +2946,7 @@ export function AgentDexterPage({
             return {
               ...base,
               messages: base.messages.map((item) =>
-                item.id === assistantStreamMessage.id ? { ...item, pendingAction } : item,
+                item.id === assistantStreamMessage.id ? { ...item, pendingActions: [...(item.pendingActions ?? []).filter(action => action.id !== pendingAction.id), pendingAction], ...(pendingAction.emailDraftId ? { pendingAction } : {}) } : item,
               ),
             }
           })
@@ -2748,6 +2955,7 @@ export function AgentDexterPage({
 
       if (conversationIntentRef.current.version !== submissionIntent.version) return
       setActiveConversation(conversation)
+      forgetRequest()
       const acknowledgedResponse = responseGroupsFor(conversation.messages)
         .responsesByUserId.get(retryMessageId)
         ?.at(-1)
@@ -2793,11 +3001,32 @@ export function AgentDexterPage({
       setError(requestError instanceof Error ? requestError.message : t("Dexter could not answer this request."))
     } finally {
       if (activePromptAbortControllerRef.current !== requestController) return
+      await reconcileActiveCorrection()
+      if (recoveryRef.current) {
+        setRecoveryNeedsCheck(true)
+        setRecoveryNotice("Check the previous request before sending it again.")
+      }
+      setActiveRunId(null)
       activePromptAbortControllerRef.current = null
       promptSubmissionInFlightRef.current = false
       setRetryingMessageId(null)
       setIsSending(false)
       setStreamingMessageId(null)
+    }
+  }
+
+  async function handleDismissDeferredWork(message: DexterMessage) {
+    const sourceId = persistedDexterMessageId(message)
+    const conversationId = activeConversation?.id
+    if (!sourceId || !conversationId || isWorking) return
+    const intentVersion = conversationIntentRef.current.version
+    setIsSending(true)
+    try {
+      await dismissDexterDeferredWork(conversationId, sourceId)
+      const refreshed = await getDexterConversation(conversationId)
+      if (conversationIntentRef.current.version === intentVersion) setActiveConversation(refreshed)
+    } finally {
+      if (conversationIntentRef.current.version === intentVersion) setIsSending(false)
     }
   }
 
@@ -2811,6 +3040,9 @@ export function AgentDexterPage({
     }
 
     const previousConversation = activeConversation
+    setActiveRunId(null)
+    setSteering(null)
+    steeringRequestRef.current = null
     const submissionIntent = conversationIntentRef.current
     const previousBranchMessages = conversationBranchFor(
       previousConversation.messages,
@@ -2819,6 +3051,15 @@ export function AgentDexterPage({
     const parentResponseMessage = latestPersistedAssistantMessage(previousBranchMessages)
     const decisionLabel = decision === "approve" ? t("Approve") : t("Deny")
     actionDecisionInFlightRef.current = action.id
+    if (action.emailDraftId) {
+      setActiveConversation(current => current ? {
+        ...current,
+        messages: current.messages.map(message => message.emailDraft?.id === action.emailDraftId ? {
+          ...message, pendingAction: action,
+          pendingActions: [...(message.pendingActions ?? []).filter(existing => existing.id !== action.id), action],
+        } : message),
+      } : current)
+    }
     setPendingActionDecision({ actionId: action.id, decision })
     setActionDecisionError(null)
     setIsSending(true)
@@ -2855,6 +3096,16 @@ export function AgentDexterPage({
           ? requestError.message
           : t("Dexter could not apply this decision."),
       })
+      // A rejected write can already be terminal in the server ledger. Refresh
+      // that status so an old approval does not remain actionable after failure.
+      try {
+        const refreshed = await getDexterConversation(previousConversation.id)
+        if (conversationIntentRef.current.version === submissionIntent.version) {
+          setActiveConversation(refreshed)
+        }
+      } catch {
+        // Retain the existing conversation and decision error during a network failure.
+      }
     } finally {
       if (conversationIntentRef.current.version === submissionIntent.version) {
         actionDecisionInFlightRef.current = null
@@ -2905,6 +3156,11 @@ export function AgentDexterPage({
   }
 
   async function handleHistorySelect(id: string) {
+    const stored = currentUser?.id ? readDexterRecovery(currentUser.id) : null
+    if (stored?.conversationId === id) { void recoverRequest(stored); return }
+    recoveryRef.current = null
+    setRecoveryNotice(null)
+    setRecoveryNeedsCheck(false)
     activePromptAbortControllerRef.current?.abort()
     activePromptAbortControllerRef.current = null
     promptSubmissionInFlightRef.current = false
@@ -2937,6 +3193,8 @@ export function AgentDexterPage({
       const conversation = await getDexterConversation(id)
       if (conversationIntentRef.current.version !== intent.version) return
       setActiveConversation(conversation)
+      const previousModel = [...conversation.messages].reverse().find(message => message.role === "assistant" && message.model)?.model
+      setSelectedModelId(previousModel ?? defaultDexterModelId)
     } catch (requestError) {
       if (conversationIntentRef.current.version !== intent.version) return
       setError(requestError instanceof Error ? requestError.message : t("This conversation could not be loaded."))
@@ -2996,6 +3254,9 @@ export function AgentDexterPage({
   }
 
   function startNewConversation() {
+    recoveryRef.current = null
+    setRecoveryNotice(null)
+    setRecoveryNeedsCheck(false)
     activePromptAbortControllerRef.current?.abort()
     activePromptAbortControllerRef.current = null
     promptSubmissionInFlightRef.current = false
@@ -3070,7 +3331,11 @@ export function AgentDexterPage({
     const handoffId = takeDexterConversationHandoff()
     const refreshConversationId = initialConversationIdRef.current
     initialConversationIdRef.current = null
-    if (handoffId) void handleHistorySelect(handoffId)
+    const checkRecovery = Boolean(currentUser?.id && recoveryBootOwnerRef.current !== currentUser.id)
+    const savedRequest = checkRecovery && currentUser?.id ? readDexterRecovery(currentUser.id) : null
+    if (currentUser?.id) recoveryBootOwnerRef.current = currentUser.id
+    if (!handoffId && !refreshConversationId && savedRequest && !recoveryRef.current) void recoverRequest(savedRequest)
+    else if (handoffId) void handleHistorySelect(handoffId)
     else if (refreshConversationId) void handleHistorySelect(refreshConversationId)
 
     window.addEventListener(DEXTER_NEW_CONVERSATION_EVENT, startNew)
@@ -3081,13 +3346,15 @@ export function AgentDexterPage({
       window.removeEventListener(DEXTER_SELECT_CONVERSATION_EVENT, selectConversation)
       window.removeEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, syncConversationChange)
     }
-  }, [activeConversation?.id])
+  }, [activeConversation?.id, currentUser?.id])
 
   return (
     <LayoutGroup>
       <input
         ref={computerFileInputRef}
         type="file"
+        aria-label="Choose files for Dexter"
+        disabled={isUploadingDocument}
         multiple
         accept=".pdf,.txt,.csv,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp"
         className="sr-only"
@@ -3136,21 +3403,24 @@ export function AgentDexterPage({
 
             <div className="relative z-10 mx-auto flex w-full max-w-[850px] flex-1 flex-col justify-center px-[var(--md-page-stack-gap)] py-[clamp(48px,8vw,64px)]">
               <motion.div
-                className="mx-auto mb-[var(--md-page-section-gap)] text-center"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={mdMotion.page}
+                className="mx-auto overflow-hidden text-center"
+                aria-hidden={dexterMode === "watch"}
+                initial={false}
+                animate={{
+                  height: dexterMode === "watch" ? 0 : "auto",
+                  opacity: dexterMode === "watch" ? 0 : 1,
+                  marginBottom: dexterMode === "watch" ? 0 : "var(--md-page-section-gap)",
+                }}
+                transition={shouldReduceMotion ? { duration: 0 } : mdMotion.smooth}
               >
                 <div className="flex items-center justify-center gap-3">
                   <DexterBrandMark className="size-6 shrink-0" />
                   <h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)] sm:text-[30px]">
-                    {t(dexterMode === "watch" ? "What do you want me to watch?" : "What can I help you with today?")}
+                    {t("What can I help you with today?")}
                   </h1>
                 </div>
                 <p className="mt-4 text-[15px] text-[var(--md-text)]">
-                  {t(dexterMode === "watch"
-                    ? "Describe the record and the change that matters. Type /chat to return."
-                    : "Bookings, customers, documents, rates - or hand me the whole job.")}
+                  {t("Bookings, customers, documents, rates - or hand me the whole job.")}
                 </p>
               </motion.div>
 
@@ -3193,7 +3463,7 @@ export function AgentDexterPage({
                   isAccessModeChanging={isAccessModeChanging}
                   onCommand={handleSlashCommand}
                   onRemoveAttachment={(id) => {
-                    if (composerUploadedDocuments.some((document) => document.id === id)) {
+                    if ([...composerUploadedDocuments, ...uploadingDocuments].some((document) => document.id === id)) {
                       removeComposerUploadedDocument(id)
                       return
                     }
@@ -3205,8 +3475,15 @@ export function AgentDexterPage({
                       setComposerEmailAttachments((current) => current.filter((attachment) => attachment.id !== id))
                     } else toggleAttachment(id)
                   }}
-                  onSend={(prompt) => void submitPrompt(prompt)}
-                  isSending={isWorking}
+                  onSend={prompt => { void (isSending && activeRunId ? updateActiveRequest(prompt) : submitPrompt(prompt)) }}
+                  isSending={isWorking || recoveryNeedsCheck}
+                  isUploading={isUploadingDocument}
+                  uploadError={uploadError}
+                  hasFailedUploads={uploadingDocuments.length > 0 && !isUploadingDocument}
+                  onRetryUpload={() => void handleDocumentUpload([...failedUploadFiles.current])}
+                  canUpdateRequest={isSending && Boolean(activeRunId)}
+                  updatePending={Boolean(isSending && steering && ["pending", "claimed", "submitted", "queued"].includes(steering.status))}
+                  updateStatus={steeringStatusText}
                 />
               </motion.div>
 
@@ -3318,7 +3595,7 @@ export function AgentDexterPage({
                   <MessageScroller.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                     <MotionMessageScrollerViewport
                       ref={streamRef}
-                      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pt-[76px] md-scrollbar"
+                      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pt-[60px] md-scrollbar"
                       style={{ paddingBottom: composerInset + 24 }}
                       onScroll={handleConversationScroll}
                       initial={{ opacity: 0, y: 16 }}
@@ -3353,8 +3630,16 @@ export function AgentDexterPage({
                         pendingActionDecision={pendingActionDecision}
                         actionDecisionError={actionDecisionError}
                         onActionDecision={(action, decision) => void handleActionDecision(action, decision)}
-                        onRetryMessage={dexterMode === "chat" ? (message) => void retryPrompt(message) : undefined}
-                        onRetryError={failedPrompt ? () => void submitPrompt(
+                        onDismissDeferredWork={handleDismissDeferredWork}
+                        onContinueRequest={(message) => {
+                          const sourceId = persistedDexterMessageId(message)
+                          if (sourceId) void submitPrompt(deferredWorkPrompt(message), selectedSpecialistId, undefined, sourceId)
+                        }}
+                        continuationDisabledReason={recoveryNeedsCheck ? t("Check the current request before continuing.")
+                          : accessMode !== "approve" ? t("Switch to Approve to review the remaining changes.")
+                          : composerValue.trim() ? t("Send or clear your draft before continuing.") : null}
+                        onRetryMessage={dexterMode === "chat" && !recoveryNeedsCheck ? (message) => void retryPrompt(message) : undefined}
+                        onRetryError={failedPrompt && !recoveryNeedsCheck ? () => void submitPrompt(
                           failedPrompt.input.message,
                           isDexterSpecialistId(failedPrompt.input.specialist)
                             ? failedPrompt.input.specialist
@@ -3380,6 +3665,11 @@ export function AgentDexterPage({
                           } : current)
                         }}
                       />
+                      {recoveryNotice ? <div className="mx-auto flex w-full max-w-[860px] flex-col items-start gap-2 px-5 py-2" role="status">
+                        {recoveryRef.current ? <p className="text-[12px] text-[var(--md-text)]">{recoveryRef.current.prompt}</p> : null}
+                        <p className="text-[12px] text-[var(--md-text-muted)]">{t(recoveryNotice)}</p>
+                        {recoveryNeedsCheck && recoveryRef.current ? <Button variant="ghost" size="sm" onClick={() => { if (recoveryRef.current) void recoverRequest(recoveryRef.current) }}>Check request</Button> : null}
+                      </div> : null}
                     </MotionMessageScrollerViewport>
 
                     {trailMessages.length > 5 ? (
@@ -3391,7 +3681,6 @@ export function AgentDexterPage({
                     ) : null}
                   </MessageScroller.Root>
 
-                  <ProgressiveBlur edge="top" height={132} />
                   {/* Handed over at the composer's own top edge, less a few pixels of overlap
             so no seam shows through its rounded corners. */}
                   <ProgressiveBlur edge="bottom" height={116} offset={Math.max(composerInset - 40, 0)} />
@@ -3422,24 +3711,21 @@ export function AgentDexterPage({
                       }}
                       transition={reduceMotion(shouldReduceMotion, mdMotion.enter)}
                     >
-                      <motion.button
-                        type="button"
+                      <MessageScroller.Button
+                        direction="end"
+                        behavior={shouldReduceMotion ? "auto" : "smooth"}
                         className="md-dexter-jump-to-latest pointer-events-auto grid size-11 place-items-center rounded-full text-[var(--md-ink)]"
                         aria-label={t("Jump to latest message")}
                         title={t("Jump to latest message")}
-                        whileTap={shouldReduceMotion ? undefined : { scale: 0.94 }}
-                        onClick={() => scrollToLatest(true)}
+                        onClick={() => { stickToBottomRef.current = true }}
                       >
                         <ArrowDown className="size-[18px]" strokeWidth={1.55} aria-hidden="true" />
-                      </motion.button>
+                      </MessageScroller.Button>
                     </motion.div>
                   ) : null}
                 </AnimatePresence>
 
                 <DexterConversationHeader
-                  title={activeConversation?.title || t("Dexter conversation")}
-                  isWorking={isWorking}
-                  selectedSpecialistId={selectedSpecialistId}
                   watchersOpen={!isMonitorRailCollapsed}
                   onToggleWatchers={toggleWatchers}
                 />
@@ -3487,7 +3773,7 @@ export function AgentDexterPage({
                         isAccessModeChanging={isAccessModeChanging}
                         onCommand={handleSlashCommand}
                         onRemoveAttachment={(id) => {
-                          if (composerUploadedDocuments.some((document) => document.id === id)) {
+                          if ([...composerUploadedDocuments, ...uploadingDocuments].some((document) => document.id === id)) {
                             removeComposerUploadedDocument(id)
                             return
                           }
@@ -3499,8 +3785,15 @@ export function AgentDexterPage({
                             setComposerEmailAttachments((current) => current.filter((attachment) => attachment.id !== id))
                           } else toggleAttachment(id)
                         }}
-                        onSend={(prompt) => void submitPrompt(prompt)}
-                        isSending={isWorking}
+                        onSend={prompt => { void (isSending && activeRunId ? updateActiveRequest(prompt) : submitPrompt(prompt)) }}
+                        isSending={isWorking || recoveryNeedsCheck}
+                  isUploading={isUploadingDocument}
+                  uploadError={uploadError}
+                  hasFailedUploads={uploadingDocuments.length > 0 && !isUploadingDocument}
+                  onRetryUpload={() => void handleDocumentUpload([...failedUploadFiles.current])}
+                        canUpdateRequest={isSending && Boolean(activeRunId)}
+                        updatePending={Boolean(isSending && steering && ["pending", "claimed", "submitted", "queued"].includes(steering.status))}
+                        updateStatus={steeringStatusText}
                         className="shadow-[0_0_0_1px_var(--md-accent-a42),0_16px_38px_rgba(42,52,50,0.16)]"
                       />
                     </motion.div>
@@ -3578,4 +3871,39 @@ export function AgentDexterPage({
       />
     </LayoutGroup>
   )
+}
+
+function SentDexterFiles({attachments}: {attachments: {id: string; type: string; title: string}[]}) {
+  const [files, setFiles] = useState<TicketAttachment[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const request = useRef<AbortController | null>(null)
+  useEffect(() => () => request.current?.abort(), [])
+  const uploads = attachments.filter(file => file.type === "uploaded_document")
+  const uploadIds = uploads.map(file => file.id).join(",")
+  useEffect(() => {
+    if (uploadIds) void openFiles()
+    return () => request.current?.abort()
+  }, [uploadIds])
+  if (!uploads.length) return null
+  async function openFiles() {
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
+    setLoading(true)
+    setError(null)
+    const results = await Promise.allSettled(uploads.map(file => previewDexterDocument(file.id, controller.signal)))
+    if (controller.signal.aborted) return
+    setFiles(results.flatMap(result => result.status === "fulfilled" ? [result.value] : []))
+    const failed = results.find(result => result.status === "rejected")
+    if (failed?.status === "rejected") setError(failed.reason instanceof Error ? failed.reason.message : "The file preview is unavailable. Try again.")
+    setLoading(false)
+  }
+  return <div className="mt-2 grid justify-items-end gap-2">
+    {loading ? <p role="status" className="text-xs text-[var(--md-subtle)]">Opening attachments…</p> : null}
+    {!files.length && !loading ? <p className="text-xs text-[var(--md-text)]">{uploads.map(file => file.title).join(", ")}</p> : null}
+    {error ? <Button type="button" variant="ghost" disabled={loading} onClick={() => void openFiles()}>Retry preview</Button> : null}
+    {files.length ? <TicketAttachmentList items={files} align="end" /> : null}
+    {error ? <p role="alert" className="text-xs text-[var(--md-red)]">{error}</p> : null}
+  </div>
 }

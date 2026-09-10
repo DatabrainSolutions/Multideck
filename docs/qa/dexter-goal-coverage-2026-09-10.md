@@ -1,0 +1,64 @@
+# Dexter goal coverage — 10 September 2026
+
+Development goal verification completed, including direct PDF upload, reading, approved resulting action and saved preview. This is a requirement audit, not a production-release or perfection claim. The shared client runs on localhost:3000 against development project `aqtwypsuijxlnvtxpuxe`. Detailed results, failures and superseding fixes are in [the QA record](dexter-reliability-2026-09-09.md).
+
+| Original requirement | Authoritative evidence collected | Assessment |
+| --- | --- | --- |
+| Inline email creation and sending | Editable composer, self-recipient validation, provider acceptance in conversation `d0b19d89-c2c9-40ad-8b1c-10e5b0dc3bfe`; separate initial draft/send journey confirmed at recipient Gmail thread `84cee9b4-8845-44fe-91e4-774db0b27aa2` | Browser/provider coverage established; recipient receipt is proved only for the identified journey. |
+| Create provider drafts, then send | Existing-provider-draft send, exact reviewed content, owner checks, no repeat after uncertain outcome; initial self-mailbox journey and provider tests | Covered for supported Gmail/Outlook paths. Provider-created drafts remain locked snapshots in Dexter; editing happens in the email provider. |
+| Ask about workspace data | Native lead/deal tables, exact lead lookup, booking aggregate rather than capped-row counts, empty results and linked records | Covered for tested domains. Model-declared filters are enforced; this is not an independent parser of every natural-language constraint. |
+| Company/address/field updates | Approved code/postcode changes, denied independent changes, stale-version checks, contact transfer and restoration in `4c8cc1bf-b2d2-49c2-b5d8-542552abc291` | Browser persistence, review and restoration covered. |
+| Move deals through pipelines | Northstar deal moved and restored through approved canonical action; deterministic watch lifecycle | Covered; normal edit-version and permission checks retained. |
+| Product questions and navigation | Actual Companies → Setup → Operational addresses, Deals Board/pipeline and Settings Integrations click-through, corrected Dexter directions | Tested routes covered; unfamiliar routes must not be invented. |
+| Surface inbox information | Chronological recent-message query, exact linked source opening, permission-scoped mailbox reads, empty future-period query | Covered for connected test mailboxes, subject to stated indexing coverage. |
+| Upload a local PDF, extract it and act on its contents | Successful direct-PDF conversations ebd9a35e-385b-4c0f-ac90-b7bfb6b953e0 and 44b0ae28-8e02-4f84-b320-70dc0602d358; exact approved lead update and restoration, DB readback, reopened PDF and zoom. | Verified via the operator-requested direct AI reading path; no mandatory scanner. |
+| Read and display PDF information inline | Existing email PDF extracted in `d58db69b-ff44-4b69-a793-1bfdec260579`; rendered page checked against invoice facts; editable email prepared from facts | Covered for that email PDF. This does not replace the local-upload requirement. |
+| Multiple actions and individual UI states | Independent approvals, denial, deferred prerequisites, dismissal, reload; three completed steps in `5aae64d7-3671-44cc-a674-24e8bdec2d93` | Covered for tested independent/dependent scenarios. Separate-tab duplication can prepare another review but does not grant execution. |
+| Use native components for structured results | Verified record tables, email composers, approval diffs, deferred-step panels and PDF viewer; phone/tablet/reload checks | Covered on the tested surfaces; ordinary prose remains for explanation. |
+| Async function calling | Live provider probe with original call IDs plus integrated permission-checked async data reads, bounded/deduplicated invocation and orchestrator tests | Implemented and integrated. Early execution is limited to reads; writes retain approval and audit. |
+| Mid-turn steering | Real Smart correction from three rows to two, incorporated server record, saved tables; another correction survives reload | Read and write steering covered: live QA061 → QA062 supersession persisted on reload; QA071 → QA072 retest also verified truthful wording. See latest QA record. |
+| Change reasoning effort without invalidating cached history | Browser Smart → Worker after reload; 26,994 cached tokens reused with configuration update to high; live protocol artifact | Covered for the tested provider/configuration transition. |
+| Permissions, audit and Watching for you | Canonical allowlisted actions; owned action/history/run resolvers; real-schema role denial; deterministic deal/company/address/office/contact/email/related-party watch lifecycles | Tested boundaries covered. A second user's complete HTTP/login journey is not claimed. |
+| Relevant error, responsive and persistence states | Recoverable read/provider failures, partial artifacts, denial/stale versions, reload recovery, phone/tablet layouts; drafts no longer falsely labelled Sent | Covered cases are enumerated in the QA record. Physical soft keyboard, every race and every malformed PDF are not claimed. |
+
+## Remaining work
+
+1. Closed: actual local PDF upload, direct reading, approved action/restoration and reopened saved preview are verified below.
+2. Follow-up correction issue closed: bc2c49c2-6dde-42ae-ac75-a49b17dfa829 verified targeted withdrawal, preservation of an unrelated proposal and reload persistence. All test proposals were declined.
+3. Final regression review completed for the current changes: 140 Dexter tests covered across the full run and targeted stale-assertion rerun, plus 61 selected agent/approval/orchestrator checks; Deno, client build and diff checks pass. Repeat relevant checks if PDF testing requires further fixes. No production deployment is claimed.
+
+## Superseded file-picker diagnosis
+
+The initial diagnosis incorrectly attributed invisible upload failures to browser file access. Subsequent UI inspection showed that the application hid upload errors inside a closed panel and discarded the API problem detail. Both UI faults were fixed. File selection now works; the confirmed remaining dependency is document-scanner configuration, not a browser setting. See the later evidence below and [scanner setup](dexter-scanner-setup.md).
+
+### File-access setting confirmed by operator
+
+The operator confirmed that Chrome extension file URL access is already enabled. Retried the documented file chooser flow, including refreshing the Dexter Chrome page. The chooser API returned without an error, but the composer still displayed no attachment, upload progress, or upload error; no browser console errors were reported. This supersedes any assumption that the setting is disabled. The remaining blocker is the automated file-selection handoff, whose cause is not established. An actual operator-selected local attachment is still needed to distinguish automation failure from the application upload path and finish the PDF extraction/action journey. No PDF request was submitted during these retries.
+
+### Attachment UI correction and confirmed scanner blocker
+
+The earlier attribution to browser automation/file access was incorrect. Once upload status was moved out of the hidden attachment palette into the visible composer, actual file selection and upload attempts were observed. The API sends problem details in `detail`, while the client previously read only `message`, masking the specific failure. The visible backend response is now: “Document scanning is temporarily unavailable. Try again later.” The DEV project's secret-name inventory contains neither DEXTER_MALWARE_SCAN_URL nor DEXTER_MALWARE_SCAN_TOKEN. Scanning was not bypassed.
+
+Dexter now reuses TicketAttachmentList for local image and document previews, including TicketPdfPreview and ImageLightbox. Files appear immediately while uploading, failed files remain previewable, Retry retains the written request, and submission is disabled until failed files are removed or successfully uploaded. Upload fetches have a two-minute timeout. Gallery quick links include Dexter. The shared image tile remove hit area no longer overlaps the centre preview target.
+
+Chrome localhost evidence: local PDF selected; visible scanning failure; PDF page rendered in the shared viewer; zoom 100% → 125%; keyboard Close returned to the composer. PNG selected and retained after scanning failure; keyboard and pointer open the shared image lightbox; Close works. Separate retry retained DOM composer text “Summarise the attached enquiry.” Mobile width 390 had scrollWidth 390; image preview opened there. Desktop viewport restored. No extraction/action request submitted: scanner configuration still prevents accepted uploads. Local preview is not proof of stored attachments or post-send/reload previews. This supersedes the earlier file-access blocker notes.
+
+Attachment UI validation: final client TypeScript/Vite build passed (13.78 seconds); git diff --check passed. No production deployment.
+
+### Saved-message attachment previews
+
+Sent Dexter messages now render their uploaded files through the same ticket attachment list. The file-upload function has a read-only GET preview endpoint that rechecks active actor, AgentDexter.Manage permission, company, owner, clean scan, expiry and active stored-object state before issuing a five-minute private link. Responses are no-store. This is an additional presentation of existing authorised upload reads; Watching for you has no corresponding new mutation or event, and continues its existing deterministic rules unchanged.
+
+Eight focused tests execute the actual preview helper: allowed owner, different user/company, pending scan, expiry, deleted upload/object and revoked permission. Deno checking and the client build pass. The endpoint was deployed to development only. Browser conversation f30d9eac-9ac5-4bb2-9854-29b3bd4f35b7 displays the existing file name, “This attachment is no longer available”, and Retry preview for its quarantined file. No quarantined file was signed or opened. Successful saved-message preview remains unverified until the scanner is connected and a clean upload exists. Current owned upload inventory contains only two quarantined entries.
+
+### Completed direct PDF journey — supersedes scanner blocker
+
+On 10 September the operator explicitly requested passing documents to the AI directly, without the mandatory external scanner. New uploads retain size/signature/type/archive checks and private ownership/permission/expiry boundaries; their status is `validated`, not a false malware `clean` verdict. Existing quarantined/rejected uploads remain unavailable. Migration `20260910084714_dexter_validated_document_inputs` and the updated upload/chat functions were applied/deployed to development project aqtwypsuijxlnvtxpuxe.
+
+PDF/image inputs now go directly to the governed AI request. The Mistral conversion tool remains for other formats and explicit OCR; an initial Mistral attempt returned unreadable and is not claimed repaired by this change. The user's chosen direct-reading route was verified independently.
+
+Conversation ebd9a35e-385b-4c0f-ac90-b7bfb6b953e0: actual local PDF upload succeeded; Dexter read Manchester → Amsterdam, air/DAP, three pallets, 250.0 kg, 2.50 m³, GBP 1,234.50 and 10 September 09:00 UTC next-action time. These matched the visually checked fixture. It distinguished absent shipment dates. A follow-up used the document's exact QA lead and proposed name, read the current record and presented an approval. Approval changed only the QA lead company name to Dexter QA document verification; database readback confirmed it. A separate reviewed/approved restoration returned the name to Development verification — not a sales enquiry; database readback confirmed restoration. Reopening the saved conversation in a new browser tab loaded the PDF from the authenticated preview endpoint, rendered Page 1 and zoomed to 125%; keyboard Close worked.
+
+Fresh conversation 44b0ae28-8e02-4f84-b320-70dc0602d358 used only “Summarise this PDF, including cargo totals and any missing shipment dates.” A newly uploaded PDF was correctly summarised with filename/page attribution, the matching totals, and a clear distinction between next-action time and missing shipment dates. No debugging instructions or OCR override were needed.
+
+Final focused checks: 63 action/document/security/preview contracts pass; Deno check passes; git diff --check passes. The preceding frontend preview build and keyboard/mobile checks remain applicable (no subsequent client changes in this slice). All required development journeys now have the specific evidence recorded in this audit. This is local/development verification, not a production tenant deployment or a guarantee about every conceivable request. No new scanner deployment or credentials are required.

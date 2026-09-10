@@ -103,6 +103,12 @@ test("new composers track opens by default and keep an explicit opt-out", () => 
   assert.equal(composerEdits({ ...composer, trackOpens: false }).trackOpens, false)
 })
 
+test("provider draft status remains unsent during normalisation", () => {
+  const detail = normalizeThreadDetail({ id: "thread", messageTotal: 1, messages: [{ id: "draft", direction: "outbound", delivery: { status: "draft" } }] })
+  assert.equal(detail.messages[0].delivery?.status, "draft")
+  assert.equal(detail.messages[0].delivery?.sentAt, null)
+})
+
 test("outbound delivery evidence is normalised without adding it to inbound mail", () => {
   const detail = normalizeThreadDetail({
     id: "thread-1",

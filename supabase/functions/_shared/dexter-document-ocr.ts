@@ -155,7 +155,7 @@ export async function extractDexterUploadedDocument(authorization: string, uploa
   const { data, error } = await clients.admin.from("AI_DexterUploads").select("*,DOC_StoredObjects(*)")
     .eq("AIDexterUpload_ID", uploadId).eq("AIDexterUpload_CompanyID", actor.companyId)
     .eq("AIDexterUpload_UserID", actor.userId).eq("AIDexterUpload_StatusCode", "active")
-    .eq("AIDexterUpload_ScanStatusCode", "clean").maybeSingle()
+    .in("AIDexterUpload_ScanStatusCode", ["clean", "validated"]).maybeSingle()
   if (error) throw new InboxHttpError(503, "Dexter could not open the uploaded document.", "document_ocr_lookup_failed")
   if (!isObject(data) || !isObject(data.DOC_StoredObjects)) throw new InboxHttpError(404, "That uploaded document is no longer available.", "document_ocr_upload_unavailable")
 

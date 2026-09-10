@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import { ChevronUp, Download, Eye, FileText, Loader2, Mail, MessageCircle } from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
@@ -10,6 +10,8 @@ import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
 import type { DexterEmailAttachment } from "@/lib/dexter-api"
 import { getAttachmentBlobUrl } from "@/lib/inbox-api"
+
+const PdfViewer = lazy(() => import("./pdf-document-viewer-dialog").then((module) => ({ default: module.PdfDocumentViewerDialog })))
 
 type PreviewKind = "image" | "pdf" | "text" | null
 
@@ -44,6 +46,8 @@ export function DexterEmailAttachmentCard({
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const kind = useMemo(() => previewKind(attachment.mimeType), [attachment.mimeType])
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
+  const [pdfOpen, setPdfOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewText, setPreviewText] = useState<string | null>(null)
   const [previewRevoke, setPreviewRevoke] = useState<(() => void) | null>(null)
@@ -82,6 +86,22 @@ export function DexterEmailAttachmentCard({
 
   async function view() {
     if (!kind || busyAction) return
+    if (kind === "pdf") {
+      setPdfOpen(true)
+      setBusyAction("view")
+      try {
+        const opened = await loadAttachment(attachment.id)
+        try {
+          const response = await fetch(opened.url)
+          if (!response.ok) throw new Error("PDF preview unavailable")
+          setPdfBlob(await response.blob())
+        } finally { opened.revoke() }
+      } catch {
+        setPdfOpen(false)
+        toast.error(t("This attachment could not be opened."))
+      } finally { setBusyAction(null) }
+      return
+    }
     if (previewUrl) {
       previewRevoke?.()
       setPreviewUrl(null)
@@ -236,19 +256,15 @@ export function DexterEmailAttachmentCard({
 
       {previewUrl && kind !== "image" ? (
         <div className="border-t border-[var(--md-line)] bg-[var(--md-surface)] p-2">
-          {kind === "pdf" ? (
-            <iframe
-              src={previewUrl}
-              title={`${t("Preview")} ${attachment.fileName}`}
-              className="h-[min(62vh,620px)] w-full rounded-[var(--md-radius-lg)] border-0 bg-white"
-            />
-          ) : (
-            <pre data-i18n-skip dir="auto" className="md-scrollbar max-h-[420px] overflow-auto whitespace-pre-wrap rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-[12px] leading-5 text-[var(--md-ink)]">
+          <pre data-i18n-skip dir="auto" className="md-scrollbar max-h-[420px] overflow-auto whitespace-pre-wrap rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-[12px] leading-5 text-[var(--md-ink)]">
               {previewText ?? t("Loading preview…")}
             </pre>
-          )}
         </div>
       ) : null}
+
+      {pdfOpen ? <Suspense fallback={<p role="status" className="px-3 py-2 text-sm">{t("Opening PDF preview…")}</p>}>
+        <PdfViewer open onOpenChange={(open) => { setPdfOpen(open); if (!open) setPdfBlob(null) }} blob={pdfBlob} loading={busyAction === "view"} title={attachment.fileName} fileName={attachment.fileName} onDownload={download} />
+      </Suspense> : null}
 
       <div className="flex items-center justify-between gap-3 border-t border-[var(--md-line)] px-3 py-2 text-[11px] text-[var(--md-subtle)]">
         <span className="inline-flex items-center gap-1.5">

@@ -148,7 +148,14 @@ export function OrganisationFoundationPanel({
   async function saveSetup() {
     setSaving(true); setError(null)
     try {
-      const updated = await updateOrganisationFoundation(account.id, setup, account.editVersion)
+      const officesChanged = setup.officeAssignments.length !== account.officeAssignments.length
+        || setup.officeAssignments.some((office) => !account.officeAssignments.some(
+          (saved) => saved.officeId === office.officeId && saved.isPrimary === office.isPrimary,
+        ))
+      const updated = await updateOrganisationFoundation(account.id, {
+        ...setup,
+        officeAssignments: officesChanged ? setup.officeAssignments : undefined,
+      }, account.editVersion)
       onChange(updated); setSetupOpen(false); toast.success(t("Company setup saved"))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("Company setup could not be saved."))

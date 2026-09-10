@@ -162,6 +162,9 @@ const ACTION_INTENTS: Record<string, RegExp> = {
   report_warehouse_location_empty: /\b(report|mark|set)\b.{0,80}\b(location|bin|bay)\b.{0,40}\bempty\b/,
   resolve_warehouse_location_exception: /\b(resolve|close|clear)\b.{0,80}\b(location|bin|bay|exception)\b/,
   update_lead: /\b(update|edit|change|amend|correct|assign|set)\b.{0,80}\b(lead|prospect)\b/,
+  update_company_foundation: /\b(update|edit|change|amend|correct|set)\b.{0,100}\b(company|account|organisation|organization|scope|code)\b/,
+  upsert_company_address: /\b(update|edit|change|amend|correct|set|add|create)\b.{0,100}\b(address|postcode|postal code|opening hours)\b/,
+  move_deal_stage: /\b(move|change|set|advance)\b.{0,100}\b(deal|opportunity|pipeline|stage)\b/,
   update_deal: /\b(update|edit|change|amend|correct|assign|set|move)\b.{0,80}\b(deal|opportunity|pipeline)\b/,
   update_quote: /\b(update|edit|change|amend|correct|set)\b.{0,80}\b(quote|quotation)\b/,
   mark_quote_lost: /\b(mark|record|set)\b.{0,40}\b(quote|quotation)\b.{0,40}\b(lost|declined|unsuccessful)\b|\b(lost|declined)\b.{0,40}\b(quote|quotation)\b/,
@@ -220,100 +223,23 @@ async function ownsConversation(admin: Db, actor: DexterActor, conversationId: s
   return Boolean(data)
 }
 
-async function actorCanManageDexter(admin: Db, actor: DexterActor) {
-  const { data, error } = await admin.rpc("_multideck_dexter_has_permissions", {
-    p_user_id: actor.userId,
-    p_permissions: ["AgentDexter.Manage"],
-  })
-  return !error && data === true
-}
-
-export async function setConversationAccessMode(
-  admin: Db,
-  actor: DexterActor,
-  conversationId: string | null,
-  clientSessionId: string,
-  mode: "approve" | "full",
-) {
+/** Legacy clients may revoke a grant, but can no longer opt out of review. */
+export async function setConversationAccessMode(admin: Db, actor: DexterActor, conversationId: string | null, clientSessionId: string, _mode: "approve" | "full") {
   if (!isUuid(clientSessionId)) throw new Error("invalid_client_session")
-  if (conversationId && (!isUuid(conversationId) || !(await ownsConversation(admin, actor, conversationId)))) {
-    throw new Error("conversation_unavailable")
-  }
-  if (mode === "full" && !(await actorCanManageDexter(admin, actor))) throw new Error("permission_denied")
-  await admin.from("AI_DexterConversationGrants").update({
-    AIDexterGrant_Status: "revoked",
-    AIDexterGrant_RevokedAt: new Date().toISOString(),
-  }).eq("AIDexterGrant_CompanyID", actor.companyId)
-    .eq("AIDexterGrant_UserID", actor.userId)
-    .eq("AIDexterGrant_ClientSessionID", clientSessionId)
-    .eq("AIDexterGrant_Status", "active")
-
-  if (mode === "approve") return { mode, grantId: null, expiresAt: null }
-
-  const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
-  const grantId = crypto.randomUUID()
-  const { error } = await admin.from("AI_DexterConversationGrants").insert({
-    AIDexterGrant_ID: grantId,
-    AIDexterGrant_CompanyID: actor.companyId,
-    AIDexterGrant_UserID: actor.userId,
-    AIDexterGrant_ConversationID: conversationId,
-    AIDexterGrant_ClientSessionID: clientSessionId,
-    AIDexterGrant_Mode: "full",
-    AIDexterGrant_Status: "active",
-    AIDexterGrant_ExpiresAt: expiresAt,
-  })
+  if (conversationId && (!isUuid(conversationId) || !(await ownsConversation(admin, actor, conversationId)))) throw new Error("conversation_unavailable")
+  const {error} = await admin.from("AI_DexterConversationGrants").update({
+    AIDexterGrant_Status: "revoked", AIDexterGrant_RevokedAt: new Date().toISOString(),
+  }).eq("AIDexterGrant_CompanyID", actor.companyId).eq("AIDexterGrant_UserID", actor.userId)
+    .eq("AIDexterGrant_ClientSessionID", clientSessionId).eq("AIDexterGrant_Status", "active")
   if (error) throw new Error("grant_unavailable")
-  return { mode, grantId, expiresAt }
+  return {mode: "approve" as const, grantId: null, expiresAt: null}
 }
 
-async function validFullGrant(
-  admin: Db,
-  actor: DexterActor,
-  grantId: string,
-  clientSessionId: string,
-  conversationId: string | null,
-) {
-  if (!isUuid(grantId) || !isUuid(clientSessionId)) return false
-  let query = admin.from("AI_DexterConversationGrants").select("AIDexterGrant_ID")
-    .eq("AIDexterGrant_ID", grantId)
-    .eq("AIDexterGrant_CompanyID", actor.companyId)
-    .eq("AIDexterGrant_UserID", actor.userId)
-    .eq("AIDexterGrant_ClientSessionID", clientSessionId)
-    .eq("AIDexterGrant_Mode", "full")
-    .eq("AIDexterGrant_Status", "active")
-    .gt("AIDexterGrant_ExpiresAt", new Date().toISOString())
-  query = conversationId
-    ? query.eq("AIDexterGrant_ConversationID", conversationId)
-    : query.is("AIDexterGrant_ConversationID", null)
-  const { data } = await query.maybeSingle()
-  return Boolean(data)
-}
-
-export async function resolveConversationAccessMode(input: {
-  admin: Db
-  actor: DexterActor
-  grantId: string | null
-  clientSessionId: string
-  conversationId: string | null
-}) : Promise<"approve" | "full"> {
-  if (!isUuid(input.clientSessionId) || !input.grantId) return "approve"
-  if (!(await actorCanManageDexter(input.admin, input.actor))) {
-    await input.admin.from("AI_DexterConversationGrants").update({
-      AIDexterGrant_Status: "revoked",
-      AIDexterGrant_RevokedAt: new Date().toISOString(),
-    }).eq("AIDexterGrant_ID", input.grantId)
-      .eq("AIDexterGrant_CompanyID", input.actor.companyId)
-      .eq("AIDexterGrant_UserID", input.actor.userId)
-      .eq("AIDexterGrant_Status", "active")
-    return "approve"
-  }
-  return await validFullGrant(
-    input.admin,
-    input.actor,
-    input.grantId,
-    input.clientSessionId,
-    input.conversationId,
-  ) ? "full" : "approve"
+export async function resolveConversationAccessMode(_input: {
+  admin: Db; actor: DexterActor; grantId: string | null; clientSessionId: string; conversationId: string | null
+}): Promise<"approve" | "full"> {
+  // Old stored Full access grants never confer execution authority.
+  return "approve"
 }
 
 export async function createSecurityContext(input: {

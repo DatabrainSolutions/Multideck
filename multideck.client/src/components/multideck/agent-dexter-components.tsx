@@ -1,3 +1,4 @@
+import { TicketAttachmentList } from "./ticket-attachments"
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
 import { SentIcon as SendHorizontalIcon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -111,7 +112,9 @@ export type DexterAttachment = {
   meta: string
   tone: StatusTone
   icon: LucideIcon
-  /** Present only for local image uploads that can open without another request. */
+  /** Local file URL, kept in the browser only. */
+  mimeType?: string
+  sizeBytes?: number
   previewUrl?: string
 }
 
@@ -1275,8 +1278,6 @@ export function DexterPromptComposer({
   selectedSpecialistId,
   models = dexterModels,
   selectedModelId,
-  accessMode,
-  pendingAccessMode = null,
   contextUsedTokens = 0,
   contextMaxTokens = 128_000,
   attachments = [],
@@ -1291,12 +1292,17 @@ export function DexterPromptComposer({
   attachmentActionLabel = "Attach context",
   onSelectSpecialist,
   onSelectModel,
-  onAccessModeChange,
-  isAccessModeChanging = false,
   onCommand,
   onRemoveAttachment,
   onSend,
   isSending = false,
+  canUpdateRequest = false,
+  updatePending = false,
+  updateStatus,
+  isUploading = false,
+  uploadError,
+  hasFailedUploads = false,
+  onRetryUpload,
   mode = "chat",
   compact = false,
   animateProgrammaticMentions = false,
@@ -1329,6 +1335,13 @@ export function DexterPromptComposer({
   onRemoveAttachment?: (id: string) => void
   onSend: (value?: string) => void
   isSending?: boolean
+  canUpdateRequest?: boolean
+  updatePending?: boolean
+  updateStatus?: string
+  isUploading?: boolean
+  uploadError?: string | null
+  hasFailedUploads?: boolean
+  onRetryUpload?: () => void
   /** Watch mode has one deterministic job, so it does not expose role routing. */
   mode?: "chat" | "watch"
   compact?: boolean
@@ -1339,7 +1352,7 @@ export function DexterPromptComposer({
   const shouldReduceMotion = useReducedMotion()
   const sendShortcutModifier = useSendShortcutModifier()
   const [internalMentions, setInternalMentions] = useState<DexterMentionItem[]>([])
-  const canSend = value.trim().length > 0
+  const canSend = value.trim().length > 0 && !isUploading && !hasFailedUploads && !updatePending && (!isSending || canUpdateRequest)
   const minRows = compact ? 52 : 76
   const maxRows = compact ? 168 : 232
   const activeMentions = selectedMentions ?? internalMentions
@@ -1384,9 +1397,10 @@ export function DexterPromptComposer({
                 exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0, marginBottom: 0 }}
                 transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.panel)}
               >
+                <TicketAttachmentList items={attachments.flatMap(file => file.type === "uploaded_document" && file.previewUrl ? [{id:file.id, originalName:file.title, mediaType:file.mimeType || "application/octet-stream", byteSize:file.sizeBytes || 0, signedUrl:file.previewUrl}] : [])} onRemove={onRemoveAttachment} disabled={isUploading} />
                 <ImageLightbox items={imageLightboxItems}>
                   {(imageLightbox) => <AnimatePresence initial={false} mode="popLayout">
-                    {attachments.map((attachment) => {
+                    {attachments.filter(attachment => !(attachment.type === "uploaded_document" && attachment.previewUrl)).map((attachment) => {
                       if (attachment.previewUrl) {
                         return <DexterImageAttachmentPreview
                           key={attachment.id}
@@ -1444,17 +1458,22 @@ export function DexterPromptComposer({
             onMentionsChange={handleMentionsChange}
             onUnavailableMention={onUnavailableMention}
             onCommand={onCommand}
-            onSend={(liveValue) => onSend(liveValue)}
+            onSend={(liveValue) => { if (canSend) onSend(liveValue) }}
             animateProgrammaticMentions={animateProgrammaticMentions}
           />
 
+          {isUploading ? <p role="status" className="mt-2 text-[12px] text-[var(--md-text)]">{t("Uploading files… Your message will be ready to send when this finishes.")}</p> : null}
+          {uploadError ? <p role="alert" className="mt-2 text-[12px] text-[var(--md-red)]">{uploadError}</p> : null}
+          {hasFailedUploads && onRetryUpload ? <Button type="button" variant="ghost" className="mt-1 self-start" onClick={onRetryUpload}>{t("Retry upload")}</Button> : null}
+          {updateStatus ? <p role="status" className="mt-2 text-[12px] text-[var(--md-text)]">{t(updateStatus)}</p> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="ghost"
               size="icon"
               aria-label={t(attachmentActionLabel)}
-              title={t(attachmentActionLabel)}
+              title={t(canUpdateRequest ? "Finish this request before attaching files" : attachmentActionLabel)}
+              disabled={canUpdateRequest}
               className="md-composer-chip size-9 shrink-0 rounded-full text-[var(--md-text)] hover:text-[var(--md-ink)]"
               onClick={onOpenAttachments}
             >
@@ -1476,12 +1495,6 @@ export function DexterPromptComposer({
               </ContextContent>
             </Context>
             <div className="ms-auto flex shrink-0 items-center gap-2">
-              <DexterAccessModeToggle
-                mode={accessMode}
-                pendingMode={pendingAccessMode}
-                onChange={onAccessModeChange}
-                disabled={isSending || isAccessModeChanging}
-              />
               <motion.div
                 className="flex shrink-0 items-center gap-2"
                 animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
@@ -1508,11 +1521,11 @@ export function DexterPromptComposer({
                     />
                   }
                   iconOnly
-                  label={`${t("Send prompt")} (${sendShortcutModifier} + Enter)`}
+                  label={`${t(canUpdateRequest ? "Update request" : "Send prompt")} (${sendShortcutModifier} + Enter)`}
                   aria-keyshortcuts="Meta+Enter Control+Enter"
                   className="size-10 min-w-0 rounded-full p-0"
                   onClick={() => onSend()}
-                  disabled={!canSend || isSending}
+                  disabled={!canSend}
                 />
               </motion.div>
             </div>
