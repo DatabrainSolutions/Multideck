@@ -8,7 +8,6 @@ import {
   RotateCcw,
 } from '@/components/icons/hugeicons'
 import { Button } from '@/components/ui/button'
-import { StatusPill } from '@/components/multideck/status-pill'
 import { useLanguage } from '@/i18n/language-provider'
 import { cn } from '@/lib/utils'
 import { mdMotion, reduceMotion } from '@/lib/motion'
@@ -25,7 +24,12 @@ const sidebarStatusTone = {
   queued: 'neutral', scheduled: 'neutral', waiting: 'amber', working: 'amber',
   ready: 'green', needs_input: 'amber', failed: 'red', cancelled: 'neutral', completed: 'green',
 } as const
-const sidebarStatusLabel = { ...taskAgentStatus, ready: 'Ready', waiting: 'Waiting', failed: 'Failed' }
+const sidebarStatusDot = {
+  neutral: 'bg-[var(--md-subtle)]',
+  amber: 'bg-[var(--md-amber)]',
+  green: 'bg-[var(--md-green)]',
+  red: 'bg-[var(--md-red)]',
+} as const
 
 const iconViews = [
   '30 55 385 390',
@@ -122,15 +126,14 @@ export function TaskAgentStack({
                     <span className="block truncate text-[12px] font-medium leading-[14px] text-[var(--md-ink)]">{agent.name}</span>
                     <span className="flex min-w-0 items-center justify-between gap-1.5">
                       <span className="min-w-0 truncate text-[11px] leading-[18px] text-[var(--md-text)]">
-                        {agent.title.trim().split(/\s+/u).slice(0, 3).join(' ')}
+                        {agent.title}
                       </span>
-                      <StatusPill
-                        tone={sidebarStatusTone[agent.status]}
-                        indicator={false}
-                        className={cn('h-[18px] border-[color-mix(in_srgb,currentColor_22%,transparent)]! px-1.5 py-0 text-[10px] leading-none', sidebarStatusTone[agent.status] === 'neutral' && 'bg-transparent text-[var(--md-subtle)]')}
-                      >
-                        {t(sidebarStatusLabel[agent.status])}
-                      </StatusPill>
+                      <span
+                        role="img"
+                        aria-label={t(taskAgentStatus[agent.status])}
+                        title={t(taskAgentStatus[agent.status])}
+                        className={cn('size-1.5 shrink-0 rounded-full', sidebarStatusDot[sidebarStatusTone[agent.status]])}
+                      />
                     </span>
                   </span>
                 ) : null}
