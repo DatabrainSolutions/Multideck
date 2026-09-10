@@ -89,8 +89,8 @@ export function TaskAgentStack({
   ).length
   if (!visible.length && !outstanding) return null
   return (
-    <section aria-label={t('Your task agents')} className="mb-2 min-w-0 border-t border-[var(--md-line)] pt-[var(--md-gap-md)]">
-      <div className="divide-y divide-[var(--md-line)]">
+    <section aria-label={t('Your task agents')} className="mb-2 min-w-0 border-t-[0.5px] border-[var(--md-line)] pt-[var(--md-gap-md)]">
+      <div className="divide-y-[0.5px] divide-[var(--md-line)]">
         <AnimatePresence initial={false} mode="popLayout">
           {visible.map((agent) => (
             <motion.div
