@@ -103,7 +103,7 @@ customer permission, deployment or Live screen routing is enabled by this batch.
 
 ## Grant administration and routed portal batch
 
-App customer records now include **Multideck Live access**. The dedicated
+App company records under **Organisations → Companies** (`/crm/accounts`) include **Warehouse customer access** and **Multideck Live access** on the **Overview** tab. The dedicated
 `live-grant-admin/{organisationId}` Edge endpoint verifies the caller with this
 App project's Auth, resolves active internal warehouse/user permissions, checks
 assigned facilities, and refuses writes in Training. It fails closed if the
@@ -114,7 +114,7 @@ it does not accept an unsigned or cross-project identity.
 Apply migrations `20260908040000_live_company_order_reads.sql` and
 `20260908043000_live_grant_administration.sql` after the preceding gateway/WMS
 migrations. Configure a dedicated key in `LIVE_GATEWAY_KEYS` before enabling a
-grant. In the customer's App record, enter the connection reference from Live,
+grant. In the company's App record, enter the connection reference from Live,
 Live user reference, key identifier, explicit facilities and separate product,
 general order and purchase order permissions. Grants default disabled. Saving
 creates the matching connection/key records if absent, and never re-enables a
