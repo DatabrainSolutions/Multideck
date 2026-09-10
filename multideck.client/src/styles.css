@@ -3858,6 +3858,39 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     border-top: 1px solid var(--md-line);
   }
 
+  .md-dexter-markdown [data-sd-animate] {
+    animation: md-dexter-letter-in var(--sd-duration, 200ms) var(--sd-easing, ease-out) both;
+    /* Large chunks catch up promptly, even after a slow connection. */
+    animation-delay: min(var(--sd-delay, 0ms), 60ms);
+  }
+
+  @keyframes md-dexter-letter-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .md-dexter-artifact[data-dexter-artifact-state="pending"] {
+    opacity: 0;
+    filter: blur(32px);
+    transform: translateY(8px);
+  }
+
+  .md-dexter-artifact[data-dexter-artifact-state="entering"] {
+    animation: md-dexter-artifact-in 1s cubic-bezier(0.22, 0.7, 0.26, 1) both;
+    will-change: filter, opacity, transform;
+  }
+
+  @keyframes md-dexter-artifact-in {
+    from { opacity: 0; filter: blur(32px); transform: translateY(8px); }
+    20% { opacity: 0.8; filter: blur(24px); transform: translateY(6px); }
+    to { opacity: 1; filter: blur(0); transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .md-dexter-markdown [data-sd-animate],
+    .md-dexter-artifact[data-dexter-artifact-state] { animation: none; opacity: 1; filter: none; transform: none; }
+  }
+
   .md-dexter-markdown--streaming > :last-child::after {
     content: "";
     display: inline-block;

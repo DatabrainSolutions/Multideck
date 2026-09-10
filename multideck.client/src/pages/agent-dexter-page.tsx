@@ -5,8 +5,13 @@ import { deferredWorkState, deferredWorkPrompt } from "@/lib/dexter-deferred-wor
 import { readDexterRecovery, writeDexterRecovery, clearDexterRecovery, type DexterRecovery } from "@/lib/dexter-request-recovery"
 import { mergeSteeringStatus } from "@/lib/dexter-steering-status"
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
+import { dexterArtifactReferences, retainDexterRenderKeys } from "@/lib/dexter-response-presentation"
 import {
   useEffect,
+  memo,
+  createContext,
+  useContext,
+  useCallback,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -36,7 +41,8 @@ import {
   type LucideIcon,
 } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
-import ReactMarkdown from "react-markdown"
+import ReactMarkdown, { type Components as MarkdownComponents } from "react-markdown"
+import { createAnimatePlugin } from "streamdown"
 import remarkGfm from "remark-gfm"
 import {
   Reasoning,
@@ -295,9 +301,15 @@ function DexterConversationHeader({
 function DexterReasoningDisclosure({
   content,
   isStreaming,
+  open,
+  onOpenChange,
+  onCollapsed,
 }: {
   content: string
   isStreaming: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onCollapsed: () => void
 }) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -307,7 +319,7 @@ function DexterReasoningDisclosure({
   return (
     <div className="max-w-[680px]">
       <AnimatePresence initial={false}>
-        {isStreaming ? (
+        {isStreaming && !hasReasoning ? (
           <motion.div
             key="thinking"
             className="flex min-h-8 items-center py-1 text-[12.5px] font-medium text-[var(--md-text)]"
@@ -337,9 +349,10 @@ function DexterReasoningDisclosure({
             transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.enter)}
           >
             <Reasoning
-              defaultOpen={isStreaming}
+              open={open}
+              onOpenChange={onOpenChange}
               isStreaming={isStreaming}
-              className="mb-0 py-1 data-[state=open]:pb-6"
+              className="mb-0 py-1"
               data-reasoning-state={isStreaming ? "streaming" : "complete"}
             >
               <ReasoningTrigger
@@ -348,9 +361,20 @@ function DexterReasoningDisclosure({
                   <span>{isStreaming ? t("Reasoning") : t("Reasoning summary")}</span>
                 )}
               />
-              <ReasoningContent className="mt-3 text-[13px] leading-5 text-[var(--md-text)]">
-                {content}
-              </ReasoningContent>
+              <motion.div
+                initial={false}
+                animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0, filter: open || shouldReduceMotion ? "blur(0px)" : "blur(6px)" }}
+                transition={reduceMotion(Boolean(shouldReduceMotion), open ? mdMotion.smooth : { duration: 0.24, ease: [0.4, 0, 1, 1] })}
+                onAnimationComplete={() => { if (!open) onCollapsed() }}
+                className="overflow-hidden"
+                aria-hidden={!open}
+                inert={!open || undefined}
+                data-dexter-reasoning-panel
+              >
+                <ReasoningContent forceMount className="mt-0 pt-3 pb-6 text-[13px] leading-5 text-[var(--md-text)] data-[state=closed]:animate-none data-[state=open]:animate-none">
+                  {content}
+                </ReasoningContent>
+              </motion.div>
             </Reasoning>
           </motion.div>
         ) : null}
@@ -707,78 +731,187 @@ function DexterMarkdownTable({
   )
 }
 
+const DexterArtifactVisibility = createContext({ ready: true, animate: false })
+
+function DexterArtifactEntrance({ children, className }: { children: ReactNode; className?: string }) {
+  const { animate } = useContext(DexterArtifactVisibility)
+  const root = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  const [finished, setFinished] = useState(false)
+
+  useEffect(() => {
+    const element = root.current
+    if (!element || !animate || visible) return
+    // A long answer can leave its table below the viewport. Do not spend the
+    // reveal off-screen before the operator has had a chance to see it.
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting && entry.intersectionRect.height > 0)) {
+        setVisible(true)
+        observer.disconnect()
+        resize.disconnect()
+      }
+    })
+    const resize = new ResizeObserver(() => {
+      observer.unobserve(element)
+      observer.observe(element)
+    })
+    observer.observe(element)
+    resize.observe(element)
+    return () => { observer.disconnect(); resize.disconnect() }
+  }, [animate, visible])
+
+  return <div ref={root} className={cn("md-dexter-artifact min-w-0", className)}
+    data-dexter-artifact-state={!animate || finished ? "complete" : visible ? "entering" : "pending"}
+    // Keyboard and assistive navigation must never wait for a visual reveal.
+    onFocusCapture={() => { if (animate && !finished) { setVisible(true); setFinished(true) } }}
+    onAnimationEnd={event => {
+      if (event.target === event.currentTarget && event.animationName === "md-dexter-artifact-in") setFinished(true)
+    }}>
+    {children}
+  </div>
+}
+
+const DexterMarkdownRenderer = memo(ReactMarkdown, (previous, next) =>
+  previous.children === next.children && previous.rehypePlugins?.[0] === next.rehypePlugins?.[0],
+)
+
+function DexterStagedMarkdownTable(props: Parameters<typeof DexterMarkdownTable>[0]) {
+  return useContext(DexterArtifactVisibility).ready ? (
+    <DexterArtifactEntrance><DexterMarkdownTable {...props} /></DexterArtifactEntrance>
+  ) : null
+}
+
+// Stable renderer identities keep previous letters and citations mounted on each delta.
+const dexterMarkdownComponents: MarkdownComponents = {
+          h1: ({ children }) => (
+            <h2 dir="auto" className="md-dexter-markdown__h1 mt-0 mb-4 max-w-[30ch] text-[clamp(24px,2vw,28px)] font-medium leading-[1.16] tracking-[-0.028em] text-[var(--md-ink)]">{children}</h2>
+          ),
+          h2: ({ children }) => (
+            <h3 dir="auto" className="md-dexter-markdown__h2 mt-[1.9rem] mb-[0.68rem] text-[19px] font-medium leading-[1.3] tracking-[-0.018em] text-[var(--md-ink)]">{children}</h3>
+          ),
+          h3: ({ children }) => (
+            <h4 dir="auto" className="md-dexter-markdown__h3 mt-6 mb-2 text-[16px] font-medium leading-[1.4] tracking-[-0.008em] text-[var(--md-ink)]">{children}</h4>
+          ),
+          h4: ({ children }) => (
+            <h5 dir="auto" className="md-dexter-markdown__h4 mt-4 mb-1.5 text-[13px] font-medium leading-[1.45] text-[var(--md-text)]">{children}</h5>
+          ),
+          p: ({ children }) => <p dir="auto" className="my-4 max-w-[68ch] whitespace-normal text-pretty first:mt-0 last:mb-0">{children}</p>,
+          ul: ({ children }) => <ul dir="auto" className="my-4 max-w-[70ch] list-disc space-y-2 ps-[1.35rem] first:mt-0 last:mb-0 marker:text-[var(--md-accent)]">{children}</ul>,
+          ol: ({ children }) => <ol dir="auto" className="my-4 max-w-[70ch] list-decimal space-y-2 ps-[1.35rem] first:mt-0 last:mb-0 marker:text-[var(--md-accent)]">{children}</ol>,
+          blockquote: ({ children }) => <blockquote dir="auto" className="my-5 max-w-[68ch] rounded-e-[var(--md-radius-md)] border-s-2 border-[var(--md-accent-a36)] bg-[var(--md-accent-a08)] px-4 py-3 text-[var(--md-text)] first:mt-0 last:mb-0">{children}</blockquote>,
+          a: ({ children, href, title }) => isDexterCitationUrl(href)
+            ? <DexterInlineCitation href={href} title={title ?? undefined}>{children}</DexterInlineCitation>
+            : <span>{children}</span>,
+          table: ({ children, node }) => <DexterStagedMarkdownTable node={node} children={children} />,
+}
+
 function DexterMarkdown({
   content,
   isStreaming,
+  animateText = false,
 }: {
   content: string
   isStreaming: boolean
+  animateText?: boolean
 }) {
+  const animation = useMemo(() => createAnimatePlugin({ animation: "fadeIn", sep: "char", duration: 200, stagger: 2, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }), [])
+  const previousLength = useRef(0)
+  animation.setPrevContentLength(previousLength.current)
+  useLayoutEffect(() => {
+    const count = animation.getLastRenderCharCount()
+    if (count) previousLength.current = count
+  })
   return (
     <article
       className={cn("md-dexter-markdown w-full min-w-0", isStreaming && "md-dexter-markdown--streaming")}
-      aria-live={isStreaming ? "polite" : undefined}
+      aria-live="polite"
+      aria-busy={isStreaming}
       aria-atomic={isStreaming ? "false" : undefined}
     >
-      <ReactMarkdown
+      <DexterMarkdownRenderer
         remarkPlugins={[remarkGfm]}
-        components={{
-          h1: ({ children }) => (
-            <h2 dir="auto" className="md-dexter-markdown__h1 mt-0 mb-4 max-w-[30ch] text-[clamp(24px,2vw,28px)] font-medium leading-[1.16] tracking-[-0.028em] text-[var(--md-ink)]">
-              {children}
-            </h2>
-          ),
-          h2: ({ children }) => (
-            <h3 dir="auto" className="md-dexter-markdown__h2 mt-[1.9rem] mb-[0.68rem] text-[19px] font-medium leading-[1.3] tracking-[-0.018em] text-[var(--md-ink)]">
-              {children}
-            </h3>
-          ),
-          h3: ({ children }) => (
-            <h4 dir="auto" className="md-dexter-markdown__h3 mt-6 mb-2 text-[16px] font-medium leading-[1.4] tracking-[-0.008em] text-[var(--md-ink)]">
-              {children}
-            </h4>
-          ),
-          h4: ({ children }) => (
-            <h5 dir="auto" className="md-dexter-markdown__h4 mt-4 mb-1.5 text-[13px] font-medium leading-[1.45] text-[var(--md-text)]">
-              {children}
-            </h5>
-          ),
-          p: ({ children }) => (
-            <p dir="auto" className="my-4 max-w-[68ch] whitespace-normal text-pretty first:mt-0 last:mb-0">
-              {children}
-            </p>
-          ),
-          ul: ({ children }) => (
-            <ul dir="auto" className="my-4 max-w-[70ch] list-disc space-y-2 ps-[1.35rem] first:mt-0 last:mb-0 marker:text-[var(--md-accent)]">
-              {children}
-            </ul>
-          ),
-          ol: ({ children }) => (
-            <ol dir="auto" className="my-4 max-w-[70ch] list-decimal space-y-2 ps-[1.35rem] first:mt-0 last:mb-0 marker:text-[var(--md-accent)]">
-              {children}
-            </ol>
-          ),
-          blockquote: ({ children }) => (
-            <blockquote dir="auto" className="my-5 max-w-[68ch] rounded-e-[var(--md-radius-md)] border-s-2 border-[var(--md-accent-a36)] bg-[var(--md-accent-a08)] px-4 py-3 text-[var(--md-text)] first:mt-0 last:mb-0">
-              {children}
-            </blockquote>
-          ),
-          a: ({ children, href, title }) => isDexterCitationUrl(href) ? (
-            <DexterInlineCitation href={href} title={title ?? undefined}>
-              {children}
-            </DexterInlineCitation>
-          ) : (
-            <span>{children}</span>
-          ),
-          table: ({ children, node }) => (
-            <DexterMarkdownTable node={node} children={children} />
-          ),
-        }}
+        rehypePlugins={animateText ? [animation.rehypePlugin] : []}
+        components={dexterMarkdownComponents}
       >
         {normaliseDexterMarkdown(content)}
-      </ReactMarkdown>
+      </DexterMarkdownRenderer>
     </article>
   )
+}
+
+function DexterResponseBody({ content, reasoning, isStreaming, children }: {
+  content: string
+  reasoning: string
+  isStreaming: boolean
+  children: ReactNode
+}) {
+  const reduce = useReducedMotion()
+  const root = useRef<HTMLDivElement>(null)
+  const [wasStreaming] = useState(isStreaming)
+  const thinking = isStreaming && !content.trim()
+  const [reasoningOpen, setReasoningOpen] = useState(false)
+  const [reasoningCollapsed, setReasoningCollapsed] = useState(true)
+  const [answerReleased, setAnswerReleased] = useState(!isStreaming)
+  const [settledContent, setSettledContent] = useState(isStreaming ? null : content)
+  const [artifactsReleased, setArtifactsReleased] = useState(!isStreaming)
+  const readyToRelease = answerReleased && !isStreaming && (Boolean(reduce) || !wasStreaming || settledContent === content)
+  // Presentation advances once per response. A saved-content correction must
+  // not hide/remount an editable artifact or replay its completed entrance.
+  const ready = artifactsReleased || readyToRelease
+  useLayoutEffect(() => {
+    if (readyToRelease) setArtifactsReleased(true)
+  }, [readyToRelease])
+  const artifactVisibility = useMemo(() => ({ ready, animate: wasStreaming && !reduce }), [ready, wasStreaming, reduce])
+  const onReasoningOpenChange = useCallback((open: boolean) => {
+    setReasoningOpen(open)
+    if (open) setReasoningCollapsed(false)
+  }, [])
+  const onReasoningCollapsed = useCallback(() => setReasoningCollapsed(true), [])
+
+  useLayoutEffect(() => {
+    if (thinking) setAnswerReleased(false)
+    else setReasoningOpen(false)
+  }, [thinking])
+
+  useLayoutEffect(() => {
+    if (!thinking && !reasoningOpen && (!reasoning.trim() || reasoningCollapsed || reduce)) setAnswerReleased(true)
+  }, [thinking, reasoning, reasoningOpen, reasoningCollapsed, reduce])
+
+  useEffect(() => {
+    if (!answerReleased || isStreaming || !wasStreaming || reduce) return
+    let cancelled = false
+    // Wait for the final visible letters, not a simulated typing timer.
+    const fades = root.current?.getAnimations({ subtree: true })
+      .filter(animation => "animationName" in animation && animation.animationName === "md-dexter-letter-in") ?? []
+    void Promise.allSettled(fades.map(animation => animation.finished)).then(() => {
+      if (!cancelled) setSettledContent(content)
+    })
+    return () => { cancelled = true }
+  }, [answerReleased, content, isStreaming, reduce, wasStreaming])
+
+  return (
+    <div ref={root} className="min-w-0" data-dexter-response-state={ready ? "complete" : "streaming"} data-dexter-animate={wasStreaming && !reduce ? "true" : undefined}>
+      <DexterReasoningDisclosure content={reasoning} isStreaming={thinking} open={reasoningOpen}
+        onOpenChange={onReasoningOpenChange} onCollapsed={onReasoningCollapsed} />
+      <DexterArtifactVisibility.Provider value={artifactVisibility}>
+        {answerReleased && content.trim() ? <DexterMarkdown content={content} isStreaming={!ready} animateText={wasStreaming && !reduce && !ready} /> : null}
+        {ready ? <DexterArtifactEntrance><div data-dexter-artifacts>{children}</div></DexterArtifactEntrance> : null}
+      </DexterArtifactVisibility.Provider>
+    </div>
+  )
+}
+
+function DexterJumpToLatestButton({ reduce, onJump }: { reduce: boolean; onJump: () => void }) {
+  const { t } = useLanguage()
+  const { scrollToEnd } = useMessageScroller()
+
+  return <button type="button"
+    className="md-dexter-jump-to-latest pointer-events-auto grid size-11 place-items-center rounded-full text-[var(--md-ink)]"
+    aria-label={t("Jump to latest message")}
+    title={t("Jump to latest message")}
+    onClick={() => { onJump(); scrollToEnd({ behavior: reduce ? "auto" : "smooth" }) }}>
+    <ArrowDown className="size-[18px]" strokeWidth={1.55} aria-hidden="true" />
+  </button>
 }
 
 function getDexterTrailPreview(content: string) {
@@ -1241,9 +1374,7 @@ function ConversationStream({
       : message.reasoningSummary || ""
     const isAwaitingFirstResponse = isStreamingMessage &&
       !reasoning.trim() &&
-      !message.content.trim() &&
-      !(message.emailAttachments?.length) &&
-      !message.pendingAction
+      !message.content.trim()
     const messageIndex = messages.findIndex((candidate) => candidate.id === message.id)
     const sourceUserMessage = message.responseToUserMessageId
       ? messages.find((candidate) => candidate.id === message.responseToUserMessageId && candidate.role === "user")
@@ -1259,7 +1390,7 @@ function ConversationStream({
 
     return (
       <motion.div
-        key={message.id}
+        key={message.renderKey ?? message.id}
         layout="position"
         className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4"
         initial={shouldReduceMotion ? false : { opacity: 0, y: 6, filter: "blur(4px)" }}
@@ -1269,10 +1400,6 @@ function ConversationStream({
       >
         <DexterBrandMark className="mt-1" />
         <div className="min-w-0">
-          <DexterReasoningDisclosure
-            content={reasoning}
-            isStreaming={isStreamingMessage}
-          />
           <AnimatePresence initial={false} mode="popLayout">
             {isAwaitingFirstResponse ? (
               <motion.div
@@ -1311,12 +1438,7 @@ function ConversationStream({
               <span className="font-medium">{t("Your correction")}: </span>{correction.input}
             </p>)}
           </div> : null}
-          {message.content.trim() ? (
-            <DexterMarkdown
-              content={message.content}
-              isStreaming={isStreamingMessage}
-            />
-          ) : null}
+          <DexterResponseBody content={dexterArtifactReferences(message.content, Boolean(message.recordTables?.length))} reasoning={reasoning} isStreaming={isStreamingMessage}>
           {message.recordTables?.map(table => <DexterRecordTable key={table.id} table={table} />)}
           {message.emailAttachments?.length ? (
             <div className="mt-3 grid gap-2" aria-label={t("Email attachments")}>
@@ -1328,7 +1450,7 @@ function ConversationStream({
           {message.emailDraft ? (
             <div className="w-full max-w-2xl">
               <DexterEmailComposeCard
-                key={`${message.emailDraft.id}:${message.emailDraft.delivery.status}`}
+                key={message.emailDraft.id}
                 messageId={dexterMessageServerId(message)}
                 draft={message.emailDraft}
                 preparedActionId={message.pendingAction?.id ?? null}
@@ -1380,6 +1502,7 @@ function ConversationStream({
             </div>
           ) : null}
           {todoSuggestion && sourceMessageId ? <DexterTodoSuggestionAction suggestion={todoSuggestion} sourceMessageId={sourceMessageId} /> : null}
+          </DexterResponseBody>
         </div>
       </motion.div>
     )
@@ -1433,7 +1556,7 @@ function ConversationStream({
 
             const userItem = (
               <MessageScroller.Item
-                key={message.id}
+                key={message.renderKey ?? message.id}
                 messageId={message.id}
                 scrollAnchor
                 className="min-w-0 shrink-0 [contain-intrinsic-size:auto_8rem] [content-visibility:auto]"
@@ -1568,7 +1691,7 @@ function ConversationStream({
 
             const responseItem = selectedResponse ? (
               <MessageScroller.Item
-                key={`response-${message.id}`}
+                key={`response-${message.renderKey ?? message.id}`}
                 messageId={selectedResponse.id}
                 scrollAnchor
                 className="min-w-0 shrink-0 [contain-intrinsic-size:auto_12rem] [content-visibility:auto]"
@@ -2064,6 +2187,22 @@ export function AgentDexterPage({
     )
     setShowJumpToLatest(distanceFromLatest > revealDistance)
   }
+
+  useEffect(() => {
+    const stream = streamRef.current
+    const content = stream?.querySelector('[role="log"]')
+    if (!stream || !content) return
+    // Artifacts can grow below the reading position without causing a scroll
+    // event. Keep the explicit jump control available without moving the view.
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => updateJumpToLatestVisibility(stream))
+    })
+    observer.observe(content)
+    observer.observe(stream)
+    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+  }, [stage, conversationRenderKey])
 
   function handleConversationScroll(event: React.UIEvent<HTMLDivElement>) {
     updateJumpToLatestVisibility(event.currentTarget)
@@ -2649,9 +2788,6 @@ export function AgentDexterPage({
         },
         onAnswerDelta: (delta) => {
           if (conversationIntentRef.current.version !== submissionIntent.version) return
-          const stream = streamRef.current
-          const shouldFollow = !stream || stream.scrollHeight - stream.scrollTop - stream.clientHeight < 220
-
           setActiveConversation((current) => {
             const base = current ?? pendingConversation
             const existingIndex = base.messages.findIndex((item) => item.id === assistantStreamMessage.id)
@@ -2670,11 +2806,6 @@ export function AgentDexterPage({
             }
           })
 
-          if (shouldFollow) {
-            window.requestAnimationFrame(() => {
-              if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight
-            })
-          }
         },
         onReasoningDelta: (delta) => {
           if (conversationIntentRef.current.version !== submissionIntent.version) return
@@ -2725,7 +2856,7 @@ export function AgentDexterPage({
       }, requestController.signal)
       if (conversationIntentRef.current.version !== submissionIntent.version) return
       conversationIntentRef.current = { id: conversation.id, version: submissionIntent.version }
-      setActiveConversation(conversation)
+      setActiveConversation(current => retainDexterRenderKeys(conversation, current, assistantStreamMessage.id, pendingMessage.id))
       forgetRequest()
       rememberOpenDexterConversation(conversation.id)
       announceDexterConversationsChanged()
@@ -2954,7 +3085,7 @@ export function AgentDexterPage({
       }, requestController.signal)
 
       if (conversationIntentRef.current.version !== submissionIntent.version) return
-      setActiveConversation(conversation)
+      setActiveConversation(current => retainDexterRenderKeys(conversation, current, assistantStreamMessage.id))
       forgetRequest()
       const acknowledgedResponse = responseGroupsFor(conversation.messages)
         .responsesByUserId.get(retryMessageId)
@@ -3586,7 +3717,10 @@ export function AgentDexterPage({
           never reflows or re-centres the thread beneath it. */}
             <MessageScroller.Provider
               key={conversationRenderKey}
-              autoScroll
+              // Follow live text, never the height added by completed artifacts.
+              // The saved response can replace its streaming ID before request
+              // cleanup finishes, so check the message itself as well.
+              autoScroll={Boolean(streamingMessageId && activeConversation?.messages.some(message => message.id === streamingMessageId))}
               defaultScrollPosition="end"
               scrollMargin={88}
             >
@@ -3711,16 +3845,8 @@ export function AgentDexterPage({
                       }}
                       transition={reduceMotion(shouldReduceMotion, mdMotion.enter)}
                     >
-                      <MessageScroller.Button
-                        direction="end"
-                        behavior={shouldReduceMotion ? "auto" : "smooth"}
-                        className="md-dexter-jump-to-latest pointer-events-auto grid size-11 place-items-center rounded-full text-[var(--md-ink)]"
-                        aria-label={t("Jump to latest message")}
-                        title={t("Jump to latest message")}
-                        onClick={() => { stickToBottomRef.current = true }}
-                      >
-                        <ArrowDown className="size-[18px]" strokeWidth={1.55} aria-hidden="true" />
-                      </MessageScroller.Button>
+                      <DexterJumpToLatestButton reduce={shouldReduceMotion}
+                        onJump={() => { stickToBottomRef.current = true }} />
                     </motion.div>
                   ) : null}
                 </AnimatePresence>

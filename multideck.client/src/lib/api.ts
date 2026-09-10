@@ -95,6 +95,7 @@ export type ApiTeamUserReplacementPage = {
 
 export type ApiAuthSession = {
   authenticated: boolean
+  onboardingRequired?: boolean
   user: {
     id: string | null
     email: string | null

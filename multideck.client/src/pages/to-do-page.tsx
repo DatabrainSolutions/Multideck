@@ -200,7 +200,7 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
                   onChange={(next) => void toggleTask(task, next)}
                 />
                 <div data-i18n-skip className="min-w-0 flex-1 px-1 py-1 text-start">
-                  <span dir="auto" className={cn("block text-[13.5px] font-medium leading-5 text-[var(--md-ink)]", completed && "text-[var(--md-subtle)] line-through decoration-[var(--md-line-strong)]")}>{task.title}</span>
+                  <span dir="auto" className={cn("block [overflow-wrap:anywhere] text-[13.5px] font-medium leading-5 text-[var(--md-ink)]", completed && "text-[var(--md-subtle)] line-through decoration-[var(--md-line-strong)]")}>{task.title}</span>
                   {task.tags.length || task.links.length ? (
                     <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--md-subtle)]">
                       {task.tags.length ? <span className="inline-flex items-center gap-1"><Tag className="size-3" />{task.tags.map((tag) => tag.label).join(" · ")}</span> : null}

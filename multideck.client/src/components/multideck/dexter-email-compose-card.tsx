@@ -15,6 +15,8 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill";
 import { MailProviderMark } from "@/components/multideck/mailbox-provider-switch";
+import { MailRecipientField, type MailRecipientSearch } from "@/components/multideck/mail-recipient-field";
+import { searchMeetingPeople } from "@/lib/calendar-api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -237,6 +239,7 @@ export function DexterEmailComposeCard({
   preparedActionError,
   onPreparedActionDecision,
   onDraftChange,
+  recipientSearch = searchMeetingPeople,
 }: {
   messageId: string;
   draft: DexterEmailDraft;
@@ -246,15 +249,22 @@ export function DexterEmailComposeCard({
   preparedActionError?: string | null;
   onPreparedActionDecision?: (action?: DexterPendingAction) => void;
   onDraftChange?: (draft: DexterEmailDraft) => void;
+  recipientSearch?: MailRecipientSearch;
 }) {
   const { direction, t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [mailboxesLoading, setMailboxesLoading] = useState(!preview);
   const [mailboxId, setMailboxId] = useState(draft.mailboxId ?? "");
-  const [toText, setToText] = useState(addressText(draft.to));
-  const [ccText, setCcText] = useState(addressText(draft.cc));
-  const [bccText, setBccText] = useState(addressText(draft.bcc));
+  const [toAddresses, setToAddresses] = useState<MailAddress[]>(draft.to);
+  const [ccAddresses, setCcAddresses] = useState<MailAddress[]>(draft.cc);
+  const [bccAddresses, setBccAddresses] = useState<MailAddress[]>(draft.bcc);
+  const [toInput, setToInput] = useState("");
+  const [ccInput, setCcInput] = useState("");
+  const [bccInput, setBccInput] = useState("");
+  const toText = [addressText(toAddresses), toInput].filter(Boolean).join(", ");
+  const ccText = [addressText(ccAddresses), ccInput].filter(Boolean).join(", ");
+  const bccText = [addressText(bccAddresses), bccInput].filter(Boolean).join(", ");
   const [subject, setSubject] = useState(draft.subject);
   const [bodyText, setBodyText] = useState(draft.bodyText);
   const [trackOpens, setTrackOpens] = useState(draft.trackOpens);
@@ -306,6 +316,12 @@ export function DexterEmailComposeCard({
       setSaveState("idle");
     }
   }, [messageId, activeMessageId, isEditingCopy]);
+
+  // Delivery acknowledgement updates the existing editor, not its identity.
+  // Keep typed fields and focus intact when a provider action changes status.
+  useEffect(() => {
+    if (!isEditingCopy) setStatus(draft.delivery.status);
+  }, [draft.delivery.status, isEditingCopy]);
 
   useEffect(() => {
     if (preparedActionError) setError(preparedActionError);
@@ -665,6 +681,7 @@ export function DexterEmailComposeCard({
       hydratedDraftId.current !== draft.id ||
       isCreatingCopy ||
       copyFailed ||
+      [toText, ccText, bccText].some(value => parseAddresses(value).invalid) ||
       status === "sent" ||
       status === "sending" ||
       status === "creating_draft" ||
@@ -1284,126 +1301,43 @@ export function DexterEmailComposeCard({
           </Select>
         </div>
 
-        <div className="flex min-h-12 items-center gap-3 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] transition-colors focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] motion-reduce:transition-none">
-          <label
-            htmlFor={`${activeDraftId}-to`}
-            className="w-14 shrink-0 text-[13px] font-medium text-[var(--md-subtle)]"
-          >
-            {t("To")}
-          </label>
-          <Input
-            id={`${activeDraftId}-to`}
-            type="text"
-            inputMode="email"
-            autoComplete="email"
-            dir="ltr"
-            data-i18n-skip
-            value={toText}
-            disabled={locked}
-            style={{
-              background: "transparent",
-              borderColor: "transparent",
-              boxShadow: "none",
-            }}
-            aria-invalid={invalidField === "to"}
-            aria-describedby={
-              invalidField === "to" ? `${activeDraftId}-status` : undefined
-            }
-            placeholder="name@example.com"
-            onChange={(event) => setToText(event.target.value)}
-            className="h-10 min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-          />
-          <div className="flex shrink-0 items-center gap-1">
-            {!showCc ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={locked}
-                className="h-8 rounded-full px-2 text-[12px] text-[var(--md-subtle)]"
-                onClick={() => setShowCc(true)}
-              >
-                {t("Cc")}
-              </Button>
-            ) : null}
-            {!showBcc ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={locked}
-                className="h-8 rounded-full px-2 text-[12px] text-[var(--md-subtle)]"
-                onClick={() => setShowBcc(true)}
-              >
-                {t("Bcc")}
-              </Button>
-            ) : null}
-          </div>
-        </div>
+        <MailRecipientField
+          inputId={`${activeDraftId}-to`}
+          label={t("To")}
+          addresses={toAddresses}
+          onChange={setToAddresses}
+          onInputChange={setToInput}
+          search={recipientSearch}
+          disabled={locked}
+          invalid={invalidField === "to"}
+          describedBy={invalidField === "to" ? `${activeDraftId}-status` : undefined}
+          className="min-h-12 gap-x-3 gap-y-0 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] px-0 focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] max-sm:flex-wrap max-sm:[&>[data-mail-recipient-content]]:basis-full max-sm:[&>[data-mail-recipient-content]]:order-1"
+          labelClassName="w-14 text-[13px]"
+          trailing={<>
+            {!showCc ? <Button type="button" variant="ghost" size="sm" disabled={locked}
+              className="h-8 rounded-full px-2 text-[12px] text-[var(--md-subtle)]" onClick={() => setShowCc(true)}>{t("Cc")}</Button> : null}
+            {!showBcc ? <Button type="button" variant="ghost" size="sm" disabled={locked}
+              className="h-8 rounded-full px-2 text-[12px] text-[var(--md-subtle)]" onClick={() => setShowBcc(true)}>{t("Bcc")}</Button> : null}
+          </>}
+        />
 
-        {showCc ? (
-          <div className="flex min-h-12 items-center gap-3 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] transition-colors focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] motion-reduce:transition-none">
-            <label
-              htmlFor={`${activeDraftId}-cc`}
-              className="w-14 shrink-0 text-[13px] font-medium text-[var(--md-subtle)]"
-            >
-              {t("Cc")}
-            </label>
-            <Input
-              id={`${activeDraftId}-cc`}
-              type="text"
-              inputMode="email"
-              dir="ltr"
-              data-i18n-skip
-              value={ccText}
-              disabled={locked}
-              style={{
-                background: "transparent",
-                borderColor: "transparent",
-                boxShadow: "none",
-              }}
-              aria-invalid={invalidField === "cc"}
-              aria-describedby={
-                invalidField === "cc" ? `${activeDraftId}-status` : undefined
-              }
-              placeholder="name@example.com"
-              onChange={(event) => setCcText(event.target.value)}
-              className="h-10 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-            />
-          </div>
-        ) : null}
+        {showCc ? <MailRecipientField
+          inputId={`${activeDraftId}-cc`} label={t("Cc")}
+          addresses={ccAddresses} onChange={setCcAddresses} onInputChange={setCcInput}
+          search={recipientSearch} disabled={locked} invalid={invalidField === "cc"}
+          describedBy={invalidField === "cc" ? `${activeDraftId}-status` : undefined}
+          className="min-h-12 gap-x-3 gap-y-0 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] px-0 focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] max-sm:flex-wrap max-sm:[&>[data-mail-recipient-content]]:basis-full max-sm:[&>[data-mail-recipient-content]]:order-1"
+          labelClassName="w-14 text-[13px]"
+        /> : null}
 
-        {showBcc ? (
-          <div className="flex min-h-12 items-center gap-3 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] transition-colors focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] motion-reduce:transition-none">
-            <label
-              htmlFor={`${activeDraftId}-bcc`}
-              className="w-14 shrink-0 text-[13px] font-medium text-[var(--md-subtle)]"
-            >
-              {t("Bcc")}
-            </label>
-            <Input
-              id={`${activeDraftId}-bcc`}
-              type="text"
-              inputMode="email"
-              dir="ltr"
-              data-i18n-skip
-              value={bccText}
-              disabled={locked}
-              style={{
-                background: "transparent",
-                borderColor: "transparent",
-                boxShadow: "none",
-              }}
-              aria-invalid={invalidField === "bcc"}
-              aria-describedby={
-                invalidField === "bcc" ? `${activeDraftId}-status` : undefined
-              }
-              placeholder="name@example.com"
-              onChange={(event) => setBccText(event.target.value)}
-              className="h-10 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-            />
-          </div>
-        ) : null}
+        {showBcc ? <MailRecipientField
+          inputId={`${activeDraftId}-bcc`} label={t("Bcc")}
+          addresses={bccAddresses} onChange={setBccAddresses} onInputChange={setBccInput}
+          search={recipientSearch} disabled={locked} invalid={invalidField === "bcc"}
+          describedBy={invalidField === "bcc" ? `${activeDraftId}-status` : undefined}
+          className="min-h-12 gap-x-3 gap-y-0 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] px-0 focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] max-sm:flex-wrap max-sm:[&>[data-mail-recipient-content]]:basis-full max-sm:[&>[data-mail-recipient-content]]:order-1"
+          labelClassName="w-14 text-[13px]"
+        /> : null}
 
         <div className="flex min-h-12 items-center gap-3 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] transition-colors focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] motion-reduce:transition-none">
           <label

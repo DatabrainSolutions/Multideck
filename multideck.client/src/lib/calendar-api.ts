@@ -318,8 +318,8 @@ export async function getCalendarConnections(signal?: AbortSignal) {
   return result.connections
 }
 
-export async function getCalendarWorkspace(start: string, end: string, signal?: AbortSignal) {
-  if (localCalendarPreviewEnabled) {
+export async function getCalendarWorkspace(start: string, end: string, signal?: AbortSignal, options?: { requireDatabase?: boolean }) {
+  if (localCalendarPreviewEnabled && !options?.requireDatabase) {
     if (signal?.aborted) throw new DOMException("The request was aborted.", "AbortError")
     const workspace = (await localPreview()).getPreviewCalendarWorkspace(start, end)
     return { ...workspace, bookingLinks: workspace.bookingLinks.map(normaliseBookingLink) }
@@ -402,14 +402,14 @@ export function defaultMeetingProviderForInbox(provider: "gmail" | "outlook" | n
 }
 
 /** The signed-in user's availability preferences, read from the workspace payload with the smallest useful range. */
-export async function getCalendarAvailability(signal?: AbortSignal) {
+export async function getCalendarAvailability(signal?: AbortSignal, options?: { requireDatabase?: boolean }) {
   const now = Date.now()
-  const workspace = await getCalendarWorkspace(new Date(now).toISOString(), new Date(now + 86_400_000).toISOString(), signal)
+  const workspace = await getCalendarWorkspace(new Date(now).toISOString(), new Date(now + 86_400_000).toISOString(), signal, options)
   return workspace.availability
 }
 
-export async function saveCalendarAvailability(availability: CalendarAvailabilityPreferences) {
-  if (localCalendarPreviewEnabled) return (await localPreview()).savePreviewAvailability(availability)
+export async function saveCalendarAvailability(availability: CalendarAvailabilityPreferences, options?: { requireDatabase?: boolean }) {
+  if (localCalendarPreviewEnabled && !options?.requireDatabase) return (await localPreview()).savePreviewAvailability(availability)
   return apiJson<{ saved: boolean; availability: CalendarAvailabilityPreferences }>(calendarFetch("/availability", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(availability) }), "Availability could not be saved.")
 }
 
@@ -461,10 +461,10 @@ export async function sendMeetingEmailTemplateTest(kind: MeetingEmailTemplateKin
   return apiJson<{ sent: boolean; email: string }>(calendarFetch(`/templates/${encodeURIComponent(kind)}/test`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }), "The test email could not be sent.")
 }
 
-export async function beginCalendarConnection(provider: CalendarConnection["provider"]) {
+export async function beginCalendarConnection(provider: CalendarConnection["provider"], returnPath = "/settings?tab=integrations") {
   if (localCalendarPreviewEnabled) throw new Error("Provider connections are unavailable in local preview. Deploy the Calendar functions before connecting an account.")
   const accessToken = await sessionToken()
-  const result = await apiJson<{ authorizationUrl: string }>(edgeFetch("calendar-oauth", `/start/${provider}?returnPath=${encodeURIComponent("/settings?tab=integrations")}`, accessToken), "The provider connection could not be started.")
+  const result = await apiJson<{ authorizationUrl: string }>(edgeFetch("calendar-oauth", `/start/${provider}?returnPath=${encodeURIComponent(returnPath)}`, accessToken), "The provider connection could not be started.")
   window.location.assign(result.authorizationUrl)
 }
 

@@ -485,6 +485,7 @@ function ProfileTab({
   const [savedProfile, setSavedProfile] = useState<ProfileFormState>(emptyProfileForm)
   const [isProfileLoading, setIsProfileLoading] = useState(true)
   const [isProfileSaving, setIsProfileSaving] = useState(false)
+  const [profileDepartments, setProfileDepartments] = useState<string[]>([])
   const initialProfilePhoto = currentUser?.profilePhoto ?? null
   const initialCoverPhoto = currentUser?.coverPhoto ?? null
   const initialProfilePhotoUrl = profileMediaUrls.profilePhotoPath === initialProfilePhoto?.path
@@ -553,6 +554,8 @@ function ProfileTab({
       }
 
       applyProfile(createProfileFormFromUser(data.user))
+      const departments = data.user.user_metadata?.profile_departments
+      setProfileDepartments(Array.isArray(departments) ? departments.flatMap((department: { name?: unknown }) => typeof department?.name === "string" ? [department.name] : []) : [])
     }).catch((error) => {
       console.error(error)
       setIsProfileLoading(false)
@@ -989,6 +992,14 @@ function ProfileTab({
           </div>
         </section>
 
+        {import.meta.env.DEV && currentUser?.internalUserId ? (
+          <div className="flex justify-end">
+            <Button asChild variant="outline" className="h-9 rounded-[var(--md-radius-lg)] text-[12px]">
+              <a href="/onboarding?preview=1">{t("Preview account setup")}</a>
+            </Button>
+          </div>
+        ) : null}
+
         <SettingsPanel title={t("Account details")}>
             <SettingsFieldRow label="Name">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -1029,6 +1040,9 @@ function ProfileTab({
               </span>
             </div>
             </SettingsFieldRow>
+            {profileDepartments.length ? <SettingsFieldRow label={t("Profile departments")}>
+              <div className="flex flex-wrap gap-2" data-i18n-skip>{profileDepartments.map((department) => <span key={department} className="rounded-full bg-[var(--md-accent-a08)] px-3 py-1.5 text-[12px] text-[var(--md-accent)]">{department}</span>)}</div>
+            </SettingsFieldRow> : null}
             <SettingsFieldRow label={t("Phone")} description={t("Used where you choose to share your contact details.")}>
             <SettingsInput
               value={profile.phone}

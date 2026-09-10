@@ -14,6 +14,7 @@ import dataTableSource from "@/components/multideck/data-table.tsx?raw"
 import tableCsvExportDialogSource from "@/components/multideck/table-csv-export-dialog.tsx?raw"
 import publicBrandIdentitySource from "@/components/multideck/public-brand-identity.tsx?raw"
 import multiSelectMenuSource from "@/components/multideck/multi-select-menu.tsx?raw"
+import mailRecipientFieldSource from "@/components/multideck/mail-recipient-field.tsx?raw"
 import { AiBrain, AiEditing, ArrowUpDown, BadgeCheck, BarChart3, Bell, BrainCircuit, Building2, Boxes, BriefcaseBusiness, CalendarDays, ChartAnalysis, ChartArea, ChartBar, ChartBarStacked, ChartLine, ChartNoAxesCombined, ChartPie, ChartScatter, ClipboardCheck, Clock3, Cloud, Component, FileText, Funnel, Gauge, Globe2, Grid3X3, Image, KeyRound, LayoutDashboard, ListOrdered, Mail, MessageCircle, MoonStar, MousePointerClick, PackageCheck, Palette, Pencil, Phone, ReceiptText, QrCode, Radar, Search, ScanText, Settings2, ShieldCheck, Ship, SlidersHorizontal, Sparkles, Type, TriangleAlert, Truck, Users, Workflow, type LucideIcon } from "@/components/icons/hugeicons"
 export * from "./operational-data"
 
@@ -155,6 +156,7 @@ export const galleryComponents = [
     details: "Use for short controlled lists such as transcription vocabulary. Enter, comma and multi-value paste all add terms; duplicates are ignored, limits are announced, and each tag remains keyboard-removable. New tags pop into place with transform-only motion and reduced-motion support.",
     foundOn: [
       { label: "Dexter voice settings", route: "/settings?tab=dexter#voice" },
+      { label: "Account setup", route: "/onboarding?preview=1&step=dictation" },
       { label: "Components", route: "/components?component=tag-entry-field" },
     ],
     componentCode: `export { TagEntryField, normalizeTagTerms } from "@/components/multideck/tag-entry-field"`,
@@ -419,6 +421,7 @@ export const galleryComponents = [
       { label: "Keyboard shortcuts", route: "/settings?tab=shortcuts" },
       { label: "Overview", route: "/" },
       { label: "Components", route: "/components?component=shortcut-keys" },
+      { label: "Account setup", route: "/onboarding" },
     ],
     componentCode: `export function ShortcutKeys({ binding, className, keyClassName, emptyLabel = "Not set" }) {\n  const platform = usePlatformShortcutLabels()\n  const steps = useMemo(() => bindingTokens(binding, platform), [binding, platform])\n\n  if (steps.length === 0) return <span className={className}>{emptyLabel}</span>\n\n  return (\n    <span className={cn("inline-flex flex-wrap items-center gap-1.5", className)}>\n      {steps.map((tokens, stepIndex) => (\n        <span key={stepIndex} className="inline-flex items-center gap-1.5">\n          {stepIndex > 0 ? <span className="text-[11px] text-[var(--md-subtle)]">then</span> : null}\n          <KbdGroup dir="ltr" data-i18n-skip>\n            {tokens.map((token, tokenIndex) => (\n              <span key={\`\${token}-\${tokenIndex}\`} className="inline-flex items-center gap-1">\n                {tokenIndex > 0 ? <span aria-hidden="true">+</span> : null}\n                <Kbd className={keyClassName}>{token}</Kbd>\n              </span>\n            ))}\n          </KbdGroup>\n        </span>\n      ))}\n    </span>\n  )\n}`,
     usageCode: `// From a saved binding\n<ShortcutKeys binding={useShortcutBinding("search.focus")} />\n\n// Or straight from a shortcut id\n<ShortcutHint shortcutId="dexter.summon" />\n\n// Inside a field, so the hint follows whatever the operator rebound it to\n<span className="pointer-events-none absolute inset-y-0 end-2 my-auto flex h-fit items-center">\n  <ShortcutKeys binding={searchShortcut} keyClassName="bg-[var(--md-surface-tint)]" emptyLabel="" />\n</span>`,
@@ -445,6 +448,7 @@ export const galleryComponents = [
     foundOn: [
       { label: "Workspace text fields", route: "/" },
       { label: "Dexter voice settings", route: "/settings?tab=dexter#voice" },
+      { label: "Account setup", route: "/onboarding?preview=1&step=dictation" },
       { label: "Components", route: "/components?component=dictation-status-pill" },
     ],
     componentCode: `export function DictationStatusPill({ phase, level = 0.45, message }) {\n  const shouldReduceMotion = useReducedMotion()\n  const { t } = useLanguage()\n  const urgent = phase === "allowance" || phase === "error"\n  const label = phase === "allowance" ? message || t("Transcription usage limit reached") : phase === "error" ? message || t("Transcription failed") : phase === "transcribing" ? t("Transcribing") : phase === "polishing" ? t("Polishing") : t("Complete")\n\n  return (\n    <motion.div layout="size" data-state={phase} role={urgent ? "alert" : "status"} aria-live={urgent ? "assertive" : "polite"}>\n      <AnimatePresence initial={false} mode="popLayout">\n        <motion.span key={phase}>{label}</motion.span>\n      </AnimatePresence>\n      <span aria-hidden>\n        {shapeIds.map((shapeId, index) => (\n          <motion.span key={shapeId} animate={shapeTarget(index, phase, level, shouldReduceMotion)} />\n        ))}\n      </span>\n    </motion.div>\n  )\n}`,
@@ -695,6 +699,7 @@ export const galleryComponents = [
       { label: "CRM deals", route: "/crm/deals" },
       { label: "Inbox", route: "/inbox" },
       { label: "Components", route: "/components?component=dexter-action-pill" },
+      { label: "Account setup", route: "/onboarding" },
     ],
     componentCode: `export function DexterActionPill({ label = "Ask Dexter", icon: Icon = AiBrain, iconOnly = false, onClick }) {\n  return (\n    <Button\n      type="button"\n      variant="ghost"\n      aria-label={label}\n      data-icon-only={iconOnly || undefined}\n      className="md-dexter-pill relative h-10 min-w-[132px] overflow-hidden rounded-[var(--md-radius-lg)] px-3.5 text-[13px] font-medium text-white"\n      onClick={onClick}\n    >\n      <span className="md-dexter-pill__shader" aria-hidden>\n        <SpectralBloomShader />\n      </span>\n      <span className="md-dexter-pill__contrast" aria-hidden />\n      <Icon className="relative z-10 size-3.5" strokeWidth={1.25} />\n      {iconOnly ? null : <SlotLabel label={label} />}\n    </Button>\n  )\n}`,
     usageCode: `const [dexterOpen, setDexterOpen] = useState(false)\n\n<div className="flex flex-wrap items-center gap-2">\n  <SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n  <DexterActionPill onClick={() => setDexterOpen(true)} />\n  <PageSettingsMenu\n    viewOptions={customerViewOptions}\n    value={viewMode}\n    onViewChange={setViewMode}\n    actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n  />\n</div>\n\n<DexterActionPill\n  icon={ArrowUp}\n  iconOnly\n  label="Send prompt"\n  onClick={sendPrompt}\n/>\n\n<DexterCompanionSidebar open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Customers" />`,
@@ -1650,6 +1655,28 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
 />`,
   },
   {
+    id: "mail-recipient-field",
+    name: "Mail Recipient Field",
+    category: "Operations",
+    description: "Compact outlined recipient pills shared by Inbox and Dexter, with optional @ people search.",
+    details: "Use for To, Cc or Bcc rows. Enter, Tab, comma, paste or blur commits an address; invalid fragments remain editable. Backspace or the remove control removes a pill. Dexter uses the existing tenant-scoped people lookup, with keyboard suggestions and a direct-email fallback if lookup fails. Inbox's server-resolved reply recipients remain locked. Pass onInputChange when the parent must validate uncommitted text before saving or sending.",
+    foundOn: [
+      { label: "Inbox", route: "/inbox" },
+      { label: "Agent Dexter", route: "/agent-dexter" },
+      { label: "Components", route: "/components?component=mail-recipient-field" },
+    ],
+    componentCode: mailRecipientFieldSource,
+    usageCode: `<MailRecipientField
+  inputId="email-to"
+  label="To"
+  addresses={recipients}
+  onChange={setRecipients}
+  onInputChange={setUncommittedRecipient}
+  search={searchMeetingPeople}
+  disabled={sending}
+/>`,
+  },
+  {
     id: "toggle-group",
     name: "Toggle Group",
     category: "Navigation",
@@ -2197,6 +2224,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
       { label: "CRM contacts", route: "/crm/contacts" },
       { label: "CRM deals", route: "/crm/deals" },
       { label: "Components", route: "/components?component=dexter-mention-input" },
+      { label: "Account setup", route: "/onboarding" },
     ],
     componentCode: `export function DexterMentionInput({ value, items, selectedMentions, onChange, onMentionsChange, onSend }) {\n  return (\n    <div className="relative">\n      <AnimatePresence initial={false}>\n        {mentionQuery !== null ? (\n          <motion.div role="listbox" className="md-dexter-mention-menu">\n            {results.map((item) => (\n              <button key={item.id} role="option" onMouseDown={(event) => event.preventDefault()} onClick={() => selectMention(item)}>\n                <item.icon />\n                <span>{item.title}</span>\n                <span>{item.type}</span>\n              </button>\n            ))}\n          </motion.div>\n        ) : null}\n      </AnimatePresence>\n      <div\n        contentEditable\n        role="combobox"\n        aria-autocomplete="list"\n        aria-expanded={mentionQuery !== null}\n        data-placeholder="Ask anything, @ a record, or / for a command"\n        className="md-dexter-mention-editor"\n        onInput={handleInput}\n        onKeyDown={handleKeyDown}\n      />\n    </div>\n  )\n}`,
     usageCode: `<DexterMentionInput\n  value={prompt}\n  items={mentionItems}\n  selectedMentions={mentions}\n  placeholder="Ask anything, @ a record, or / for a command"\n  minHeight={76}\n  maxHeight={232}\n  canSend={Boolean(prompt.trim())}\n  onChange={setPrompt}\n  onMentionsChange={setMentions}\n  onSend={sendPrompt}\n/>`,
@@ -2219,9 +2247,9 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "dexter-prompt-composer",
     name: "Dexter Prompt Composer",
     category: "Agent Dexter",
-    description: "The central command box for Agent Dexter: @ mentions, attached context, slash commands, model and role choices, live context usage, plus explicit approval or full-access control.",
-    details: "Use on the Agent Dexter landing and conversation footer. For an active steerable run, canUpdateRequest changes the send label to Update request; updatePending prevents duplicates and updateStatus announces progress without clearing unsent text. The + button opens the computer file chooser, @ references workspace or email context, and / switches between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
+    description: "The central command box for Agent Dexter: voice input, @ mentions, attached context, slash commands, model and role choices, and live context usage.",
+    details: "Use on Home, the Agent Dexter landing and the conversation footer. The microphone uses the existing Gemini transcription service and saved microphone preference. Recording preserves the composer size, shape and shader: the microphone becomes Stop in place, with a compact live waveform flowing right to left along the controls row. Stopping inserts the transcript without sending the prompt. Draft text and attachments are retained. Escape cancels a recording. For an active steerable run, canUpdateRequest changes Send to Update request; updatePending prevents duplicates and updateStatus announces progress without clearing unsent text. The + button uploads files, @ references records, and / switches between Chat and Watch.",
+    foundOn: [{ label: "Home", route: "/" }, { label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
     componentCode: `export function DexterPromptComposer({ value, selectedSpecialistId, selectedModelId, accessMode, contextUsedTokens, contextMaxTokens, attachments, onChange, onOpenAttachments, onSelectSpecialist, onSelectModel, onAccessModeChange, onSend }) {\n  return (\n    <div className="md-composer md-composer-bloom relative overflow-hidden rounded-[26px]">\n      <span aria-hidden className="md-composer-bloom__shader">\n        <SpectralBloomShader shape="composer" />\n      </span>\n      <span aria-hidden className="md-composer-bloom__contrast" />\n      <div className="relative z-[2] flex h-[44px] items-center px-3">\n        <DexterRoleMenu selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />\n      </div>\n      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)]">\n        {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n        <textarea\n          value={value}\n          rows={1}\n          onChange={(event) => onChange(event.target.value)}\n          onKeyDown={(event) => {\n            if (event.key === "Enter" && !event.shiftKey) {\n              event.preventDefault()\n              if (value.trim()) onSend()\n            }\n          }}\n        />\n        <button onClick={onOpenAttachments}>Attach</button>\n        <DexterModelMenu selectedId={selectedModelId} onSelect={onSelectModel} />\n        <Context\n          usedTokens={contextUsedTokens}\n          maxTokens={contextMaxTokens}\n          label={t("Conversation context")}\n          description={t("How much of this chat Dexter can keep in mind.")}\n        >\n          <ContextTrigger />\n          <ContextContent><ContextContentHeader /></ContextContent>\n        </Context>\n        <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />\n        <DexterActionPill icon={ArrowUp} iconOnly disabled={!value.trim()} onClick={onSend} />\n      </div>\n    </div>\n  )\n}`,
     usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => computerFileInputRef.current?.click()}\n  attachmentActionLabel="Upload files"\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  isSending={isSending}\n  canUpdateRequest={Boolean(activeRunId)}\n  updatePending={isCorrectionPending}\n  updateStatus={correctionStatus}\n  onSend={activeRunId ? updateRequest : startConversation}\n/>`,
   },
@@ -2253,10 +2281,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Live Reasoning",
     category: "Agent Dexter",
     description: "A compact disclosure for Dexter's in-progress reasoning summary, with the text continuing to stream when the operator opens it.",
-    details: "Use while Dexter is producing a reply. Keep the same disclosure mounted as the answer begins, then transition it in place to the completed reasoning summary so the conversation does not jump or flicker.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-live-reasoning" }],
+    details: "Use while Dexter is producing a reply. The operator can open and close the live summary without it reopening itself. Keep the same disclosure mounted: when the first answer text arrives, collapse an expanded trail before releasing the answer, and relabel the trigger Reasoning summary. A controlled Reasoning owns its own open/close lifecycle.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Account setup", route: "/onboarding?preview=1&step=dexter" }, { label: "Components", route: "/components?component=dexter-live-reasoning" }],
     componentCode: `<Reasoning defaultOpen={false} isStreaming>\n  <ReasoningTrigger getThinkingMessage={() => <span>Reasoning</span>} />\n  <ReasoningContent>{streamedReasoning}</ReasoningContent>\n</Reasoning>`,
-    usageCode: `<Reasoning defaultOpen={false} isStreaming={isResponding} className="mb-0 max-w-[680px] py-1">\n  <ReasoningTrigger getThinkingMessage={() => <span>{t("Reasoning")}</span>} />\n  <ReasoningContent>{reasoningContent}</ReasoningContent>\n</Reasoning>`,
+    usageCode: `<Reasoning open={reasoningOpen} onOpenChange={setReasoningOpen} isStreaming={isThinking} className="mb-0 max-w-[680px] py-1">\n  <ReasoningTrigger getThinkingMessage={() => <span>{t(isThinking ? "Reasoning" : "Reasoning summary")}</span>} />\n  <ReasoningContent>{reasoningContent}</ReasoningContent>\n</Reasoning>`,
   },
   {
     id: "dexter-reasoning-summary",
@@ -2264,16 +2292,16 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Agent Dexter",
     description: "The completed state of Dexter's persistent reasoning disclosure, letting the operator revisit the supported summary attached to an answer.",
     details: "Keep the same disclosure used during streaming and change its label in place after completion. Render only provider-supported summary content, keep it closed by default, and do not add a card background.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-reasoning-summary" }],
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Account setup", route: "/onboarding?preview=1&step=dexter" }, { label: "Components", route: "/components?component=dexter-reasoning-summary" }],
     componentCode: `<Reasoning defaultOpen={false} isStreaming={false}>\n  <ReasoningTrigger getThinkingMessage={() => <span>Reasoning summary</span>} />\n  <ReasoningContent>{reasoningSummary}</ReasoningContent>\n</Reasoning>`,
-    usageCode: `<DexterReasoningDisclosure\n  content={message.reasoningSummary ?? ""}\n  isStreaming={message.id === streamingMessageId}\n/>`,
+    usageCode: `<Reasoning open={summaryOpen} onOpenChange={setSummaryOpen} isStreaming={false}>\n  <ReasoningTrigger getThinkingMessage={() => <span>Reasoning summary</span>} />\n  <ReasoningContent>{message.reasoningSummary ?? ""}</ReasoningContent>\n</Reasoning>`,
   },
   {
     id: "dexter-record-table",
     name: "Dexter Record Table",
     category: "Agent Dexter",
     description: "A native Multideck table for verified records returned by Dexter, with sorting and links to the real records.",
-    details: "Use for leads, deals, companies, jobs and quotes. Values come from authorised query results. Choose fields relevant to the question. Keep explicitly requested empty fields visible, omit wholly empty optional columns, and show the saved snapshot count. Date-time fields include the time and zone. Accompany the table with a short explanation instead of repeating its rows as prose.",
+    details: "Use for leads, deals, companies, jobs and quotes. Values come from authorised query results. Choose fields relevant to the question. Keep explicitly requested empty fields visible, omit wholly empty optional columns, and show the saved snapshot count. Date-time fields include the time and zone. Accompany the table with a short explanation instead of repeating its rows as prose. In a live Dexter answer, finish the text first, then reveal the visible table from heavy blur to clear over one second; saved conversations and reduced motion do not replay that entrance. Preserve the operator's conversation scroll position when a table arrives, and offer Jump to latest message instead of automatically scrolling through its rows.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-record-table" }],
     componentCode: `<DexterRecordTable table={recordTable} />`,
     usageCode: `{message.recordTables?.map(table => <DexterRecordTable key={table.id} table={table} />)}`,
@@ -3626,7 +3654,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Controls",
     description: "One calm row for when a meeting happens: branded date popover, typed or picked start and finish times, quick duration chips and the timezone.",
     details: "Use wherever an operator sets a meeting or appointment window. Enable showLabels for the composer's responsive Date, Starts and Finishes fields. Times are stored as ISO instants; the timezone only changes how they read. Start and finish accept typed values such as 9, 930, 9:30 or 2pm, and the finish list shows the resulting length.",
-    foundOn: [{ label: "Calendar · New meeting", route: "/calendar" }, { label: "Calendar · Reschedule from details", route: "/calendar" }, { label: "CRM leads · Schedule meeting", route: "/crm/leads" }, { label: "Settings · Availability (time fields)", route: "/settings?tab=availability" }, { label: "Components", route: "/components?component=meeting-time-picker" }],
+    foundOn: [{ label: "Calendar · New meeting", route: "/calendar" }, { label: "Calendar · Reschedule from details", route: "/calendar" }, { label: "CRM leads · Schedule meeting", route: "/crm/leads" }, { label: "Settings · Availability (time fields)", route: "/settings?tab=availability" }, { label: "Account setup", route: "/onboarding" }, { label: "Components", route: "/components?component=meeting-time-picker" }],
     componentCode: `export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZoneChange }) {
   const start = zonedParts(startAt, timeZone)
   const end = zonedParts(endAt, timeZone)
@@ -3745,7 +3773,7 @@ export function MeetingAttendeeList({ participants }) {
     category: "Controls",
     description: "The week as seven quiet rows: a switch per day, then start and finish in the same on-brand time fields as the meeting composer.",
     details: "Use wherever an operator sets recurring hours: personal Availability settings and a booking link's override. Days that are off read Unavailable rather than showing disabled inputs, and once Monday differs from the other weekdays a Use Mon–Fri shortcut copies it across. One range per day.",
-    foundOn: [{ label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Booking links · Edit link", route: "/calendar/booking-links" }, { label: "Components", route: "/components?component=working-hours-editor" }],
+    foundOn: [{ label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Booking links · Edit link", route: "/calendar/booking-links" }, { label: "Account setup", route: "/onboarding" }, { label: "Components", route: "/components?component=working-hours-editor" }],
     componentCode: `export function WorkingHoursEditor({ value, onChange, disabled }) {
   return weekdayKeys.map((day) => {
     const range = value[day]?.[0] ?? null

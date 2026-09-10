@@ -1,5 +1,6 @@
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
 import dexterRecordTableSource from "@/components/multideck/dexter-record-table.tsx?raw"
+import dexterComponentsSource from "@/components/multideck/agent-dexter-components.tsx?raw"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
@@ -128,6 +129,7 @@ import { EmailMessageRenderer } from "@/components/multideck/email-message-rende
 import { EmailDeliveryStatus } from "@/components/multideck/email-delivery-status"
 import { InboxThreadRow } from "@/components/multideck/inbox-thread-row"
 import { MailComposer, type ComposerState } from "@/components/multideck/mail-composer"
+import { MailRecipientField } from "@/components/multideck/mail-recipient-field"
 import { ThreadSummary } from "@/components/multideck/thread-summary"
 import type { InboxThreadListItem, Mailbox, ThreadSummaryState } from "@/lib/inbox-api"
 import type { ApiCustomerDetail, CustomerReference } from "@/lib/customer-api"
@@ -372,7 +374,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Inbox",
     helper: "Mail, threads, and delivery evidence",
-    ids: ["inbox-thread-row", "email-message-renderer", "thread-summary", "mail-composer"],
+    ids: ["inbox-thread-row", "email-message-renderer", "thread-summary", "mail-composer", "mail-recipient-field"],
   },
   {
     label: "Contact cards",
@@ -1794,6 +1796,10 @@ const previewMeetingRoster: MeetingParticipant[] = [
   { id: "r5", name: "Jordan Reyes", email: "jordan@atlasfreight.example", response: "declined", external: true },
 ]
 
+const searchPreviewMailPeople = async (query: string) => ({
+  people: previewMeetingPeople.filter(person => [person.name, person.email].some(value => value.toLowerCase().includes(query.toLowerCase()))),
+})
+
 const previewBookingHosts: BookingHostCandidate[] = [
   { userId: "h-self", name: "Harry Phillips", email: "harry@databrain.co.uk", detail: "Founder", self: true, connectedProviders: ["google"] },
   { userId: "h-priya", name: "Priya Shah", email: "priya@multideck.app", detail: "Operations lead", self: false, connectedProviders: ["google", "microsoft"] },
@@ -3087,6 +3093,15 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "mail-recipient-field" ? (
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2 shadow-[var(--md-shadow-line)]">
+          <MailRecipientField inputId="preview-email-to" label="To" disabled={false}
+            addresses={previewMeetingAttendees.map(person => ({ address: person.email, displayName: person.name }))}
+            onChange={addresses => setPreviewMeetingAttendees(addresses.map(address => ({ email: address.address, name: address.displayName || address.address })))}
+            search={searchPreviewMailPeople} />
+        </div>
+      ) : null}
+
       {id === "mail-composer" ? (
         <div className="w-full max-w-[620px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] py-3 shadow-[var(--md-shadow-line)]">
           <MailComposer
@@ -3720,6 +3735,7 @@ function ComponentPreview({ id }: { id: string }) {
           <DexterEmailComposeCard
             messageId="gallery-dexter-message"
             preview
+            recipientSearch={searchPreviewMailPeople}
             draft={{
               id: "gallery-dexter-email-draft",
               requestedAction: "create_draft",
@@ -4939,7 +4955,7 @@ export function ComponentsGalleryPage() {
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
-                <CopyButton value={(selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.componentCode)} />
+                <CopyButton value={(selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.id === "dexter-prompt-composer" ? dexterComponentsSource.slice(dexterComponentsSource.indexOf("function DexterRecordingWaveform"), dexterComponentsSource.indexOf("export function DexterSpecialistPicker")) : selected.componentCode)} />
                 <Button variant="ghost" size="icon" className="rounded-[var(--md-radius-lg)] bg-white/50 shadow-[var(--md-shadow-line)]" onClick={() => moveSelection(-1)}>
                   <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
                 </Button>
@@ -4970,7 +4986,7 @@ export function ComponentsGalleryPage() {
 
               <TabsContent value="code" id="code" className="mt-[var(--md-page-stack-gap)]">
                 <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-                  <CodeBlock code={(selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.componentCode)} />
+                  <CodeBlock code={(selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.id === "dexter-prompt-composer" ? dexterComponentsSource.slice(dexterComponentsSource.indexOf("function DexterRecordingWaveform"), dexterComponentsSource.indexOf("export function DexterSpecialistPicker")) : selected.componentCode)} />
                 </Surface>
               </TabsContent>
 

@@ -20,6 +20,8 @@ export type DexterConversationSummary = {
 
 export type DexterMessage = {
   id: string
+  /** Client-only identity retained across the final stream acknowledgement. */
+  renderKey?: string
   serverId?: string | null
   role: "user" | "assistant" | "system" | "tool"
   content: string

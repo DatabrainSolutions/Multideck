@@ -21,6 +21,7 @@ import {
 } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import { MailRecipientField as RecipientField } from "@/components/multideck/mail-recipient-field"
 import { ImageLightbox, type ImageLightboxControls } from "@/components/multideck/image-lightbox"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -35,14 +36,9 @@ import {
   attachmentTotalBytes,
   composerModeLabels,
   composerNeedsRecipient,
-  dedupeAddresses,
-  formatAddress,
-  isLikelyEmailAddress,
-  parseAddressInput,
   readFileAsAttachment,
   type ComposerState,
   type ComposerStatus,
-  type MailAddress,
   type Mailbox,
   type OutboundAttachment,
   type SendMode,
@@ -94,220 +90,6 @@ function attachmentIcon(mimeType: string) {
   return FileText
 }
 
-function addressInitial(address: MailAddress) {
-  const source = address.displayName?.trim() || address.address
-  return source.slice(0, 1).toUpperCase()
-}
-
-/**
- * Splits typed or pasted text into the addresses that parsed and the fragments
- * that did not. The leftovers stay in the input rather than disappearing, so a
- * mistyped address is corrected where it was written.
- */
-function splitRecipientInput(value: string): { valid: MailAddress[]; leftover: string[] } {
-  const valid: MailAddress[] = []
-  const leftover: string[] = []
-
-  for (const entry of value.split(/[,;\n]/).map((part) => part.trim()).filter(Boolean)) {
-    const parsed = parseAddressInput(entry)
-    if (parsed.length > 0 && parsed.every((address) => isLikelyEmailAddress(address.address))) valid.push(...parsed)
-    else leftover.push(entry)
-  }
-
-  return { valid, leftover }
-}
-
-function RecipientChip({
-  address,
-  onRemove,
-  disabled,
-}: {
-  address: MailAddress
-  onRemove: () => void
-  disabled: boolean
-}) {
-  const { t } = useLanguage()
-  const label = address.displayName?.trim() || address.address
-
-  return (
-    <span
-      className="group inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-[var(--md-surface)] ps-1 pe-1 text-[12.5px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
-      title={formatAddress(address)}
-    >
-      <span
-        aria-hidden="true"
-        className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[10px] font-semibold text-[var(--md-accent)]"
-      >
-        {addressInitial(address)}
-      </span>
-      <bdi data-i18n-skip dir="auto" className="min-w-0 truncate">
-        {label}
-      </bdi>
-      <button
-        type="button"
-        disabled={disabled}
-        aria-label={`${t("Remove")} ${address.address}`}
-        className="grid size-5 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] outline-none transition-[background-color,color,scale] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.9] disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100"
-        onClick={onRemove}
-      >
-        <X className="size-3" strokeWidth={1.8} aria-hidden="true" />
-      </button>
-    </span>
-  )
-}
-
-/**
- * One address row: a label, the chips already committed, and a bare input that
- * turns text into another chip on Enter, comma, Tab or blur.
- */
-function RecipientField({
-  inputId,
-  label,
-  addresses,
-  onChange,
-  placeholder,
-  disabled,
-  autoFocus,
-  lockedLabel,
-  lockedTitle,
-  trailing,
-}: {
-  inputId: string
-  label: string
-  addresses: MailAddress[]
-  onChange: (next: MailAddress[]) => void
-  placeholder?: string
-  disabled: boolean
-  autoFocus?: boolean
-  /** A recipient the server resolves. Shown, never edited. */
-  lockedLabel?: string | null
-  lockedTitle?: string
-  trailing?: React.ReactNode
-}) {
-  const { t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
-  const [draft, setDraft] = useState("")
-  const [invalid, setInvalid] = useState(false)
-  const inputRef = useRef<HTMLInputElement | null>(null)
-
-  function commit(value: string, keepLeftover: boolean) {
-    const { valid, leftover } = splitRecipientInput(value)
-    if (valid.length > 0) onChange(dedupeAddresses([...addresses, ...valid]))
-    setDraft(keepLeftover ? leftover.join(", ") : "")
-    setInvalid(keepLeftover && leftover.length > 0)
-  }
-
-  return (
-    <div className="flex min-h-11 items-start gap-2 px-3 py-1.5">
-      <label
-        htmlFor={inputId}
-        className="mt-[7px] w-[54px] shrink-0 cursor-text text-[12px] font-medium text-[var(--md-subtle)]"
-      >
-        {label}
-      </label>
-
-      <div
-        className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 py-1"
-        onMouseDown={(event) => {
-          // Clicking the empty part of the row should land in the input, the way
-          // it does in a native client, without stealing a click from a chip.
-          if (event.target !== event.currentTarget) return
-          event.preventDefault()
-          inputRef.current?.focus()
-        }}
-      >
-        {lockedLabel ? (
-          <span
-            title={lockedTitle}
-            className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-[var(--md-surface-tint)] px-2 text-[12.5px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"
-          >
-            <AiEditing className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.6} aria-hidden="true" />
-            <span className="min-w-0 truncate">{lockedLabel}</span>
-          </span>
-        ) : null}
-
-        <AnimatePresence initial={false}>
-          {addresses.map((address) => (
-            <motion.span
-              key={address.address.toLowerCase()}
-              layout
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={reduceMotion(Boolean(shouldReduceMotion), { type: "spring", duration: 0.3, bounce: 0 })}
-              className="min-w-0 max-w-full"
-            >
-              <RecipientChip
-                address={address}
-                disabled={disabled}
-                onRemove={() => onChange(addresses.filter((item) => item.address !== address.address))}
-              />
-            </motion.span>
-          ))}
-        </AnimatePresence>
-
-        <input
-          id={inputId}
-          ref={inputRef}
-          type="text"
-          inputMode="email"
-          autoComplete="off"
-          spellCheck={false}
-          dir="ltr"
-          data-i18n-skip
-          disabled={disabled}
-          autoFocus={autoFocus}
-          aria-invalid={invalid || undefined}
-          aria-describedby={invalid ? `${inputId}-hint` : undefined}
-          placeholder={addresses.length === 0 && !lockedLabel ? placeholder : undefined}
-          value={draft}
-          className={cn(
-            "h-7 min-w-[140px] flex-1 bg-transparent text-[16px] text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)] disabled:opacity-55 sm:text-[13px]",
-            invalid && "text-[var(--md-red)]",
-          )}
-          onChange={(event) => {
-            const value = event.target.value
-            setInvalid(false)
-            // A separator finishes the address the way it does in a native client.
-            if (/[,;]/.test(value)) commit(value, true)
-            else setDraft(value)
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === "Tab") {
-              if (!draft.trim()) return
-              event.preventDefault()
-              commit(draft, true)
-              return
-            }
-            if (event.key === "Backspace" && draft === "" && addresses.length > 0) {
-              event.preventDefault()
-              onChange(addresses.slice(0, -1))
-            }
-          }}
-          onPaste={(event) => {
-            const pasted = event.clipboardData.getData("text")
-            if (!/[,;\n]/.test(pasted)) return
-            event.preventDefault()
-            commit(`${draft}${draft ? "," : ""}${pasted}`, true)
-          }}
-          onBlur={() => {
-            if (draft.trim()) commit(draft, true)
-          }}
-        />
-      </div>
-
-      {/* Outside the wrapping chip area, so a long recipient list never pushes
-          the Cc and Bcc toggles onto a line of their own. */}
-      {trailing ? <span className="mt-0.5 flex shrink-0 items-center gap-0.5">{trailing}</span> : null}
-
-      {invalid ? (
-        <p id={`${inputId}-hint`} role="alert" className="sr-only">
-          {t("Enter a complete email address.")}
-        </p>
-      ) : null}
-    </div>
-  )
-}
 
 function AttachmentCard({
   attachment,

@@ -98,13 +98,16 @@ export const Reasoning = memo(
 
     // Auto-open when streaming starts (unless explicitly closed)
     useEffect(() => {
+      // Controlled callers own the handoff from reasoning to the answer.
+      if (open !== undefined) return;
       if (isStreaming && !isOpen && !isExplicitlyClosed) {
         setIsOpen(true);
       }
-    }, [isStreaming, isOpen, setIsOpen, isExplicitlyClosed]);
+    }, [isStreaming, isOpen, setIsOpen, isExplicitlyClosed, open]);
 
     // Auto-close when streaming ends (once only, and only if it ever streamed)
     useEffect(() => {
+      if (open !== undefined) return;
       if (
         hasEverStreamedRef.current &&
         !isStreaming &&
@@ -118,7 +121,7 @@ export const Reasoning = memo(
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed]);
+    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed, open]);
 
     const handleOpenChange = useCallback(
       (newOpen: boolean) => {

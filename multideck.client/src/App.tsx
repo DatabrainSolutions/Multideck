@@ -38,6 +38,7 @@ import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 const HomePage = lazy(() => import("@/pages/home-page").then((module) => ({ default: module.HomePage })))
 const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
 const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) => ({ default: module.AuthFlowPage })))
+const AccountOnboardingPage = lazy(() => import("@/pages/account-onboarding-page").then((module) => ({ default: module.AccountOnboardingPage })))
 const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
 const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
@@ -106,6 +107,7 @@ function preloadImage(url: string) {
 }
 
 const validRoutes = new Set([
+  "/onboarding",
   "/",
   "/agent-dexter",
   "/admin/users",
@@ -450,6 +452,22 @@ class WorkspaceErrorBoundary extends Component<{
 
 export default function App() {
   const [route, setRoute] = useState(getRoute)
+  const [onboardingTheme, setOnboardingTheme] = useState<"light" | "dark">("light")
+  useEffect(() => {
+    const previewTheme = (event: Event) => {
+      const mode = (event as CustomEvent<unknown>).detail
+      if (mode === "light" || mode === "dark") setOnboardingTheme(mode)
+    }
+    // Completion is emitted only after the account endpoint confirms it. Clear
+    // the local gate immediately while the refreshed bootstrap catches up.
+    const finishSetup = () => setCurrentUser((user) => user ? { ...user, onboardingRequired: false } : user)
+    window.addEventListener("multideck:onboarding-theme-preview", previewTheme)
+    window.addEventListener("multideck:onboarding-complete", finishSetup)
+    return () => {
+      window.removeEventListener("multideck:onboarding-theme-preview", previewTheme)
+      window.removeEventListener("multideck:onboarding-complete", finishSetup)
+    }
+  }, [])
   const navigationRouteRef = useRef(route)
   navigationRouteRef.current = route
   const [bookingCreation, setBookingCreation] = useState<"booking" | "road" | null>(null)
@@ -473,6 +491,8 @@ export default function App() {
     && !isPublicBookingRoute(route)
     && !isMeetingManageRoute(route)
     && route !== "/auth"
+    && route !== "/onboarding"
+    && !currentUser?.onboardingRequired
     && (authStatus === "authenticated" || isLocalNavigationLab)
 
   const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null, profilePhotoUrl: string | null) => {
@@ -614,6 +634,7 @@ export default function App() {
           const apiProfile = apiSession?.profile ?? null
           const bootstrapMedia = apiSession?.workspace?.profileMedia ?? null
           const nextUser = summarizeAuthUser(session.user, apiProfile)
+          nextUser.onboardingRequired = apiSession?.onboardingRequired ?? nextUser.onboardingRequired
           if (bootstrapMedia && bootstrapMedia.profilePhotoPath === apiProfile?.profilePhoto?.path) {
             nextUser.profilePhotoUrl = bootstrapMedia.profilePhotoUrl
           }
@@ -689,11 +710,17 @@ export default function App() {
       return
     }
 
+    if (authStatus === "authenticated" && currentUser?.onboardingRequired && route !== "/onboarding" && !isPasswordSetupRoute) {
+      window.history.replaceState({}, "", "/onboarding")
+      startTransition(() => setRoute("/onboarding"))
+      return
+    }
+
     if (authStatus === "authenticated" && route === "/auth" && !isPasswordSetupRoute) {
       window.history.replaceState({}, "", takeAuthReturnPath())
       startTransition(() => setRoute(getRoute()))
     }
-  }, [authStatus, isPasswordSetupRoute, route])
+  }, [authStatus, currentUser?.onboardingRequired, isPasswordSetupRoute, route])
 
   useEffect(() => {
     if (authStatus !== "authenticated" || currentUser?.actorType !== "customer") return
@@ -755,7 +782,7 @@ export default function App() {
       defaultTheme="light"
       disableTransitionOnChange
       enableSystem={false}
-      forcedTheme={isExternalSurfaceRoute(route) ? "light" : undefined}
+      forcedTheme={isExternalSurfaceRoute(route) || authMode === "invite" ? "light" : route === "/onboarding" ? onboardingTheme : undefined}
       storageKey={themeStorageKey}
     >
       {isExternalSurfaceRoute(route) ? null : <ThemeProfileSync />}
@@ -797,6 +824,10 @@ export default function App() {
             ) : !isLocalNavigationLab && (authStatus === "unauthenticated" || route === "/auth") ? (
               <Suspense fallback={<RouteFallback fullScreen />}>
                 <AuthFlowPage navigate={navigate} />
+              </Suspense>
+            ) : route === "/onboarding" || currentUser?.onboardingRequired ? (
+              <Suspense fallback={<RouteFallback fullScreen />}>
+                <AccountOnboardingPage navigate={navigate} />
               </Suspense>
             ) : (
               <AppShell route={directBookingCreation ? (route === "/road-control/new" ? "/road-control" : "/bookings") : route} navigate={navigate} currentUser={currentUser}>
