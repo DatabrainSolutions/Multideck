@@ -557,6 +557,7 @@ export function createFinanceDraft(input: FinanceDraftInput) { return post<Finan
 export function updateFinanceDraft(id: string, input: FinanceDraftInput) { return put<FinanceDocument>(`/documents/${encodeURIComponent(id)}/draft`, input) }
 export function reopenFinanceDocumentDraft(id: string, reason: string) { return post<FinanceDocument>(`/documents/${encodeURIComponent(id)}/reopen-draft`, { reason }) }
 export function retryFinanceDocumentPosting(id: string) { return post<{ id: string; status: string; provider: AccountingProviderCode; externalObjectType: string; externalId: string; externalNumber: string | null; externalUrl: string | null }>(`/documents/${encodeURIComponent(id)}/retry-posting`) }
+export function correctFinanceDocumentBillingParty(id: string, partyOrgId: string, reason: string) { return post<{ sourceDocumentId: string; reversalDocumentId: string; replacementDocumentId: string; replacementNumber: string | null }>(`/documents/${encodeURIComponent(id)}/correct-billing-party`, { partyOrgId, reason }) }
 export function createFinanceCashDraft(input: FinanceCashInput) { return post<FinanceCashTransaction>("/cash/draft", input) }
 export function requestFinanceDocumentReview(id: string, reason?: string) { return post<FinanceDocument>(`/documents/${encodeURIComponent(id)}/request-review`, { reason }) }
 export function approveFinanceDocument(id: string, reason?: string) { return post<FinanceDocument>(`/documents/${encodeURIComponent(id)}/approve`, { reason }) }

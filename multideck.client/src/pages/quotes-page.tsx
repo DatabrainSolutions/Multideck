@@ -236,8 +236,8 @@ function LockedFieldTooltip({ children }: { children: ReactNode }) {
           <HugeiconsIcon icon={LockPasswordSolidRoundedIcon} className="size-3.5" aria-hidden="true" />
         </span>
         <span className="min-w-0">
-          <span className="block text-[11.5px] font-medium leading-4">{t("Locked to payer account")}</span>
-          <span className="mt-0.5 block text-[10.5px] leading-4 opacity-75">{t("This value comes from the selected payer's account record. Update it there to keep every quote consistent.")}</span>
+          <span className="block text-[11.5px] font-medium leading-4">{t("Locked to customer account")}</span>
+          <span className="mt-0.5 block text-[10.5px] leading-4 opacity-75">{t("This value comes from the selected customer's account record. Update it there to keep every quote consistent.")}</span>
         </span>
       </TooltipContent>
     </Tooltip>
@@ -374,6 +374,7 @@ type QuoteRecord = {
   shipperReference?: string
   consigneeReference?: string
   agentReference?: string
+  leadSourceParty?: "customer" | "agent"
   carrierReference?: string
   docsStatus?: string
   workflow?: string
@@ -3957,10 +3958,7 @@ function QuoteDetailsPanelV2({
   const organisationsById = useMemo(() => new Map(organisations.map((organisation) => [organisation.id, organisation])), [organisations])
   const customerOrganisation = organisationsById.get(quote.customerId ?? "")
     ?? organisations.find((option) => option.name.trim().toLocaleLowerCase() === quote.customer.trim().toLocaleLowerCase())
-  const payerOrganisation = organisationsById.get(quote.payerOrgId ?? "")
-    ?? organisations.find((option) => option.name.trim().toLocaleLowerCase() === quote.payerName?.trim().toLocaleLowerCase())
   const customerSourceContact = customerOrganisation?.contacts?.find((contact) => contact.isOperational)
-  const payerSourceContact = payerOrganisation?.contacts?.find((contact) => contact.isOperational)
   const customerAutoPopulationDescription = customerOrganisation
     ? `Filled from ${customerOrganisation.name}. Edit this field to override it for this quote.`
     : undefined
@@ -3983,11 +3981,6 @@ function QuoteDetailsPanelV2({
   }, [])
   const customerAddresses = customerOrganisation?.addresses ?? []
   const customerOperationalContacts = (customerOrganisation?.contacts ?? []).filter((contact) => contact.isOperational)
-  const payerAddresses = payerOrganisation?.addresses ?? []
-  const payerOperationalContacts = (payerOrganisation?.contacts ?? []).filter((contact) => contact.isOperational)
-  const payerAutoPopulationDescription = payerOrganisation
-    ? `Filled from ${payerOrganisation.name}. Its account terms govern this quote.`
-    : undefined
   const supplierOptions = useMemo(() => supplierOptionsFromQuote(quote), [quote.supplierOptionsJson, quote.supplierId, quote.supplier, quote.carrierId, quote.carrier])
   type OrganisationRole = "customer" | "payer" | "supplier" | "carrier" | "agent" | "shipper" | "consignee"
   const organisationRecentOptionLimit = 10
@@ -4320,7 +4313,11 @@ function QuoteDetailsPanelV2({
   function selectAddress(role: "customer" | "payer" | "shipper" | "consignee" | "agent", addressId: string) {
     const address = organisationForRole(role)?.addresses.find((item) => item.id === addressId)
     if (!address) return
-    onQuoteChange(role === "customer" ? "customerAddress" : role === "payer" ? "payerAddress" : role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", address.address)
+    if (role === "customer") {
+      onQuotePatch({ customerAddress: address.address, payerAddress: address.address })
+      return
+    }
+    onQuoteChange(role === "payer" ? "payerAddress" : role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", address.address)
   }
 
   function selectContact(role: "customer" | "payer" | "shipper" | "consignee" | "agent", contactId: string) {
@@ -4331,6 +4328,8 @@ function QuoteDetailsPanelV2({
         contactId: contact.id,
         customerContact: contact.name,
         customerEmail: contact.email ?? "",
+        payerContact: contact.name,
+        payerEmail: contact.email ?? "",
       })
       return
     }
@@ -4361,7 +4360,6 @@ function QuoteDetailsPanelV2({
     const address = organisation.addresses?.[0]?.address ?? ""
     const contact = operationalContactsForOrganisation(organisation.id)[0]
     if (role === "customer") {
-      const useCustomerAsPayer = !quote.payerOrgId || quote.payerOrgId === quote.customerId || quote.customerId !== organisation.id
       const patch: Partial<QuoteRecord> = {
         customerId: organisation.id,
         clientCode: organisation.code,
@@ -4370,21 +4368,18 @@ function QuoteDetailsPanelV2({
         contactId: contact?.id ?? "",
         customerContact: contact?.name ?? "",
         customerEmail: contact?.email ?? "",
-        ...(useCustomerAsPayer ? {
-          payerOrgId: organisation.id,
-          payerCode: organisation.code,
-          payerName: organisation.name,
-          payerAddress: address,
-          payerContact: contact?.name ?? "",
-          payerEmail: contact?.email ?? "",
-        } : {}),
-        ...(useCustomerAsPayer ? {
-          customerTermsSource: organisation.name,
-          terms: organisation.quoteTerms?.terms ?? "",
-          subjectToTerms: organisation.quoteTerms?.subjectTo ?? "",
-          customerNotes: organisation.quoteTerms?.notes ?? "",
-          deadline: organisation.quoteTerms?.deadline ?? "",
-        } : {}),
+        ...(organisation.currencyCode ? { currency: organisation.currencyCode as QuoteCurrency } : {}),
+        payerOrgId: organisation.id,
+        payerCode: organisation.code,
+        payerName: organisation.name,
+        payerAddress: address,
+        payerContact: contact?.name ?? "",
+        payerEmail: contact?.email ?? "",
+        customerTermsSource: organisation.name,
+        terms: organisation.quoteTerms?.terms ?? "",
+        subjectToTerms: organisation.quoteTerms?.subjectTo ?? "",
+        customerNotes: organisation.quoteTerms?.notes ?? "",
+        deadline: organisation.quoteTerms?.deadline ?? "",
       }
       if (quote.customerId && quote.customerId !== organisation.id && onCustomerOrganisationChange) {
         onCustomerOrganisationChange({ organisation, patch })
@@ -4505,7 +4500,7 @@ function QuoteDetailsPanelV2({
     patchSupplier(supplierId, { carriers: supplier.carriers.filter((item) => item.id !== carrierId) })
   }
 
-  function roleCard(role: "shipper" | "consignee" | "agent") {
+  function roleCard(role: "shipper" | "consignee" | "agent", headerAction?: ReactNode) {
     const title = role === "shipper" ? "Shipper" : role === "consignee" ? "Consignee" : "Overseas Agent"
     const roleSearchLabel = role === "agent" ? "overseas agents" : `${role}s`
     const name = role === "shipper" ? quote.shipperName ?? "" : role === "consignee" ? quote.consigneeName ?? "" : quote.agentName ?? ""
@@ -4535,7 +4530,7 @@ function QuoteDetailsPanelV2({
         title={title}
         meta={role === "consignee" ? (selectedId ? "Linked" : "Manual entry") : undefined}
         className="[&>header]:h-8 [&>header]:overflow-hidden"
-        action={(
+        action={headerAction ?? (
           <Button type="button" variant="ghost" size="sm" disabled={!editable || !quote.customer} onClick={() => useCustomerForParty(role)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]">
             <Copy className="size-3" aria-hidden="true" />{t("Use customer")}
           </Button>
@@ -4585,6 +4580,18 @@ function QuoteDetailsPanelV2({
     && !incotermAddressFallback?.trim(),
   )
   const incotermNamedPlaceLabel = incotermDefinition?.namedLocationLabel ?? "Named place"
+  const leadSourceParty = quote.leadSourceParty === "agent" ? "agent" : "customer"
+  const leadSourceToggle = (
+    <SegmentedControl
+      options={["customer", "agent"] as const}
+      value={leadSourceParty}
+      onChange={(value) => onQuoteChange("leadSourceParty", value)}
+      ariaLabel={t("RFQ received from")}
+      renderOption={(value) => t(value === "customer" ? "Customer" : "Overseas agent")}
+      disabled={!editable}
+      className="h-7 shrink-0 p-0.5 [&>button]:h-6 [&>button]:rounded-[calc(var(--md-radius-lg)-2px)] [&>button]:px-2 [&>button]:text-[10.5px]"
+    />
+  )
   return (
     <div dir={direction} data-quote-readonly={!editable || undefined} className={cn(
       "@container/quote-details grid items-start gap-2",
@@ -4613,19 +4620,18 @@ function QuoteDetailsPanelV2({
         </div>
       </CompactSectionShell>
 
-      <div className="grid items-stretch gap-2 @min-[40rem]/quote-details:grid-cols-2 @min-[80rem]/quote-details:grid-cols-4">
-        <CompactSectionShell title="Customer data" className="[&>header]:h-8 [&>header]:overflow-hidden">
+      <div className="grid items-stretch gap-2 @min-[40rem]/quote-details:grid-cols-2 @min-[72rem]/quote-details:grid-cols-3">
+        {leadSourceParty === "customer" ? <CompactSectionShell title="Customer / Billing" action={leadSourceToggle} className="[&>header]:h-8 [&>header]:overflow-hidden">
           <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
-            <CompactCombobox label="Customer" value={quote.customer} options={organisationDirectories.customer.options} clearable={!quote.customerId} onValueChange={(value) => { if (quote.customerId && customerOrganisation?.name !== value) return; onQuoteChange("customer", value); if (customerOrganisation && customerOrganisation.name !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-12" />
-            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationDirectories.customer.codes} clearable={!quote.customerId} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; if (quote.customerId && customerOrganisation?.code !== value) return; onQuoteChange("clientCode", value); if (customerOrganisation && customerOrganisation.code !== value) onQuoteChange("customerId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-7 [&_input]:tracking-tight" />
+            <CompactCombobox label="Customer" value={quote.customer} options={organisationDirectories.customer.options} clearable={!quote.customerId} onValueChange={(value) => { if (quote.customerId && customerOrganisation?.name !== value) return; const clearOrganisation = Boolean(customerOrganisation && customerOrganisation.name !== value); onQuotePatch({ customer: value, payerName: value, ...(clearOrganisation ? { customerId: "", payerOrgId: "" } : {}) }) }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-12" />
+            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationDirectories.customer.codes} clearable={!quote.customerId} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; if (quote.customerId && customerOrganisation?.code !== value) return; const clearOrganisation = Boolean(customerOrganisation && customerOrganisation.code !== value); onQuotePatch({ clientCode: value, payerCode: value, ...(clearOrganisation ? { customerId: "", payerOrgId: "" } : {}) }) }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-7 [&_input]:tracking-tight" />
             <QuoteCompactInput label="Customer PO" value={quote.customerPO ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("customerPO", value)} />
-            <CompactCombobox label="Address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerAutoPopulationDescription} options={customerAddresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress("customer", option.id)} onValueChange={(value) => onQuoteChange("customerAddress", value)} />
+            <CompactCombobox label="Billing address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerAutoPopulationDescription} options={customerAddresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress("customer", option.id)} onValueChange={(value) => onQuotePatch({ customerAddress: value, payerAddress: value })} />
             <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
-            <CompactCombobox label="Operational contact" value={quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => { onQuoteChange("customerContact", value); if (value !== quote.customerContact) onQuoteChange("contactId", "") }} />
-            <QuoteCompactInput label="Email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuoteChange("customerEmail", value)} />
+            <CompactCombobox label="Billing contact" value={quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => onQuotePatch({ customerContact: value, payerContact: value, ...(value !== quote.customerContact ? { contactId: "" } : {}) })} />
+            <QuoteCompactInput label="Billing email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuotePatch({ customerEmail: value, payerEmail: value })} />
           </div>
-        </CompactSectionShell>
-        {roleCard("agent")}
+        </CompactSectionShell> : roleCard("agent", leadSourceToggle)}
         {roleCard("shipper")}
         {roleCard("consignee")}
       </div>
@@ -4937,33 +4943,14 @@ function QuoteDetailsPanelV2({
           </div>
       </CompactSectionShell>
 
-      <div className="grid gap-2 xl:grid-cols-[minmax(20rem,0.82fr)_minmax(0,1.18fr)] xl:items-start">
-        <CompactSectionShell
-          title="Bill to / payer"
-          meta="This account supplies the quote terms"
-          action={(
-            <Button type="button" variant="ghost" size="sm" disabled={!editable || !quote.customer} onClick={() => useCustomerForParty("payer")} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]">
-              <Copy className="size-3" aria-hidden="true" />{t("Use customer")}
-            </Button>
-          )}
-        >
-          <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
-            <CompactCombobox label="Payer" value={quote.payerName ?? quote.customer} options={organisationDirectories.payer.options} allowCustom={false} onValueChange={(value) => { if (payerOrganisation?.name !== value) onQuoteChange("payerOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation("payer", option.id)} placeholder="Search customer accounts" allLabel="All customer accounts" emptyLabel="No matching payer account" disabled={!editable} width="full" className="col-span-12" />
-            <CompactCombobox label="Account code" value={quote.payerCode ?? quote.clientCode ?? ""} options={organisationDirectories.payer.codes} allowCustom={false} autoPopulated={matchesAutoPopulation(quote.payerCode, payerOrganisation?.code)} autoPopulationDescription={payerAutoPopulationDescription} onValueChange={(value) => { selectOrganisationByCode("payer", value) }} onOptionSelect={(option) => option.id && selectOrganisation("payer", option.id)} placeholder="Search account codes" allLabel="All payer account codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-5 [&_input]:tracking-tight" />
-            <CompactCombobox label="Billing contact" value={quote.payerContact ?? quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.payerContact, payerSourceContact?.name)} autoPopulationDescription={payerAutoPopulationDescription} options={payerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("payer", option.id)} onValueChange={(value) => onQuoteChange("payerContact", value)} />
-            <CompactCombobox label="Billing address" value={quote.payerAddress ?? quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.payerAddress, payerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={payerAutoPopulationDescription} options={payerAddresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress("payer", option.id)} onValueChange={(value) => onQuoteChange("payerAddress", value)} />
-            <QuoteCompactInput label="Billing email" value={quote.payerEmail ?? quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.payerEmail, payerSourceContact?.email)} autoPopulationDescription={payerAutoPopulationDescription} onChange={(value) => onQuoteChange("payerEmail", value)} />
-          </div>
-        </CompactSectionShell>
-        <CompactSectionShell title="Customer terms" meta={quote.customerTermsSource ? `${t("Inherited from")} ${quote.customerTermsSource}` : "Stored on the payer account"} contentClassName="bg-[var(--md-surface-soft)]" action={<span className="flex items-center gap-1 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 py-1 text-[10.5px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]"><HugeiconsIcon icon={LockPasswordSolidRoundedIcon} className="size-3" aria-hidden="true" />{t("Locked to payer account")}</span>}>
+      <CompactSectionShell title="Customer terms" meta={quote.customerTermsSource ? `${t("Inherited from")} ${quote.customerTermsSource}` : "Stored on the customer account"} contentClassName="bg-[var(--md-surface-soft)]" action={<span className="flex items-center gap-1 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 py-1 text-[10.5px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]"><HugeiconsIcon icon={LockPasswordSolidRoundedIcon} className="size-3" aria-hidden="true" />{t("Locked to customer account")}</span>}>
           <div className="grid gap-2 md:grid-cols-2">
             <LockedQuoteTextarea label="Terms and conditions" value={quote.terms ?? ""} />
             <LockedQuoteTextarea label="Subject to rate / space" value={quote.subjectToTerms ?? ""} />
             <LockedQuoteTextarea label="Customer notes" value={quote.customerNotes ?? ""} />
             <QuoteCompactDatePicker label="Response deadline" value={quote.deadline ?? ""} disabled locked onChange={() => undefined} />
           </div>
-        </CompactSectionShell>
-      </div>
+      </CompactSectionShell>
 
       <Dialog open={pendingOverallMode !== null} onOpenChange={(open) => { if (!open) setPendingOverallMode(null) }}>
         <DialogContent onOpenAutoFocus={(event) => { event.preventDefault(); overallModeCancelRef.current?.focus() }} onCloseAutoFocus={(event) => { event.preventDefault(); (overallModeTriggerRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? overallModeTriggerRef.current)?.focus() }}>
@@ -5351,6 +5338,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     shipperReference: fact("shipperReference"),
     consigneeReference: fact("consigneeReference"),
     agentReference: fact("agentReference"),
+    leadSourceParty: fact("leadSourceParty") === "agent" ? "agent" : "customer",
     carrierReference: fact("carrierReference"),
     docsStatus: fact("docsStatus"),
     workflow: fact("workflow") || presentation.status,
@@ -5485,7 +5473,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     profit: workspace.totals.profit,
     cost: workspace.totals.cost,
     revenue: workspace.totals.sell,
-    currency: (record.currency || "") as QuoteCurrency | "",
+    currency: (record.currency || customer?.currencyCode || "") as QuoteCurrency | "",
     jobRoes: Array.isArray(facts.jobRoes) ? facts.jobRoes as JobRoe[] : [],
   }
 }
@@ -5735,6 +5723,7 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       shipperReference: quote.shipperReference,
       consigneeReference: quote.consigneeReference,
       agentReference: quote.agentReference,
+      leadSourceParty: quote.leadSourceParty,
       carrierReference: quote.carrierReference,
       docsStatus: quote.docsStatus,
       workflow: quote.workflow,

@@ -57,6 +57,7 @@ export type QuoteRelatedPartyRecommendation = {
 }
 export type QuoteOrganisationOption = QuoteSupplierOption & {
   code: string
+  currencyCode?: string | null
   types: string[]
   addresses: QuoteOrganisationAddress[]
   contacts: QuoteOrganisationContact[]

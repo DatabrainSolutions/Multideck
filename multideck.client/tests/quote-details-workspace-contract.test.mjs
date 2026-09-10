@@ -29,12 +29,16 @@ function expectRoundTrip(field, loaded = field, saved = field) {
 
 test("quote details reorganise references around their owning parties and remove obsolete controls", () => {
   assert.ok(detailsStart > -1 && detailsEnd > detailsStart, "The editable quote details workspace must remain present.")
-  assert.match(details, /title="Customer(?: data)?"[\s\S]*label="Customer ref"/u)
+  assert.match(details, /title="Customer \/ Billing"[\s\S]*label="Customer ref"/u)
   assert.match(details, /const reference = role === "shipper" \? quote\.shipperReference[\s\S]*quote\.consigneeReference[\s\S]*quote\.agentReference/u)
   assert.match(details, /label=\{`\$\{title\} ref`\}/u)
-  for (const role of ["shipper", "consignee", "agent"]) {
+  for (const role of ["shipper", "consignee"]) {
     assert.ok(details.includes(`roleCard("${role}")`), `${role} party must remain available.`)
   }
+  assert.match(details, /leadSourceParty === "customer" \? <CompactSectionShell title="Customer \/ Billing" action=\{leadSourceToggle\}/u)
+  assert.match(details, /roleCard\("agent", leadSourceToggle\)/u)
+  assert.match(details, /ariaLabel=\{t\("RFQ received from"\)\}/u)
+  assert.doesNotMatch(details, /title="Bill to \/ payer"/u)
   assert.match(details, /supplier\.carriers\.map[\s\S]*label="Carrier ref"/u)
   assert.doesNotMatch(details, /label="Hold reason"/u)
   assert.doesNotMatch(details, /label="Docs"/u)
@@ -42,7 +46,7 @@ test("quote details reorganise references around their owning parties and remove
   assert.match(page, /aria-label=\{`\$\{t\("Sales representative"\)\}[\s\S]{0,1000}<QuotePersonAvatar/u)
   assert.doesNotMatch(details, /<CargoWiseSelectField label="Sales rep"/u)
 
-  const jobData = details.slice(details.indexOf('title="Job data"'), details.indexOf('title="Customer data"'))
+  const jobData = details.slice(details.indexOf('title="Job data"'), details.indexOf('title="Customer / Billing"'))
   assert.match(jobData, /label="Mode"/u)
   assert.match(jobData, /label="Shipment type"/u)
   assert.match(jobData, /label="HBL mode"/u)
@@ -69,10 +73,10 @@ test("party selection keeps related and recent organisations above a hairline wi
   assert.match(details, /!organisation \|\| !organisationDirectories\[role\]\.ids\.has\(organisation\.id\)/u)
   assert.match(details, /organisationDirectories\.agent\.options/u)
   assert.match(details, /option\.value\.trim\(\)\.toLocaleLowerCase\(\) === normalizedName/u)
-  assert.match(details, /@min-\[40rem\]\/quote-details:grid-cols-2 @min-\[80rem\]\/quote-details:grid-cols-4/u)
+  assert.match(details, /@min-\[40rem\]\/quote-details:grid-cols-2 @min-\[72rem\]\/quote-details:grid-cols-3/u)
   assert.match(details, /grid-cols-12 gap-x-2 gap-y-1\.5/u)
-  assert.match(details, /label="Address"[\s\S]{0,220}className="col-span-12"/u)
-  assert.match(details, /label="Email"[\s\S]{0,220}className="col-span-12"/u)
+  assert.match(details, /label="Billing address"[\s\S]{0,220}className="col-span-12"/u)
+  assert.match(details, /label="Billing email"[\s\S]{0,220}className="col-span-12"/u)
 })
 
 test("company quote defaults are stored on the organisation and copied into a selected quote", () => {
@@ -128,7 +132,7 @@ test("route inputs derive UN/LOCODE while transit and repeat frequency use linke
   assert.match(fields, /aria-label=\{t\(`Clear \$\{label\}`\)\}/u)
 
   assert.doesNotMatch(details, /<IncotermField\b/u)
-  assert.match(details, /QuoteCompactInput label="Email" value=\{quote\.customerEmail[^\n]+onChange=\{\(value\) => onQuoteChange\("customerEmail", value\)\}/u)
+  assert.match(details, /QuoteCompactInput label="Billing email" value=\{quote\.customerEmail[^\n]+onChange=\{\(value\) => onQuotePatch\(\{ customerEmail: value, payerEmail: value \}\)\}/u)
 
   assert.match(details, /<NumberUnitField[\s\S]{0,300}(?:transitDays|Transit time)/u)
   assert.match(details, /<RecurrenceBuilder/u)
@@ -312,11 +316,19 @@ test("goods, cargo characteristics, hazardous details and customs agents remain 
   assert.match(details, /Destination customs agent/u)
 })
 
-test("customer terms are presented as inherited payer account data", () => {
+test("customer and billing stay unified while terms inherit from the customer account", () => {
   assert.match(details, /`\$\{t\("Inherited from"\)\} \$\{quote\.customerTermsSource\}`/u)
   assert.match(details, /customerTermsSource/u)
-  assert.match(details, /Stored on the payer account/u)
-  assert.match(details, /Locked to payer account/u)
+  assert.match(details, /Stored on the customer account/u)
+  assert.match(details, /Locked to customer account/u)
+  assert.match(details, /payerOrgId: organisation\.id/u)
+  assert.match(details, /payerName: organisation\.name/u)
+  assert.match(details, /organisation\.currencyCode \? \{ currency: organisation\.currencyCode as QuoteCurrency \}/u)
+  assert.match(page, /currency: \(record\.currency \|\| customer\?\.currencyCode \|\| ""\) as QuoteCurrency/u)
+  assert.match(page, /leadSourceParty: fact\("leadSourceParty"\) === "agent" \? "agent" : "customer"/u)
+  assert.match(page, /leadSourceParty: quote\.leadSourceParty/u)
+  assert.match(details, /customerAddress: address\.address, payerAddress: address\.address/u)
+  assert.match(details, /customerEmail: value, payerEmail: value/u)
   assert.ok((details.match(/<LockedQuoteTextarea\b/gu) ?? []).length >= 3, "Inherited terms and notes must use the locked field treatment.")
   assert.match(page, /function LockedQuoteTextarea/u)
   assert.match(page, /disabled[\s\S]{0,300}md-field-locked-line/u)

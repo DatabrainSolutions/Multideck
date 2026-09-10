@@ -1512,6 +1512,32 @@ async function retryDocumentPosting(admin: any, current: any, id: string) {
   return await processQueue(admin, current, queue.FINIntQ_ID)
 }
 
+type BillingPartyCorrectionInput = { partyOrgId?: string; reason?: string }
+
+async function correctDocumentBillingParty(admin: any, current: any, id: string, input: BillingPartyCorrectionInput) {
+  const document = await scopedDocument(admin, current, id)
+  await requirePermission(admin, current.User_ID, documentPermission(document.FINDoc_TypeCode))
+  await requirePermission(admin, current.User_ID, "Finance.ReviewAndPost")
+  const partyOrgId = clean(input.partyOrgId, 80)
+  const reason = clean(input.reason, 500)
+  if (!isUuid(partyOrgId)) throw new HttpError(400, "Choose the new billing party.")
+  if (!reason) throw new HttpError(400, "Record why the billing party is changing.")
+  const { data, error } = await admin.rpc("multideck_finance_correct_document_billing_party", {
+    p_company_id: current.Company_ID,
+    p_user_id: current.User_ID,
+    p_document_id: id,
+    p_new_party_org_id: partyOrgId,
+    p_reason: reason,
+  })
+  rpcFailure(error, "Could not correct the document billing party.")
+  for (const correctedId of [data?.reversalDocumentId, data?.replacementDocumentId]) {
+    if (!correctedId) continue
+    const { data: queue } = await admin.from("FIN_IntegrationQueue").select("FINIntQ_ID").eq("FINIntQ_LocalTable", "FIN_Documents").eq("FINIntQ_LocalID", correctedId).eq("FINIntQ_StatusCode", "queued").order("FINIntQ_CreatedAt", { ascending: false }).limit(1).maybeSingle()
+    if (queue?.FINIntQ_ID) await processQueue(admin, current, queue.FINIntQ_ID, true).catch(() => null)
+  }
+  return data
+}
+
 async function createCashDraft(admin: any, current: any, input: CashInput) {
   await requirePermission(admin, current.User_ID, cashPermission(input.type))
   const tenantEntity = await tenantLegalEntity(admin, current)
@@ -1918,6 +1944,7 @@ Deno.serve(async (request) => {
     if (request.method === "PUT" && parts[0] === "documents" && parts[2] === "draft") return json(request, await updateDocumentDraft(admin, current, parts[1], await body<DraftInput>(request)))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "reopen-draft") return json(request, await reopenDocumentDraft(admin, current, parts[1], await optionalReason(request)))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "retry-posting") return json(request, await retryDocumentPosting(admin, current, parts[1]))
+    if (request.method === "POST" && parts[0] === "documents" && parts[2] === "correct-billing-party") return json(request, await correctDocumentBillingParty(admin, current, parts[1], await body<BillingPartyCorrectionInput>(request)))
     if (request.method === "POST" && parts[0] === "cash" && parts[1] === "draft") return json(request, await createCashDraft(admin, current, await body<CashInput>(request)), 201)
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "provider-preflight") return json(request, await preflightDocument(admin, current, parts[1]))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "request-review") return json(request, await transitionDocument(admin, current, parts[1], "request_review", await optionalReason(request)))
