@@ -1,3 +1,4 @@
+import taskAgentSource from "@/components/multideck/task-agent-components.tsx?raw"
 import bookingCustomerPanelSource from "@/components/multideck/booking-customer-panel.tsx?raw"
 import toggleGroupSource from "@/components/ui/toggle-group.tsx?raw"
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
@@ -353,9 +354,25 @@ export const galleryComponents = [
     category: "Feedback",
     description: "The single compact semantic pill treatment for workflow statuses and descriptive attributes across Multideck.",
     details: "Every status and attribute pill uses the established filled operator-table palette and footprint, whether it appears in a table, list, header, inspector, or history view. Optional icons may reinforce meaning, but the component never adds a competing dot or outlined treatment.",
-    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Tasks", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn(filledPillClass, toneClass[tone], className)}\n    >\n      {indicator !== false ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
+  },
+  {
+    id: "task-agent-stack",
+    name: "Task agents", category: "AI", description: "Three quiet rows for working agents and new results, with a route to all delegated tasks.",
+    details: "Use above the support action in the app sidebar. Names and icons belong to saved assignments. Results remain visible until read. Reduced motion removes movement; status always has a text label.",
+    foundOn: [{label:"App sidebar",route:"/"},{label:"Tasks",route:"/to-do?view=dexter"},{label:"Agent conversation",route:"/agent-dexter"}],
+    componentCode: taskAgentSource,
+    usageCode: `<TaskAgentStack agents={agents} onOpen={agent => navigate(taskAgentUrl(agent))} onViewAll={() => navigate('/to-do?view=dexter')} />`,
+  },
+  {
+    id: "task-agent-controls",
+    name: "Task agent controls", category: "AI", description: "Clear progress with stop, retry and one-off scheduling controls.",
+    details: "Use beside a delegated task or in its saved conversation. A failed update keeps the task and entered time available. The gallery uses a local preview callback; product callers use the owner-authorised task service.",
+    foundOn: [{label:"Tasks",route:"/to-do?view=dexter"},{label:"Agent conversation",route:"/agent-dexter"}],
+    componentCode: taskAgentSource,
+    usageCode: `<TaskAgentControls agent={agent} />`,
   },
   {
     id: "todo-completion-control",
@@ -363,7 +380,7 @@ export const galleryComponents = [
     category: "Controls",
     description: "A personal-task checkbox with a tactile circle pop and a trimmed SVG tick.",
     details: "Use for completing or reopening To Do tasks. The footprint stays stable through optimistic saves, the tick draws only after direct input, and reduced-motion users receive the final state immediately.",
-    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-completion-control" }],
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-completion-control" }],
     componentCode: `export function TodoCompletionControl({ checked, busy, label, onChange }) {\n  const reduce = useReducedMotion()\n  return (\n    <button aria-label={label} aria-pressed={checked} aria-busy={busy || undefined} onClick={() => onChange(!checked)}>\n      <motion.svg viewBox="0 0 24 24" animate={reduce ? undefined : { scale: checked ? [1, 0.88, 1.08, 1] : 1 }}>\n        <motion.circle cx="12" cy="12" r="9.25" animate={{ fill: checked ? "var(--md-accent)" : "transparent" }} />\n        <motion.path d="M7.8 12.2 10.6 15l5.8-6.2" animate={{ pathLength: checked ? 1 : 0, opacity: checked ? 1 : 0 }} />\n      </motion.svg>\n    </button>\n  )\n}`,
     usageCode: `<TodoCompletionControl\n  checked={task.status === "completed"}\n  busy={saving}\n  label={task.status === "completed" ? "Reopen task" : "Mark task complete"}\n  onChange={(checked) => updateTask({ status: checked ? "completed" : "open" })}\n/>`,
   },
@@ -373,7 +390,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "The table-pill priority language for Low, Medium, High, and Urgent personal tasks.",
     details: "Use only when an operator assigns a priority. Colour and a directional icon work together, so the priority remains understandable without relying on colour alone.",
-    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-pill" }],
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-pill" }],
     componentCode: `export function TodoPriorityPill({ priority }) {\n  const { label, tone, Icon } = priorityPresentation[priority]\n  return <StatusPill kind="status" tone={tone} indicator={<Icon aria-hidden="true" />}>{label}</StatusPill>\n}`,
     usageCode: `{task.priority ? <TodoPriorityPill priority={task.priority} /> : null}`,
   },
@@ -385,7 +402,7 @@ export const galleryComponents = [
     details: "Use inside the Dexter Add to To Do action. The arrow yields to a compact progress ring during the real save, then the tick draws after confirmation. Only progress rotation is linear, and reduced motion switches states instantly.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=todo-action-state-icon" }],
     componentCode: `export function TodoActionStateIcon({ state }) {\n  return (\n    <motion.svg viewBox="0 0 24 24">\n      <motion.g animate={{ opacity: state === "idle" ? 1 : 0 }}><path d="M5 12h13M13 7l5 5-5 5" /></motion.g>\n      <motion.circle animate={{ opacity: state === "loading" ? 1 : 0 }} />\n      <motion.path d="M6.8 12.2 10.4 15.7 17.5 8.3" animate={{ pathLength: state === "success" ? 1 : 0 }} />\n    </motion.svg>\n  )\n}`,
-    usageCode: `<button disabled={state !== "idle"}>\n  <span>Add to To Do list</span>\n  <TodoActionStateIcon state={state} />\n</button>`,
+    usageCode: `<button disabled={state !== "idle"}>\n  <span>Add to Tasks</span>\n  <TodoActionStateIcon state={state} />\n</button>`,
   },
   {
     id: "todo-priority-picker",
@@ -393,7 +410,7 @@ export const galleryComponents = [
     category: "Controls",
     description: "An icon-led priority selector for assigning task urgency without making every task feel urgent.",
     details: "Use for task creation and editing. Each priority has a distinct icon and semantic colour; the menu keeps the standard Multideck surface and short entrance motion, with an explicit No priority state.",
-    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-picker" }],
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-picker" }],
     componentCode: `export function TodoPriorityPicker({ value, onValueChange, ariaLabel }) {\n  return (\n    <Select value={value || "none"} onValueChange={(next) => onValueChange(next === "none" ? "" : next)}>\n      <SelectTrigger aria-label={ariaLabel}><SelectValue /></SelectTrigger>\n      <SelectContent>{priorityOptions.map((option) => <SelectItem value={option.value}><PriorityOption {...option} /></SelectItem>)}</SelectContent>\n    </Select>\n  )\n}`,
     usageCode: `<TodoPriorityPicker value={priority} ariaLabel="Priority" onValueChange={setPriority} />`,
   },
@@ -2632,7 +2649,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Phone Call Suggested Actions",
     category: "CRM",
     description: "Editable, reviewable actions inferred from a call before any task or CRM record changes.",
-    details: "Use for specific next steps such as adding a revised quote request to the To Do list or linking a call to a reviewed lead candidate. The operator can edit, approve, or dismiss each suggestion; arbitrary lead IDs are never accepted and generation is never treated as approval.",
+    details: "Use for specific next steps such as adding a revised quote request to the Tasks or linking a call to a reviewed lead candidate. The operator can edit, approve, or dismiss each suggestion; arbitrary lead IDs are never accepted and generation is never treated as approval.",
     foundOn: [{ label: "Phone call detail", route: "/crm/phone-calls/preview" }, { label: "Components", route: "/components?component=phone-call-suggested-actions" }],
     componentCode: `export function PhoneCallSuggestedActions({ actions, leadCandidates, onReview }) {
   const safeLeads = leadCandidates.filter((candidate) => candidate.recordType === "lead")

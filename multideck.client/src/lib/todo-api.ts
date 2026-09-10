@@ -121,7 +121,7 @@ function apiError(error: { message?: string } | null, fallback: string) {
 }
 
 function client() {
-  if (!supabase) throw new TodoApiError("The To Do list is not connected to this workspace.")
+  if (!supabase) throw new TodoApiError("The Tasks is not connected to this workspace.")
   return supabase
 }
 
@@ -129,7 +129,7 @@ export async function listTodoTasks(scheduledDate: string, signal?: AbortSignal)
   let request = client().rpc("multideck_todo_list", { p_scheduled_date: scheduledDate })
   if (signal) request = request.abortSignal(signal)
   const { data, error } = await request
-  if (error) throw apiError(error, "Your To Do list could not be loaded.")
+  if (error) throw apiError(error, "Your Tasks could not be loaded.")
   return (Array.isArray(data) ? data : []).map(normaliseTask)
 }
 

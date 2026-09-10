@@ -1,3 +1,5 @@
+import { TaskAgentStack, TaskAgentControls } from "@/components/multideck/task-agent-components"
+import type { TaskAgent } from "@/lib/task-agents"
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
 import dexterRecordTableSource from "@/components/multideck/dexter-record-table.tsx?raw"
 import dexterComponentsSource from "@/components/multideck/agent-dexter-components.tsx?raw"
@@ -349,7 +351,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["task-agent-stack", "task-agent-controls", "dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Home",
@@ -2330,6 +2332,14 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "todo-priority-picker" ? (
         <div className="flex w-full max-w-[520px] items-center justify-center rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]"><TodoPriorityPicker value="high" ariaLabel="Priority" onValueChange={() => undefined} /></div>
       ) : null}
+
+      {id === "task-agent-controls" ? <div className="w-full max-w-[480px] p-4"><TaskAgentControls agent={{id:'preview-controls',task_id:'preview-task',conversation_id:'preview-conversation',title:'Prepare Tuesday’s brief',name:'Harper',icon:1,status:'scheduled',summary:'Scheduled for Tuesday',instruction:'Prepare Tuesday’s brief',time_zone:'Europe/London',due_at:'2026-09-15T08:00:00Z',outcome:null,message_id:null,result_revision:0,viewed_revision:0,version:1,updated_at:'2026-09-10T09:00:00Z',taskStatus:'open',scheduledDate:'2026-09-15'}} onControl={async agent=>agent}/></div> : null}
+
+      {id === "task-agent-stack" ? <div className="w-[260px] p-3"><TaskAgentStack agents={[
+        {id:'preview-1',task_id:'task-1',conversation_id:'conversation-1',title:'Prepare Tuesday’s meeting brief',name:'Harper',icon:1,status:'working',summary:'Checking the latest context',result_revision:0,viewed_revision:0,updated_at:'2026-09-10T09:00:00Z'},
+        {id:'preview-2',task_id:'task-2',conversation_id:'conversation-2',title:'Reply to Sam about the quote',name:'Xylo',icon:4,status:'ready',summary:'Your draft is ready',result_revision:1,viewed_revision:0,updated_at:'2026-09-10T08:00:00Z'},
+        {id:'preview-3',task_id:'task-3',conversation_id:'conversation-3',title:'Find the invoice for the shipment',name:'Ternus',icon:5,status:'needs_input',summary:'Choose between two matching invoices',result_revision:1,viewed_revision:0,updated_at:'2026-09-10T07:00:00Z'},
+      ] as TaskAgent[]} onOpen={()=>undefined} onViewAll={()=>undefined}/></div> : null}
 
       {id === "todo-action-state-icon" ? (
         <div className="flex w-full max-w-[520px] items-center justify-center gap-8 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">

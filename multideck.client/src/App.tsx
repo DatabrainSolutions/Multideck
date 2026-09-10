@@ -566,8 +566,10 @@ export default function App() {
   useEffect(() => {
     const onPopState = () => {
       const destination = getRoute()
+      const destinationUrl = ['/agent-dexter','/to-do'].includes(destination) && window.location.pathname === destination
+        ? `${destination}${window.location.search}${window.location.hash}` : destination
       const proceed = () => {
-        window.history.replaceState(window.history.state, "", destination)
+        window.history.replaceState(window.history.state, "", destinationUrl)
         startTransition(() => setRoute(destination))
       }
       if (!window.dispatchEvent(new CustomEvent("multideck:before-navigate", { cancelable: true, detail: { proceed } }))) {

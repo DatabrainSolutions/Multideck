@@ -105,7 +105,7 @@ export const homeNavItem: NavItem = { label: "Home", icon: Home03, route: "/" }
  * Sales & CRM / Marketing / Email marketing, which is outbound campaign work.
  */
 export const inboxNavItem: NavItem = { label: "Inbox", icon: Inbox, route: "/inbox" }
-export const todoNavItem: NavItem = { label: "To Do list", icon: ClipboardCheck, route: "/to-do" }
+export const todoNavItem: NavItem = { label: "Tasks", icon: ClipboardCheck, route: "/to-do" }
 export const calendarNavItem: NavItem = { label: "Calendar", icon: CalendarDays, route: "/calendar" }
 
 export const sidebarAreas: SidebarArea[] = [
@@ -318,7 +318,7 @@ export const sidebarAreas: SidebarArea[] = [
 
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
-  { label: "To Do list", icon: ClipboardCheck, route: "/to-do" },
+  { label: "Tasks", icon: ClipboardCheck, route: "/to-do" },
   { label: "Warehouse", icon: Forklift, route: "/warehouse" },
   { label: "Customers", icon: Users, route: "/customers" },
   { label: "CRM", icon: BriefcaseBusiness, route: "/crm" },

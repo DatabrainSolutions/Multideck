@@ -1372,6 +1372,7 @@ function DexterRecordingWaveform({ level, phase }: {
 
 export function DexterPromptComposer({
   value,
+  taskAgentName,
   specialists = defaultDexterSpecialists,
   selectedSpecialistId,
   models = dexterModels,
@@ -1407,6 +1408,8 @@ export function DexterPromptComposer({
   className,
 }: {
   value: string
+  /** Background tasks use their saved agent and fixed cloud model. Reference mentions stay available. */
+  taskAgentName?: string
   specialists?: DexterSpecialist[]
   selectedSpecialistId: DexterSpecialistId
   models?: DexterModel[]
@@ -1516,9 +1519,9 @@ export function DexterPromptComposer({
       <span aria-hidden="true" className="md-composer-bloom__contrast" />
 
       <div className="md-dexter-role-container relative z-[2] flex h-[44px] min-w-0 items-center px-3 sm:px-3.5">
-        {mode === "watch" ? (
+        {mode === "watch" || taskAgentName ? (
           <span className="md-composer-lead inline-flex h-8 items-center rounded-full px-2.5 text-[13px] font-medium text-white dark:text-[var(--md-ink)]">
-            {t("Watcher")}
+            {taskAgentName ?? t("Watcher")}
           </span>
         ) : (
           <DexterRoleMenu specialists={specialists} selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />
@@ -1611,7 +1614,7 @@ export function DexterPromptComposer({
           <div className="-mx-2 mt-3 flex flex-wrap items-center gap-1 sm:mx-0 sm:gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
             <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <Button
+            {!taskAgentName ? <Button
               type="button"
               variant="ghost"
               size="icon"
@@ -1622,10 +1625,10 @@ export function DexterPromptComposer({
               onClick={onOpenAttachments}
             >
               <Plus className="size-4" strokeWidth={1.4} />
-            </Button>
-            <PillFrame>
+            </Button> : null}
+            {!taskAgentName ? <PillFrame>
               <DexterModelMenu models={models} selectedId={selectedModelId} onSelect={onSelectModel} />
-            </PillFrame>
+            </PillFrame> : null}
             <Context
               usedTokens={contextUsedTokens}
               maxTokens={contextMaxTokens}

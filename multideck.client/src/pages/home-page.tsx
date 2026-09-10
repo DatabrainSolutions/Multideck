@@ -189,7 +189,7 @@ export function HomePage({
 
   useEffect(() => {
     const controller = new AbortController()
-    // The To Do workspace owns this list. Home shows today's open tasks and can
+    // The Tasks workspace owns this list. Home shows today's open tasks and can
     // tick one off; everything else about them belongs on /to-do.
     setTodoLoadState("loading")
     listTodoTasks(todayTaskDate, controller.signal)
@@ -218,7 +218,7 @@ export function HomePage({
   const openTasks = useMemo(() => todoTasks.filter((task) => task.status === "open"), [todoTasks])
 
   /** The operator's own priority work, which is what the prompts are built
-      from – separate to the To Do list, which they write themselves. */
+      from – separate to the Tasks, which they write themselves. */
   const priorityItems = useMemo<DashboardPriorityItem[]>(
     () => overview?.priorityMineItems?.length ? overview.priorityMineItems : overview?.priorityItems ?? [],
     [overview],
@@ -382,7 +382,7 @@ export function HomePage({
   }, [dueTodayCount, followUps, overview, priorityItems, recentWork, t])
 
   /**
-   * Ticking a task off Home writes to the same list the To Do workspace uses.
+   * Ticking a task off Home writes to the same list the Tasks workspace uses.
    * The tick gets its full confirmation beat before the row clears. A failed
    * write leaves the task in place rather than briefly pretending it is done.
    */
@@ -445,7 +445,7 @@ export function HomePage({
             )) : todoLoadState === "loading" ? (
               <HomeDeckEmpty>{t("Checking today’s list…")}</HomeDeckEmpty>
             ) : todoLoadState === "error" ? (
-              <HomeDeckEmpty>{t("Your To Do list couldn’t be loaded.")}</HomeDeckEmpty>
+              <HomeDeckEmpty>{t("Your Tasks couldn’t be loaded.")}</HomeDeckEmpty>
             ) : (
               <HomeDeckEmpty>{t(todoEmptyPhrases[todoEmptyPhraseIndex])}</HomeDeckEmpty>
             )}

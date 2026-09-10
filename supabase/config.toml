@@ -512,6 +512,10 @@ verify_jwt = true
 [functions.email-watch-worker]
 verify_jwt = false
 
+# Tenant-local durable task queue; validates its own Vault-backed worker secret.
+[functions.dexter-task-worker]
+verify_jwt = false
+
 # User calls are authorised inside the function. Tenant-local pg_cron uses a
 # separate Vault-backed worker secret for the monthly refresh check.
 [functions.dexter-writing-profile]

@@ -13,6 +13,8 @@ export type DexterEmailProvider = "gmail" | "outlook"
 type SelectedContext = { id: string; type: string; title: string }
 
 export type DexterEmailToolState = {
+  /** Server-only callback: rechecks the durable task lease before attachment access. */
+  backgroundRuntime?: () => Promise<Awaited<ReturnType<typeof emailRuntime>>>
   authorization: string
   authUserId: string
   userClient: DexterSupabaseClient
@@ -246,6 +248,7 @@ export function buildEmailTools(providers: DexterEmailProvider[], allowAttachmen
 }
 
 export function createEmailToolState(input: {
+  backgroundRuntime?: DexterEmailToolState['backgroundRuntime']
   authorization: string
   authUserId: string
   userClient: DexterSupabaseClient
@@ -344,7 +347,13 @@ function attachmentType(fileName: string, providerMime: string) {
   return definition
 }
 
-async function emailRuntime(state: DexterEmailToolState) {
+async function emailRuntime(state: DexterEmailToolState): Promise<{admin: DexterSupabaseClient; actor: Awaited<ReturnType<typeof requireActor>>}> {
+  if (state.backgroundRuntime) {
+    const runtime = await state.backgroundRuntime()
+    if (runtime.actor.authUserId !== state.authUserId) throw new InboxHttpError(403, 'This task cannot access that mailbox.', 'permission_denied')
+    await requirePermission(runtime.admin, runtime.actor, 'Email.AIRead')
+    return runtime
+  }
   const clients = runtimeClients(state.authorization)
   const actor = await requireActor(clients.user, clients.admin)
   if (actor.authUserId !== state.authUserId) throw new InboxHttpError(401, "Sign in again to use email with Dexter.", "authentication_required")
@@ -477,8 +486,8 @@ export async function executeEmailTool(
     if (declaredBytes > MAX_ATTACHMENT_BYTES) {
       return { output: { error: "This attachment is larger than Dexter's 25 MB analysis limit.", code: "attachment_too_large" } }
     }
-    if (declaredBytes && state.attachmentBytesRead + declaredBytes > MAX_ATTACHMENT_BYTES_PER_TURN) {
-      return { output: { error: "Analysing this attachment would exceed Dexter's 45 MB limit for one request.", code: "attachment_total_too_large" } }
+    if (declaredBytes && state.attachmentBytesRead + declaredBytes > (state.backgroundRuntime ? 12 * 1024 * 1024 : MAX_ATTACHMENT_BYTES_PER_TURN)) {
+      return { output: { error: "Analysing this attachment would exceed Dexter's attachment limit for one request.", code: "attachment_total_too_large" } }
     }
 
     const runtime = await emailRuntime(state)
@@ -486,8 +495,8 @@ export async function executeEmailTool(
     if (download.bytes.byteLength > MAX_ATTACHMENT_BYTES) {
       return { output: { error: "This attachment is larger than Dexter's 25 MB analysis limit.", code: "attachment_too_large" } }
     }
-    if (state.attachmentBytesRead + download.bytes.byteLength > MAX_ATTACHMENT_BYTES_PER_TURN) {
-      return { output: { error: "Analysing this attachment would exceed Dexter's 45 MB limit for one request.", code: "attachment_total_too_large" } }
+    if (state.attachmentBytesRead + download.bytes.byteLength > (state.backgroundRuntime ? 12 * 1024 * 1024 : MAX_ATTACHMENT_BYTES_PER_TURN)) {
+      return { output: { error: "Analysing this attachment would exceed Dexter's attachment limit for one request.", code: "attachment_total_too_large" } }
     }
 
     const fileName = safeFileName(download.fileName)
