@@ -8,6 +8,7 @@ import {
   RotateCcw,
 } from '@/components/icons/hugeicons'
 import { Button } from '@/components/ui/button'
+import { StatusPill } from '@/components/multideck/status-pill'
 import { useLanguage } from '@/i18n/language-provider'
 import { cn } from '@/lib/utils'
 import { mdMotion, reduceMotion } from '@/lib/motion'
@@ -19,6 +20,12 @@ import {
   agentHasUpdate,
 } from '@/lib/task-agents'
 import { useTaskAgents, controlTaskAgent } from '@/lib/task-agent-store'
+
+const sidebarStatusTone = {
+  queued: 'neutral', scheduled: 'neutral', waiting: 'amber', working: 'amber',
+  ready: 'green', needs_input: 'amber', failed: 'red', cancelled: 'neutral', completed: 'green',
+} as const
+const sidebarStatusLabel = { ...taskAgentStatus, ready: 'Ready', waiting: 'Waiting', failed: 'Failed' }
 
 const iconViews = [
   '30 55 385 390',
@@ -100,7 +107,7 @@ export function TaskAgentStack({
                 aria-label={`${agent.name}: ${agent.title}. ${t(taskAgentStatus[agent.status])}`}
                 onClick={() => onOpen(agent)}
                 className={cn(
-                  'group flex min-h-11 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-1 py-1 text-start transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none',
+                  'group flex min-h-12 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-1 py-1.5 text-start transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none',
                   collapsed && 'justify-center',
                 )}
               >
@@ -111,15 +118,19 @@ export function TaskAgentStack({
                   ) : null}
                 </span>
                 {!collapsed ? (
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center justify-between gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-                      <span className="truncate">{agent.name}</span>
-                      <span className="shrink-0 text-[10px] font-normal text-[var(--md-subtle)]">
-                        {t(taskAgentStatus[agent.status])}
+                  <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+                    <span className="block truncate text-[12px] font-medium leading-[14px] text-[var(--md-ink)]">{agent.name}</span>
+                    <span className="flex min-w-0 items-center justify-between gap-1.5">
+                      <span className="min-w-0 truncate text-[11px] leading-[18px] text-[var(--md-text)]">
+                        {agent.title.trim().split(/\s+/u).slice(0, 3).join(' ')}
                       </span>
-                    </span>
-                    <span className="mt-0.5 block truncate text-[11px] text-[var(--md-text)]">
-                      {agent.title}
+                      <StatusPill
+                        tone={sidebarStatusTone[agent.status]}
+                        indicator={false}
+                        className={cn('h-[18px] border-[color-mix(in_srgb,currentColor_22%,transparent)]! px-1.5 py-0 text-[10px] leading-none', sidebarStatusTone[agent.status] === 'neutral' && 'bg-transparent text-[var(--md-subtle)]')}
+                      >
+                        {t(sidebarStatusLabel[agent.status])}
+                      </StatusPill>
                     </span>
                   </span>
                 ) : null}
