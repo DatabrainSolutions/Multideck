@@ -179,8 +179,7 @@ export function QuoteSubmittedDetails({
       ) : overview ? (
         <>
           {section("At a glance", [
-            ["Customer", quote.customerName],
-            ["Bill to / payer", quote.payer?.name],
+            ["Customer / Billing", quote.customerName],
             ["Mode", quote.mode],
             ["Direction", quote.direction],
             ["Shipment type", quote.shipmentType],
@@ -242,7 +241,7 @@ export function QuoteSubmittedDetails({
             </section>
           ) : null}
           {party(
-            "Customer",
+            "Customer / Billing",
             {
               name: quote.customerName,
               code: facts.clientCode,
@@ -255,7 +254,17 @@ export function QuoteSubmittedDetails({
               ["Customer PO", facts.customerPO],
             ],
           )}
-          {party("Bill to / payer", quote.payer)}
+          {facts.leadSourceParty === "agent" ? party(
+            "Overseas agent · RFQ source",
+            {
+              name: facts.agentName,
+              code: facts.agentCode,
+              address: facts.agentAddress,
+              contact: facts.agentContact,
+              email: facts.agentEmail,
+            },
+            [["Reference", facts.agentReference]],
+          ) : null}
           {party("Shipper", { ...record(quote.shipper), code: facts.shipperCode, email: facts.shipperEmail }, [
             ["Collection address", quote.collectionAddress],
             ["Collection required", facts.collectionRequired],
@@ -274,17 +283,6 @@ export function QuoteSubmittedDetails({
               ["Delivery required", facts.deliveryRequired],
               ["Reference", facts.consigneeReference],
             ],
-          )}
-          {party(
-            "Overseas agent",
-            {
-              name: facts.agentName,
-              code: facts.agentCode,
-              address: facts.agentAddress,
-              contact: facts.agentContact,
-              email: facts.agentEmail,
-            },
-            [["Reference", facts.agentReference]],
           )}
           {section("Shipment goods", [
             ["Goods value", amount(facts.goodsValue, facts.goodsValueCurrency)],

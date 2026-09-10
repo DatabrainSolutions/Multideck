@@ -54,6 +54,8 @@ type FinanceDocumentLineEditorProps = {
   jobChargeOptions?: FinanceJobChargeOption[]
   sourceKind: "manual" | "job"
   currencyCode: string
+  appearance?: "panel" | "document"
+  showQuantity?: boolean
   credit?: boolean
   disabled?: boolean
   readOnly?: boolean
@@ -103,6 +105,8 @@ export function FinanceDocumentLineEditor({
   jobChargeOptions = [],
   sourceKind,
   currencyCode,
+  appearance = "panel",
+  showQuantity = true,
   credit = false,
   disabled = false,
   readOnly = false,
@@ -113,13 +117,17 @@ export function FinanceDocumentLineEditor({
 }: FinanceDocumentLineEditorProps) {
   const { language, t } = useLanguage()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [selectedLineId, setSelectedLineId] = useState(lines[0]?.id ?? "")
+  const [selectedLineId, setSelectedLineId] = useState(readOnly ? "" : lines[0]?.id ?? "")
 
   useEffect(() => {
+    if (readOnly) {
+      if (selectedLineId) setSelectedLineId("")
+      return
+    }
     if (!lines.some((line) => line.id === selectedLineId)) setSelectedLineId(lines[0]?.id ?? "")
-  }, [lines, selectedLineId])
+  }, [lines, readOnly, selectedLineId])
 
-  const selectedIndex = lines.findIndex((line) => line.id === selectedLineId)
+  const selectedIndex = readOnly ? -1 : lines.findIndex((line) => line.id === selectedLineId)
   const formatter = useMemo(
     () => new Intl.NumberFormat(language, /^[A-Z]{3}$/.test(currencyCode)
       ? { style: "currency", currency: currencyCode }
@@ -132,7 +140,7 @@ export function FinanceDocumentLineEditor({
   const editDisabled = disabled || readOnly
 
   const defaultTreatment = taxOptions.find((option) => option.approved) ?? taxOptions[0]
-  const selectLine = (id: string) => setSelectedLineId(id)
+  const selectLine = (id: string) => { if (!readOnly) setSelectedLineId(id) }
   const updateLine = (id: string, value: Partial<FinanceDocumentLine>) => {
     onLinesChange(lines.map((line) => line.id === id ? { ...line, ...value } : line))
   }
@@ -172,8 +180,8 @@ export function FinanceDocumentLineEditor({
   const gridSelectClass = "h-9 w-full rounded-[var(--md-radius-sm)] !border-transparent !bg-transparent px-2 !shadow-none hover:!bg-[var(--md-surface-soft)] focus-visible:!bg-[var(--md-surface)] focus-visible:!ring-2 focus-visible:!ring-[var(--md-accent-a18)] data-[state=open]:!bg-[var(--md-surface)]"
 
   return (
-    <section aria-labelledby="finance-lines-title" className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
-      <div className="flex flex-wrap items-center gap-1.5 bg-[var(--md-surface-soft)] p-1.5 shadow-[inset_0_-1px_0_var(--md-line)]">
+    <section aria-labelledby="finance-lines-title" className={cn("bg-[var(--md-surface)]", appearance === "document" ? "overflow-visible rounded-none shadow-none" : "overflow-hidden rounded-[var(--md-radius-xl)] shadow-[var(--md-shadow-line)]")}>
+      <div className={cn("flex flex-wrap items-center gap-1.5 bg-[var(--md-surface-soft)] p-1.5", appearance === "document" ? "rounded-[var(--md-radius-xl)]" : "shadow-[inset_0_-1px_0_var(--md-line)]")}>
         <Button type="button" variant="ghost" className={commandClass} onClick={addLine} disabled={editDisabled}>
           <Plus data-icon="inline-start" />{t("Add row")}
         </Button>
@@ -217,25 +225,25 @@ export function FinanceDocumentLineEditor({
         <p className="mt-0.5 text-[12px] text-[var(--md-subtle)]">{t("Choose a controlled charge code, then adjust its description, currency, rate of exchange and tax where required.")}</p>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1160px] border-separate border-spacing-0 text-[12px]">
+      <div className={cn("overflow-x-auto", appearance === "document" && "rounded-t-[var(--md-radius-xl)]")}>
+        <table className={cn("w-full table-fixed border-separate border-spacing-0 text-[12px]", showQuantity ? "min-w-[1160px]" : "min-w-[1080px]")}>
           <thead>
             <tr className="bg-[var(--md-surface-soft)] text-start text-[var(--md-subtle)] shadow-[inset_0_-1px_0_var(--md-line-strong)]">
               <th scope="col" className="w-11 px-2 py-2.5 text-center font-medium">{t("Line")}</th>
-              <th scope="col" className="w-[130px] px-2 py-2.5 text-start font-medium">{t("Charge code")}</th>
+              <th scope="col" className="w-[210px] px-2 py-2.5 text-start font-medium">{t("Charge code")}</th>
               <th scope="col" className="min-w-[260px] px-2 py-2.5 text-start font-medium">{t("Description")}</th>
-              <th scope="col" className="w-[70px] px-2 py-2.5 text-end font-medium">{t("Qty")}</th>
+              {showQuantity ? <th scope="col" className="w-[70px] px-2 py-2.5 text-end font-medium">{t("Qty")}</th> : null}
               <th scope="col" className="w-[86px] px-2 py-2.5 text-start font-medium">{t("Currency")}</th>
-              <th scope="col" className="w-[105px] px-2 py-2.5 text-end font-medium">{t("Rate")}</th>
-              <th scope="col" className="w-[90px] px-2 py-2.5 text-end font-medium">{t("ROE")}</th>
-              <th scope="col" className="w-[120px] px-2 py-2.5 text-start font-medium">{t("Tax")}</th>
-              <th scope="col" className="w-[130px] px-2 py-2.5 text-end font-medium">{t("Invoice amount")}</th>
+              <th scope="col" className="w-[70px] px-2 py-2.5 text-end font-medium">{t("Rate")}</th>
+              <th scope="col" className="w-[70px] px-2 py-2.5 text-end font-medium">{t("ROE")}</th>
+              <th scope="col" className="w-[190px] px-2 py-2.5 text-start font-medium">{t("Tax")}</th>
+              <th scope="col" className="w-[115px] px-2 py-2.5 text-end font-medium">{t("Invoice amount")}</th>
               <th scope="col" className="w-10 px-2 py-2"><span className="sr-only">{t("Actions")}</span></th>
             </tr>
           </thead>
           <tbody>
             {lines.map((line, index) => {
-              const selected = line.id === selectedLineId
+              const selected = !readOnly && line.id === selectedLineId
               const lineCurrencyCode = line.currencyCode || currencyCode
               const lineExchangeRate = lineCurrencyCode === currencyCode ? 1 : (Number(line.exchangeRate) || 0)
               const lineNet = (Number(line.quantity) || 0) * (Number(line.unitAmount) || 0) * lineExchangeRate * polarity
@@ -244,7 +252,7 @@ export function FinanceDocumentLineEditor({
                 : null
               const availableCharges = recordedCharge ? [recordedCharge, ...chargeOptions] : chargeOptions
               return (
-                <tr key={line.id} className={cn("group transition-colors", selected ? "bg-[var(--md-selected-bg)]" : "bg-[var(--md-surface)] hover:bg-[var(--md-surface-soft)]")} onClick={() => selectLine(line.id)}>
+                <tr key={line.id} className={cn("group transition-colors", selected ? "bg-[var(--md-selected-bg)]" : "bg-[var(--md-surface)]", !readOnly && !selected && "hover:bg-[var(--md-surface-soft)]")} onClick={readOnly ? undefined : () => selectLine(line.id)}>
                   <td className="border-b border-[var(--md-line)] px-2 py-1 text-center text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{index + 1}</td>
                   <td className="border-b border-[var(--md-line)] p-1" data-provider-field="item_code">{sourceKind === "job" && jobChargeOptions.length ? (
                     <Select value={line.jobCostingLineId || "unmatched"} disabled={editDisabled} onValueChange={(value) => { const option = jobChargeOptions.find((item) => item.id === value); updateLine(line.id, option ? { jobCostingLineId: option.id, chargeCode: option.chargeCode || `LINE-${option.lineNo}`, description: option.description } : { jobCostingLineId: null }) }}>
@@ -252,11 +260,11 @@ export function FinanceDocumentLineEditor({
                       <SelectContent><SelectItem value="unmatched">{t("Unmatched actual")}</SelectItem>{jobChargeOptions.map((option) => <SelectItem key={option.id} value={option.id}><span data-i18n-skip dir="ltr">{option.lineNo} · {option.chargeCode || option.description}</span></SelectItem>)}</SelectContent>
                     </Select>
                   ) : <Select value={line.chargeCode || undefined} disabled={editDisabled || !availableCharges.length} onValueChange={(value) => { const option = availableCharges.find((item) => item.code === value); const defaultTax = option?.defaultTaxCode ? taxOptions.find((tax) => tax.code === option.defaultTaxCode) : null; updateLine(line.id, { chargeCode: value, description: option?.description || option?.name || line.description, jobCostingLineId: null, ...(defaultTax ? { taxCode: defaultTax.code, taxRatePercent: String(defaultTax.approved ? defaultTax.ratePercent : 0) } : {}) }) }}>
-                    <SelectTrigger aria-label={`${t("Charge code")} ${index + 1}`} className={gridSelectClass}><SelectValue placeholder={t("Select code")} /></SelectTrigger>
+                    <SelectTrigger aria-label={`${t("Charge code")} ${index + 1}`} className={gridSelectClass}><SelectValue placeholder={t("Select code")}>{line.chargeCode ? <span className="truncate" data-i18n-skip dir="ltr">{line.chargeCode}</span> : undefined}</SelectValue></SelectTrigger>
                     <SelectContent>{availableCharges.map((option) => <SelectItem key={option.id} value={option.code}><span className="font-medium" data-i18n-skip dir="ltr">{option.code}</span><span className="ms-2 text-[var(--md-subtle)]" dir="auto">{option.name}</span></SelectItem>)}</SelectContent>
                   </Select>}</td>
                   <td className="border-b border-[var(--md-line)] p-1" data-provider-field="description"><Input aria-label={`${t("Description")} ${index + 1}`} className={gridInputClass} value={line.description} onFocus={() => selectLine(line.id)} onChange={(event) => updateLine(line.id, { description: event.target.value })} disabled={editDisabled} required /></td>
-                  <td className="border-b border-[var(--md-line)] p-1" data-provider-field="qty"><Input aria-label={`${t("Quantity")} ${index + 1}`} className={cn(gridInputClass, "text-end")} type="number" min="0.0001" step="0.0001" value={line.quantity} onFocus={() => selectLine(line.id)} onChange={(event) => updateLine(line.id, { quantity: event.target.value })} data-i18n-skip dir="ltr" disabled={editDisabled} required /></td>
+                  {showQuantity ? <td className="border-b border-[var(--md-line)] p-1" data-provider-field="qty"><Input aria-label={`${t("Quantity")} ${index + 1}`} className={cn(gridInputClass, "text-end")} type="number" min="0.0001" step="0.0001" value={line.quantity} onFocus={() => selectLine(line.id)} onChange={(event) => updateLine(line.id, { quantity: event.target.value })} data-i18n-skip dir="ltr" disabled={editDisabled} required /></td> : null}
                   <td className="border-b border-[var(--md-line)] p-1" data-provider-field="source_currency"><Select value={lineCurrencyCode} disabled={editDisabled} onValueChange={(value) => updateLine(line.id, { currencyCode: value, exchangeRate: value === currencyCode ? "1" : line.currencyCode === currencyCode ? "" : line.exchangeRate })}>
                     <SelectTrigger aria-label={`${t("Currency")} ${index + 1}`} className={gridSelectClass}><SelectValue /></SelectTrigger>
                     <SelectContent>{[...new Set([currencyCode, ...currencyOptions, lineCurrencyCode].filter(Boolean))].map((code) => <SelectItem key={code} value={code}><span data-i18n-skip dir="ltr">{code}</span></SelectItem>)}</SelectContent>

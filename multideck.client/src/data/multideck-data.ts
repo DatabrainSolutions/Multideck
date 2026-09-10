@@ -1808,7 +1808,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Finance Document Line Editor",
     category: "Operations",
     description: "A freight invoice and credit-note charge grid with exact job allocation, accounting-item mapping, controlled tax, automatic totals and fast row commands.",
-    details: "Use inside manual sales and purchase document workflows. The operator-facing fields stay focused on charge code, description, quantity, rate, tax and line amount; provider item, nominal-account and tax-template mappings are applied at posting. Job documents can link each row to the exact costing charge so actuals reclassify that line's WIP or accrual without moving gross profit.",
+    details: "Use inside manual sales and purchase document workflows. The operator-facing fields stay focused on charge code, description, quantity, rate, tax and line amount; provider item, nominal-account and tax-template mappings are applied at posting. Use the document appearance for the flatter invoice canvas and hide quantity when a sales charge is always recorded as one line. Job documents can link each row to the exact costing charge so actuals reclassify that line's WIP or accrual without moving gross profit.",
     foundOn: [{ label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Components", route: "/components?component=finance-document-line-editor" }],
     componentCode: `export function FinanceDocumentLineEditor({ lines, onLinesChange, taxOptions, sourceKind, currencyCode, credit, disabled, onClear, onImport, onExport, onPrint }) {
   const [selectedLineId, setSelectedLineId] = useState(lines[0]?.id ?? "")
@@ -1836,6 +1836,8 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   taxOptions={approvedTaxTreatments}
   sourceKind={draft.sourceKind}
   currencyCode={draft.currencyCode}
+  appearance="document"
+  showQuantity={false}
   credit={draft.type === "credit_note" || draft.type === "debit_note"}
   onImport={importExcelLines}
   onExport={exportExcelLines}

@@ -12,16 +12,17 @@ const [quotePage, quoteApi, bookingPage, workflow, pdf, migration] = await Promi
   readFile(new URL("supabase/migrations/20260904144000_quote_bill_to_payer.sql", root), "utf8"),
 ])
 
-test("quote drafts use a separate linked payer whose account terms govern the quote", () => {
+test("quote drafts keep legacy payer fields synchronised to the customer account", () => {
   assert.match(quoteApi, /payer\?: QuotePartyDraft \| null/u)
   for (const field of ["payerOrgId", "payerCode", "payerName", "payerAddress", "payerContact", "payerEmail"]) {
     assert.match(quotePage, new RegExp(`${field}\\?: string`, "u"))
   }
-  assert.match(quotePage, /title="Bill to \/ payer"/u)
-  assert.match(quotePage, /This account supplies the quote terms/u)
-  assert.match(quotePage, /selectOrganisation\("payer", option\.id\)/u)
+  assert.match(quotePage, /title="Customer \/ Billing"/u)
+  assert.doesNotMatch(quotePage, /title="Bill to \/ payer"/u)
+  assert.match(quotePage, /payerOrgId: organisation\.id/u)
+  assert.match(quotePage, /payerName: organisation\.name/u)
   assert.match(quotePage, /terms: organisation\.quoteTerms\?\.terms \?\? ""/u)
-  assert.match(quotePage, /Locked to payer account/u)
+  assert.match(quotePage, /Locked to customer account/u)
   assert.match(quotePage, /payer: \{[\s\S]*orgId: quote\.payerOrgId \|\| quote\.customerId/u)
 })
 
