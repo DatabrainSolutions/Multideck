@@ -78,7 +78,7 @@ export function TaskAgentStack({
   ).length
   if (!visible.length && !outstanding) return null
   return (
-    <section aria-label={t('Your task agents')} className="mb-3 min-w-0">
+    <section aria-label={t('Your task agents')} className="mb-2 min-w-0 border-t border-[var(--md-line)] pt-[var(--md-gap-md)]">
       <div className="divide-y divide-[var(--md-line)]">
         <AnimatePresence initial={false} mode="popLayout">
           {visible.map((agent) => (
@@ -100,7 +100,7 @@ export function TaskAgentStack({
                 aria-label={`${agent.name}: ${agent.title}. ${t(taskAgentStatus[agent.status])}`}
                 onClick={() => onOpen(agent)}
                 className={cn(
-                  'group flex min-h-14 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-1 py-1.5 text-start transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none',
+                  'group flex min-h-11 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-1 py-1 text-start transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none',
                   collapsed && 'justify-center',
                 )}
               >

@@ -2171,7 +2171,7 @@ export function AppSidebar({
         />
       </div>
 
-      <div className="relative z-10 mt-[var(--md-page-stack-gap)]">
+      <div className="relative z-10 mt-[var(--md-page-stack-gap)] shrink-0">
         <SidebarTaskAgents collapsed={collapsed} onNavigate={(path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')); onRequestClose?.() }} />
         {supportTicketFeatureEnabled ? <><Separator className="mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
         <button
