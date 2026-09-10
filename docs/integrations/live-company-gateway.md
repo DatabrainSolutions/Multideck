@@ -103,7 +103,7 @@ customer permission, deployment or Live screen routing is enabled by this batch.
 
 ## Grant administration and routed portal batch
 
-App company records under **Organisations → Companies** (`/crm/accounts`) include **Warehouse customer access** and **Multideck Live access** on the **Overview** tab. The dedicated
+App company records under **Organisations → Companies** (`/crm/accounts`) have a dedicated **Multideck Live** tab for customer warehouse grants. The legacy **Warehouse customer access** panel is no longer shown on company records. The dedicated
 `live-grant-admin/{organisationId}` Edge endpoint verifies the caller with this
 App project's Auth, resolves active internal warehouse/user permissions, checks
 assigned facilities, and refuses writes in Training. It fails closed if the
