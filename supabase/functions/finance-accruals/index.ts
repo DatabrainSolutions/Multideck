@@ -47,7 +47,7 @@ async function accessibleJobs(admin: any, current: any, entityId: string, target
   if (!officeIds.length) return []
   let query = admin.from("Job_Header")
     .select("Job_ID,Job_Number,Job_Period,Job_Status,Job_DomainCode,Job_Customer,Job_Supplier,Job_ReadyDate,Job_RequiredDeliveryDate,Job_ClosedDate,Job_LegalEntityID,Job_OrgOfficeID,Job_OfficeID")
-    .eq("Job_IsDeleted", false).order("Job_Number")
+    .eq("Job_IsDeleted", false).not("Job_Status", "in", "(draft,provisional)").order("Job_Number")
   if (targetPeriod) query = query.eq("Job_Period", targetPeriod)
   const { data, error } = await query
   if (error) throw new HttpError(500, error.message)

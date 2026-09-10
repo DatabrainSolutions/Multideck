@@ -9,6 +9,7 @@ type BookingStatus = "On track" | "Delayed" | "Exception"
 type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade" | "Direction needed"
 
 export type LiveBooking = {
+  lifecycleStatus?: string
   sourceId: string
   id: string
   customer: string
@@ -270,6 +271,7 @@ function bookingMode(value: unknown): BookingMode {
 
 function toLiveBooking(row: Record<string, unknown>): LiveBooking {
   return {
+    lifecycleStatus: row.Lifecycle_Status == null ? undefined : String(row.Lifecycle_Status),
     sourceId: String(row.Job_ID ?? ""),
     id: String(row.Booking_Reference),
     customer: String(row.Customer_Name ?? ""),

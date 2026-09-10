@@ -1,3 +1,4 @@
+import { bookingLifecycleLabel } from "@/lib/booking-lifecycle"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react"
@@ -290,8 +291,15 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
       minWidth: 136,
       maxWidth: 200,
       resizable: true,
-      sortValue: (booking) => `${booking.status} ${getBookingExceptionSummary(booking)}`,
-      cell: (booking) => <BookingStatusPill status={booking.status} />,
+      sortValue: (booking) => booking.lifecycleStatus ? bookingLifecycleLabel(booking.lifecycleStatus) : booking.status,
+      cell: (booking) => booking.lifecycleStatus
+        ? <StatusPill tone={bookingLifecycleLabel(booking.lifecycleStatus) === "Provisional" ? "amber" : "green"}>{t(bookingLifecycleLabel(booking.lifecycleStatus))}</StatusPill>
+        : <BookingStatusPill status={booking.status} />,
+    },
+    {
+      id: "trackingStatus", label: t("Tracking status"), kind: "status", width: 140,
+      sortValue: booking => booking.status,
+      cell: booking => <BookingStatusPill status={booking.status} />,
     },
     {
       id: "booking",

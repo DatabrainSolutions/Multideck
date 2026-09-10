@@ -239,6 +239,7 @@ export function CompactCombobox({
   valueDirection = "auto",
   className,
   autoPopulated = false,
+  autoPopulationEvent,
   autoPopulationDescription,
 }: {
   label: string
@@ -262,6 +263,7 @@ export function CompactCombobox({
   valueDirection?: "auto" | "ltr" | "rtl"
   className?: string
   autoPopulated?: boolean
+  autoPopulationEvent?: number | null
   autoPopulationDescription?: string
 }) {
   const { t } = useLanguage()
@@ -274,7 +276,7 @@ export function CompactCombobox({
   const [activeIndex, setActiveIndex] = useState(0)
   const keyboardNavigationRef = useRef(false)
   const pointerFocusRef = useRef(false)
-  const inputMorphRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated, displayedValue)
+  const inputMorphRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated && displayedValue === value, value, undefined, autoPopulationEvent)
   const query = open ? search.trim() : ""
   const recommended = useMemo(
     () => deduplicateComboboxOptions(recommendedOptions.filter((option) => matchesComboboxOption(option, query)))
@@ -1126,4 +1128,106 @@ function SwitchLabel({ label, checked, onCheckedChange }: { label: string; check
 
 export function CompactSearchIcon() {
   return <Search className="size-3.5 text-[var(--md-subtle)]" aria-hidden="true" />
+}
+
+export function CargoWiseField({
+  label,
+  value,
+  span = false,
+  compact = false,
+  fitValue = false,
+  compactLabel = "fixed",
+  compactPadding = "default",
+  editable = false,
+  className,
+  action,
+  onChange,
+}: {
+  label: string
+  value: string
+  span?: boolean
+  compact?: boolean
+  fitValue?: boolean
+  compactLabel?: "fixed" | "content" | "tight"
+  compactPadding?: "default" | "square"
+  editable?: boolean
+  className?: string
+  action?: ReactNode
+  onChange?: (value: string) => void
+}) {
+  const { t } = useLanguage()
+  const inputId = useId()
+
+  return (
+    <div className={cn(
+      "md-cargowise-field grid min-w-0 items-center",
+      compact
+        ? compactLabel === "content"
+          ? "grid-cols-[max-content_minmax(0,1fr)] gap-1"
+          : compactLabel === "tight"
+            ? "grid-cols-[44px_minmax(0,1fr)] gap-1"
+          : "grid-cols-[64px_minmax(0,1fr)] gap-1"
+        : "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] gap-1.5",
+      span && "md:col-span-2",
+      className,
+    )}>
+      <label htmlFor={inputId} className={cn("min-w-0 whitespace-normal break-words text-[11px] font-medium leading-[1.15] text-[var(--md-text)]", compactLabel === "content" ? "text-start" : "text-end")}>{t(label)}</label>
+      <div className={cn("grid min-w-0", action && "grid-cols-[minmax(0,1fr)_auto] gap-0.5")}>
+        {editable ? <input
+          id={inputId}
+          data-i18n-skip
+          dir="auto"
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
+          className={cn(
+            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
+            compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
+            fitValue && "w-fit max-w-full",
+          )}
+        /> : <span id={inputId} data-i18n-skip dir="auto" className={cn(
+          "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+          compact
+            ? compactPadding === "square"
+              ? "min-h-7 p-1 leading-5"
+              : "min-h-7 px-1.5 py-1 leading-5"
+            : "min-h-8 px-2 py-1.5 leading-5",
+          fitValue && "w-fit max-w-full",
+        )}>{value || "–"}</span>}
+        {action}
+      </div>
+    </div>
+  )
+}
+
+export function CargoWiseGroup({
+  title,
+  children,
+  headerAction,
+  icon: Icon,
+  compact = false,
+  className,
+  contentClassName,
+}: {
+  title: string
+  children: ReactNode
+  headerAction?: ReactNode
+  icon?: typeof Search
+  compact?: boolean
+  className?: string
+  contentClassName?: string
+}) {
+  const { t } = useLanguage()
+
+  return (
+    <section className={cn("h-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", compact ? "p-2" : "p-2.5", className)}>
+      <div className={cn("flex min-w-0 items-center justify-between gap-2", compact ? "mb-1.5" : "mb-2")}>
+        <h3 className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium leading-4 text-[var(--md-ink)]">
+          {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
+          <span>{t(title)}</span>
+        </h3>
+        {headerAction}
+      </div>
+      <div className={cn("grid", compact ? "gap-1.5" : "gap-2", contentClassName)}>{children}</div>
+    </section>
+  )
 }

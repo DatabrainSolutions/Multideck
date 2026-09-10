@@ -1,3 +1,4 @@
+import bookingCustomerPanelSource from "@/components/multideck/booking-customer-panel.tsx?raw"
 import toggleGroupSource from "@/components/ui/toggle-group.tsx?raw"
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
 import quoteCargoEditorSource from "@/components/multideck/quote-details/quote-cargo-editor.tsx?raw"
@@ -138,6 +139,7 @@ export const galleryComponents = [
     description: "An editable field state for values copied or derived from linked records, with quiet provenance and a reversible manual override.",
     details: "All editable autofill controls share a left-to-right letter stagger, including inputs, comboboxes, codes, contacts and multiline notes. The real value updates immediately while the visual reveal plays without overlapping text. Long values have a bounded duration, and reduced motion shows the value immediately. Accent tint and stroke distinguish derived values without taking space from the text. Screen readers can read the source description; editing a value removes its derived state. Keep inherited, locked fields separate.",
     foundOn: [
+      { label: "Booking details", route: "/bookings/je0991133" },
       { label: "Quote details", route: "/quotes/jq20015" },
       { label: "New booking", route: "/bookings/new" },
       { label: "Components", route: "/components?component=auto-populated-field" },
@@ -234,11 +236,12 @@ export const galleryComponents = [
     description: "Compact freight-aware form controls for organisation recommendations, linked locations, derived values, Incoterms, units, recurrence and cargo characteristics. Cargo flags can inherit from individual goods lines without changing manual shipment handling.",
     details: "Use these controls in quote and booking detail workflows where expected input length should shape the field. Organisation comboboxes keep current, recent and related records above a hairline and retain the full directory below it. Location fields ask for country and port/location, then derive an editable UN/LOCODE from the official directory. Derived values use the shared auto-populated state until the operator overrides them.",
     foundOn: [
+      { label: "Booking details", route: "/bookings/je0991133" },
       { label: "Quote details", route: "/quotes/jq20013" },
       { label: "Components", route: "/components?component=quote-detail-controls" },
     ],
-    componentCode: `export {\n  CompactCombobox,\n  LocationFields,\n  AutoFilledField,\n  IncotermField,\n  AmountCurrencyField,\n  NumberUnitField,\n  RecurrenceBuilder,\n  CargoCharacteristicsField,\n} from "@/components/multideck/quote-details/quote-detail-fields"`,
-    usageCode: `<CompactCombobox\n  label="Shipper"\n  value={shipperName}\n  recommendedOptions={recentAndRelatedShippers}\n  options={allOrganisations}\n  recommendedLabel="Current, recent & related"\n  allLabel="All organisations"\n  onValueChange={setShipperName}\n/>\n\n<LocationFields label="Origin" value={origin} options={unlocodeDirectory} countries={countries} onChange={setOrigin} />\n<AutoFilledField label="UN/LOCODE" value={origin.unlocode} onChange={setUnlocode} autoPopulated={origin.unlocode === resolvedUnlocode} valueDirection="ltr" />\n<IncotermField value={incoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />\n<AmountCurrencyField label="Goods value" value={goodsValue} currencies={currencies} onChange={setGoodsValue} />`,
+    componentCode: `export {\n  CargoWiseField,\n  CargoWiseGroup,\n  CompactFieldShell,\n  CompactSectionShell,\n  CompactCombobox,\n  LocationFields,\n  AutoFilledField,\n  IncotermField,\n  AmountCurrencyField,\n  NumberUnitField,\n  RecurrenceBuilder,\n  CargoCharacteristicsField,\n} from "@/components/multideck/quote-details/quote-detail-fields"`,
+    usageCode: `<CargoWiseGroup title="Routing" compact>\n  <CargoWiseField label="Origin" value="GBFXT" compact />\n  <CargoWiseField label="Destination" value="NLRTM" compact />\n</CargoWiseGroup>\n\n<CompactCombobox\n  label="Shipper"\n  value={shipperName}\n  recommendedOptions={recentAndRelatedShippers}\n  options={allOrganisations}\n  recommendedLabel="Current, recent & related"\n  allLabel="All organisations"\n  onValueChange={setShipperName}\n/>\n\n<LocationFields label="Origin" value={origin} options={unlocodeDirectory} countries={countries} onChange={setOrigin} />\n<AutoFilledField label="UN/LOCODE" value={origin.unlocode} onChange={setUnlocode} autoPopulated={origin.unlocode === resolvedUnlocode} valueDirection="ltr" />\n<IncotermField value={incoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />\n<AmountCurrencyField label="Goods value" value={goodsValue} currencies={currencies} onChange={setGoodsValue} />`,
   },
   {
     id: "quote-cargo-editor",
@@ -255,10 +258,10 @@ export const galleryComponents = [
     name: "Cargo Handling Editor",
     category: "Forms",
     description: "Per-line handling selections with explicit outstanding details.",
-    details: "Hazardous and temperature requirements use dialogs. Oversized uses cargo measurements; fragile and food-grade use the goods description. TBC permits Quote issue, not Booking operational readiness or completion. New lines start without selections.",
+    details: "Booking handling selections open supported fields and render compact expandable Goods evidence rows. Hazardous and temperature requirements have dedicated details; oversized uses cargo measurements, and fragile and food-grade use the goods description. Source evidence remains distinct from handling requirements. TBC must be resolved before Booking readiness or completion.",
     foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=cargo-handling-editor" }],
     componentCode: cargoHandlingEditorSource,
-    usageCode: `<CargoHandlingEditor value={line.handlingDetailsJson} line={line} editable={!submitted} onChange={handlingDetailsJson => updateLine({ handlingDetailsJson })} />`,
+    usageCode: `<CargoHandlingEditor booking value={line.handlingDetailsJson} line={line} editable={!saving} onChange={handlingDetailsJson => updateLine({ handlingDetailsJson })} onLineChange={(field, value) => updateLine({ [field]: value })} />`,
   },
   {
     id: "cargo-allocation-editor",
@@ -271,11 +274,21 @@ export const galleryComponents = [
     usageCode: `<CargoAllocationEditor\n  cargo={workspace.cargo}\n  equipment={workspace.containers}\n  routes={workspace.routes}\n  allocations={workspace.cargoAllocationState?.allocations}\n  legacyLinks={workspace.cargoAllocationState?.legacyUnquantifiedLinks}\n  editable={canEdit && !saving}\n  validationAttempt={validationAttempt}\n  onChange={updateDraftAllocations}\n/>`,
   },
   {
+    id: "booking-customer-panel",
+    name: "Booking Customer Panel",
+    category: "Data display",
+    description: "Linked customer and saved preferences, with compact contact pills that replace the company identity with contact details and icon actions in the same panel.",
+    details: "Loads the exact customer through the authenticated CRM loader. Customer changes clear previous details. Contact drill-in preserves account context and returns focus to its pill. Supports unassigned, loading, denied and missing-information states; profile links open separately and email/phone actions remain user-operated.",
+    foundOn: [{ label: "Booking Overview", route: "/bookings/je0991133" }, { label: "Components", route: "/components?component=booking-customer-panel" }],
+    componentCode: bookingCustomerPanelSource,
+    usageCode: `<BookingCustomerPanel customerId={workspace.booking.customerId} contactId={customerParty?.contactId} onAssignCustomer={openCustomerSelector} />`,
+  },
+  {
     id: "booking-dangerous-goods",
     name: "Booking Dangerous Goods",
     category: "Forms",
     description: "Record supplied dangerous-goods evidence for one saved cargo line, with explicit unknown flags and retained source history.",
-    details: "Use inside Booking cargo details. Legacy and voided evidence is read-only. This is not a classification or transport approval. Keep the parent draft clean before direct saving and replace it only with the complete returned workspace. Marine pollutant entry is maritime-relevant; existing supplied values remain visible after mode changes.",
+    details: "Compose with CargoHandlingEditor through renderHandling to show source-evidence entry within Hazardous and saved records in expandable Goods evidence rows. Empty evidence has no standalone section. Legacy and voided evidence is read-only. This is not a classification or transport approval. Keep the parent draft clean before direct saving and replace it only with the complete returned workspace. Marine pollutant entry is maritime-relevant; existing supplied values remain visible after mode changes.",
     foundOn: [{ label: "Booking details", route: "/bookings/je0991134" }, { label: "Components", route: "/components?component=booking-dangerous-goods" }],
     componentCode: bookingDangerousGoodsSource,
     usageCode: `<BookingDangerousGoodsEditor\n  bookingId={workspace.booking.jobId}\n  bookingReference={workspace.booking.bookingReference}\n  bookingUpdatedAt={workspace.booking.updatedAt}\n  cargo={selectedCargo}\n  maritime={hasSeaLeg}\n  events={workspace.events}\n  editable={canEdit && !saving}\n  disabledReason={dirty ? "Save or discard Booking changes first." : undefined}\n  onSaved={replaceCleanWorkspace}\n/>`,
@@ -1912,7 +1925,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Tabs",
     category: "Navigation",
     description: "A reusable horizontal tab rail for switching sections inside one record or workflow.",
-    details: "Use when the user should stay in context while moving between record sections. Booking Details uses the shared keyboard-accessible Tabs primitive for Control, Parties, Route & schedule, and Cargo & equipment.",
+    details: "Use when the user should stay in context while moving between record sections. Quotes and bookings use the shared keyboard-accessible tab rail for their main workspace sections. Booking Details is one continuous form, with job data, parties, routing, cargo and terms.",
     foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Account detail", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Booking detail", route: "/bookings/je0991133" }, { label: "Warehouse", route: "/warehouse" }, { label: "Finance administration", route: "/admin/finance" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function TabsRail({ tabs, activeTab, onChange }) {\n  return (\n    <div className="flex gap-6 overflow-x-auto border-b border-[rgba(11,20,19,0.08)]">\n      {tabs.map((tab) => (\n        <button key={tab.label} onClick={() => onChange(tab.label)}>\n          {tab.label}\n          {tab.value ? <span>{tab.value}</span> : null}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<TabsRail\n  tabs={tabs}\n  activeTab={activeTab}\n  onChange={setActiveTab}\n/>`,
@@ -2152,10 +2165,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Customs Readiness Review",
     category: "Operations",
     description: "A progress-led readiness review that shows exactly what blocks a declaration and opens the relevant correction inline.",
-    details: "Use before a Customs handoff or submission. Keep each issue actionable, save through the owning workflow, then recalculate readiness from the server.",
+    details: "Use before a Customs handoff or submission. Keep each issue actionable, save through the owning workflow, then recalculate readiness from the server. Booking uses compactHeader to show the heading and percentage once.",
     foundOn: [{ label: "Finance administration", route: "/finance/administration" }, { label: "Booking Customs review", route: "/bookings" }, { label: "Customs declaration Review", route: "/customs/standalone" }, { label: "Components", route: "/components?component=customs-readiness-review" }],
     componentCode: `export function CustomsReadinessReview({ percent, completeChecks, totalChecks, issues, renderFix }) {\n  return (\n    <Surface>\n      <h2>{percent}% complete</h2>\n      <p>{completeChecks}/{totalChecks} readiness checks passed</p>\n      {issues.map((issue) => (\n        <div key={issue.key}>\n          <span>{issue.label}</span>\n          <button>Fix</button>\n          {renderFix(issue)}\n        </div>\n      ))}\n    </Surface>\n  )\n}`,
-    usageCode: `<CustomsReadinessReview\n  percent={readiness.percent}\n  completeChecks={readiness.completeChecks}\n  totalChecks={readiness.totalChecks}\n  issues={readiness.missing}\n  renderFix={(issue, close) => <InlineCorrection issue={issue} onSaved={close} />}\n/>`,
+    usageCode: `<CustomsReadinessReview\n  compactHeader\n  percent={readiness.percent}\n  completeChecks={readiness.completeChecks}\n  totalChecks={readiness.totalChecks}\n  issues={readiness.missing}\n  renderFix={(issue, close) => <InlineCorrection issue={issue} onSaved={close} />}\n/>`,
   },
   {
     id: "booking-ask-panel",

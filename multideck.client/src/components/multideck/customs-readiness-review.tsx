@@ -14,6 +14,7 @@ export type CustomsReadinessReviewIssue = {
 }
 
 export function CustomsReadinessReview({
+  compactHeader = false,
   completeChecks,
   emptyDescription,
   emptyTitle,
@@ -30,6 +31,7 @@ export function CustomsReadinessReview({
   progressLabel = "Customs readiness",
   reviewContent,
 }: {
+  compactHeader?: boolean
   completeChecks: number
   emptyDescription: string
   emptyTitle: string
@@ -66,9 +68,11 @@ export function CustomsReadinessReview({
       ) : null}
       <div className="flex items-center justify-between gap-4">
         <span>
+          {compactHeader ? <h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t(title)}</h2> : <>
           <p className="text-[12px] font-medium text-[var(--md-accent)]">{t(title)}</p>
           <h2 className="mt-1 text-[22px] font-medium text-[var(--md-ink)]">{headline ? t(headline) : <>{percent}% {t("complete")}</>}</h2>
           {headline ? <p className="mt-1 text-[13px] font-medium text-[var(--md-ink)]">{percent}% {t("complete")}</p> : null}
+          </>}
           <p className="mt-1 text-[12px] text-[var(--md-text)]">{completeChecks}/{totalChecks} {t("readiness checks passed")}</p>
         </span>
         <div

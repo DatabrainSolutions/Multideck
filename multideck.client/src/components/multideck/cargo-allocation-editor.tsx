@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,12 +9,13 @@ import { allocationMeasures, analyseCargoAllocations, newBookingCargoAllocation,
 import type { BookingCargoAllocation, BookingCargoAllocationState, BookingWorkflowCargo, BookingWorkflowContainer, BookingWorkflowRoute } from '@/lib/booking-workflow-api'
 
 /** Reusable allocation rows. The Booking owns persistence and concurrency. */
-export function CargoAllocationEditor({ cargo, equipment, routes, allocations, legacyLinks = [], editable, validationAttempt = 0, onChange }: {
+export function CargoAllocationEditor({ cargo, equipment, routes, allocations, legacyLinks = [], editable, validationAttempt = 0, supportingInfo, onChange }: {
   cargo: readonly BookingWorkflowCargo[]
   equipment: readonly BookingWorkflowContainer[]
   routes: readonly BookingWorkflowRoute[]
   allocations: BookingCargoAllocation[] | undefined
   legacyLinks?: BookingCargoAllocationState['legacyUnquantifiedLinks']
+  supportingInfo?: ReactNode
   editable: boolean
   validationAttempt?: number
   onChange: (lines: BookingCargoAllocation[]) => void
@@ -47,10 +48,12 @@ export function CargoAllocationEditor({ cargo, equipment, routes, allocations, l
   if (!allocations) return <p className="text-[12px] leading-relaxed text-[var(--md-text)]">{t('Cargo allocation is not available on this deployment yet. Existing equipment details remain unchanged.')}</p>
   return <section ref={root} tabIndex={-1} aria-label={t('Cargo allocation')} className="@container grid min-w-0 gap-4 outline-offset-2">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="max-w-2xl text-[12px] leading-relaxed text-[var(--md-text)]">
+      {supportingInfo ? <div className="flex items-center gap-1 text-[12px] text-[var(--md-text)]">
+        <p>{t('Blank quantities are unknown. Container totals and VGM stay unchanged.')}</p>{supportingInfo}
+      </div> : <div className="max-w-2xl text-[12px] leading-relaxed text-[var(--md-text)]">
         <p>{t('Assign goods to equipment for the whole journey or a specific leg. Successive legs are balanced separately.')}</p>
         <p>{t('Blank quantities remain unknown. Allocations do not change container totals, VGM or the accepted Quote.')}</p>
-      </div>
+      </div>}
       {editable ? <Button ref={addButton} type="button" variant="outline" size="sm" disabled={!cargoOptions.length || !equipmentOptions.length || allocations.length >= 1000}
         onClick={() => {
           if (!editable || !cargoOptions.length || !equipmentOptions.length || allocations.length >= 1000) return

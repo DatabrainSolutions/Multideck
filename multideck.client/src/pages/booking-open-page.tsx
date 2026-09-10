@@ -2,7 +2,8 @@ import { workspaceStorageKey } from "@/lib/workspace-environment"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
-import { Surface } from "@/components/multideck/surface"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useLanguage } from "@/i18n/language-provider"
 import { openBookingWorkflow, type BookingOpeningDirection } from "@/lib/booking-workflow-api"
 
@@ -14,7 +15,12 @@ function requestKey(requestStorageKey: string) {
   return next
 }
 
-export function BookingOpenPage({ navigate, initialMode }: { navigate: (path: string) => void; initialMode?: "road" }) {
+export function BookingOpenPage({ navigate, initialMode, onCancel, returnFocus }: {
+  navigate: (path: string) => void
+  initialMode?: "road"
+  onCancel?: () => void
+  returnFocus?: () => void
+}) {
   const { t } = useLanguage()
   const pending = useRef<ReturnType<typeof openBookingWorkflow> | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -44,46 +50,57 @@ export function BookingOpenPage({ navigate, initialMode }: { navigate: (path: st
     setAttempt((current) => current + 1)
   }
 
+  const creating = Boolean(requestedDirection) && !error
+  const cancel = onCancel ?? (() => navigate(initialMode === "road" ? "/road-control" : "/bookings"))
+
   return (
-    <main className="grid min-h-full place-items-center bg-[var(--md-analytics-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
-      {!requestedDirection ? (
-        <Surface padding="lg" className="w-full max-w-[520px] rounded-[var(--md-radius-xl)]">
-          <h1 className="text-[18px] font-medium">{t(initialMode === "road" ? "New road job" : "New booking")}</h1>
-          <p id="booking-opening-direction-help" className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">
-            {t("Choose the direction relative to the office that owns this Booking. It is needed to allocate the correct reference; no route or dates will be assumed.")}
-          </p>
-          <form className="mt-4" onSubmit={event => { event.preventDefault(); if (direction) setRequestedDirection(direction) }}>
+    <Dialog open onOpenChange={open => { if (!open && !creating) cancel() }}>
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-6 text-[var(--md-ink)] sm:max-w-[460px]"
+        showCloseButton={!creating}
+        closeLabel={t("Close")}
+        onCloseAutoFocus={event => { if (returnFocus) { event.preventDefault(); returnFocus() } }}
+        onEscapeKeyDown={event => { if (creating) event.preventDefault() }}
+        onPointerDownOutside={event => { if (creating) event.preventDefault() }}
+      >
+        <DialogHeader>
+          <DialogTitle className="pr-8 text-[18px] font-medium">{t(initialMode === "road" ? "New road job" : "New booking")}</DialogTitle>
+          <DialogDescription className="text-[13px] leading-6 text-[var(--md-text)]">
+            {t("Choose the direction for your office. The booking starts as Provisional; add the remaining details next.")}
+          </DialogDescription>
+        </DialogHeader>
+        <form className="space-y-5" onSubmit={event => {
+          event.preventDefault()
+          if (!direction || creating) return
+          if (error) retry()
+          else setRequestedDirection(direction)
+        }}>
+          <div className="space-y-2">
             <label htmlFor="booking-opening-direction" className="text-[13px] font-medium">{t("Direction")}</label>
-            <select id="booking-opening-direction" required value={direction} aria-describedby="booking-opening-direction-help"
-              className="mt-2 h-10 w-full rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
-              onChange={event => setDirection(event.target.value as BookingOpeningDirection)}>
-              <option value="" disabled>{t("Choose direction")}</option>
-              <option value="import">{t("Import")}</option>
-              <option value="export">{t("Export")}</option>
-              <option value="domestic">{t("Domestic")}</option>
-              <option value="cross_trade">{t("Cross trade")}</option>
-            </select>
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => navigate(initialMode === "road" ? "/road-control" : "/bookings")}>{t("Cancel")}</Button>
-              <Button type="submit">{t("Open booking")}</Button>
-            </div>
-          </form>
-        </Surface>
-      ) : error ? (
-        <Surface padding="lg" className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] text-center">
-          <h1 className="text-[20px] font-medium">{t("Booking could not be opened")}</h1>
-          <p role="alert" className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{error}</p>
-          <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Button variant="ghost" onClick={() => navigate(initialMode === "road" ? "/road-control" : "/bookings")}>{t(initialMode === "road" ? "Return to Road control" : "Return to bookings")}</Button>
-            <Button onClick={retry}>{t("Try again")}</Button>
+            <Select value={direction} onValueChange={value => setDirection(value as BookingOpeningDirection)} disabled={Boolean(requestedDirection)}>
+              <SelectTrigger id="booking-opening-direction" aria-required="true" className="w-full">
+                <SelectValue placeholder={t("Choose direction")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="import">{t("Import")}</SelectItem>
+                <SelectItem value="export">{t("Export")}</SelectItem>
+                <SelectItem value="domestic">{t("Domestic")}</SelectItem>
+                <SelectItem value="cross_trade">{t("Cross trade")}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        </Surface>
-      ) : (
-        <div className="flex flex-col items-center gap-3" role="status" aria-live="polite">
-          <DotGridLoader size="md" />
-          <p className="text-[13px] text-[var(--md-text)]">{t("Opening a new booking...")}</p>
-        </div>
-      )}
-    </main>
+          {error ? <p role="alert" className="text-[13px] leading-5 text-[var(--md-status-red-ink)]">{error}</p> : null}
+          {creating ? <div role="status" aria-live="polite" className="flex items-center gap-2 text-[13px] text-[var(--md-text)]">
+            <DotGridLoader size="sm" />{t("Creating booking…")}
+          </div> : null}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="ghost" disabled={creating} onClick={cancel}>{t("Cancel")}</Button>
+            <Button type="submit" disabled={!direction || creating} title={!direction ? t("Choose a direction first") : undefined}>
+              {t(error ? "Try again" : creating ? "Creating…" : "Create provisional booking")}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }

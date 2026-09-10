@@ -50,6 +50,17 @@ Supabase-managed Auth and Storage schemas are not part of this dump. Configure A
 apply the reviewed Storage bucket policies, deploy every Edge Function, set tenant-specific secrets,
 and run the cross-tenant denial checklist before considering a tenant live.
 
+## Booking lifecycle provisioning
+
+After the preceding booking, quote-sync and finance migrations, apply
+`20260910151110_booking_provisional_lifecycle.sql` followed by
+`20260910151116_provisional_no_financial_records.sql`. Deploy the matching
+`agent-dexter` and `finance-accruals` functions. The second migration enables
+the client lifecycle selector only after provisional finance guards exist.
+Historical financial records are retained; review any provisional cost lines
+before tenant rollout. Keep these private-schema changes as ordered migrations
+until a validated complete snapshot is regenerated.
+
 ## Reports provisioning
 
 The current snapshot predates the Reports workspace. Apply the later migrations in
