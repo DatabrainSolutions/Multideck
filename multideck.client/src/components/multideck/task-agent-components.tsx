@@ -44,7 +44,7 @@ export function TaskAgentIcon({
         <Clock className="size-full p-2 text-[var(--md-subtle)]" />
       ) : (
         <svg
-          className="size-full overflow-hidden"
+          className="size-full scale-[0.6] overflow-hidden"
           viewBox={iconViews[icon] ?? iconViews[0]}
         >
           <image
