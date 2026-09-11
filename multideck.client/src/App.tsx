@@ -571,7 +571,9 @@ export default function App() {
   useEffect(() => {
     const onPopState = () => {
       const destination = getRoute()
-      const destinationUrl = ['/agent-dexter','/to-do'].includes(destination) && window.location.pathname === destination
+      // Settings keeps its active panel in the query/hash. Preserve it when
+      // the sidebar dispatches popstate, before panel listeners read the URL.
+      const destinationUrl = ['/agent-dexter','/to-do','/settings'].includes(destination) && window.location.pathname === destination
         ? `${destination}${window.location.search}${window.location.hash}` : destination
       const proceed = () => {
         window.history.replaceState(window.history.state, "", destinationUrl)
