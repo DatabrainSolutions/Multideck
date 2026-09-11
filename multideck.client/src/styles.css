@@ -6733,6 +6733,10 @@ html.md-summon-picking {
 
 /* Keep agent controls compact on laptop-height and narrower viewports. */
 @media (max-height: 900px), (max-width: 1440px) {
+  .task-agent-stack[data-collapsed="false"] + .sidebar-support-divider {
+    display: none;
+  }
+
   .task-agent-stack[data-collapsed="false"] {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
