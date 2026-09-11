@@ -3,7 +3,7 @@ import {test} from 'node:test'
 import {readFileSync,mkdtempSync,rmSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {spawnSync} from 'node:child_process'
+import {spawn,spawnSync} from 'node:child_process'
 const bin=process.env.PG_TEST_BIN||'/opt/homebrew/opt/postgresql@17/bin'
 const migration=readFileSync(new URL('../migrations/20260910212840_dexter_background_tasks.sql',import.meta.url),'utf8')
 const recoveryMigration=readFileSync(new URL('../migrations/20260910214530_dexter_task_recovery.sql',import.meta.url),'utf8')
@@ -11,7 +11,8 @@ const calendarMigration=readFileSync(new URL('../migrations/20260910214949_dexte
 const retryMigration=readFileSync(new URL('../migrations/20260910215732_dexter_task_retry_phase.sql',import.meta.url),'utf8')
 const conversationMigration=readFileSync(new URL('../migrations/20260910220611_dexter_task_conversation_lifecycle.sql',import.meta.url),'utf8')
 const deletedControlMigration=readFileSync(new URL('../migrations/20260910221122_dexter_task_deleted_control.sql',import.meta.url),'utf8')
-test('durable tasks: owner isolation, three slots, leases, saved results, schedules, events and confirmed completion',()=>{
+const scheduleClaimMigration=readFileSync(new URL('../migrations/20260910235915_dexter_schedule_claim_race.sql',import.meta.url),'utf8')
+test('durable tasks: owner isolation, three slots, leases, saved results, schedules, events and confirmed completion',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'dexter-tasks-'));const data=join(dir,'data');let started=false
  const run=(cmd,args,input)=>{const r=spawnSync(join(bin,cmd),args,{input,encoding:'utf8',timeout:30000});assert.equal(r.status,0,`${r.stderr}\n${r.stdout}`)}
  try {
@@ -48,6 +49,7 @@ test('durable tasks: owner isolation, three slots, leases, saved results, schedu
  ${retryMigration}
  ${conversationMigration}
  ${deletedControlMigration}
+ ${scheduleClaimMigration}
  -- Local fixture has no outbound network. Keep all actual queue/lease logic.
  create or replace function _dexter_task_kick() returns void language sql as $$select$$;
  update "AI_DexterTaskSettings" set enabled=true;
@@ -88,6 +90,22 @@ test('durable tasks: owner isolation, three slots, leases, saved results, schedu
  v:=multideck_task_control(a,'reschedule',(select version from "AI_DexterTaskAssignments" where id=a),null,null,now()+interval '1 day');
  perform set_config('request.jwt.claim.role','service_role',true);
  if multideck_task_claim()<>'[]'::jsonb then raise exception 'future run early';end if;
+ perform set_config('request.jwt.claim.role','authenticated',true);
+ -- Changing the time replaces the pending run and stale tabs cannot restore it.
+ begin perform multideck_task_control(a,'reschedule',(v->>'version')::int,null,null,now()-interval '1 minute');raise exception 'past schedule accepted';exception when invalid_parameter_value then null;end;
+ begin perform multideck_task_control(a,'reschedule',(v->>'version')::int,null,null,null);raise exception 'missing schedule accepted';exception when invalid_parameter_value then null;end;
+ v:=multideck_task_control(a,'reschedule',(v->>'version')::int,null,null,now()+interval '2 days');
+ if (select count(*) from "AI_DexterTaskRuns" where assignment_id=a and state='queued')<>1 or
+    (select due_at from "AI_DexterTaskRuns" where assignment_id=a and state='queued')<>now()+interval '2 days' then raise exception 'change time retained old run';end if;
+ begin perform multideck_task_control(a,'reschedule',(v->>'version')::int-1,null,null,now()+interval '3 days');raise exception 'stale reschedule accepted';exception when serialization_failure then null;end;
+ -- Do now cancels the future run and executes once, without reinterpreting its original date.
+ v:=multideck_task_control(a,'resume',(v->>'version')::int);
+ if v->>'status'<>'queued' or (select count(*) from "AI_DexterTaskRuns" where assignment_id=a and state='queued')<>1 or
+    not exists(select 1 from "AI_DexterTaskRuns" where assignment_id=a and state='queued' and phase='execute' and due_at<=now()) then raise exception 'do now did not replace scheduled execution';end if;
+ -- Return it to a future slot; neither the old slot nor Do now may still run.
+ v:=multideck_task_control(a,'reschedule',(v->>'version')::int,null,null,now()+interval '1 day');
+ perform set_config('request.jwt.claim.role','service_role',true);
+ if multideck_task_claim()<>'[]'::jsonb then raise exception 'replaced do now still claimed';end if;
  perform set_config('request.jwt.claim.role','authenticated',true);
  perform multideck_task_control(a,'cancel',(v->>'version')::int);
  if exists(select 1 from "AI_DexterTaskRuns" where assignment_id=a and state in ('running','queued')) then raise exception 'cancel left work';end if;
@@ -150,6 +168,30 @@ test('durable tasks: owner isolation, three slots, leases, saved results, schedu
  begin perform multideck_task_control(a,'retry',(select version from "AI_DexterTaskAssignments" where id=a));raise exception 'deleted task restarted';exception when insufficient_privilege then null;end;
  if has_table_privilege('authenticated','public."AI_DexterTaskRuns"','SELECT') or has_function_privilege('authenticated','public.multideck_task_worker_rpc(uuid,uuid,text,jsonb)','EXECUTE') then raise exception 'worker data exposed';end if;
  end$$;
+ do $$declare c uuid:=gen_random_uuid();u uuid:=gen_random_uuid();actor uuid:=gen_random_uuid();t uuid;a uuid;r uuid;token uuid;v jsonb;
+ begin
+  insert into "cmp_Company" values(c);insert into "cmp_Users" values(u,c,actor,'active',null,null,null);
+  perform set_config('request.jwt.claim.sub',actor::text,true);perform set_config('request.jwt.claim.role','authenticated',true);
+  insert into "OPS_UserTasks"("TodoTask_CompanyID","TodoTask_OwnerUserID","TodoTask_Title") values(c,u,'Schedule timing QA') returning "TodoTask_ID" into t;
+  v:=multideck_task_handoff(t);a:=(v->>'id')::uuid;
+  v:=multideck_task_control(a,'reschedule',(v->>'version')::int,null,null,now()+interval '5 minutes');
+  perform set_config('request.jwt.claim.role','service_role',true);
+  if multideck_task_claim()<>'[]'::jsonb then raise exception 'scheduled task started early with free slots';end if;
+  -- Advance this isolated fixture to its deadline, keeping the production claim path.
+  update "AI_DexterTaskRuns" set due_at=now() where assignment_id=a and state='queued';
+  if jsonb_array_length(multideck_task_claim())<>1 then raise exception 'due schedule did not start';end if;
+  if (select status from "AI_DexterTaskAssignments" where id=a)<>'working' then raise exception 'due task not working';end if;
+  if multideck_task_claim()<>'[]'::jsonb then raise exception 'due schedule started twice';end if;
+  select id,lease_token into r,token from "AI_DexterTaskRuns" where assignment_id=a and state='running';
+  if (select phase from "AI_DexterTaskRuns" where id=r)<>'execute' then raise exception 'due task rediscovered schedule';end if;
+  insert into "AI_Messages"("AIMSG_ConversationID","AIMSG_Role","AIMSG_ContentJSON") values((v->>'conversation_id')::uuid,'assistant',jsonb_build_object('metadata',jsonb_build_object('taskRunId',r)));
+  perform multideck_task_finish(r,token,'{"status":"ready","outcome":"deliver_result","summary":"Scheduled result"}');
+  if multideck_task_claim()<>'[]'::jsonb then raise exception 'finished schedule repeated';end if;
+  if (select status from "AI_DexterTaskAssignments" where id=a)<>'ready' then raise exception 'scheduled response disappeared before review';end if;
+  perform set_config('request.jwt.claim.role','authenticated',true);
+  perform multideck_task_control(a,'view',0,null,1);
+  if (select "TodoTask_StatusCode" from "OPS_UserTasks" where "TodoTask_ID"=t)<>'completed' then raise exception 'scheduled response did not complete on view';end if;
+ end$$;
  do $$declare c uuid:=gen_random_uuid();u uuid:=gen_random_uuid();actor uuid:=gen_random_uuid();id uuid:=gen_random_uuid();conn uuid:=gen_random_uuid();v jsonb;bounds record;
  begin
   insert into "cmp_Company" values(c);insert into "cmp_Users" values(u,c,actor,'active',null,null,null);
@@ -167,5 +209,31 @@ test('durable tasks: owner isolation, three slots, leases, saved results, schedu
   if multideck_dexter_domain_external_events(c,'Private detail',25)<>'[]'::jsonb then raise exception 'private title searchable';end if;
  end$$;
  `)
+ // Concurrent reschedule versus a worker whose candidate was selected earlier.
+ const qaAuth='10000000-0000-4000-8000-000000000001'
+ const qaOwner='10000000-0000-4000-8000-000000000002'
+ const qaCompany='10000000-0000-4000-8000-000000000003'
+ const qaTask='10000000-0000-4000-8000-000000000004'
+ sql(`insert into "cmp_Company" values('${qaCompany}');insert into "cmp_Users" values('${qaOwner}','${qaCompany}','${qaAuth}','active',null,null,null);
+ select set_config('request.jwt.claim.sub','${qaAuth}',false);select set_config('request.jwt.claim.role','authenticated',false);
+ insert into "OPS_UserTasks"("TodoTask_ID","TodoTask_CompanyID","TodoTask_OwnerUserID","TodoTask_Title") values('${qaTask}','${qaCompany}','${qaOwner}','Concurrent schedule QA');select multideck_task_handoff('${qaTask}');`)
+ const args=['-h',dir,'-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-At']
+ const holder=spawn(join(bin,'psql'),args,{stdio:['pipe','pipe','pipe']})
+ let holderOut='';let holderErr='';holder.stdout.on('data',b=>holderOut+=b);holder.stderr.on('data',b=>holderErr+=b)
+ const holderDone=new Promise(resolve=>holder.on('close',resolve))
+ const until=async(check)=>{const deadline=Date.now()+10000;while(!check()){assert.ok(Date.now()<deadline,'concurrency setup timed out');await new Promise(resolve=>setTimeout(resolve,25))}}
+ holder.stdin.write(`begin;select set_config('request.jwt.claim.sub','${qaAuth}',true);select set_config('request.jwt.claim.role','authenticated',true);select id from "AI_DexterTaskAssignments" where task_id='${qaTask}' for update;select 'assignment_locked';
+`)
+ await until(()=>holderOut.includes('assignment_locked'))
+ const claimant=spawn(join(bin,'psql'),args,{stdio:['pipe','pipe','pipe']})
+ let claimOut='';let claimErr='';claimant.stdout.on('data',b=>claimOut+=b);claimant.stderr.on('data',b=>claimErr+=b)
+ const claimDone=new Promise(resolve=>claimant.on('close',resolve))
+ claimant.stdin.end("set application_name='schedule_race_claim';select set_config('request.jwt.claim.role','service_role',false);select multideck_task_claim();")
+ const blocked=()=>spawnSync(join(bin,'psql'),[...args,'-c',"select count(*) from pg_stat_activity where application_name='schedule_race_claim' and wait_event_type='Lock'"],{encoding:'utf8'}).stdout.trim()==='1'
+ await until(blocked)
+ holder.stdin.end(`select multideck_task_control(id,'reschedule',version,null,null,now()+interval '1 day') from "AI_DexterTaskAssignments" where task_id='${qaTask}';commit;`)
+ assert.equal(await holderDone,0,holderErr);assert.equal(await claimDone,0,claimErr)
+ assert.ok(claimOut.includes('[]'),`replaced run was claimed: ${claimOut}`)
+ sql(`do $$begin if (select count(*) from "AI_DexterTaskRuns" r join "AI_DexterTaskAssignments" a on a.id=r.assignment_id where a.task_id='${qaTask}' and r.state='queued' and r.due_at>now())<>1 or exists(select 1 from "AI_DexterTaskRuns" r join "AI_DexterTaskAssignments" a on a.id=r.assignment_id where a.task_id='${qaTask}' and r.state='running') then raise exception 'reschedule race started old work';end if;end$$;`)
  }finally{if(started)spawnSync(join(bin,'pg_ctl'),['-D',data,'-m','immediate','-w','stop']);rmSync(dir,{recursive:true,force:true})}
 })

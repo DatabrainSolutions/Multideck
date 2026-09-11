@@ -46,25 +46,16 @@ export function agentHasUpdate(agent: TaskAgent) {
     ['ready', 'needs_input', 'failed', 'completed'].includes(agent.status)
   )
 }
-export function sidebarTaskAgents(
-  agents: TaskAgent[],
-  openConversationId: string | null = null,
-) {
+export function isSidebarTaskAgent(agent: TaskAgent) {
+  if (agent.taskStatus === 'completed') return false
+  return ['working', 'queued'].includes(agent.status) ||
+    (agent.status === 'ready' && agentHasUpdate(agent))
+}
+export function sidebarTaskAgents(agents: TaskAgent[]) {
   const rank = (a: TaskAgent) =>
-    agentHasUpdate(a)
-      ? ['failed', 'needs_input'].includes(a.status)
-        ? 0
-        : 1
-      : 2
+    agentHasUpdate(a) ? 0 : a.status === 'working' ? 1 : 2
   return agents
-    .filter(
-      (a) =>
-        a.status === 'working' ||
-        agentHasUpdate(a) ||
-        (a.conversation_id === openConversationId &&
-          a.result_revision > 0 &&
-          ['ready', 'needs_input', 'failed', 'completed'].includes(a.status)),
-    )
+    .filter(isSidebarTaskAgent)
     .sort(
       (a, b) =>
         rank(a) - rank(b) ||

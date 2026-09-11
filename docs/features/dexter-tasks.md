@@ -5,12 +5,12 @@ Tasks retains the daily list, quick add, priorities, record references and compl
 ## Operator experience
 
 - Up to three agents work per operator; further work queues. Waiting for a date, an event or review does not hold a working slot.
-- The sidebar above Submit a ticket shows at most three working agents or unseen results. View all opens Tasks → With Dexter.
+- The sidebar above Submit a ticket shows at most three queued/working agents or unseen results. Scheduled and event-waiting agents stay in Tasks until execution starts. View all opens Tasks → With Dexter.
 - A brief/check/comparison completes when its actual latest result enters the visible conversation. Loading or prefetching it is not acknowledgement.
 - A reply task completes only after the connected provider confirms the matching draft was sent. Merely saving a provider draft does not complete a reply task.
 - A record-change task completes when every proposal in its latest result has succeeded. Approval is still required for each operational change.
 - Viewing a blocker or unsent reply hides its sidebar row after navigating away, while the task stays open. A later result resurfaces the same agent.
-- Stop invalidates active work and pauses a linked event watch. A retry or follow-up explicitly reopens the task. Change time uses the operator's local timezone. Retrying due work keeps its execution phase. Deleting the task stops its work and closes its conversation; an assigned conversation cannot be removed separately while its task remains.
+- Stop invalidates active work and pauses a linked event watch. A retry or follow-up explicitly reopens the task. Worker claims re-check the run after acquiring the assignment lock, so a simultaneous schedule change cannot revive an old run. Change time shows the saved run time in the browser's local timezone and replaces the previous pending run. Do now replaces a scheduled run with immediate execution, retaining the same agent and conversation without rediscovering its original deadline. Execution explicitly overrides the original run time; relative research dates remain anchored to the originating instruction, including after retries. Retrying due work keeps its execution phase. Deleting the task stops its work and closes its conversation; an assigned conversation cannot be removed separately while its task remains.
 
 ## Useful examples
 
@@ -51,3 +51,11 @@ Creating or controlling background agents through model-generated actions is int
 - A rolled-back check against the connected tenant exercises the actual task domain, watch creation, match/non-match, duplicate suppression, pause/resume and foreign-owner denial. No business message is sent by these checks. Temporary QA tasks are removed after verification.
 
 The broader existing Dexter/Home contract selection has six failures also reproduced against the unchanged branch HEAD (51/57 pass); these are separate from the task lifecycle tests. Service-only tables deliberately have no browser RLS policy. Public owner RPCs deliberately use permission-checked security-definer functions; Supabase reports these patterns as advisory notices.
+
+### Scheduling verification — 11 September 2026
+
+Chrome on localhost:3000 against the connected development backend: the saved 15 September run was changed to 11 September 00:58 BST, retained after reload, and absent from the sidebar while waiting. The old run was cancelled. The cloud worker claimed the replacement at 00:58:03 BST and saved its result at 00:58:51 on attempt one. Without opening the conversation, the sidebar changed from Working to Ready to review; opening the result completed the task and removed its row. The scheduler checks once per minute, so this is minute-level scheduling, not a promise of execution at an exact second; busy worker slots can delay a due task.
+
+The PostgreSQL regression runs two real concurrent sessions to reproduce a schedule change against an already selected worker candidate. It fails with a deadlock before the fix and passes with the new lock order and state re-check. Other assertions cover no early start with free slots, exactly one due execution, old-run replacement, stale-version rejection, cancellation, Do now preserving execution phase, and completion on review.
+
+The first live Do now check exposed a model instruction conflict: it attempted to retain the original future execution time. After adding explicit execution precedence and the original request-date anchor, the repeat cancelled the future run, executed once, and returned the requested two-sentence calendar summary at 01:04:58 BST. The response remained Ready to review until actually visible, then completed and cleared the sidebar. No queued/running runs remained for the test assignment. Backend versions verified active: agent-dexter 234 and dexter-task-worker 9; frontend changes verified on localhost, not claimed deployed.

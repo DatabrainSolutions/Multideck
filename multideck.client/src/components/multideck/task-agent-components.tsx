@@ -1,4 +1,4 @@
-import { DEXTER_SELECT_CONVERSATION_EVENT } from '@/lib/dexter-navigation'
+import { DEXTER_SELECT_CONVERSATION_EVENT, readDexterConversationIdFromLocation } from '@/lib/dexter-navigation'
 import { useId, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
@@ -16,7 +16,7 @@ import {
   taskAgentStatus,
   sidebarTaskAgents,
   taskAgentUrl,
-  agentHasUpdate,
+  isSidebarTaskAgent,
 } from '@/lib/task-agents'
 import { useTaskAgents, controlTaskAgent } from '@/lib/task-agent-store'
 
@@ -73,20 +73,16 @@ export function TaskAgentStack({
   collapsed = false,
   onOpen,
   onViewAll,
-  openConversationId = null,
 }: {
   agents: TaskAgent[]
   collapsed?: boolean
   onOpen: (agent: TaskAgent) => void
   onViewAll: () => void
-  openConversationId?: string | null
 }) {
   const { t } = useLanguage()
   const reduced = Boolean(useReducedMotion())
-  const visible = sidebarTaskAgents(agents, openConversationId)
-  const outstanding = agents.filter(
-    (a) => !['cancelled', 'completed'].includes(a.status) || agentHasUpdate(a),
-  ).length
+  const visible = sidebarTaskAgents(agents)
+  const outstanding = agents.filter(isSidebarTaskAgent).length
   if (!visible.length && !outstanding) return null
   return (
     <section aria-label={t('Your task agents')} className="mb-2 min-w-0 border-t-[0.5px] border-[var(--md-line)] pt-[var(--md-gap-md)]">
@@ -111,26 +107,26 @@ export function TaskAgentStack({
                 aria-label={`${agent.name}: ${agent.title}. ${t(taskAgentStatus[agent.status])}`}
                 onClick={() => onOpen(agent)}
                 className={cn(
-                  'group flex min-h-12 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-1 py-1.5 text-start transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none',
+                  'group flex min-h-12 w-full items-center gap-2 rounded-[var(--md-radius-xl)] px-1 py-1.5 text-start transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none',
                   collapsed && 'justify-center',
                 )}
               >
                 <TaskAgentIcon icon={agent.icon} />
                 {!collapsed ? (
+                  <>
                   <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
                     <span className="block truncate text-[12px] font-medium leading-[14px] text-[var(--md-ink)]">{agent.name}</span>
-                    <span className="flex min-w-0 items-center justify-between gap-1.5">
-                      <span className="min-w-0 truncate text-[11px] leading-[18px] text-[var(--md-text)]">
-                        {agent.title}
-                      </span>
-                      <span
-                        role="img"
-                        aria-label={t(taskAgentStatus[agent.status])}
-                        title={t(taskAgentStatus[agent.status])}
-                        className={cn('size-1.5 shrink-0 rounded-full', sidebarStatusDot[sidebarStatusTone[agent.status]])}
-                      />
+                    <span className="min-w-0 truncate text-[11px] leading-[18px] text-[var(--md-text)]">
+                      {agent.title.trim().split(/\s+/u).slice(0, 4).join(' ')}
                     </span>
                   </span>
+                  <span
+                    role="img"
+                    aria-label={t(taskAgentStatus[agent.status])}
+                    title={t(taskAgentStatus[agent.status])}
+                    className={cn('size-1.5 shrink-0 rounded-full', sidebarStatusDot[sidebarStatusTone[agent.status]])}
+                  />
+                  </>
                 ) : null}
               </button>
             </motion.div>
@@ -165,17 +161,13 @@ export function SidebarTaskAgents({
   onNavigate: (path: string) => void
 }) {
   const { agents } = useTaskAgents()
-  const conversation =
-    typeof window === 'undefined'
-      ? null
-      : new URLSearchParams(window.location.search).get('conversation')
   return (
     <TaskAgentStack
       agents={agents}
       collapsed={collapsed}
-      openConversationId={conversation}
       onOpen={(a) => {
         const alreadyOpen = window.location.pathname === '/agent-dexter'
+        if (alreadyOpen && readDexterConversationIdFromLocation() === a.conversation_id) return
         onNavigate(taskAgentUrl(a))
         if (alreadyOpen)
           window.dispatchEvent(
@@ -192,7 +184,7 @@ export function TaskAgentControls({ agent, onControl = controlTaskAgent }: {
   agent: TaskAgent
   onControl?: typeof controlTaskAgent
 }) {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scheduleId = useId()
@@ -220,7 +212,7 @@ export function TaskAgentControls({ agent, onControl = controlTaskAgent }: {
       setBusy(false)
     }
   }
-  async function act(operation: 'cancel' | 'retry') {
+  async function act(operation: 'cancel' | 'retry' | 'resume') {
     setBusy(true)
     setError(null)
     try {
@@ -239,7 +231,14 @@ export function TaskAgentControls({ agent, onControl = controlTaskAgent }: {
     <div className="flex flex-wrap items-center gap-2">
       <span role="status" className="text-[12px] text-[var(--md-subtle)]">
         {t(taskAgentStatus[agent.status])}
+        {agent.status === 'scheduled' && agent.due_at ? ` · ${new Date(agent.due_at).toLocaleString(language, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}` : ''}
       </span>
+      {agent.status === 'scheduled' ? (
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act('resume')}>
+          <ArrowRight className="size-3.5" />
+          {t('Do now')}
+        </Button>
+      ) : null}
       {['failed', 'needs_input', 'cancelled'].includes(agent.status) ? (
         <Button
           size="sm"
@@ -294,6 +293,10 @@ export function TaskAgentControls({ agent, onControl = controlTaskAgent }: {
               type="datetime-local"
               required
               name="runAt"
+              defaultValue={agent.due_at ? (() => {
+                const date = new Date(agent.due_at)
+                return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+              })() : ''}
               className="min-h-9 rounded-[var(--md-radius-md)] border border-[var(--md-line)] bg-[var(--md-surface)] px-2 text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
             />
           </label>

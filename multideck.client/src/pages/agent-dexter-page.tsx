@@ -8,7 +8,7 @@ import { deferredWorkState, deferredWorkPrompt } from "@/lib/dexter-deferred-wor
 import { readDexterRecovery, writeDexterRecovery, clearDexterRecovery, type DexterRecovery } from "@/lib/dexter-request-recovery"
 import { mergeSteeringStatus } from "@/lib/dexter-steering-status"
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
-import { dexterArtifactReferences, retainDexterRenderKeys } from "@/lib/dexter-response-presentation"
+import { dexterArtifactReferences, retainDexterRenderKeys, structureDexterMeetingBrief } from "@/lib/dexter-response-presentation"
 import {
   useEffect,
   memo,
@@ -387,7 +387,7 @@ function DexterReasoningDisclosure({
 }
 
 function normaliseDexterMarkdown(content: string) {
-  const lines = content
+  const lines = structureDexterMeetingBrief(content)
     .replace(/\r\n?/g, "\n")
     .split("\n")
     .map((line) => {

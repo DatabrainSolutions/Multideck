@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   AiBeautify,
   AiEditing,
@@ -301,6 +302,7 @@ export function DexterEmailComposeCard({
     status !== "sent" && status !== "draft_created";
   const idempotencyKey = useRef(createIdempotencyKey());
   const saveTimer = useRef<number | null>(null);
+  const pendingAutosave = useRef<{ messageId: string; draft: DexterEmailDraft } | null>(null);
   const hydratedDraftId = useRef(draft.id);
   const copyRequest = useRef<Promise<{
     messageId: string;
@@ -689,9 +691,12 @@ export function DexterEmailComposeCard({
     )
       return;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    const pending = { messageId: activeMessageId, draft: currentDraft() };
+    pendingAutosave.current = pending;
+    setSaveState("saving");
     saveTimer.current = window.setTimeout(() => {
-      setSaveState("saving");
-      void updateDexterEmailDraft(activeMessageId, currentDraft())
+      pendingAutosave.current = null;
+      void updateDexterEmailDraft(pending.messageId, pending.draft)
         .then((savedDraft) => {
           setSaveState("saved");
           if (activeMessageId === messageId) onDraftChange?.(savedDraft);
@@ -719,6 +724,15 @@ export function DexterEmailComposeCard({
     toText,
     trackOpens,
   ]);
+
+  useEffect(() => () => {
+    // Navigation must flush the latest edit instead of cancelling the debounce.
+    const pending = pendingAutosave.current;
+    pendingAutosave.current = null;
+    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    if (pending) void updateDexterEmailDraft(pending.messageId, pending.draft)
+      .catch(() => toast.error("Your last draft edit could not be saved. Reopen the conversation to check it."));
+  }, []);
 
   useEffect(() => {
     const sendRequestId = draft.delivery.sendRequestId;
