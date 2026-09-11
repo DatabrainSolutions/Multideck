@@ -82,7 +82,7 @@ export function BookingRouteMilestones(props: Props) {
       <h5 id={`${id}-heading`} ref={heading} tabIndex={-1} className="font-medium">{t('Operational milestones')}</h5>
       <Button type="button" variant="ghost" className="h-9 px-2 text-xs" disabled={!canCreate} onClick={event => open(event.currentTarget)}>{t('Record milestone')}</Button>
     </div>
-    <p className="text-xs leading-5 text-[var(--md-text)]">{t('Recorded events for this step. Planned, estimated and actual times are independent; no tracking feed is connected.')}</p>
+    <p className="text-xs leading-5 text-[var(--md-text)]">{t('Planned, estimated and actual times are independent. No tracking feed connected.')}</p>
     {disabledReason ? <p className="text-xs leading-5 text-[var(--md-text)]">{t(disabledReason)}</p> : null}
     {available && !types?.some(type => type.code !== 'customs_released') ? <p className="text-xs leading-5 text-[var(--md-text)]">{t('No active operational milestone types are available for new records.')}</p> : null}
     {!available ? <p>{t('Milestone data is unavailable. Reload the Booking before editing.')}</p> : route.milestones!.length === 0 ? <p className="text-[var(--md-text)]">{t('No milestones recorded for this step.')}</p> : <ol className="grid min-w-0 gap-4">

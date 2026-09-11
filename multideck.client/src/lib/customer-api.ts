@@ -258,7 +258,7 @@ export type ApiContactDetail = ApiContact & {
     jobTitle: string | null
     department: string | null
     role: string | null
-    startedAt: string
+    startedAt: string | null
     endedAt: string | null
     isCurrent: boolean
   }[]
@@ -428,7 +428,7 @@ export type UpdateOrganisationFoundationInput = {
   accountCode: string
   scopeCode: "standard" | "national" | "global"
   isPotential: boolean
-  officeAssignments: Array<{ officeId: string; isPrimary: boolean }>
+  officeAssignments?: Array<{ officeId: string; isPrimary: boolean }>
 }
 
 export type UpsertOrganisationAddressInput = Omit<OrganisationAddress, "id" | "capabilities" | "weeklyHours" | "openingOverrides"> & {

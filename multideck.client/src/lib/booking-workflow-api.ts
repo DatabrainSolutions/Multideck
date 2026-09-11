@@ -295,6 +295,7 @@ export type BookingWorkflowEvent = {
 }
 
 export type BookingWorkflowWorkspace = {
+  lifecycleSupported?: boolean
   dangerousGoodsSupported?: boolean
   securityEvidenceSupported?: boolean
   routeCutoffsSupported?: boolean
@@ -416,6 +417,9 @@ function requireClient() {
 }
 
 async function functionError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.includes("Failed to send a request to the Edge Function")) {
+    return new Error("Could not connect. Check your connection and try again.")
+  }
   const context = typeof error === "object" && error && "context" in error ? (error as { context?: unknown }).context : null
   if (context instanceof Response) {
     try {

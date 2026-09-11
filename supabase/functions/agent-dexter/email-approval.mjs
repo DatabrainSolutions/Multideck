@@ -7,7 +7,14 @@ export function emailInstructionText(prompt, purpose = "write") {
   const clauses = text.split(/[\n;!?]|\.(?=\s|$)|\b(?:but|instead|however)\b/i)
   const positive = []
   let sendVeto = false
-  for (const clause of clauses) {
+  for (let clause of clauses) {
+    // Product-navigation questions do not authorise email work merely because
+    // an unrelated verb such as editing an address appears beside "email".
+    if (/^\s*(?:please\s+)?(?:where\b|how\s+(?:do|can)\s+i\b|show me where\b|tell me where\b)/i.test(clause)) {
+      const separateAction = /\b(?:and|also|then)\s+(?:please\s+)?(?:draft|write|compose|prepare|send|reply|forward)\b/i.exec(clause)
+      if (!separateAction) continue
+      clause = clause.slice(separateAction.index).replace(/^(?:and|also|then)\s+/i, "")
+    }
     const negative = /\b(?:do\s+not|don't|never|without|avoid|refrain\s+from|no|not|must\s+not|should\s+not)\b/i.exec(clause)
     if (!negative) { positive.push(clause); continue }
     const prohibited = clause.slice(negative.index)
@@ -21,6 +28,10 @@ export function emailInstructionText(prompt, purpose = "write") {
     || /\b(?:draft|write|compose|prepare|reply|respond|rewrite|reword|polish|edit)\b/i.test(clause)).join("\n")
 }
 
+export function emailSelfRecipientRequested(prompt) {
+  return /\bto\s+(?:myself|me|my (?:own )?(?:connected |default )?(?:sending |outbound )?(?:mailbox|email(?: address)?))\b/i.test(emailInstructionText(prompt))
+}
+
 export function emailSendRequested(prompt) {
   const text = emailInstructionText(prompt, "send").toLowerCase()
   return /\bsend\s+(?:an?\s+|the\s+|this\s+)?(?:e-?mail|message|reply|response)\b/.test(text)
@@ -28,24 +39,9 @@ export function emailSendRequested(prompt) {
     || /(?:^|\n)\s*(?:please\s+)?email\s+[^\n.!?]{0,90}\b(now|today|straight away|immediately)\b/.test(text)
     || /\bsend\s+(?:it|this)\b/.test(text)
     || /\bplease\s+send\b/.test(text)
+    || /\b(?:review|check|approve)\s+(?:it\s+)?(?:and|then)\s+send\b/.test(text)
 }
 
-export function requiresExplicitActionApproval(actionCode, accessMode) {
-  return accessMode === "approve" || [
-    "send_email",
-    "save_report",
-    "create_support_ticket",
-    "create_purchase_order",
-    "update_booking_cargo",
-    "update_booking_container",
-    "update_booking_route",
-    "change_booking_route_mode",
-    "update_booking_shipment_value",
-    "update_booking_weight_override",
-    "update_quote_cargo",
-    "replace_booking_allocations",
-    "record_booking_milestone",
-    "record_booking_dangerous_goods",
-    "record_booking_security_evidence",
-  ].includes(actionCode)
+export function requiresExplicitActionApproval(_actionCode, _accessMode) {
+  return true
 }

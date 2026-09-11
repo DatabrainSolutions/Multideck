@@ -6,7 +6,7 @@ import {
   problemResponse,
   readAllowedOrigins,
 } from "../inbox-api/core.ts"
-import { uploadDexterDocument } from "../_shared/dexter-uploads.ts"
+import { uploadDexterDocument, previewDexterUpload } from "../_shared/dexter-uploads.ts"
 import { requireActor, requirePermission, runtimeClients } from "../inbox-api/runtime.ts"
 
 const MAX_MULTIPART_BYTES = 27 * 1024 * 1024
@@ -28,6 +28,12 @@ Deno.serve(async (request) => {
     const authorization = request.headers.get("Authorization")?.trim() ?? ""
     if (!/^Bearer\s+\S+$/i.test(authorization)) {
       throw new InboxHttpError(401, "Sign in again to upload a document to Dexter.", "authentication_required")
+    }
+    if (request.method === "GET") {
+      const preview = await previewDexterUpload(authorization, new URL(request.url).searchParams.get("id") ?? "")
+      const response = jsonResponse(request, allowedOrigins, {preview})
+      response.headers.set("Cache-Control", "private, no-store")
+      return response
     }
     if (request.method !== "POST") {
       throw new InboxHttpError(405, "That Dexter upload operation is not available.", "method_not_allowed")

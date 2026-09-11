@@ -8,7 +8,7 @@
     "npm:@supabase/supabase-js@2": "2.108.2",
     "npm:@supabase/supabase-js@2.108.2": "2.108.2",
     "npm:exceljs@4.4.0": "4.4.0",
-    "npm:openai@^4.52.5": "4.104.0",
+    "npm:openai@^4.52.5": "4.104.0_ws@8.18.3",
     "npm:pdf-lib@1.17.1": "1.17.1",
     "npm:pdf-lib@^1.17.1": "1.17.1",
     "npm:pgsql-ast-parser@12.0.2": "12.0.2",
@@ -16,6 +16,7 @@
     "npm:standardwebhooks@1.0.0": "1.0.0",
     "npm:word-extractor@1.0.4": "1.0.4",
     "npm:word-extractor@^1.0.4": "1.0.4",
+    "npm:ws@8.18.3": "8.18.3",
     "npm:xlsx@0.18.5": "0.18.5",
     "npm:xlsx@~0.18.5": "0.18.5"
   },
@@ -667,7 +668,7 @@
         "wrappy"
       ]
     },
-    "openai@4.104.0": {
+    "openai@4.104.0_ws@8.18.3": {
       "integrity": "sha512-p99EFNsA/yX6UhVO93f5kJsDRLAg+CTA2RBqdHK4RtK8u5IJw32Hyb2dTGKbnnFmnuoBv5r7Z2CURI9sGZpSuA==",
       "dependencies": [
         "@types/node@18.19.130",
@@ -676,7 +677,11 @@
         "agentkeepalive",
         "form-data-encoder",
         "formdata-node",
-        "node-fetch"
+        "node-fetch",
+        "ws"
+      ],
+      "optionalPeers": [
+        "ws"
       ],
       "bin": true
     },
@@ -880,6 +885,9 @@
     },
     "wrappy@1.0.2": {
       "integrity": "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="
+    },
+    "ws@8.18.3": {
+      "integrity": "sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg=="
     },
     "xlsx@0.18.5": {
       "integrity": "sha512-dmg3LCjBPHZnQp5/F/+nnTa+miPJxUXB6vtk42YjBBKayDNagxGEeIdWApkYPOf3Z3pm3k62Knjzp7lMeTEtFQ==",

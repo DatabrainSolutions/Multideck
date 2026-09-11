@@ -38,6 +38,7 @@ import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 const HomePage = lazy(() => import("@/pages/home-page").then((module) => ({ default: module.HomePage })))
 const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
 const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) => ({ default: module.AuthFlowPage })))
+const AccountOnboardingPage = lazy(() => import("@/pages/account-onboarding-page").then((module) => ({ default: module.AccountOnboardingPage })))
 const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
 const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
@@ -59,7 +60,6 @@ const AdminPage = lazy(() => import("@/pages/admin-page").then((module) => ({ de
 const WarehousePage = lazy(() => import("@/pages/warehouse-page").then((module) => ({ default: module.WarehousePage })))
 const BookingDetailPage = lazy(() => import("@/pages/booking-detail-page").then((module) => ({ default: module.BookingDetailPage })))
 const BookingOpenPage = lazy(() => import("@/pages/booking-open-page").then((module) => ({ default: module.BookingOpenPage })))
-const ProvisionalBookingPage = lazy(() => import("@/pages/provisional-booking-page").then((module) => ({ default: module.ProvisionalBookingPage })))
 const BookingsPage = lazy(() => import("@/pages/bookings-page").then((module) => ({ default: module.BookingsPage })))
 const RoadControlPage = lazy(() => import("@/pages/road-control-page").then((module) => ({ default: module.RoadControlPage })))
 const DomesticRoadBookingPage = lazy(() => import("@/pages/domestic-road-booking-page").then((module) => ({ default: module.DomesticRoadBookingPage })))
@@ -107,6 +107,7 @@ function preloadImage(url: string) {
 }
 
 const validRoutes = new Set([
+  "/onboarding",
   "/",
   "/agent-dexter",
   "/admin/users",
@@ -451,6 +452,28 @@ class WorkspaceErrorBoundary extends Component<{
 
 export default function App() {
   const [route, setRoute] = useState(getRoute)
+  const [onboardingTheme, setOnboardingTheme] = useState<"light" | "dark">("light")
+  useEffect(() => {
+    const previewTheme = (event: Event) => {
+      const mode = (event as CustomEvent<unknown>).detail
+      if (mode === "light" || mode === "dark") setOnboardingTheme(mode)
+    }
+    // Completion is emitted only after the account endpoint confirms it. Clear
+    // the local gate immediately while the refreshed bootstrap catches up.
+    const finishSetup = () => setCurrentUser((user) => user ? { ...user, onboardingRequired: false } : user)
+    window.addEventListener("multideck:onboarding-theme-preview", previewTheme)
+    window.addEventListener("multideck:onboarding-complete", finishSetup)
+    return () => {
+      window.removeEventListener("multideck:onboarding-theme-preview", previewTheme)
+      window.removeEventListener("multideck:onboarding-complete", finishSetup)
+    }
+  }, [])
+  const navigationRouteRef = useRef(route)
+  navigationRouteRef.current = route
+  const [bookingCreation, setBookingCreation] = useState<"booking" | "road" | null>(null)
+  const bookingCreationTrigger = useRef<HTMLElement | null>(null)
+  const directBookingCreation = route === "/bookings/new" || route === "/bookings/provisional" || route === "/road-control/new"
+  const bookingCreationMode = bookingCreation ?? (directBookingCreation ? (route === "/road-control/new" ? "road" : "booking") : null)
   const isExternalSurface = isExternalSurfaceRoute(route)
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(isTrainingWorkspace ? trainingConfigurationError : null)
@@ -468,6 +491,8 @@ export default function App() {
     && !isPublicBookingRoute(route)
     && !isMeetingManageRoute(route)
     && route !== "/auth"
+    && route !== "/onboarding"
+    && !currentUser?.onboardingRequired
     && (authStatus === "authenticated" || isLocalNavigationLab)
 
   const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null, profilePhotoUrl: string | null) => {
@@ -540,7 +565,17 @@ export default function App() {
 
   useEffect(() => {
     const onPopState = () => {
-      startTransition(() => setRoute(getRoute()))
+      const destination = getRoute()
+      const proceed = () => {
+        window.history.replaceState(window.history.state, "", destination)
+        startTransition(() => setRoute(destination))
+      }
+      if (!window.dispatchEvent(new CustomEvent("multideck:before-navigate", { cancelable: true, detail: { proceed } }))) {
+        // Keep the current editor mounted while it saves. Resume at the requested history entry.
+        window.history.replaceState(window.history.state, "", navigationRouteRef.current)
+        return
+      }
+      proceed()
     }
     window.addEventListener("popstate", onPopState)
     return () => window.removeEventListener("popstate", onPopState)
@@ -599,6 +634,7 @@ export default function App() {
           const apiProfile = apiSession?.profile ?? null
           const bootstrapMedia = apiSession?.workspace?.profileMedia ?? null
           const nextUser = summarizeAuthUser(session.user, apiProfile)
+          nextUser.onboardingRequired = apiSession?.onboardingRequired ?? nextUser.onboardingRequired
           if (bootstrapMedia && bootstrapMedia.profilePhotoPath === apiProfile?.profilePhoto?.path) {
             nextUser.profilePhotoUrl = bootstrapMedia.profilePhotoUrl
           }
@@ -674,11 +710,17 @@ export default function App() {
       return
     }
 
+    if (authStatus === "authenticated" && currentUser?.onboardingRequired && route !== "/onboarding" && !isPasswordSetupRoute) {
+      window.history.replaceState({}, "", "/onboarding")
+      startTransition(() => setRoute("/onboarding"))
+      return
+    }
+
     if (authStatus === "authenticated" && route === "/auth" && !isPasswordSetupRoute) {
       window.history.replaceState({}, "", takeAuthReturnPath())
       startTransition(() => setRoute(getRoute()))
     }
-  }, [authStatus, isPasswordSetupRoute, route])
+  }, [authStatus, currentUser?.onboardingRequired, isPasswordSetupRoute, route])
 
   useEffect(() => {
     if (authStatus !== "authenticated" || currentUser?.actorType !== "customer") return
@@ -721,6 +763,13 @@ export default function App() {
       path = currentUser.landingPath
     }
     if (path.startsWith("/admin") && !isTenantAdministrator(currentUser)) path = "/"
+    if (path !== route && !window.dispatchEvent(new CustomEvent("multideck:before-navigate", { cancelable: true, detail: { proceed: () => navigate(path) } }))) return
+    if (path === "/bookings/new" || path === "/bookings/provisional" || path === "/road-control/new") {
+      bookingCreationTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      setBookingCreation(path === "/road-control/new" ? "road" : "booking")
+      return
+    }
+    setBookingCreation(null)
     if (path === route) return
     rememberRecentWorkContext(route)
     window.history.pushState({}, "", path === "/" ? "/app" : path)
@@ -733,7 +782,7 @@ export default function App() {
       defaultTheme="light"
       disableTransitionOnChange
       enableSystem={false}
-      forcedTheme={isExternalSurfaceRoute(route) ? "light" : undefined}
+      forcedTheme={isExternalSurfaceRoute(route) || authMode === "invite" ? "light" : route === "/onboarding" ? onboardingTheme : undefined}
       storageKey={themeStorageKey}
     >
       {isExternalSurfaceRoute(route) ? null : <ThemeProfileSync />}
@@ -776,8 +825,13 @@ export default function App() {
               <Suspense fallback={<RouteFallback fullScreen />}>
                 <AuthFlowPage navigate={navigate} />
               </Suspense>
+            ) : route === "/onboarding" || currentUser?.onboardingRequired ? (
+              <Suspense fallback={<RouteFallback fullScreen />}>
+                <AccountOnboardingPage navigate={navigate} />
+              </Suspense>
             ) : (
-              <AppShell route={route} navigate={navigate} currentUser={currentUser}>
+              <AppShell route={directBookingCreation ? (route === "/road-control/new" ? "/road-control" : "/bookings") : route} navigate={navigate} currentUser={currentUser}>
+                <div className="contents" inert={bookingCreationMode ? true : undefined} aria-hidden={bookingCreationMode ? true : undefined}>
                 <Suspense fallback={<RouteFallback />}>
                   {route === "/components" ? <ComponentsGalleryPage /> : null}
                   {route === "/agent-dexter" ? (
@@ -833,15 +887,24 @@ export default function App() {
                   ) : null}
                   {route.startsWith("/admin") ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
-                  {route === "/bookings" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
+                  {route === "/bookings" || route === "/bookings/new" || route === "/bookings/provisional" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} currentUser={currentUser} /> : null}
-                  {route === "/road-control" ? <RoadControlPage navigate={navigate} currentUser={currentUser} /> : null}
-                  {route === "/road-control/new" ? <DomesticRoadBookingPage navigate={navigate} /> : null}
+                  {route === "/road-control" || route === "/road-control/new" ? <RoadControlPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isRoadJobDetailRoute(route) ? <DomesticRoadBookingPage key={route} navigate={navigate} roadJobId={route.split("/").at(-1) ?? ""} /> : null}
-                  {route === "/bookings/new" ? <BookingOpenPage navigate={navigate} /> : null}
-                  {route === "/bookings/provisional" ? <ProvisionalBookingPage navigate={navigate} /> : null}
                   {route === "/" ? <HomePage navigate={navigate} currentUser={currentUser} /> : null}
                 </Suspense>
+                </div>
+                {bookingCreationMode ? <Suspense fallback={null}>
+                  <BookingOpenPage
+                    navigate={navigate}
+                    initialMode={bookingCreationMode === "road" ? "road" : undefined}
+                    onCancel={() => {
+                      setBookingCreation(null)
+                      if (directBookingCreation) navigate(route === "/road-control/new" ? "/road-control" : "/bookings")
+                    }}
+                    returnFocus={() => bookingCreationTrigger.current?.focus({ preventScroll: true })}
+                  />
+                </Suspense> : null}
               </AppShell>
             )}
             {isWorkspaceRoute ? (

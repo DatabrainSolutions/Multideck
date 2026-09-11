@@ -284,7 +284,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
           meta={String(contact.employmentHistory.length)}
           action={<Button type="button" variant="outline" className="h-8 px-2.5 text-[12px]" onClick={() => setTransferOpen(true)}><ArrowLeftRight className="size-3.5" strokeWidth={1.4} />{t("Move to another company")}</Button>}
         >
-          {contact.employmentHistory.length ? contact.employmentHistory.map((item, index) => (
+          {contact.employmentHistory.length ? [...contact.employmentHistory].sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent) || (b.startedAt ?? "").localeCompare(a.startedAt ?? "")).map((item, index) => (
             <div key={item.id} className={`grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:px-6 ${index ? "border-t border-[var(--md-line)]" : ""}`}>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -293,7 +293,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
                 </div>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]" dir="auto">{[item.jobTitle, item.department, localizeContactValue(item.role, t)].filter(Boolean).join(" · ") || t("No role recorded")}</p>
               </div>
-              <p className="text-[12px] tabular-nums text-[var(--md-subtle)]"><span dir="ltr">{formatDate(item.startedAt, language)}</span> – <span dir="ltr">{item.endedAt ? formatDate(item.endedAt, language) : t("Present")}</span></p>
+              <p className="text-[12px] tabular-nums text-[var(--md-subtle)]"><span dir="ltr">{item.startedAt ? formatDate(item.startedAt, language) : t("Start date not recorded")}</span> – <span dir="ltr">{item.endedAt ? formatDate(item.endedAt, language) : t("Present")}</span></p>
             </div>
           )) : <Empty text={t("No employer history has been recorded yet.")} />}
         </Panel>

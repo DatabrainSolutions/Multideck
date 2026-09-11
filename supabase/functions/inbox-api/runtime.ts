@@ -2623,6 +2623,9 @@ export async function getThread(admin: Db, actor: Actor, threadId: string, url?:
     if (target) inferredReplyTargetByInbound.set(message.CommMessage_ID, target)
   }
   const delivery = (row: Row) => {
+    if (row.CommMessage_IsDraft === true || row.CommMessage_StatusCode === "draft") {
+      return { status: "draft", sentAt: null, deliveredAt: null, openedAt: null, repliedAt: null, failedAt: null, bouncedAt: null, openTrackingEnabled: false, confidence: "none" }
+    }
     const events = deliveryEvents.filter((event) => event.CommDelivery_MessageID === row.CommMessage_ID)
     const eventAt = (type: string) => events.find((event) => event.CommDelivery_EventTypeCode === type)?.CommDelivery_EventAt ?? null
     const tracking = trackingTokens.find((token) => token.CommTrack_MessageID === row.CommMessage_ID)
@@ -2908,6 +2911,7 @@ async function providerSend(
   internetMessageId: string,
   trackingEnabled: boolean,
   attachments: OutboundAttachment[] = [],
+  existingProviderDraftId: string | null = null,
 ) {
   const from = { address: mailbox.CommMailbox_Address, displayName: mailbox.CommMailbox_DisplayName }
   if (provider === "gmail") {
@@ -2923,7 +2927,13 @@ async function providerSend(
     }
     const threadId = resolved.command.startsWith("reply") && resolved.source?.CommMessage_ProviderThreadID ? resolved.source.CommMessage_ProviderThreadID : null
     let response: Response
-    if (attachments.length) {
+    if (existingProviderDraftId) {
+      response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts/send", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ id: existingProviderDraftId, message: { raw: buildRfc2822(mime), ...(threadId ? { threadId } : {}) } }),
+      })
+    } else if (attachments.length) {
       // A base64 `raw` field inside JSON outgrows what the metadata endpoint
       // accepts long before the mailbox's own limit, so a message carrying files
       // goes to the upload endpoint as its own RFC 2822 part.
@@ -2969,6 +2979,19 @@ async function providerSend(
       providerThreadId: cleanString(draft.conversationId, 1_000) || null,
       internetMessageId,
     }
+  }
+  if (existingProviderDraftId) {
+    const draftUrl = `https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(existingProviderDraftId)}`
+    const read = await fetch(`${draftUrl}?$select=id,isDraft,hasAttachments,conversationId`, { headers: graphHeaders })
+    if (!read.ok) throw providerErrorStatus(read)
+    const current = await read.json()
+    if (current.isDraft !== true) throw new InboxHttpError(409, "This provider draft has already been sent or removed. Check Inbox before trying again.", "provider_draft_unavailable")
+    if (current.hasAttachments === true) throw new InboxHttpError(409, "This provider draft now has attachments. Review and send it in Inbox.", "provider_draft_changed")
+    // Reapply the approved visible content. Never send unseen provider edits.
+    const { internetMessageId: _messageId, ...editableMessage } = message
+    const patch = await fetch(draftUrl, { method: "PATCH", headers: graphHeaders, body: JSON.stringify(editableMessage) })
+    if (!patch.ok) throw providerErrorStatus(patch)
+    return await sendDraft(current)
   }
   if (resolved.command === "new") {
     // Creating a draft first gives Multideck the immutable provider ID before
@@ -3247,6 +3270,108 @@ async function recordDeliveryEvent(
   } catch {
     // The provider has already accepted or rejected the send. An audit-event
     // failure must not turn that known outcome into a duplicate-send risk.
+  }
+}
+
+/** Send one existing provider draft. The saved row is the single-use claim,
+ * shared across every request key, so two prepared approvals cannot send it twice.
+ */
+export async function sendProviderDraft(admin: Db, actor: Actor, body: Row, suppliedKey: string) {
+  await requirePermission(admin, actor, "Email.Send")
+  if (!suppliedKey || suppliedKey.length > 200) throw new InboxHttpError(400, "An Idempotency-Key header is required when sending email.", "idempotency_key_required")
+  const messageId = cleanString(body.draftMessageId, 80)
+  const draft = await result<Row>(admin.from("Comm_Messages").select("*")
+    .eq("CommMessage_ID", messageId).eq("CommMessage_CreatedBy", actor.userId)
+    .eq("CommMessage_IsDeleted", false).maybeSingle())
+  if (!draft) throw new InboxHttpError(404, "This email draft is unavailable.", "draft_not_found")
+  const { mailbox, connection } = await requireMailbox(admin, actor, draft.CommMessage_MailboxID, "send")
+  const receipt = async () => {
+    const send = await result<Row>(admin.from("Comm_SendRequests").select("CommSend_ID,CommSend_StatusCode")
+      .eq("CommSend_MessageID", messageId).eq("CommSend_RequestedBy", actor.userId)
+      .order("CommSend_CreatedAt", { ascending: false }).limit(1).maybeSingle())
+    if (!send) throw new InboxHttpError(409, "This draft is already being processed. Check Inbox before trying again.", "provider_draft_processing")
+    return { id: send.CommSend_ID, messageId, threadId: draft.CommMessage_ThreadID, status: send.CommSend_StatusCode, reused: true }
+  }
+  if (["sending", "sent", "failed"].includes(draft.CommMessage_StatusCode)) return await receipt()
+  let headers: Row = {}
+  try { headers = JSON.parse(draft.CommMessage_HeaderJSON ?? "{}") } catch { /* Invalid provenance fails closed below. */ }
+  const providerDraftId = cleanString(headers.providerDraftId, 1_000)
+  if (draft.CommMessage_IsDraft !== true || draft.CommMessage_StatusCode !== "draft" || !providerDraftId || headers.providerDraftState !== "created") {
+    throw new InboxHttpError(409, "This provider draft is no longer available. Check Inbox.", "provider_draft_unavailable")
+  }
+  if (!mailbox.CommMailbox_OutboundEnabled || !connection.CommConn_OutboundEnabled || connection.CommConn_StatusCode !== "active") {
+    throw new InboxHttpError(409, "Reconnect this mailbox before sending.", "reauthorization_required")
+  }
+  if (draft.CommMessage_HasAttachments) throw new InboxHttpError(409, "Review and send this draft's attachments in Inbox.", "provider_draft_attachments")
+  const recipients = await result<Row[]>(admin.from("Comm_MessageRecipients").select("*").eq("CommRecipient_MessageID", messageId)) ?? []
+  const addresses = (type: string) => normalizeAddresses(recipients.filter(row => row.CommRecipient_RecipientTypeCode === type)
+    .map(row => ({ address: row.CommRecipient_Address, displayName: row.CommRecipient_DisplayNameSnapshot })))
+  const to = addresses("to"), cc = addresses("cc"), bcc = addresses("bcc")
+  const addressKey = (value: unknown) => normalizeAddresses(value).map(item => item.address.toLowerCase()).sort().join("\n")
+  // The approval is for exactly the visible snapshot, never a provider or local edit.
+  if (body.mailboxId !== draft.CommMessage_MailboxID ||
+      (cleanString(body.subject, 500) || "(No subject)") !== draft.CommMessage_Subject ||
+      cleanString(body.bodyText, 50_000) !== draft.CommMessage_BodyText ||
+      addressKey(body.addedTo) !== addressKey(to) || addressKey(body.addedCc) !== addressKey(cc) || addressKey(body.addedBcc) !== addressKey(bcc)) {
+    throw new InboxHttpError(409, "The saved draft has changed. Refresh and review it before sending.", "provider_draft_changed")
+  }
+  assertRecipients(to, cc, bcc)
+  const creds = await credential(admin, connection)
+  const sendId = crypto.randomUUID(), now = new Date().toISOString()
+  const idempotencyKey = await sha256Hex(`${actor.userId}:send-provider-draft:${suppliedKey}`)
+  const claimed = await result<Row>(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "sending", CommMessage_UpdatedAt: now })
+    .eq("CommMessage_ID", messageId).eq("CommMessage_CreatedBy", actor.userId)
+    .eq("CommMessage_StatusCode", "draft").eq("CommMessage_IsDraft", true).eq("CommMessage_IsDeleted", false)
+    .eq("CommMessage_UpdatedAt", draft.CommMessage_UpdatedAt).select("CommMessage_ID").maybeSingle())
+  if (!claimed) return await receipt()
+  await result(admin.from("Comm_SendRequests").insert({
+    CommSend_ID: sendId, CommSend_MessageID: messageId, CommSend_ThreadID: draft.CommMessage_ThreadID,
+    CommSend_MailboxID: draft.CommMessage_MailboxID, CommSend_ChannelCode: "email", CommSend_StatusCode: "sending",
+    CommSend_SourceTypeCode: "manual", CommSend_PriorityCode: "normal", CommSend_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal",
+    CommSend_RequestedBy: actor.userId, CommSend_ScheduledAt: now, CommSend_AttemptCount: 1, CommSend_MaxAttempts: 1,
+    CommSend_Subject: draft.CommMessage_Subject, CommSend_BodyText: draft.CommMessage_BodyText,
+    CommSend_PayloadJSON: JSON.stringify({ providerDraftMessageId: messageId, openTrackingEnabled: body.trackOpens === true }),
+    CommSend_CorrelationID: idempotencyKey, CommSend_CreatedAt: now, CommSend_UpdatedAt: now,
+  }))
+  try {
+    const trackingToken = body.trackOpens === true ? opaqueTrackingToken() : null
+    const trackingUrl = trackingToken ? `${Deno.env.get("SUPABASE_URL")}/functions/v1/email-track/open?token=${encodeURIComponent(trackingToken)}` : null
+    const bodyHtml = trackingUrl ? `<div>${escapeTrackedHtml(draft.CommMessage_BodyText)}</div><img src="${trackingUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" referrerpolicy="no-referrer">` : null
+    if (trackingToken) await result(admin.from("Comm_MessageTrackingTokens").insert({
+      CommTrack_ID: crypto.randomUUID(), CommTrack_MessageID: messageId, CommTrack_SendID: sendId,
+      CommTrack_RecipientHashSHA256: await sha256Hex([...new Set([...to, ...cc, ...bcc].map(item => item.address.toLowerCase()))].sort().join("\n")),
+      CommTrack_TokenHashSHA256: await sha256Hex(trackingToken), CommTrack_ExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      CommTrack_IsActive: true, CommTrack_CreatedAt: now,
+    }))
+    let source: Row | null = null
+    if (draft.CommMessage_ReplyToMessageID) {
+      source = await result<Row>(admin.from("Comm_Messages").select("*").eq("CommMessage_ID", draft.CommMessage_ReplyToMessageID)
+        .eq("CommMessage_MailboxID", draft.CommMessage_MailboxID).eq("CommMessage_IsDeleted", false).maybeSingle())
+      if (!source) throw new InboxHttpError(409, "The original reply context is no longer available in this mailbox.", "source_not_found")
+    }
+    const sent = await providerSend(publicProvider(connection.CommConn_ProviderTypeCode), creds.accessToken, mailbox,
+      { command: source ? "reply" : "new", source, to, cc, bcc }, draft.CommMessage_Subject, draft.CommMessage_BodyText,
+      bodyHtml, draft.CommMessage_InternetMessageID, body.trackOpens === true, [], providerDraftId)
+    const completed = new Date().toISOString()
+    await result(admin.from("Comm_Messages").update({
+      CommMessage_StatusCode: "sent", CommMessage_IsDraft: false, CommMessage_ProviderMessageID: sent.providerMessageId,
+      CommMessage_ProviderThreadID: sent.providerThreadId, CommMessage_InternetMessageID: sent.internetMessageId,
+      CommMessage_BodyHTML: bodyHtml, CommMessage_ContentFormatCode: bodyHtml ? "html" : "plain_text",
+      CommMessage_SentAt: completed, CommMessage_UpdatedAt: completed, CommMessage_UpdatedBy: actor.userId,
+    }).eq("CommMessage_ID", messageId))
+    await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "sent", CommSend_UpdatedAt: completed }).eq("CommSend_ID", sendId))
+    await recordDeliveryEvent(admin, messageId, sendId, "sent", sent.providerMessageId, { source: "provider_draft_send", confidence: "confirmed" })
+    return { id: sendId, messageId, threadId: draft.CommMessage_ThreadID, status: "sent", reused: false }
+  } catch (error) {
+    // Unknown network outcomes remain claimed: a retry must never submit again.
+    if (error instanceof InboxHttpError && (!error.providerStatus || (error.providerStatus >= 400 && error.providerStatus < 500 && error.providerStatus !== 408))) {
+      const failed = new Date().toISOString()
+      await result(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "failed", CommMessage_UpdatedAt: failed }).eq("CommMessage_ID", messageId)).catch(() => undefined)
+      await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "failed", CommSend_ErrorMessage: error.message.slice(0, 1000), CommSend_UpdatedAt: failed }).eq("CommSend_ID", sendId)).catch(() => undefined)
+      await result(admin.from("Comm_MessageTrackingTokens").update({ CommTrack_IsActive: false }).eq("CommTrack_MessageID", messageId)).catch(() => undefined)
+      await recordDeliveryEvent(admin, messageId, sendId, "failed", null, { source: "provider_draft_send", confidence: "confirmed" })
+    }
+    throw error
   }
 }
 

@@ -7,6 +7,7 @@ import {
   financePurchaseAnnotationFormat,
   MAX_COMMERCIAL_INVOICE_BYTES,
   MISTRAL_OCR_MODEL,
+  invoiceOcrDocument,
   normalizeCommercialInvoiceAnnotation,
   normalizeFinancePurchaseAnnotation,
   normalizeInvoiceEvidencePages,
@@ -112,7 +113,7 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
       CUSTIE_UpdatedAt: new Date().toISOString(),
     })
 
-    let payloads = await timings.measure("mistral", () => extractWithMistralOcr(admin, actor, apiKey, stored!, prepared.pageCount, input.documentType))
+    let payloads = await timings.measure("mistral", () => extractWithMistralOcr(admin, actor, apiKey, prepared.pdfBytes, prepared.pageCount, input.documentType))
     let coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
     if (!coverage.passed && prepared.conversion.strategy === "office_pdf" && prepared.conversion.sheets.length) {
       await cleanupPreparedObject(admin, stored)
@@ -128,7 +129,7 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
         CUSTIE_PreviewExpiresAt: stored.previewExpiresAt,
         CUSTIE_UpdatedAt: new Date().toISOString(),
       })
-      payloads = await timings.measure("mistral_fallback", () => extractWithMistralOcr(admin, actor, apiKey, stored!, prepared.pageCount, input.documentType))
+      payloads = await timings.measure("mistral_fallback", () => extractWithMistralOcr(admin, actor, apiKey, prepared.pdfBytes, prepared.pageCount, input.documentType))
       coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
     }
     if (!coverage.passed) {
@@ -470,23 +471,22 @@ async function extractWithMistralOcr(
   admin: SupabaseClient,
   actor: Actor,
   apiKey: string,
-  stored: PreparedObject,
+  pdfBytes: Uint8Array,
   pageCount: number,
   documentType: DocumentType,
 ) {
-  const { data, error } = await admin.storage.from(documentBucket).createSignedUrl(stored.objectPath, signedUrlLifetimeSeconds)
-  if (error || !data?.signedUrl) throw new HttpError(503, "The prepared invoice could not be opened securely. Try again.")
+  const document = invoiceOcrDocument(pdfBytes)
   const ranges = pageRanges(pageCount)
   const payloads: Record<string, unknown>[] = []
   const gateway = { admin, companyId: actor.companyId, userId: actor.userId }
-  for (const range of ranges) payloads.push(await requestMistralChunk(gateway, apiKey, data.signedUrl, documentType, range, ranges.length > 1))
+  for (const range of ranges) payloads.push(await requestMistralChunk(gateway, apiKey, document, documentType, range, ranges.length > 1))
   return payloads
 }
 
 async function requestMistralChunk(
   gateway: ModelGatewayContext,
   apiKey: string,
-  signedUrl: string,
+  document: ReturnType<typeof invoiceOcrDocument>,
   documentType: DocumentType,
   range: PageRange,
   includeRange: boolean,
@@ -495,7 +495,7 @@ async function requestMistralChunk(
   const financePurchase = documentType === "finance_purchase"
   const requestBody = {
       model: MISTRAL_OCR_MODEL,
-      document: { type: "document_url", document_url: signedUrl },
+      document,
       ...(includeRange ? { pages: `${range.start}-${range.end}` } : {}),
       include_blocks: true,
       include_image_base64: false,

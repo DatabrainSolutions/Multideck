@@ -4,6 +4,7 @@ import {
   CheckCheck,
   CircleAlert,
   Eye,
+  FilePenLine,
   Reply,
   type LucideIcon,
 } from "@/components/icons/hugeicons"
@@ -31,6 +32,13 @@ function presentationFor(
   t: (value: string) => string,
 ): DeliveryPresentation {
   switch (status) {
+    case "draft":
+      return {
+        icon: FilePenLine,
+        label: t("Draft"),
+        detail: t("Saved in the connected mailbox. This message has not been sent. Edit it in your email provider."),
+        tone: "neutral",
+      }
     case "delivered":
       return {
         icon: CheckCheck,
@@ -173,7 +181,7 @@ export function EmailDeliveryStatus({
           </dl>
         ) : null}
 
-        {delivery.openTrackingEnabled ? (
+        {delivery.status === "draft" ? null : delivery.openTrackingEnabled ? (
           <p className="text-[10.5px] leading-[1.5] text-[var(--md-subtle)]">
             {t("Open tracking is approximate. Image blocking can hide opens, while privacy proxies or viewing the sent copy can create a signal without the recipient reading it.")}
           </p>
