@@ -47,7 +47,7 @@ export function agentHasUpdate(agent: TaskAgent) {
   )
 }
 export function isSidebarTaskAgent(agent: TaskAgent) {
-  if (agent.taskStatus === 'completed') return false
+  if (agent.taskStatus === 'completed') return agent.status === 'ready' && agentHasUpdate(agent)
   return ['working', 'queued'].includes(agent.status) ||
     (['ready', 'needs_input', 'failed'].includes(agent.status) && agentHasUpdate(agent))
 }

@@ -12,6 +12,7 @@ const retryMigration=readFileSync(new URL('../migrations/20260910215732_dexter_t
 const conversationMigration=readFileSync(new URL('../migrations/20260910220611_dexter_task_conversation_lifecycle.sql',import.meta.url),'utf8')
 const deletedControlMigration=readFileSync(new URL('../migrations/20260910221122_dexter_task_deleted_control.sql',import.meta.url),'utf8')
 const scheduleClaimMigration=readFileSync(new URL('../migrations/20260910235915_dexter_schedule_claim_race.sql',import.meta.url),'utf8')
+const completionMigration=readFileSync(new URL('../migrations/20260911110000_dexter_complete_delivered_tasks.sql',import.meta.url),'utf8')
 test('durable tasks: owner isolation, three slots, leases, saved results, schedules, events and confirmed completion',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'dexter-tasks-'));const data=join(dir,'data');let started=false
  const run=(cmd,args,input)=>{const r=spawnSync(join(bin,cmd),args,{input,encoding:'utf8',timeout:30000});assert.equal(r.status,0,`${r.stderr}\n${r.stdout}`)}
@@ -50,6 +51,7 @@ test('durable tasks: owner isolation, three slots, leases, saved results, schedu
  ${conversationMigration}
  ${deletedControlMigration}
  ${scheduleClaimMigration}
+ ${completionMigration}
  -- Local fixture has no outbound network. Keep all actual queue/lease logic.
  create or replace function _dexter_task_kick() returns void language sql as $$select$$;
  update "AI_DexterTaskSettings" set enabled=true;
@@ -80,7 +82,7 @@ test('durable tasks: owner isolation, three slots, leases, saved results, schedu
  begin perform multideck_task_finish(r,token,'{"status":"ready","outcome":"deliver_result"}');raise exception 'unsaved success';exception when object_not_in_prerequisite_state then null;end;
  insert into "AI_Messages"("AIMSG_ConversationID","AIMSG_Role","AIMSG_ContentJSON") values(conv,'assistant',jsonb_build_object('metadata',jsonb_build_object('taskRunId',r))) returning "AIMSG_ID" into msg;
  perform multideck_task_finish(r,token,'{"status":"ready","outcome":"deliver_result","summary":"Result with evidence"}');
- if (select "TodoTask_StatusCode" from "OPS_UserTasks" where "TodoTask_ID"=firsttask)<>'open' then raise exception 'unseen result completed';end if;
+ if (select "TodoTask_StatusCode" from "OPS_UserTasks" where "TodoTask_ID"=firsttask)<>'completed' then raise exception 'successful deliverable did not complete task';end if;
  if jsonb_array_length(multideck_task_claim())<>1 then raise exception 'review did not release slot';end if;
  begin perform multideck_task_finish(r,token,'{"status":"ready"}');raise exception 'result replay';exception when insufficient_privilege then null;end;
  perform set_config('request.jwt.claim.role','authenticated',true);

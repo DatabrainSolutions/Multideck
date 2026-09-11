@@ -108,3 +108,9 @@ test('missing context and failed runs remain until their actual error is viewed'
     assert.deepEqual(sidebarTaskAgents([subsequentError]), [subsequentError])
   }
 })
+
+ test('completed deliverables keep their unread response until viewed', () => {
+ const ready = {...agent('1', 'ready', true), taskStatus: 'completed' as const}
+ assert.equal(isSidebarTaskAgent(ready), true)
+ assert.equal(isSidebarTaskAgent({...ready, viewed_revision: ready.result_revision}), false)
+ })
