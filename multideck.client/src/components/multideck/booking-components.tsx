@@ -56,6 +56,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { CustomsReadinessReview, type CustomsReadinessReviewIssue } from "@/components/multideck/customs-readiness-review"
 import { CompactCombobox, type CompactComboboxOption } from "@/components/multideck/quote-details/quote-detail-fields"
+import "@/booking-details.css"
 import { filterLocationsForMode, type LocationOption } from "@/components/multideck/quote-details/quote-detail-model"
 import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
 import { cn } from "@/lib/utils"
@@ -2248,7 +2249,7 @@ function BookingCargoWiseField({
 
   return (
     <div className={cn(
-      "grid min-w-0 grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] items-center gap-1.5",
+      "booking-detail-field grid min-w-0 grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] items-center gap-1.5",
       span && "md:col-span-2 xl:col-span-1 2xl:col-span-2",
     )}>
       <label htmlFor={editable && !(options && searchable) ? fieldId : undefined} className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
@@ -2429,7 +2430,7 @@ function BookingCargoWiseAmountField({
   const normalizedCurrencies = bookingFieldOptions(currencies, currency)
 
   return (
-    <div className="grid min-w-0 grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] items-center gap-1.5">
+    <div className="booking-detail-field grid min-w-0 grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] items-center gap-1.5">
       <label htmlFor={editable ? amountId : undefined} className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
       {editable ? (
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_72px] gap-1">
@@ -3201,7 +3202,7 @@ function BookingRecordDetails({
   }
 
   return (
-    <Tabs value={detailSection} onValueChange={setDetailSection} className="min-w-0 gap-[var(--md-page-stack-gap-compact)]">
+    <Tabs value={detailSection} onValueChange={setDetailSection} className="booking-quote-details min-w-0 gap-[var(--md-page-stack-gap-compact)]">
       <div role="status" className={fieldPolicy.routingModeMismatch ? "text-[12px] leading-5 text-[var(--md-text)]" : "sr-only"}>
         {fieldPolicy.routingModeMismatch ? <p>{t("Mode review")}: {t("No routing step uses the overall mode.")} {t("Check Mode in Control and the steps in Route & schedule. Nothing is changed automatically.")}</p> : null}
       </div>

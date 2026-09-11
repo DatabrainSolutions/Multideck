@@ -1,0 +1,40 @@
+/* Quote-like field rhythm, scoped to Booking Details. Other Booking tabs,
+   Customs and shared field consumers keep their existing presentation. */
+.booking-quote-details .booking-detail-field {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  align-content: start;
+  gap: 4px;
+}
+
+.booking-quote-details .booking-detail-field > label {
+  min-height: 16px;
+  text-align: start;
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.booking-quote-details .booking-detail-field > p {
+  grid-column: 1 / -1;
+}
+
+.booking-quote-details .booking-detail-field :is(input, [role="combobox"]),
+.booking-quote-details .booking-detail-field > span {
+  min-height: 32px;
+  border-radius: var(--md-radius-lg);
+  background-color: var(--md-field-bg);
+  color: var(--md-ink);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.booking-quote-details .booking-detail-field input {
+  padding-inline: 10px;
+}
+
+@media (max-width: 639px) {
+  .booking-quote-details .booking-detail-field input {
+    font-size: 16px;
+  }
+}
