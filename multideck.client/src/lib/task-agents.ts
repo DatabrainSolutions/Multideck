@@ -49,7 +49,7 @@ export function agentHasUpdate(agent: TaskAgent) {
 export function isSidebarTaskAgent(agent: TaskAgent) {
   if (agent.taskStatus === 'completed') return false
   return ['working', 'queued'].includes(agent.status) ||
-    (agent.status === 'ready' && agentHasUpdate(agent))
+    (['ready', 'needs_input', 'failed'].includes(agent.status) && agentHasUpdate(agent))
 }
 export function sidebarTaskAgents(agents: TaskAgent[]) {
   const rank = (a: TaskAgent) =>

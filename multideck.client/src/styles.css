@@ -2860,8 +2860,8 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 
   .md-toast-icon {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     display: grid;
     place-items: center;
     color: var(--md-text);
@@ -6734,13 +6734,23 @@ html.md-summon-picking {
 /* Keep agent controls compact on laptop-height and narrower viewports. */
 @media (max-height: 900px), (max-width: 1440px) {
   .task-agent-stack[data-collapsed="false"] {
-    padding-top: 8px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    gap: 4px 6px;
+    padding-top: 4px;
+    margin-bottom: 4px;
+    border-top: 0;
   }
 
   .task-agent-stack[data-collapsed="false"] .task-agent-stack-items {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
+    display: contents;
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-all {
+    min-height: 30px;
+    margin-top: 0;
+    padding: 0 4px;
   }
 
   .task-agent-stack[data-collapsed="false"] .task-agent-stack-item {
@@ -6749,7 +6759,7 @@ html.md-summon-picking {
 
   .task-agent-stack[data-collapsed="false"] .task-agent-stack-button {
     --task-agent-outline: color-mix(in srgb, var(--md-subtle) 25%, var(--md-line));
-    min-height: 36px;
+    min-height: 30px;
     gap: 2px;
     padding: 2px 8px 2px 2px;
     border: 0.5px solid var(--task-agent-outline);
@@ -6775,8 +6785,8 @@ html.md-summon-picking {
   }
 
   .task-agent-stack[data-collapsed="false"] .task-agent-stack-icon {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
   }
 
   .task-agent-stack[data-collapsed="false"] .task-agent-stack-subtitle,

@@ -41,7 +41,7 @@ test('at most three visible rows, prioritising actionable updates without changi
   ]
   assert.deepEqual(
     sidebarTaskAgents(rows).map((a) => a.id),
-    ['2', '4', '1'],
+    ['3', '2', '4'],
   )
   assert.deepEqual(
     rows.map((a) => a.id),
@@ -62,8 +62,8 @@ test('immediate queued and working tasks remain visible independently of the cur
     assert.deepEqual(sidebarTaskAgents([row]), [row])
   }
 })
-test('unsupported, blocked, failed, stopped and completed agents stay out even with unread responses', () => {
-  for (const status of ['needs_input', 'failed', 'cancelled', 'completed'] as const) {
+test('stopped and completed agents stay out even with unread responses', () => {
+  for (const status of ['cancelled', 'completed'] as const) {
     const row = agent('1', status, true)
     assert.equal(isSidebarTaskAgent(row), false)
     assert.deepEqual(sidebarTaskAgents([row]), [])
@@ -78,9 +78,9 @@ test('a follow-up resurfaces the agent and its new result only until viewed', ()
   assert.deepEqual(sidebarTaskAgents([fresh]), [fresh])
   assert.deepEqual(sidebarTaskAgents([{ ...fresh, viewed_revision: 2 }]), [])
 })
-test('View all counts exactly the eligible agents, not hidden blockers or viewed results', () => {
+test('View all includes unseen errors but excludes viewed results', () => {
   const rows = [agent('1', 'working'), agent('2', 'queued'), agent('3', 'scheduled'), agent('4', 'ready', true), agent('5', 'needs_input', true), agent('6', 'ready')]
-  assert.equal(rows.filter(isSidebarTaskAgent).length, 3)
+  assert.equal(rows.filter(isSidebarTaskAgent).length, 4)
   assert.equal(sidebarTaskAgents(rows).length, 3)
   assert.equal([agent('1', 'needs_input'), agent('2', 'ready')].filter(isSidebarTaskAgent).length, 0)
 })
@@ -94,5 +94,17 @@ test('scheduled and event-waiting work stays hidden until it starts, then retain
     const ready = { ...working, status: 'ready' as const }
     assert.deepEqual(sidebarTaskAgents([ready]), [ready])
     assert.deepEqual(sidebarTaskAgents([{ ...ready, viewed_revision: ready.result_revision }]), [])
+  }
+})
+
+test('missing context and failed runs remain until their actual error is viewed', () => {
+  for (const status of ['needs_input', 'failed'] as const) {
+    const error = agent('1', status, true)
+    assert.deepEqual(sidebarTaskAgents([error]), [error])
+    const viewed = {...error, viewed_revision: error.result_revision}
+    assert.deepEqual(sidebarTaskAgents([viewed]), [])
+    assert.equal(viewed.taskStatus, 'open')
+    const subsequentError = {...viewed, result_revision: 2}
+    assert.deepEqual(sidebarTaskAgents([subsequentError]), [subsequentError])
   }
 })

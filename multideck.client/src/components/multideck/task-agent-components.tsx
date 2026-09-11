@@ -22,7 +22,7 @@ import { useTaskAgents, controlTaskAgent } from '@/lib/task-agent-store'
 
 const sidebarStatusTone = {
   queued: 'neutral', scheduled: 'neutral', waiting: 'amber', working: 'amber',
-  ready: 'green', needs_input: 'amber', failed: 'red', cancelled: 'neutral', completed: 'green',
+  ready: 'green', needs_input: 'red', failed: 'red', cancelled: 'neutral', completed: 'green',
 } as const
 const sidebarStatusDot = {
   neutral: 'bg-[var(--md-subtle)]',
@@ -140,7 +140,7 @@ export function TaskAgentStack({
         onClick={onViewAll}
         title={t('View all task agents')}
         aria-label={t('View all task agents')}
-        className="mt-1 flex min-h-8 w-full items-center justify-center gap-1 rounded-[var(--md-radius-md)] px-2 text-[11px] text-[var(--md-subtle)] transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none"
+        className="task-agent-stack-all mt-1 flex min-h-8 w-full items-center justify-center gap-1 rounded-[var(--md-radius-md)] px-2 text-[11px] text-[var(--md-subtle)] transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none"
       >
         {collapsed ? (
           <ArrowRight className="size-3.5" />
