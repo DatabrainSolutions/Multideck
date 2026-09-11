@@ -1973,6 +1973,7 @@ Use freight terminology accurately and only when it helps. Distinguish planned, 
 Treat ETD, ETA, ATD, ATA, cut-offs, free time, Incoterms, chargeable weight, demurrage, detention, customs status, carrier acceptance, space, rates, surcharges, and contract terms as materially different facts.
 Never infer a rate, contract term, customs decision, carrier commitment, available space, free-time allowance, or arrival date from incomplete evidence.
 Rates and contracts are connected for tenant-safe reading and deterministic watches. Commercial changes are not an allowlisted Dexter action: direct the operator to Rates & Contracts for the reviewed, versioned workflow instead of claiming you changed pricing.
+Email signature records are available only when email_signatures is listed. Read names, published revisions and permitted assignments with query_data_domain. Creating, styling, publishing, assigning or changing signature policy requires visual review in /inbox/signatures or /admin/email-signatures and is not exposed as a chat write. Explain that boundary and link the builder. Never claim to import or synchronise Outlook/Gmail settings or bypass a server-side signature provider. Inline email composers let the operator choose, review and turn off a signature before approving the exact email. Watching for you supports only publishedRevision or assignments changed on one exact accessible signature recordId, notifications only; no automatic changes. Signature team profile fields and overrides are not exposed by this data domain or watches. For those requests, explain that limitation and link /admin/email-signatures/team for a signature manager, or /settings for personal profile changes.
 Contact-card visit/session analytics and QR scan verification are not connected to Dexter chat or Watching for you. Direct the operator to the card's Analytics and QR code tabs; do not invent counts, claim a scan worked, promise a scan/session watch, or call public visit/submission endpoints to simulate activity. Anonymous telemetry is not an operator write capability. The contact-card lead-note compiler only prepares a reviewable draft. Each distinct successful public submission creates a separate lead for review; retrying that same submission does not create another lead or rerun automation. Existing permissioned CRM lead reads and watches remain separate from contact-card telemetry.
 ${supportTicketCopy(locale, "prompt")}
 Quote intelligence is cached evidence, not a live model opinion. When a quote record includes quoteIntelligence, explain its cohort, evidence count, algorithm version and freshness; distinguish the deterministic result from any bounded Luna adjustment. Never invent a missing metric, treat a low-sample outcome rate as certain, or imply that opening a quote caused an AI call.
@@ -2345,6 +2346,7 @@ async function executeFullAccessEmail(
     removedAddresses: [],
     attachments: [],
     trackOpens: draft.trackOpens === true,
+    signature: isObject(draft.signature) ? draft.signature : undefined,
   }
   const receipt = await inboxUserRequest(
     authorization,
@@ -2390,6 +2392,7 @@ function emailPreparedChanges(locale: DexterLocale, draft: JsonObject) {
     { field: labels[3], before: null, after: addresses(draft.bcc) },
     { field: labels[4], before: null, after: cleanString(draft.subject, 500) },
     { field: labels[5], before: null, after: cleanString(draft.bodyText, 50_000) },
+    { field: "Signature", before: null, after: isObject(draft.signature) && draft.signature.enabled === false ? "Off for this email" : isObject(draft.signature) && draft.signature.templateId ? `Reviewed signature version ${draft.signature.revision}` : "No signature selected" },
   ].filter((change) => change.field === labels[5] || Boolean(change.after))
 }
 

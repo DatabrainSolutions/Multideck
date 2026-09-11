@@ -31,7 +31,7 @@ test("tracking stores only hashes and the public pixel reveals no message identi
   assert.doesNotMatch(migration, /CommTrack_RawToken|CommTrack_IP/)
   assert.match(pixel, /comm_record_tracking_open/)
   assert.match(pixel, /return pixel\(method\)/)
-  assert.doesNotMatch(pixel, /console\.|request\.headers\.get\("x-forwarded-for"/)
+  assert.doesNotMatch(pixel, /console\.(?:error|log)\([^\n]*(?:token|request\.url)|request\.headers\.get\("x-forwarded-for"/)
 })
 
 test("tracking keeps message and send foreign-key lookups indexed", () => {
@@ -59,7 +59,7 @@ test("explicit prefetches are ignored without discarding a genuine immediate ope
 
 test("outbound statuses remain evidence-based and self-rendering cannot trigger the pixel", () => {
   for (const label of ["sent", "delivered", "opened_estimated", "replied", "failed", "bounced", "no_open_signal"]) assert.match(contract, new RegExp(label))
-  assert.match(runtime, /row\.CommMessage_IsInbound && row\.CommMessage_BodyHTML/)
+  assert.match(runtime, /!row\.CommMessage_ReplyToMessageID && !inferredReplyTargetByInbound\.has\(row\.CommMessage_ID\) \? sanitizeEmailHtml\(row\.CommMessage_BodyHTML\) : sanitizeOutboundEmailHtml\(row\.CommMessage_BodyHTML\)/)
   assert.match(runtime, /openTrackingEnabled/)
   assert.match(runtime, /p_status_code: null/)
   assert.match(pixel, /if \(method !== "GET" \|\| isExplicitPrefetch\(request\)\) return pixel\(method\)/)

@@ -224,6 +224,7 @@ export function AppShell({
   const isHomeRoute = route === "/"
   const isAgentRoute = route === "/agent-dexter"
   const isInboxRoute = route === "/inbox"
+  const isSignatureRoute = route === "/admin/email-signatures" || route === "/inbox/signatures"
   const isDocumentsRoute = route === "/documents"
   const isBookingDetailRoute = route.startsWith("/bookings/")
     && route !== "/bookings/new"
@@ -234,7 +235,7 @@ export function AppShell({
   // Dexter conversation's does – any page padding between them would show up as
   // a jump the moment a conversation starts.
   const isFullHeightRoute = isHomeRoute || isAgentRoute || isInboxRoute || isDocumentsRoute
-  const isChromeTightRoute = route.startsWith("/quotes/") || isBookingDetailRoute || route === "/bookings/provisional"
+  const isChromeTightRoute = isSignatureRoute || route.startsWith("/quotes/") || isBookingDetailRoute || route === "/bookings/provisional"
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const pageScrollRef = useRef<HTMLElement>(null)
@@ -278,7 +279,7 @@ export function AppShell({
           onCollapsedChange={setSidebarCollapsed}
           className="hidden h-screen min-h-0 lg:flex"
         />
-        {isFullHeightRoute ? (
+        {isFullHeightRoute || isSignatureRoute ? (
           <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
             <SheetTrigger asChild>
               <Button

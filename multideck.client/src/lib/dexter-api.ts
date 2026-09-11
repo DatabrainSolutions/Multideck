@@ -1,3 +1,4 @@
+import type { SignatureSelection } from "../../../shared/email-signatures"
 import type { DexterModelId } from "@/data/dexter-models"
 import type { AutomationAction, AutomationCondition } from "@/data/contact-card-data"
 import type { UserProfilePhoto } from "@/lib/profile-photo"
@@ -59,6 +60,10 @@ export type DexterEmailDraftDelivery = {
 }
 
 export type DexterEmailDraft = {
+  signature?: SignatureSelection
+  /** Local direct-composition retry identity; never authorises a send. */
+  sendIdempotencyKey?: string
+  localRecipientInputs?: { to: string; cc: string; bcc: string }
   id: string
   requestedAction: "create_draft" | "send"
   mode: "new" | "reply" | "reply_all" | "forward"
@@ -622,7 +627,7 @@ export async function duplicateSentDexterEmailDraft(messageId: string) {
 }
 
 export async function refineDexterEmailDraft(input: {
-  messageId: string
+  messageId: string | null
   instruction: string
   draft: DexterEmailDraft
   selection: { start: number; end: number } | null
@@ -641,7 +646,7 @@ export async function refineDexterEmailDraft(input: {
   if (!data?.draft || typeof data.draft !== "object") {
     throw new DexterApiError("Dexter could not confirm the refined draft.")
   }
-  return data.draft
+  return { ...input.draft, subject: data.draft.subject, bodyText: data.draft.bodyText }
 }
 
 /**

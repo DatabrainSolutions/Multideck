@@ -1,3 +1,6 @@
+import { EmailSignatureControl } from "@/components/multideck/email-signature-control"
+import type { SignatureSelection } from "@/lib/email-signatures"
+import { ContactEmailAction } from "@/components/multideck/contact-email-action"
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import "@/quotes-transfer.css"
 import { freightFieldPolicy, freightModeKey, freightShipmentAllowed } from "@/lib/freight-field-policy"
@@ -3012,21 +3015,7 @@ function QuoteCargoWiseDetailsPanel({
         </TooltipTrigger>
         <TooltipContent>{t(emailCopied ? "Copied" : "Copy email")}</TooltipContent>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            asChild
-            variant="ghost"
-            size="icon-sm"
-            className="size-[26px] rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] p-0 text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-[background,color,transform] duration-200 hover:bg-[var(--md-field-bg-hover)] hover:text-[var(--md-accent)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
-          >
-            <a href={`mailto:${customerEmail}`} aria-label={t("Send email")}>
-              <Mail className="size-3.5" strokeWidth={1.4} />
-            </a>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{t("Send email")}</TooltipContent>
-      </Tooltip>
+      <ContactEmailAction email={customerEmail} className="size-[26px] justify-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]"><Mail className="size-3.5" strokeWidth={1.4} /></ContactEmailAction>
     </div>
   )
 
@@ -5916,6 +5905,8 @@ export function QuoteDetailPage({
   const [issueRecipients, setIssueRecipients] = useState<QuoteIssueRecipient[]>([])
   const [issueMailboxes, setIssueMailboxes] = useState<Mailbox[]>([])
   const [issueMailboxId, setIssueMailboxId] = useState("")
+  const [issueSignature, setIssueSignature] = useState<SignatureSelection>()
+  const [issueTrackOpens, setIssueTrackOpens] = useState(false)
   const [issueRecipientEmail, setIssueRecipientEmail] = useState("")
   const [issueRecipientSuggestionsOpen, setIssueRecipientSuggestionsOpen] = useState(false)
   const [issueDeliveryMode, setIssueDeliveryMode] = useState<QuoteDeliveryMode>("standard")
@@ -6783,6 +6774,7 @@ export function QuoteDetailPage({
       return
     }
     setIssueExpiryPreset("14")
+    setIssueTrackOpens(false)
     setIssueRecipients([])
     setIssueMailboxes([])
     setIssueMailboxId("")
@@ -6943,7 +6935,7 @@ export function QuoteDetailPage({
     setIssueNotice("")
     let result: Awaited<ReturnType<typeof issueQuoteWorkflow>>
     try {
-      result = await issueQuoteWorkflow(currentQuoteId, resolvedIssueRecipient, issueDeliveryMode, issueMailboxId, issueEmailSubject, issueEmailBody, issueExpiryPreset)
+      result = await issueQuoteWorkflow(currentQuoteId, resolvedIssueRecipient, issueDeliveryMode, issueMailboxId, issueEmailSubject, issueEmailBody, issueExpiryPreset, issueSignature, issueTrackOpens)
       if (!result.delivered) throw new Error("The email provider has not confirmed delivery. Nothing was marked as sent.")
     } catch (error) {
       const message = error instanceof Error ? error.message : "The quote could not be sent."
@@ -7723,6 +7715,12 @@ export function QuoteDetailPage({
                     className={cn("resize-y rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] leading-5 shadow-[var(--md-shadow-line)]", issueDeliveryMode === "simple" ? "min-h-[150px]" : "min-h-[220px]")}
                     data-i18n-skip
                   />
+                  <EmailSignatureControl mailboxId={issueMailboxId} value={issueSignature} onChange={setIssueSignature} disabled={issuing || issueDraftLoading || issueRefining} />
+                  <label className="flex min-h-10 items-center gap-2 text-[12px] text-[var(--md-text)]">
+                    <Checkbox checked={issueTrackOpens} onCheckedChange={(checked) => setIssueTrackOpens(checked === true)} disabled={issuing || issueDraftLoading || issueRefining} aria-label={t("Track opens")} />
+                    <span>{t("Track opens")}</span>
+                    <span className="text-[11px] text-[var(--md-subtle)]">{t("Estimated from image loads")}</span>
+                  </label>
                 </div>
                 {issueDeliveryMode === "standard" ? <AiPromptMorph
                   id="quote-issue-email-refinement"

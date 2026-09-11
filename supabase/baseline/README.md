@@ -82,3 +82,15 @@ Run `supabase/tests/reporting-workspace-db.test.mjs` and
 `supabase/tests/reporting-export.test.mjs`, then verify the authenticated builder,
 exports and a scheduled snapshot against the intended tenant project. See
 `docs/verification/reporting-workspace-2026-09-07.md` for evidence and limits.
+
+## Email signature provisioning
+
+After the preceding migrations, new tenants require
+`20260911143000_email_signature_builder.sql`,
+`20260911144000_dexter_signature_draft.sql`, and
+`20260911145000_email_signature_dexter_parity.sql` in order. These provision
+private assets, manager permissions, versioned signatures, audited policies,
+Dexter draft persistence and deterministic watch adapters. See
+[the signature contract](../../docs/architecture/email-signatures.md) for the
+function deployment set and tenant verification journey. Do not manually copy
+these tables into the baseline without the permission and watch functions.

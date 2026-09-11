@@ -296,7 +296,7 @@ test("concurrent Inbox views cannot advance the same provider cursor together", 
   assert.match(runtime, /Comm_ReleaseMailboxSyncLease/)
   assert.match(runtime, /p_lease_seconds: 180/)
   assert.match(runtime, /if \(!leaseAcquired\)/)
-  assert.match(runtime, /requiresReconnect && mailbox\.CommMailbox_IndexStatus !== "ready"/)
+  assert.match(runtime, /requiresReconnect && changedConnection\?\.length && mailbox\.CommMailbox_IndexStatus !== "ready"/)
 })
 
 test("provider detail reads are bounded and cannot hang the Edge request indefinitely", () => {

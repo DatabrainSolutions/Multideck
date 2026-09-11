@@ -1,3 +1,8 @@
+import signatureBuilderSource from "@/components/multideck/signature-builder.tsx?raw"
+import signatureGlyphSource from "@/components/multideck/signature-block-glyph.tsx?raw"
+import emailSignatureControlSource from "@/components/multideck/email-signature-control.tsx?raw"
+import contactEmailActionSource from "@/components/multideck/contact-email-action.tsx?raw"
+import contactPreferencesSource from "@/components/multideck/contact-preferences-popover.tsx?raw"
 import taskAgentSource from "@/components/multideck/task-agent-components.tsx?raw"
 import bookingCustomerPanelSource from "@/components/multideck/booking-customer-panel.tsx?raw"
 import toggleGroupSource from "@/components/ui/toggle-group.tsx?raw"
@@ -66,6 +71,48 @@ function visualizationUsageCode(componentName: string, kind: string) {
 }
 
 export const galleryComponents = [
+  {
+    id: "signature-builder", name: "Signature Builder", category: "Communication",
+    description: "Arrange email-safe rows and blocks, including shared Company details from Admin, with direct, tactile movement.",
+    details: "Drag a custom block tile into the canvas, or click to add. Blocks lift and tilt with movement, open an insertion gap and settle with a short spring. Keyboard move buttons, undo and reduced motion retain the same editing workflow. Personal fields resolve for the sender; images accept uploads or a configured Admin brand logo, and Trust badges places multiple managed images in one row. Each field has visible removal and undo. Image banner and Disclaimer presets add a wide uploaded image or editable small-print footer using the same portable blocks. Drag column dividers or image corner handles to resize; percentages and dimensions update live, with keyboard adjustment and one undo step per gesture.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: signatureBuilderSource,
+    usageCode: `<SignatureBuilder document={document} onChange={setDocument} values={employee} assets={assetUrls} onUpload={uploadImage} />`,
+  },
+  {
+    id: "signature-block-glyph", name: "Signature Block Glyph", category: "Communication",
+    description: "Custom SVG miniatures for the signature block palette.",
+    details: "Layered paper, contact details, logo and divider miniatures with an active lift state. Each communicates the block's purpose before it is placed.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: signatureGlyphSource,
+    usageCode: `<SignatureBlockGlyph kind="identity" active={dragging} />`,
+  },
+  {
+    id: "email-signature-control", name: "Email Signature Control", category: "Communication",
+    description: "Choose, preview or turn off the signature for one email.",
+    details: "Shared by Inbox, Dexter, contact-card popups and quote emails. Choices are mailbox-authorised and assigned to the current sender. Turning off is always a per-email choice, including for users with a company-managed design. The gallery preview does not access or send email.",
+    foundOn: [{label:"Inbox",route:"/inbox"},{label:"Dexter",route:"/agent-dexter"},{label:"Contacts",route:"/crm/contacts"},{label:"Companies",route:"/crm/accounts"},{label:"Leads",route:"/crm/leads"},{label:"Customers",route:"/customers"},{label:"Bookings",route:"/bookings"},{label:"Quotes",route:"/quotes"}],
+    componentCode: emailSignatureControlSource,
+    usageCode: `<EmailSignatureControl mailboxId={mailboxId} value={signature} onChange={setSignature} disabled={sending} />`,
+  },
+
+  {
+    id: "contact-email-action", name: "Contact Email Action", category: "CRM",
+    description: "Compose an email in a centred popup without leaving the record.",
+    details: "Uses the Dexter email editor with recipient chips, mailbox selection, pencil refinement and explicit sending through Inbox. Dismissal retains a private draft in the current browser tab for up to 24 hours. No email is sent in the gallery preview.",
+    foundOn: [{ label: "Companies", route: "/crm/accounts" }, { label: "Leads", route: "/crm/leads" }, { label: "Contacts", route: "/crm/contacts" }, { label: "Customers", route: "/customers" }, { label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-email-action" }],
+    componentCode: contactEmailActionSource,
+    usageCode: `<ContactEmailAction email={contact.email} name={contact.name} />`,
+  },
+  {
+    id: "contact-preferences-popover", name: "Contact Preferences", category: "CRM",
+    description: "Edit one person's contact details, preferred channel and marketing consent in place.",
+    details: "Loads the authorised contact record on demand. Changes use the existing contact version check, permissions and consent history; marketing changes require a source or reason. Company preferences are never inherited.",
+    foundOn: [{ label: "Companies", route: "/crm/accounts" }, { label: "Leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-preferences-popover" }],
+    componentCode: contactPreferencesSource,
+    usageCode: `<ContactPreferencesPopover contactId={contact.id} name={contact.name} onSaved={refreshContact} />`,
+  },
+
   {
     id: "conversation-attachments", name: "Conversation Attachments", category: "Controls",
     description: "Compact image tiles and document previews for ticket messages and Dexter, with quiet remove controls and a shared image viewer.",
@@ -647,10 +694,13 @@ export const galleryComponents = [
     name: "Dexter Email Composer",
     category: "Agent Dexter",
     description: "An editable Gmail or Outlook email prepared inside a Dexter conversation, with in-place refinement and an explicit provider-backed Create draft or Send email action.",
-    details: "Use only for structured email actions returned by Dexter's prepare_email_draft tool. Operators can refine the whole email from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Provider draft creation and sending reuse Inbox permissions and idempotency, preserve the editable copy after failures, and show completion only after Gmail or Outlook confirms the action.",
+    details: "Use for structured Dexter email actions or direct operator composition via ContactEmailAction. Operators can refine the whole email from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Provider draft creation and sending reuse Inbox permissions and idempotency, preserve the editable copy after failures, and show completion only after Gmail or Outlook confirms the action.",
     foundOn: [
       { label: "Agent Dexter", route: "/agent-dexter" },
       { label: "Components", route: "/components?component=dexter-email-compose-card" },
+      { label: "Companies", route: "/crm/accounts" },
+      { label: "Leads", route: "/crm/leads" },
+      { label: "Contacts", route: "/crm/contacts" },
     ],
     componentCode: `export function DexterEmailComposeCard({ messageId, draft, onDraftChange }) {
   const [status, setStatus] = useState(draft.delivery.status)

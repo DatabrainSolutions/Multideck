@@ -1,3 +1,9 @@
+import { SignatureBuilder } from "@/components/multideck/signature-builder"
+import { SignatureBlockGlyph } from "@/components/multideck/signature-block-glyph"
+import { EmailSignatureControl } from "@/components/multideck/email-signature-control"
+import { newSignatureDocument, renderSignature, signatureKinds, type SignatureBlockKind, type SignatureSelection } from "@/lib/email-signatures"
+import { ContactEmailAction } from "@/components/multideck/contact-email-action"
+import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
 import { TaskAgentStack, TaskAgentControls } from "@/components/multideck/task-agent-components"
 import type { TaskAgent } from "@/lib/task-agents"
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
@@ -341,7 +347,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["signature-builder", "signature-block-glyph", "email-signature-control", "contact-email-action", "contact-preferences-popover", "public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -3740,6 +3746,12 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "signature-builder" ? <SignatureBuilderGallery /> : null}
+      {id === "signature-block-glyph" ? <div className="flex flex-wrap gap-5 p-8">{Object.keys(signatureKinds).map(kind=><div key={kind} className="text-center text-[11px]"><SignatureBlockGlyph kind={kind as SignatureBlockKind}/><p>{signatureKinds[kind as SignatureBlockKind]}</p></div>)}</div> : null}
+      {id === "email-signature-control" ? <SignatureControlGallery /> : null}
+      {id === "contact-email-action" ? <div className="w-full max-w-md p-6"><p className="text-[14px] font-medium">Alex Morgan</p><p className="mb-3 text-[12px] text-[var(--md-subtle)]">Operations manager</p><ContactEmailAction email="alex@example.test" name="Alex Morgan" preview /></div> : null}
+      {id === "contact-preferences-popover" ? <ContactPreferencesPopover contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /> : null}
+
       {id === "dexter-email-compose-card" ? (
         <div className="w-full max-w-[720px]">
           <DexterEmailComposeCard
@@ -5030,4 +5042,16 @@ export function ComponentsGalleryPage() {
       {activeSection === "Components" ? <RightRail selected={selected} /> : null}
     </div>
   )
+}
+
+const signatureGalleryValues={name:"Alex Morgan",jobTitle:"Operations manager",email:"alex@example.test",phone:"+44 20 7946 0123",mobile:"",company:"Example Logistics",website:"https://example.test",address:"London",companyDetails:"Example Logistics\nhttps://example.test\n+44 20 7946 0123\nLondon"}
+function SignatureBuilderGallery(){
+ const [document,setDocument]=useState(()=>newSignatureDocument('side'))
+ const [assets,setAssets]=useState<Record<string,string>>({})
+ return <div className="w-full p-3"><SignatureBuilder document={document} onChange={setDocument} values={signatureGalleryValues} assets={assets} onUpload={async file=>{const id=crypto.randomUUID();const url=URL.createObjectURL(file);setAssets(a=>({...a,[id]:url}));return {id,url}}}/></div>
+}
+function SignatureControlGallery(){
+ const [choice]=useState(()=>({id:'gallery-signature',name:'Operations',revision:1,fingerprint:'preview',personal:false,...renderSignature(newSignatureDocument('stacked'),signatureGalleryValues)}))
+ const [value,setValue]=useState<SignatureSelection>({enabled:true,templateId:choice.id,revision:1,fingerprint:'preview'})
+ return <div className="w-full max-w-xl p-6"><p className="mb-5 text-[13px]">Thanks for the update. We will confirm collection shortly.</p><EmailSignatureControl mailboxId="gallery" value={value} onChange={setValue} previewChoice={choice}/></div>
 }

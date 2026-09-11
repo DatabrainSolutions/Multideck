@@ -20,6 +20,19 @@ export function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+/** Only locally authored, owned drafts can re-enter the editable Inbox composer. */
+export function editableDraftMetadata(row: Record<string, unknown>, actorId: string, canSend: boolean) {
+  if (!canSend || row.CommMessage_IsDraft !== true || row.CommMessage_CreatedBy !== actorId || row.CommMessage_ProviderMessageID || row.CommMessage_SourceTypeCode !== "manual") return null
+  let value = row.CommMessage_BodyJSON
+  try { if (typeof value === "string") value = JSON.parse(value) } catch { return null }
+  if (!isObject(value) || !["new", "reply", "reply_all", "forward"].includes(String(value.mode))) return null
+  const edits = isObject(value.draftEdits) ? value.draftEdits : null
+  // Older replies lack the operator's recipient removals; never reconstruct a wider audience.
+  if ((value.mode === "reply" || value.mode === "reply_all") && !edits) return null
+  return { mode: value.mode, sourceMessageId: value.sourceMessageId ?? null, signature: value.signature,
+    trackOpens: value.openTrackingEnabled !== false, ...(edits ? { addedTo: edits.addedTo, addedCc: edits.addedCc, addedBcc: edits.addedBcc, removedAddresses: edits.removedAddresses } : {}) }
+}
+
 /**
  * Runs provider reads with a small, explicit concurrency ceiling. Mailbox
  * snapshots need one detail request per message, but doing those reads
@@ -212,6 +225,12 @@ export function sanitizeEmailHtml(value: unknown) {
     return safe ? ` style=${quote}${escapeAttribute(safe)}${quote}` : ""
   })
   return html
+}
+
+/** Preserve sent signatures and formatting without loading our own open pixel. */
+export function sanitizeOutboundEmailHtml(value: unknown) {
+  return sanitizeEmailHtml(value).replace(/<img\b[^>]*>/gi, (tag) =>
+    /\/email-track(?:\/|\?)/i.test(tag) ? "" : tag)
 }
 
 /**
@@ -501,7 +520,7 @@ export const OUTBOUND_ATTACHMENT_LIMITS = {
   maxTotalBytes: 15 * 1024 * 1024,
 }
 
-export type OutboundAttachment = { fileName: string; mimeType: string; bytes: Uint8Array }
+export type OutboundAttachment = { fileName: string; mimeType: string; bytes: Uint8Array; contentId?: string; isInline?: boolean }
 
 /**
  * Reads the files a send request carries.
@@ -676,7 +695,9 @@ export function parseDeliveryStatusReport(
   if (actions.includes("failed") || statuses.some((status) => status.startsWith("5."))) {
     return { eventType: "bounced", originalMessageId, statusCode }
   }
-  if (actions.includes("delivered") || statuses.some((status) => status.startsWith("2."))) {
+  // RFC 3464: a 2.x status can mean relayed or expanded, neither of which
+  // confirms final delivery. The required Action field is authoritative.
+  if (actions.includes("delivered")) {
     return { eventType: "delivered", originalMessageId, statusCode }
   }
   return null
@@ -728,31 +749,29 @@ export function buildMimeMessage(input: MimeMessage) {
       `--${alternativeBoundary}--`, ""].join("\r\n")
   }
 
-  const parts = [
-    `--${boundary}`,
-    ...(html ? [
-      `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`, "",
-      `--${alternativeBoundary}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", body,
-      `--${alternativeBoundary}`, "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", html,
-      `--${alternativeBoundary}--`, "",
-    ] : ["Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", body]),
-  ]
-
-  for (const attachment of attachments) {
-    const name = encodeHeaderValue(attachment.fileName, 260)
-    parts.push(
-      `--${boundary}`,
-      `Content-Type: ${attachment.mimeType}; name="${name}"`,
-      "Content-Transfer-Encoding: base64",
-      `Content-Disposition: attachment; filename="${name}"`,
-      "",
-      base64Encode(attachment.bytes).replace(/(.{76})/g, "$1\r\n").trimEnd(),
-    )
+  const inline = attachments.filter(file => file.isInline && file.contentId)
+  const ordinary = attachments.filter(file => !inline.includes(file))
+  const relatedBoundary = `--=_multideck_related_${crypto.randomUUID().replace(/-/g, "")}`
+  const content = html ? [
+    `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`, "",
+    `--${alternativeBoundary}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", body,
+    `--${alternativeBoundary}`, "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", html,
+    `--${alternativeBoundary}--`, "",
+  ] : ["Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", body]
+  const fileParts = (file: OutboundAttachment, separator: string) => {
+    const name = encodeHeaderValue(file.fileName, 260)
+    return [`--${separator}`, `Content-Type: ${file.mimeType}; name="${name}"`, "Content-Transfer-Encoding: base64",
+      `Content-Disposition: ${file.isInline ? "inline" : "attachment"}; filename="${name}"`,
+      ...(file.contentId ? [`Content-ID: <${escapeHeader(file.contentId)}>`] : []), "",
+      base64Encode(file.bytes).replace(/(.{76})/g, "$1\r\n").trimEnd()]
   }
-
-  parts.push(`--${boundary}--`, "")
-
-  return [...headers, `Content-Type: multipart/mixed; boundary="${boundary}"`, "", ...parts].join("\r\n")
+  const related = inline.length ? [
+    `Content-Type: multipart/related; boundary="${relatedBoundary}"`, "", `--${relatedBoundary}`, ...content,
+    ...inline.flatMap(file => fileParts(file, relatedBoundary)), `--${relatedBoundary}--`, "",
+  ] : content
+  if (!ordinary.length) return [...headers, ...related].join("\r\n")
+  return [...headers, `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, ...related,
+    ...ordinary.flatMap(file => fileParts(file, boundary)), `--${boundary}--`, ""].join("\r\n")
 }
 
 export function buildRfc2822(input: MimeMessage) {

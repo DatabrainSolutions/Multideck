@@ -1,3 +1,4 @@
+import type { SignatureSelection } from "../../../shared/email-signatures"
 import { workspaceStorageKey } from "./workspace-environment.ts"
 import type { ComposerEdits, MailAddress, SendMode } from "@/lib/inbox-api"
 
@@ -13,6 +14,7 @@ const maxLocalDrafts = 40
 const confirmedRemoteDraftIds = new Map<string, string>()
 
 export type LocalDraft = {
+  signature?: SignatureSelection
   key: string
   mailboxId: string
   threadId: string | null

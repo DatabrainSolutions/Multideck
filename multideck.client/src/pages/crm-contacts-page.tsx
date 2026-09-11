@@ -1,3 +1,4 @@
+import { ContactEmailAction } from "@/components/multideck/contact-email-action"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
@@ -86,7 +87,7 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
     {
       id: "contact", label: "Contact", width: 330, minWidth: 250, maxWidth: 460, canHide: false, resizable: true,
       sortValue: (contact) => contact.name,
-      cell: (contact) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name}</span><span dir="ltr" className="mt-0.5 block truncate text-start text-[12px] text-[var(--md-text)]">{contact.email || t("No email recorded")}</span></div>,
+      cell: (contact) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name}</span><span dir="ltr" className="mt-0.5 block truncate text-start text-[12px] text-[var(--md-text)]">{contact.email ? <ContactEmailAction email={contact.email} name={contact.name} /> : t("No email recorded")}</span></div>,
     },
     { id: "account", label: "Account", width: 190, minWidth: 150, resizable: true, sortValue: (contact) => contact.accountName, cellClassName: "text-[13px] font-medium text-[var(--md-ink)]", cell: (contact) => contact.accountName },
     { id: "role", label: "Role", width: 170, minWidth: 130, resizable: true, sortValue: (contact) => contact.jobTitle || contact.role, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (contact) => contact.jobTitle || contact.role || t("Not recorded") },

@@ -1,3 +1,4 @@
+import { standaloneRefinementDraft } from "./standalone-draft.ts";
 import {
   createClient,
   type SupabaseClient,
@@ -247,8 +248,9 @@ Deno.serve(async (request) => {
       body.instruction,
       MAX_INSTRUCTION_CHARACTERS + 1,
     );
+    const standalone = body.messageId === null;
     if (
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      !standalone && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
         messageId,
       )
     ) {
@@ -262,15 +264,18 @@ Deno.serve(async (request) => {
       throw new Error("invalid_request");
     }
 
-    const { data: savedDraft, error: saveError } = await user.rpc(
-      "multideck_dexter_update_email_draft",
-      {
-        p_message_id: messageId,
-        p_draft: body.draft,
-      },
-    );
-    if (saveError || !isObject(savedDraft))
-      throw new Error("draft_unavailable");
+    let savedDraft: JsonObject;
+    if (standalone) {
+      // The same actor and AI permissions above apply. This only returns wording;
+      // the operator's normal Inbox send boundary remains authoritative.
+      savedDraft = standaloneRefinementDraft(body.draft);
+    } else {
+      const result = await user.rpc("multideck_dexter_update_email_draft", {
+        p_message_id: messageId, p_draft: body.draft,
+      });
+      if (result.error || !isObject(result.data)) throw new Error("draft_unavailable");
+      savedDraft = result.data;
+    }
     const savedBodyText =
       typeof savedDraft.bodyText === "string" ? savedDraft.bodyText : "";
     const selection = selectionFrom(body.selection, savedBodyText);

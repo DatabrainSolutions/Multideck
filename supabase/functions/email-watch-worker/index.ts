@@ -206,6 +206,7 @@ async function processQuoteFollowUps(admin: any, limit = 2) {
           removedAddresses: [],
           attachments: [],
           trackOpens: false,
+          signature: { enabled: false, templateId: null, revision: null, fingerprint: null },
         }, `quote-follow-up:${responseLinkId}:${attemptNumber}`)
 
       if (delivery.status !== "sent") {

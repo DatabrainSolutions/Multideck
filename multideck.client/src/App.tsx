@@ -41,6 +41,8 @@ const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) =
 const AccountOnboardingPage = lazy(() => import("@/pages/account-onboarding-page").then((module) => ({ default: module.AccountOnboardingPage })))
 const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
 const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
+const SignatureTeamPage = lazy(() => import("@/pages/signature-team-page").then(module => ({ default: module.SignatureTeamPage })))
+const EmailSignaturesPage = lazy(() => import("@/pages/email-signatures-page").then(module => ({ default: module.EmailSignaturesPage })))
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
 const ToDoPage = lazy(() => import("@/pages/to-do-page").then((module) => ({ default: module.ToDoPage })))
 const CalendarPage = lazy(() => import("@/pages/calendar-page").then((module) => ({ default: module.CalendarPage })))
@@ -117,6 +119,9 @@ const validRoutes = new Set([
   "/admin/broadcast",
   "/admin/billing",
   "/admin/branding",
+  "/admin/email-signatures",
+  "/admin/email-signatures/team",
+  "/inbox/signatures",
   "/admin/system-preferences",
   "/admin/activity",
   "/admin/detailed-log",
@@ -732,7 +737,7 @@ export default function App() {
   }, [authStatus, currentUser, route])
 
   useEffect(() => {
-    if (authStatus !== "authenticated" || !route.startsWith("/admin") || isTenantAdministrator(currentUser)) return
+    if (authStatus !== "authenticated" || !route.startsWith("/admin") || isTenantAdministrator(currentUser) || (["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) && currentUser?.permissions.includes("Email.Signatures.Manage"))) return
     window.history.replaceState({}, "", "/app")
     startTransition(() => setRoute("/"))
   }, [authStatus, currentUser, route])
@@ -764,7 +769,7 @@ export default function App() {
     if (currentUser?.actorType === "customer" && !canCustomerOpenRoute(currentUser, path)) {
       path = currentUser.landingPath
     }
-    if (path.startsWith("/admin") && !isTenantAdministrator(currentUser)) path = "/"
+    if (path.startsWith("/admin") && !isTenantAdministrator(currentUser) && !(["/admin/email-signatures", "/admin/email-signatures/team"].includes(path) && currentUser?.permissions.includes("Email.Signatures.Manage"))) path = "/"
     if (path !== route && !window.dispatchEvent(new CustomEvent("multideck:before-navigate", { cancelable: true, detail: { proceed: () => navigate(path) } }))) return
     if (path === "/bookings/new" || path === "/bookings/provisional" || path === "/road-control/new") {
       bookingCreationTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -863,6 +868,9 @@ export default function App() {
                   {route === "/suppliers" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} organisationType="supplier" /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
+                  {route === "/inbox/signatures" ? <EmailSignaturesPage personal navigate={navigate} /> : null}
+                  {route === "/admin/email-signatures/team" ? <SignatureTeamPage navigate={navigate} /> : null}
+                  {route === "/admin/email-signatures" ? <EmailSignaturesPage navigate={navigate} /> : null}
                   {route === "/to-do" ? <ToDoPage operatorName={currentUser?.name} /> : null}
                   {route === "/calendar" ? <CalendarPage navigate={navigate} /> : null}
                   {route === "/calendar/booking-links" ? <BookingLinksPage navigate={navigate} /> : null}
@@ -887,7 +895,7 @@ export default function App() {
                       onCoverPhotoChange={handleCoverPhotoChange}
                     />
                   ) : null}
-                  {route.startsWith("/admin") ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
+                  {route.startsWith("/admin") && !["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
                   {route === "/bookings" || route === "/bookings/new" || route === "/bookings/provisional" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} currentUser={currentUser} /> : null}

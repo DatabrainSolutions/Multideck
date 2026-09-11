@@ -1,3 +1,4 @@
+import { signatureRoute } from "./signatures.ts"
 import {
   InboxHttpError,
   assertAllowedRequestOrigin,
@@ -72,6 +73,10 @@ Deno.serve(async (request) => {
     const actor = await requireActor(clients.user, clients.admin)
     const path = parseFunctionPath(request.url)
     const method = request.method.toUpperCase()
+
+    if (path[0] === "signatures") {
+      return jsonResponse(request, allowedOrigins, await signatureRoute(clients.admin, actor, path, method, method === "GET" ? {} : await readJson(request, 3_000_000), new URL(request.url)))
+    }
 
     if (method === "GET" && path.length === 1 && path[0] === "providers") {
       return jsonResponse(request, allowedOrigins, await providers())

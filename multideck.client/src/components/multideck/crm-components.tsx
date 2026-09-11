@@ -1,3 +1,5 @@
+import { ContactEmailAction } from "@/components/multideck/contact-email-action"
+import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
 import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import {
@@ -917,7 +919,7 @@ export function CrmLeadQualificationTable({
       cell: (lead) => lead.primaryContactName || lead.primaryContactEmail ? (
         <div className="min-w-0">
           <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{lead.primaryContactName ?? t("Contact not named")}</p>
-          {lead.primaryContactEmail ? <p className="mt-1 truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{lead.primaryContactEmail}</p> : null}
+          {lead.primaryContactEmail ? <p className="mt-1 truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{<ContactEmailAction email={lead.primaryContactEmail} name={lead.primaryContactName ?? undefined} />}</p> : null}
         </div>
       ) : <span className="text-[12px] text-[var(--md-subtle)]">{t("No primary contact")}</span>,
     },
@@ -1069,16 +1071,12 @@ export function CrmLeadDetailPanel({
   onStartQualification,
   ownerPhotoUrl,
   ownerAction,
-  onMarketingOptInChange,
-  onContactMarketingOptInChange,
 }: {
   lead: ApiLeadDetail
   onBack?: () => void
   onStartQualification?: (lead: ApiLead) => void
   ownerPhotoUrl?: string
   ownerAction?: ReactNode
-  onMarketingOptInChange?: (optedIn: boolean) => Promise<void>
-  onContactMarketingOptInChange?: (contactId: string, optedIn: boolean) => Promise<void>
 }) {
   const { language, t } = useLanguage()
   const qualification = lead.qualificationScore !== null
@@ -1302,23 +1300,12 @@ export function CrmLeadDetailPanel({
           </div>
         </div>
 
-        {onMarketingOptInChange ? (
-          <div className="px-5 py-4 shadow-[var(--md-stroke-bottom)] sm:px-6">
-            <MarketingOptInControl
-              checked={Boolean(lead.marketingOptIn)}
-              source={lead.marketingConsentSource}
-              updatedAt={lead.marketingConsentUpdatedAt}
-              onCheckedChange={onMarketingOptInChange}
-            />
-          </div>
-        ) : null}
-
         <div className="px-5 py-6 sm:px-6">
           <SectionHeader title={t("Contacts")} meta={contactCount} />
           {lead.contacts.length ? (
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               {lead.contacts.map((contact) => (
-                <LeadContactCard key={contact.id} contact={contact} language={language} onMarketingOptInChange={onContactMarketingOptInChange} />
+                <LeadContactCard key={contact.id} contact={contact} language={language} />
               ))}
             </div>
           ) : (
@@ -1530,14 +1517,13 @@ export function CrmLeadDetailPanel({
 }
 
 function LeadContactCard({
-  contact,
+  contact: initialContact,
   language,
-  onMarketingOptInChange,
 }: {
   contact: ApiLeadContact
   language: string
-  onMarketingOptInChange?: (contactId: string, optedIn: boolean) => Promise<void>
 }) {
+  const [contact, setContact] = useState(initialContact)
   const { t } = useLanguage()
   const name = contact.name ?? t("Unnamed contact")
   const role = t(leadContactRoleKey(contact.roleCode, contact.isPrimary))
@@ -1567,9 +1553,9 @@ function LeadContactCard({
           <div className="flex min-w-0 items-center gap-2">
             <Mail className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.25} aria-hidden="true" />
             <CopyableField label={t("Email")} value={contact.email} className="-my-2 min-w-0">
-            <a href={`mailto:${contact.email}`} className="inline-flex min-w-0 items-center gap-2 text-[12px] text-[var(--md-accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-ring)]" aria-label={`${t("Email")} ${name}`}>
+            <ContactEmailAction email={contact.email} className="inline-flex min-w-0 items-center gap-2 text-[12px] text-[var(--md-accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-ring)]">
               <span className="truncate" data-i18n-skip dir="ltr">{contact.email}</span>
-            </a>
+            </ContactEmailAction>
             </CopyableField>
           </div>
         ) : <p className="text-[11px] text-[var(--md-subtle)]">{t("No email recorded")}</p>}
@@ -1600,16 +1586,9 @@ function LeadContactCard({
           </CopyableField>
         ) : <p className="text-end text-[11px] font-medium text-[var(--md-ink)]">{t("No activity recorded")}</p>}
       </div>
-      {onMarketingOptInChange ? (
-        <MarketingOptInControl
-          compact
-          className="mt-3 pt-3 shadow-[var(--md-stroke-top)]"
-          checked={Boolean(contact.marketingOptIn)}
-          source={contact.marketingConsentSource}
-          updatedAt={contact.marketingConsentUpdatedAt}
-          onCheckedChange={(optedIn) => onMarketingOptInChange(contact.id, optedIn)}
-        />
-      ) : null}
+      <div className="mt-3 pt-2 shadow-[var(--md-stroke-top)]">
+        <ContactPreferencesPopover contactId={contact.id} name={name} onSaved={next => setContact(current => ({ ...current, name: next.name, email: next.email, phone: next.phone, marketingOptIn: next.consentMarketing, marketingConsentSource: next.marketingConsentSource, marketingConsentUpdatedAt: next.marketingConsentUpdatedAt }))} />
+      </div>
     </article>
   )
 }
@@ -1636,7 +1615,7 @@ export function CrmContactTable({
       width: 120,
       canHide: false,
       canPin: false,
-      cell: (contact) => <div className="inline-flex items-center justify-end gap-1.5"><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label={`${t("Email")} ${contact.name}`} className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" onClick={(event) => event.stopPropagation()}><Mail className="size-3.5" strokeWidth={1.2} /></Button></TooltipTrigger><TooltipContent>{t("Email")}</TooltipContent></Tooltip><DropdownMenu><Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`${t("More options")} ${contact.name}`} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100" onClick={(event) => event.stopPropagation()}><MoreHorizontal className="size-3.5" strokeWidth={1.2} /></Button></DropdownMenuTrigger></TooltipTrigger><TooltipContent>{t("More options")}</TooltipContent></Tooltip><DropdownMenuContent align="end"><DropdownMenuItem onSelect={(event) => event.preventDefault()}><Phone className="size-3.5" strokeWidth={1.2} />{t("Call")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>,
+      cell: (contact) => <div className="inline-flex items-center justify-end gap-1.5"><ContactEmailAction email={contact.email} name={contact.name} className="size-8 justify-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]"><Mail className="size-3.5" strokeWidth={1.2} /></ContactEmailAction><DropdownMenu><Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`${t("More options")} ${contact.name}`} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100" onClick={(event) => event.stopPropagation()}><MoreHorizontal className="size-3.5" strokeWidth={1.2} /></Button></DropdownMenuTrigger></TooltipTrigger><TooltipContent>{t("More options")}</TooltipContent></Tooltip><DropdownMenuContent align="end"><DropdownMenuItem onSelect={(event) => event.preventDefault()}><Phone className="size-3.5" strokeWidth={1.2} />{t("Call")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>,
     },
   ], [t])
 

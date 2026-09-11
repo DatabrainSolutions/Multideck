@@ -459,7 +459,7 @@ test("a reply payload carries no computed recipient list", () => {
     "draftId",
     "mailboxId",
     "mode",
-    "removedAddresses",
+    "removedAddresses", "signature",
     "sourceMessageId",
     "subject",
     "threadId",
@@ -731,4 +731,19 @@ test("a message that is only an attachment still counts as a draft worth keeping
     isEmptyEdits({ ...edits, subject: "", bodyText: "", addedTo: [], attachments: [outbound("licence.pdf", 2048)] }),
     false,
   )
+})
+
+test("every compose mode retains the reviewed signature and per-email opt-out",()=>{
+ const signature={enabled:false,templateId:"operations",revision:7,fingerprint:"reviewed"}
+ for(const mode of ["new","reply","reply_all","forward"] as const){const state={...composerState(mode),signature};const edits=composerEdits(state);assert.deepEqual(edits.signature,signature);const request=buildSendPayload({mailboxId:"mailbox",mode,sourceMessageId:mode==="new"?null:"source",threadId:mode==="new"?null:"thread",...edits});assert.deepEqual(request.signature,signature)}
+})
+
+test("an editable saved draft retains its signature and exact recipient changes after normalisation",()=>{
+ const signature={enabled:false,templateId:"operations",revision:5,fingerprint:"reviewed"}
+ const message=normalizeThreadDetail({id:"thread",messageTotal:1,messages:[{id:"draft",direction:"outbound",to:[{address:"original@example.test"}],bodyText:"Saved text",draft:{mode:"reply_all",sourceMessageId:"original",signature,trackOpens:false,addedTo:[],addedCc:[],addedBcc:[],removedAddresses:["original@example.test"]}}]},"thread").messages[0]
+ assert.deepEqual(message.draft?.signature,signature)
+ assert.deepEqual(message.draft?.addedTo,[])
+ assert.deepEqual(message.draft?.removedAddresses,["original@example.test"])
+ assert.equal(message.draft?.trackOpens,false)
+ assert.deepEqual(composerEdits({...emptyComposerState(),removedAddresses:message.draft?.removedAddresses}).removedAddresses,["original@example.test"])
 })

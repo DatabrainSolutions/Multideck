@@ -1,3 +1,5 @@
+import { ContactEmailAction } from "@/components/multideck/contact-email-action"
+import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
 import { useEffect, useId, useState } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { ArrowLeft, ArrowUpRight, Building2, Mail, Phone } from "@/components/icons/hugeicons"
@@ -51,11 +53,7 @@ export function BookingCustomerPanel({ customerId, customerName, contactId, onAs
   // Check during render as well as in the effect: a changed ID must never reveal the old account.
   const active = state?.id === customerId ? state : null
   const customer = active?.data
-  const metadata = customer?.metadata ?? {}
   const engagement = customer?.engagement
-  const preferred = engagement?.preferredChannel || (typeof metadata.preferredCommunicationPreference === "string" ? metadata.preferredCommunicationPreference : null)
-  const channels = metadata.communicationChannels && typeof metadata.communicationChannels === "object" ? metadata.communicationChannels as Record<string, unknown> : {}
-  const restrictions = Object.keys(channelLabels).filter(key => channels[key] === false || (key === "whatsapp" && engagement?.allowWhatsApp === false))
   const contacts = customer?.contacts.filter(contact => contact.accountId === customer.id) ?? []
   const selectedContact = selection?.customerId === customerId ? contacts.find(contact => contact.id === selection?.contactId) : undefined
   useEffect(() => {
@@ -67,13 +65,12 @@ export function BookingCustomerPanel({ customerId, customerName, contactId, onAs
     requestAnimationFrame(() => document.getElementById(`${panelId}-${id}`)?.focus())
   }
   const orderedContacts = [...contacts].sort((a, b) => Number(b.id === contactId) - Number(a.id === contactId))
-  const displayedPreference = selectedContact?.preferredChannel || preferred
-  const hasPreferences = Boolean(displayedPreference || restrictions.length || engagement?.doNotOverContact || engagement?.notes?.trim())
   function contactAction(kind: "email" | "phone", value: string | null | undefined, name: string) {
     const href = customerContactHref(kind, value)
-    if (!href || channels[kind] === false) return null
-    const Icon = kind === "email" ? Mail : Phone
-    return <a className={`${actionClass}${selectedContact ? " size-8 justify-center bg-[var(--md-accent-a10)]" : ""}`} href={href} title={value ?? undefined} aria-label={`${t(kind === "email" ? "Email" : "Call")} ${name}${selectedContact ? `: ${value}` : ""}`}><Icon aria-hidden="true" className="size-3.5 shrink-0" />{!selectedContact ? <span className="break-all" data-i18n-skip>{value}</span> : null}</a>
+    if (!href) return null
+    if (kind === "email") return <ContactEmailAction email={value!.trim()} name={name} className={`${actionClass}${selectedContact ? " size-8 justify-center bg-[var(--md-accent-a10)]" : ""}`}><Mail className="size-3.5 shrink-0" />{!selectedContact ? <span data-i18n-skip>{value}</span> : null}</ContactEmailAction>
+    const Icon = Phone
+    return <a className={`${actionClass}${selectedContact ? " size-8 justify-center bg-[var(--md-accent-a10)]" : ""}`} href={href} title={value ?? undefined} aria-label={`${t("Call")} ${name}${selectedContact ? `: ${value}` : ""}`}><Icon aria-hidden="true" className="size-3.5 shrink-0" />{!selectedContact ? <span className="break-all" data-i18n-skip>{value}</span> : null}</a>
   }
   return <CompactSectionShell title="Customer" className="h-full" contentClassName="min-h-52" action={customer ? <div className="flex items-center gap-3">{selectedContact ? <button id={`${panelId}-back`} type="button" className={actionClass} onClick={backToCustomer} aria-label={t("Back to customer")}><ArrowLeft className="size-3.5" aria-hidden="true" />{t("Back")}</button> : null}<a className={actionClass} href={selectedContact ? `/crm/contacts/${encodeURIComponent(selectedContact.id)}` : `/crm/accounts/${encodeURIComponent(customer.id)}`} target="_blank" rel="noopener noreferrer" aria-label={t(selectedContact ? "Contact profile" : "Open customer account in a new tab")}><span>{t(selectedContact ? "Profile" : "Account")}</span><ArrowUpRight aria-hidden="true" className="size-3.5" /></a></div> : undefined}>
     {!customerId ? <div className="flex min-h-48 flex-col items-center justify-center gap-2 text-center">
@@ -91,13 +88,15 @@ export function BookingCustomerPanel({ customerId, customerName, contactId, onAs
         </div>
         {selectedContact ? <div className="flex shrink-0 gap-1.5">{contactAction("email", selectedContact.email, selectedContact.name)}{contactAction("phone", selectedContact.phone, selectedContact.name)}</div> : null}
       </div>
-      <div className="grid gap-1.5"><h4 className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Preferences")}</h4>
-        {!hasPreferences ? <p className="text-[12px] text-[var(--md-subtle)]">{t("No preferences saved")}</p> : null}
-        {displayedPreference ? <p className="text-[12px]">{t("Preferred")}: <span data-i18n-skip>{channelLabels[displayedPreference] ? t(channelLabels[displayedPreference]) : displayedPreference}</span></p> : null}
-        {restrictions.length ? <p className="text-[12px] text-[var(--md-subtle)]">{t("Do not use")}: {restrictions.map(key => t(channelLabels[key])).join(", ")}</p> : null}
-        {engagement?.doNotOverContact ? <p className="text-[12px]">{engagement.minHoursBetweenNonUrgentMessages > 0 ? `${t("Non-urgent messages")}: ${engagement.minHoursBetweenNonUrgentMessages} ${t("hours apart")}` : t("Limit non-urgent contact")}</p> : null}
-        {engagement?.notes?.trim() ? <details><summary className={`${actionClass} cursor-pointer`}>{t("Communication notes")}</summary><p className="mt-1 whitespace-pre-wrap break-words text-[12px]" data-i18n-skip>{engagement.notes}</p></details> : null}
-      </div>
+      {selectedContact ? <div className="grid gap-1.5">
+        <p className="text-[12px]">{t("Preferred channel")}: {selectedContact.preferredChannel ? t(channelLabels[selectedContact.preferredChannel] || selectedContact.preferredChannel) : t("Not recorded")}</p>
+        <p className="text-[12px] text-[var(--md-subtle)]">{t(selectedContact.consentMarketing ? "Marketing opted in" : "Marketing opted out")}</p>
+        <ContactPreferencesPopover contactId={selectedContact.id} name={selectedContact.name} onSaved={() => setRetry(value => value + 1)} />
+      </div> : null}
+      {engagement?.doNotOverContact || engagement?.notes?.trim() ? <div className="grid gap-1.5"><h4 className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Company message rules")}</h4>
+        {engagement.doNotOverContact ? <p className="text-[12px]">{t("Allow time between non-urgent messages")}: {engagement.minHoursBetweenNonUrgentMessages} {t("hours")}</p> : null}
+        {engagement.notes?.trim() ? <p className="text-[12px]" data-i18n-skip>{engagement.notes}</p> : null}
+      </div> : null}
       {!selectedContact ? <div><h4 className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">{t("Contacts")}</h4>{orderedContacts.length ? <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto p-0.5">{orderedContacts.map(contact => <button key={contact.id} id={`${panelId}-${contact.id}`} type="button" onClick={() => setSelection({ customerId: customer.id, contactId: contact.id })} className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-[var(--md-surface-tint)] px-3 text-[12px] shadow-[var(--md-shadow-line)] transition-colors hover:bg-[var(--md-accent-a10)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]" aria-label={`${t("View contact")}: ${contact.name}`}><span data-i18n-skip>{contact.name}</span>{contact.id === contactId ? <span className="size-1.5 rounded-full bg-[var(--md-accent)]" role="img" aria-label={t("Booking contact")} /> : null}</button>)}</div> : <p className="text-[12px] text-[var(--md-subtle)]">{t("No contacts linked")}</p>}</div> : null}
     </motion.div>}
   </CompactSectionShell>

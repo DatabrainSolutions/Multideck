@@ -397,7 +397,7 @@ export type UpdateAccountInput = {
   summary: string | null
   strategic: boolean
   trainingAllowed: boolean
-  marketingOptIn: boolean
+  marketingOptIn?: boolean
   marketingConsentReason?: string | null
   metadata: Record<string, unknown>
   address: Omit<NonNullable<ApiCustomerDetail["address"]>, "id">
