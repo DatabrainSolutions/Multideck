@@ -43,7 +43,8 @@ test('PostgreSQL: real token/origin view preserves lifecycle while containing in
       revoke all on function quote_api.customer_response_view(text,text) from public,anon,authenticated;
       ${migration}
       do $test$
-      declare q uuid:=gen_random_uuid();v uuid:=gen_random_uuid();l uuid:=gen_random_uuid();c uuid:=gen_random_uuid();
+      -- A public identifier may legitimately contain the hidden amount's digits.
+      declare q uuid:='00000000-0000-4000-8000-000000000999';v uuid:=gen_random_uuid();l uuid:=gen_random_uuid();c uuid:=gen_random_uuid();
         original jsonb; result jsonb; bad text; state text;
       begin
         original:='{"savedAt":"PRIVATE","quote":{"currency":"GBP","loadingPoint":"GBFXT","dischargePoint":"NLRTM","validTo":"2026-09-20","supplierId":"PRIVATE","payer":{"bank":"PRIVATE"},"shipmentFacts":{"supplierOptions":"PRIVATE"},"charges":[{"sellCurrency":"GBP","sellAmount":100,"costAmount":80,"margin":20,"supplierId":"PRIVATE"},{"sellCurrency":"GBP","sellAmount":"10.125000","internalNotes":"PRIVATE"},{"sellAmount":999,"showToCustomer":false},null,"PRIVATE",{"sellAmount":{"costAmount":"PRIVATE"}}]}}';
@@ -51,7 +52,9 @@ test('PostgreSQL: real token/origin view preserves lifecycle while containing in
         insert into public."CusQuote_Versions" values(v,1,original);
         insert into quote_api.customer_response_links values(l,c,q,v,repeat('a',64),'https://dev.multideck.app','active',now()+interval '1 day','PRIVATE','PRIVATE',gen_random_uuid());
         result:=public.quote_customer_response_view(repeat('a',64),'https://dev.multideck.app');
-        if result::text ~ 'PRIVATE|costAmount|margin|supplier|999' then raise exception 'Internal data leaked: %',result;end if;
+        if result::text ~ 'PRIVATE|costAmount|margin|supplier'
+          or jsonb_path_exists(result, '$.quote.snapshot.quote.charges[*] ? (@.sellAmount == 999 || @.sellAmount == "999")')
+          then raise exception 'Internal data leaked: %',result;end if;
         if result#>>'{quote,snapshot,quote,charges,0,sellAmount}'<>'100'
           or result#>>'{quote,snapshot,quote,charges,1,sellAmount}'<>'10.125000'
           or result#>>'{quote,snapshot,quote,loadingPoint}'<>'GBFXT'
