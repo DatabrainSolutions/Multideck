@@ -2338,7 +2338,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "task-agent-stack" ? <div className="w-[260px] p-3"><TaskAgentStack agents={[
         {id:'preview-1',task_id:'task-1',conversation_id:'conversation-1',title:'Prepare Tuesday’s meeting brief',name:'Harper',icon:1,status:'working',summary:'Checking the latest context',result_revision:0,viewed_revision:0,updated_at:'2026-09-10T09:00:00Z'},
         {id:'preview-2',task_id:'task-2',conversation_id:'conversation-2',title:'Reply to Sam about the quote',name:'Xylo',icon:4,status:'ready',summary:'Your draft is ready',result_revision:1,viewed_revision:0,updated_at:'2026-09-10T08:00:00Z'},
-        {id:'preview-3',task_id:'task-3',conversation_id:'conversation-3',title:'Find the invoice for the shipment',name:'Ternus',icon:5,status:'needs_input',summary:'Choose between two matching invoices',result_revision:1,viewed_revision:0,updated_at:'2026-09-10T07:00:00Z'},
+        {id:'preview-3',task_id:'task-3',conversation_id:'conversation-3',title:'Find the invoice for the shipment',name:'Ternus',icon:5,status:'queued',summary:'Queued for Dexter',result_revision:1,viewed_revision:0,updated_at:'2026-09-10T07:00:00Z'},
       ] as TaskAgent[]} onOpen={()=>undefined} onViewAll={()=>undefined}/></div> : null}
 
       {id === "todo-action-state-icon" ? (

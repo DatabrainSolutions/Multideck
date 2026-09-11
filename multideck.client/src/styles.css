@@ -6730,3 +6730,57 @@ html.md-summon-picking {
     transform: none;
   }
 }
+
+/* Keep agent controls compact on laptop-height and narrower viewports. */
+@media (max-height: 900px), (max-width: 1440px) {
+  .task-agent-stack[data-collapsed="false"] {
+    padding-top: 8px;
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-items {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-item {
+    border: 0;
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-button {
+    --task-agent-outline: color-mix(in srgb, var(--md-subtle) 25%, var(--md-line));
+    min-height: 36px;
+    gap: 2px;
+    padding: 2px 8px 2px 2px;
+    border: 0.5px solid var(--task-agent-outline);
+    border-radius: 999px;
+    background: transparent;
+    transition-property: background-color, border-color, transform;
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-button[data-tone="amber"] {
+    --task-agent-outline: color-mix(in srgb, var(--md-amber) 65%, var(--md-line));
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-button[data-tone="green"] {
+    --task-agent-outline: color-mix(in srgb, var(--md-green) 65%, var(--md-line));
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-button[data-tone="red"] {
+    --task-agent-outline: color-mix(in srgb, var(--md-red) 65%, var(--md-line));
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-button:hover {
+    background: var(--md-hover);
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-subtitle,
+  .task-agent-stack[data-collapsed="false"] .task-agent-stack-dot {
+    display: none;
+  }
+}

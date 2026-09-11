@@ -360,8 +360,8 @@ export const galleryComponents = [
   },
   {
     id: "task-agent-stack",
-    name: "Task agents", category: "AI", description: "Three quiet rows for working agents and new results, with a route to all delegated tasks.",
-    details: "Use above the support action in the app sidebar. Centre each row vertically, give task subtitles the available line width and align a small coloured status dot with the subtitle. The full task remains available on hover and in the conversation. Names and icons belong to saved assignments. Results remain visible until read. Reduced motion removes movement; status remains available in the hover text and accessible name.",
+    name: "Task agents", category: "AI", description: "Working agents and new results in three quiet rows, or compact outlined name-and-icon pills on smaller screens. Status colours and a route to all delegated tasks remain available.",
+    details: "Use above the support action in the app sidebar. Centre each row vertically, give task subtitles the available line width and align a small coloured status dot with the subtitle. At viewport heights up to 900px or widths up to 1440px, use two compact, transparent pills per row with only the icon and name; thin outlines convey status. The full task remains available on hover and in the conversation. Names and icons belong to saved assignments. Results remain visible until read. Reduced motion removes movement; status remains available in the hover text and accessible name.",
     foundOn: [{label:"App sidebar",route:"/"},{label:"Tasks",route:"/to-do?view=dexter"},{label:"Agent conversation",route:"/agent-dexter"}],
     componentCode: taskAgentSource,
     usageCode: `<TaskAgentStack agents={agents} onOpen={agent => navigate(taskAgentUrl(agent))} onViewAll={() => navigate('/to-do?view=dexter')} />`,

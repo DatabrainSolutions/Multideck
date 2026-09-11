@@ -85,12 +85,13 @@ export function TaskAgentStack({
   const outstanding = agents.filter(isSidebarTaskAgent).length
   if (!visible.length && !outstanding) return null
   return (
-    <section aria-label={t('Your task agents')} className="mb-2 min-w-0 border-t-[0.5px] border-[var(--md-line)] pt-[var(--md-gap-md)]">
-      <div className="divide-y-[0.5px] divide-[var(--md-line)]">
+    <section data-collapsed={collapsed} aria-label={t('Your task agents')} className="task-agent-stack mb-2 min-w-0 border-t-[0.5px] border-[var(--md-line)] pt-[var(--md-gap-md)]">
+      <div className="task-agent-stack-items divide-y-[0.5px] divide-[var(--md-line)]">
         <AnimatePresence initial={false} mode="popLayout">
           {visible.map((agent) => (
             <motion.div
               key={agent.id}
+              className="task-agent-stack-item"
               layout="position"
               initial={reduced ? false : { opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
@@ -103,20 +104,21 @@ export function TaskAgentStack({
             >
               <button
                 type="button"
+                data-tone={sidebarStatusTone[agent.status]}
                 title={`${agent.name} · ${agent.title} · ${t(taskAgentStatus[agent.status])}`}
                 aria-label={`${agent.name}: ${agent.title}. ${t(taskAgentStatus[agent.status])}`}
                 onClick={() => onOpen(agent)}
                 className={cn(
-                  'group flex min-h-12 w-full items-center gap-2 rounded-[var(--md-radius-xl)] px-1 py-1.5 text-start transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none',
+                  'task-agent-stack-button group flex min-h-12 w-full items-center gap-2 rounded-[var(--md-radius-xl)] px-1 py-1.5 text-start transition-[background-color,transform] duration-200 ease-out hover:bg-[var(--md-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none',
                   collapsed && 'justify-center',
                 )}
               >
-                <TaskAgentIcon icon={agent.icon} />
+                <TaskAgentIcon icon={agent.icon} className="task-agent-stack-icon" />
                 {!collapsed ? (
                   <>
                   <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
                     <span className="block truncate text-[12px] font-medium leading-[14px] text-[var(--md-ink)]">{agent.name}</span>
-                    <span className="min-w-0 truncate text-[11px] leading-[18px] text-[var(--md-text)]">
+                    <span className="task-agent-stack-subtitle min-w-0 truncate text-[11px] leading-[18px] text-[var(--md-text)]">
                       {agent.title.trim().split(/\s+/u).slice(0, 4).join(' ')}
                     </span>
                   </span>
@@ -124,7 +126,7 @@ export function TaskAgentStack({
                     role="img"
                     aria-label={t(taskAgentStatus[agent.status])}
                     title={t(taskAgentStatus[agent.status])}
-                    className={cn('size-1.5 shrink-0 rounded-full', sidebarStatusDot[sidebarStatusTone[agent.status]])}
+                    className={cn('task-agent-stack-dot size-1.5 shrink-0 rounded-full', sidebarStatusDot[sidebarStatusTone[agent.status]])}
                   />
                   </>
                 ) : null}
