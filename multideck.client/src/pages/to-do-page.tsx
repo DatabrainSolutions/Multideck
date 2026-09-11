@@ -107,8 +107,9 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
   const previousCompletionKey=useRef(agentCompletionKey)
   useEffect(()=>{if(previousCompletionKey.current!==agentCompletionKey){previousCompletionKey.current=agentCompletionKey;setReloadToken(value=>value+1)}},[agentCompletionKey])
 
-  const openTasks = useMemo(() => tasks.filter((task) => (heldTaskGroups[task.id] ?? task.status) === "open"), [heldTaskGroups,tasks])
-  const completedTasks = useMemo(() => tasks.filter((task) => (heldTaskGroups[task.id] ?? task.status) === "completed"), [heldTaskGroups,tasks])
+  const dayTasks = useMemo(() => tasks.filter(task => task.scheduledDate === selectedDate), [tasks, selectedDate])
+  const openTasks = useMemo(() => dayTasks.filter((task) => (heldTaskGroups[task.id] ?? task.status) === "open"), [heldTaskGroups,dayTasks])
+  const completedTasks = useMemo(() => dayTasks.filter((task) => (heldTaskGroups[task.id] ?? task.status) === "completed"), [heldTaskGroups,dayTasks])
   const today = localDateKey()
   const hour = new Date().getHours()
   const greeting = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening"
@@ -116,7 +117,11 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
   const agentsByTask = useMemo(() => new Map(agentState.agents.map(agent => [agent.task_id,agent])), [agentState.agents])
 
   useEffect(() => {
-    const syncView = () => setView(new URLSearchParams(window.location.search).get('view') === 'dexter' ? 'dexter' : 'day')
+    const syncView = () => {
+      const query = new URLSearchParams(window.location.search)
+      setView(query.get('view') === 'dexter' ? 'dexter' : 'day')
+      setSelectedDate(validDateKey(query.get('date')) ?? localDateKey())
+    }
     window.addEventListener('popstate', syncView)
     return () => window.removeEventListener('popstate', syncView)
   }, [])
@@ -161,7 +166,9 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
     setLoadError(null)
     setTasks([])
     setHeldTaskGroups({})
-    void listTodoTasks(selectedDate, controller.signal).then(setTasks).catch(() => {
+    void listTodoTasks(selectedDate, controller.signal).then(result => {
+      if (!controller.signal.aborted) setTasks(result)
+    }).catch(() => {
       if (!controller.signal.aborted) setLoadError(t("Unable to load tasks. Check your connection and try again."))
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false)
@@ -361,7 +368,7 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
               <Button type="button" variant="outline" className="mt-4" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>
             </div>
           ) : null}
-          {!loading && !loadError && tasks.length === 0 ? (
+          {!loading && !loadError && dayTasks.length === 0 ? (
             <div className="py-12 text-center">
               <span className="mx-auto grid size-10 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-accent)]"><ClipboardCheck className="size-4" /></span>
               <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(selectedDate === today ? emptyStateCopy[emptyStateIndex].today : emptyStateCopy[emptyStateIndex].day)}</p>
