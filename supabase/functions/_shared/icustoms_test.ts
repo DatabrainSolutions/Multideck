@@ -12,9 +12,73 @@ import {
   validateICustomsH1Import,
 } from "./icustoms.ts";
 
+Deno.test("transport fields and repeatable containers reach iCustoms without stale deleted IDs", () => {
+  const draft = { ...validImportDeclaration(), isContainerised: "1", containerId: "ABCD1234567", additionalContainerIds: ["EFGH7654321"], inlandMode: "4", arrivalIdentificationType: "40", arrivalIdentificationNumber: "BA123", loadingLocationId: "GBLHR", goodsAddressType: "Y", goodsLocationCountry: "GB", goodsLocationAdditionalIdentifier: "123", gvmsCode: "RRS01", gvmsValue: "Haulier name" };
+  const xml = buildICustomsH1ImportXml(draft);
+  for (const expected of ["<SequenceNumeric>2</SequenceNumeric><ID>EFGH7654321</ID>", "<ID>BA123</ID><IdentificationTypeCode>40</IdentificationTypeCode><ModeCode>4</ModeCode>", "<LoadingLocation><ID>GBLHR</ID></LoadingLocation>", "<Address><TypeCode>Y</TypeCode><CountryCode>GB</CountryCode>", "<StatementCode>RRS01</StatementCode><StatementDescription>Haulier name</StatementDescription>"]) assert(xml.includes(expected), expected);
+  assert(!buildICustomsH1ImportXml({ ...draft, additionalContainerIds: [] }).includes("EFGH7654321"), "Deleted container still sent");
+  assert(!buildICustomsH1ImportXml({ ...draft, isContainerised: "0" }).includes("<TransportEquipment>"), "Non-containerised equipment sent");
+});
+
+Deno.test("import declaration references reach their documented XML fields", () => {
+  const draft = { ...validImportDeclaration(), jobReference: "JOB-REF-0001", ducr: "5GB021111237000-ICUSTOMSIMPORT", ucn: "GB/TEST-MASTER" };
+  const xml = buildICustomsH1ImportXml(draft);
+  assert(xml.includes("<InternalJobReference>JOB-REF-0001</InternalJobReference>"), "Job reference missing");
+  assert(xml.includes("<ID>5GB021111237000-ICUSTOMSIMPORT</ID><TypeCode>DCR</TypeCode>"), "DUCR missing");
+  assert(xml.includes("<ID>GB/TEST-MASTER</ID><TypeCode>MCR</TypeCode>"), "MUCR missing");
+  const changed = buildICustomsH1ImportXml({ ...draft, jobReference: "UPDATED", ducr: "5GB021111237000-UPDATED", ucn: "UPDATED" });
+  assert(!changed.includes("JOB-REF-0001") && !changed.includes("GB/TEST-MASTER") && !changed.includes("5GB021111237000-ICUSTOMSIMPORT"), "Previous references leaked into update");
+});
+
+Deno.test("import references with unconfirmed mappings cannot be silently dropped", () => {
+  for (const field of ["badgeId", "declarantReference", "agentReference"]) {
+    const issues = validateICustomsH1Import({ ...validImportDeclaration(), [field]: "TEST" });
+    assert(issues.some((issue) => issue.includes("provider mapping must be confirmed")), `${field} was silently ignored`);
+  }
+});
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+
+Deno.test("DANs and independent representative, seller and buyer reach the provider XML", () => {
+  const draft = { ...validImportDeclaration(), representative: "Instructing agent", representativeName: "Instructing agent", representativeEori: "GB123456789000", representativeAddressLine: "Agent street", seller: "Actual seller", sellerEori: "IE123456789", buyer: "Actual buyer", buyerEori: "FR123456789", primaryDefermentAccount: "1234567", secondaryDefermentAccount: "7654321" };
+  const xml = buildICustomsH1ImportXml(draft);
+  const agent = xml.match(/<Agent>(.*?)<\/Agent>/s)?.[1] ?? "";
+  assert(agent.includes("Instructing agent") && agent.includes("Agent street") && !agent.includes(String(draft.declarantName)), "Agent must not borrow declarant details");
+  assert(xml.includes("<Buyer><Name>Actual buyer</Name><ID>FR123456789</ID>") && xml.includes("<Seller><Name>Actual seller</Name><ID>IE123456789</ID>"), "Trading parties missing");
+  assert(xml.includes("<CategoryCode>1</CategoryCode><ID>1234567</ID><TypeCode>DAN</TypeCode>") && xml.includes("<CategoryCode>2</CategoryCode><ID>7654321</ID><TypeCode>DAN</TypeCode>"), "DAN order missing");
+});
+
+Deno.test("exporter EORI is separate from its display name and rejects malformed identifiers", () => {
+  const draft = { ...validImportDeclaration(), exporter: "Example exporter", exporterName: "Example exporter", exporterEori: "FR123456789" };
+  const xml = buildICustomsH1ImportXml(draft);
+  assert(xml.includes("<Exporter><Name>Example exporter</Name><ID>FR123456789</ID>"), "Exporter identifier was not mapped separately");
+  const cleared = buildICustomsH1ImportXml({ ...draft, exporterEori: "" });
+  assert(!cleared.includes("<ID>FR123456789</ID>"), "Cleared identifier leaked into XML");
+  assert(validateICustomsH1Import({ ...draft, exporterEori: "invalid value" }).some(issue => issue.includes("valid exporter EORI")), "Malformed exporter identifier must not be silently dropped");
+});
+
+Deno.test("declarant company selection sends the registered identifier, not the display name", () => {
+  const draft = { ...validImportDeclaration(), declarant: "Tenant company", declarantName: "Tenant company", declarantEori: "GB123456789000" };
+  const xml = buildICustomsH1ImportXml(draft);
+  assert(xml.includes("<Declarant><Name>Tenant company</Name><ID>GB123456789000</ID>"), "Declarant identity not mapped");
+  assert(!validateICustomsH1Import(draft).some(issue => issue.includes("declarant EORI")), "Configured identifier rejected");
+  assert(validateICustomsH1Import({ ...draft, declarantEori: "" }).some(issue => issue.includes("declarant EORI")), "Missing EORI fell back to the company name");
+});
+
+Deno.test("importer EORI, deferment accounts and repeated holders use documented import tags", () => {
+  const draft = { ...validImportDeclaration(), importer: "Selected company", importerEori: "GB123456789000", primaryDefermentAccount: "1234567", secondaryDefermentAccount: "7654321", additionalAuthorisationHolders: [{ category: "DPO", identifier: "GB123456789000" }, { category: "CGU", identifier: "GB123456789000" }] };
+  (draft.items as Array<Record<string, unknown>>)[0].dutyCalculations = [{ taxType: "A00", paymentMethod: "E", baseQuantity: "1", unitCode: "KGM", declaredTax: "10" }];
+  (draft.items as Array<Record<string, unknown>>)[0].additionalDocuments = [{ category: "C", type: "505", reference: "GBCGU12345" }, { category: "C", type: "506", reference: "GBDPO67890" }];
+  const xml = buildICustomsH1ImportXml(draft);
+  assert(xml.includes("<Importer><Name>Sandbox Importer Ltd</Name><ID>GB123456789000</ID>"), "Selected office EORI must be the importer identifier");
+  for (const [category, account] of [["1", "1234567"], ["2", "7654321"]]) assert(xml.includes(`<AdditionalDocument><CategoryCode>${category}</CategoryCode><ID>${account}</ID><TypeCode>DAN</TypeCode></AdditionalDocument>`), "Missing documented DAN mapping");
+  for (const category of ["DPO", "CGU"]) assert(xml.includes(`<AuthorisationHolder><ID>GB123456789000</ID><CategoryCode>${category}</CategoryCode></AuthorisationHolder>`), "Missing holder");
+  assert(xml.includes("<Payment><MethodCode>E</MethodCode><PaymentAmount currencyID=\"GBP\">10</PaymentAmount></Payment>"), "Import payment must be nested in Payment");
+  assert(!xml.includes("<PaymentMethodCode>"), "Legacy export payment tag leaked into import");
+  assert(validateICustomsH1Import({ ...draft, importerEori: "not valid" }).some(issue => issue.includes("importer EORI")), "Invalid EORI accepted");
+});
 
 function occurrences(value: string, fragment: string) {
   return value.split(fragment).length - 1;
@@ -123,6 +187,7 @@ function validImportDeclaration(): ExportDeclarationInput {
     exportCountry: "CN",
     destinationCountry: "GB",
     borderNationality: "GB",
+    inlandMode: "1",
     borderMode: "1",
     arrivalIdentificationType: "10",
     arrivalIdentificationNumber: "12345",

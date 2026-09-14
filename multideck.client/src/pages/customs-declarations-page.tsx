@@ -1,4 +1,13 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { applyTenantDeclarantDefault, declarantCompanyPatch, formattedDeclarantAddress } from "@/lib/customs-declarant"
+import { loadTenantDeclarantDefault } from "@/lib/customs-drafts-api"
+import { ducrFormatError, ducrToAutoPopulate, generateDucr } from "@/lib/customs-ducr"
+import { getCustomsReferencePreferences, type CustomsReferencePreferencesState } from "@/lib/customs-reference-preferences"
+import { AutoPopulatedInput, AutoPopulatedTextarea, useAutoPopulationMorph } from "@/components/multideck/auto-populated-field"
+import { applyImporterDefaults, formattedImporterAddress, importerCompanyPatch } from "@/lib/customs-importer"
+import { exporterCompanyPatch, formattedExporterAddress } from "@/lib/customs-exporter"
+import { customsArrivalTransportTypes } from "@/lib/customs-arrival-transport"
+import { additionalPartyCompanyPatch, clearAdditionalParty, formattedAdditionalPartyAddress, type AdditionalCustomsParty } from "@/lib/customs-additional-parties"
 import { collectExportPages } from "@/lib/table-export"
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, Eye, FileCheck2, FileText, LoaderCircle, Plus, RefreshCw, Save, ScanText, Search, Send, Trash2, UserRound } from "@/components/icons/hugeicons"
@@ -64,7 +73,7 @@ const declarationFieldVisibilityStorageKey = "multideck.customs.declaration-fiel
 function customsExportCategory(path: readonly string[]) {
   const field = path[0] ?? ""
   if (field === "items") return "Goods items"
-  if (/^(exporter|importer|seller|buyer|consignee|carrier|declarant|representative|representation|authorisation)/.test(field)) return "Parties"
+  if (/^(exporter|importer|seller|buyer|consignee|carrier|declarant|representative|representation|authorisation|primaryDeferment|secondaryDeferment)/.test(field)) return "Parties"
   if (/^(exportCountry|destinationCountry|border|inland|departure|arrival|goodsLocation|freightPayment|isContainerised|gvms|container|seal|routing)/.test(field)) return "Transport"
   if (/^(previousDocument|headerAdditionalInformation)/.test(field)) return "Documents"
   if (/^(total|currency|transactionNature|exchangeRate|tradeTerms|customsValuation|primaryDeferment|secondaryDeferment|freightCharge|vatValueAdjustment|insuranceCost|containerPackingCost)/.test(field)) return "Valuation"
@@ -886,7 +895,8 @@ function iCustomsDeclarationUrl(direction: DeclarationKind, correlationId: strin
 function shouldCheckLocalWebhookState(state: ICustomsWorkspaceState | null) {
   const status = state?.declaration.provider?.status ?? state?.declaration.status
   return shouldPollCustomsSubmission(status, state?.declaration.provider?.submittedAt) ||
-    (["accepted", "released", "cleared"].includes(status ?? "") && !state?.declaration.document.available)
+    (["accepted", "released", "cleared"].includes(status ?? "") &&
+      (!state?.declaration.document.available || !state?.declaration.provider?.mrn?.trim()))
 }
 
 function formatDraftAmount(amount: number | null, currency: string | null) {
@@ -998,6 +1008,13 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
     setAutosaveStatus("saving")
     const createInitialDraft = async () => {
       try {
+        if (!initialDraftServerRef.current && draftRef.current.direction === "import") {
+          const tenant = await loadTenantDeclarantDefault()
+          if (cancelled) return
+          const prepared = applyTenantDeclarantDefault(draftRef.current, tenant)
+          draftRef.current = prepared
+          setDraft((current) => applyTenantDeclarantDefault(current, tenant))
+        }
         const saved = initialDraftServerRef.current ?? await saveDeclarationDraft(draftRef.current)
         if (cancelled) return
         initialDraftServerRef.current = saved
@@ -1115,10 +1132,15 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
   }
 
   function updateItemById<K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) {
-    setDraft((current) => ({
-      ...current,
-      items: current.items.map((item) => item.id === itemId ? { ...item, [field]: value } : item),
-    }))
+    setDraft((current) => {
+      const previous = current.items.find(item => item.id === itemId)
+      const next = { ...current, items: current.items.map(item => item.id === itemId ? { ...item, [field]: value } : item) }
+      const newTaxOrPayment = field === "dutyCalculations" && (value as ExportDeclarationItem["dutyCalculations"]).some(entry => {
+        const old = previous?.dutyCalculations.find(row => row.id === entry.id)
+        return (entry.taxType && entry.taxType !== old?.taxType) || (entry.paymentMethod && entry.paymentMethod !== old?.paymentMethod)
+      })
+      return newTaxOrPayment ? applyImporterDefaults(next) : next
+    })
   }
 
   const queueAutosave = useCallback((nextDraft: StandaloneExportDraft) => {
@@ -1475,7 +1497,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
   function applyInvoiceItems(items: ExportDeclarationItem[], mode: "replace" | "append", sourceLineCount: number) {
     const importKey = Date.now()
     const importedItems = items.map((item, index) => ({ ...item, id: `invoice-${importKey}-${index + 1}` }))
-    setDraft((current) => ({ ...current, items: mode === "append" ? [...current.items, ...importedItems] : importedItems }))
+    setDraft((current) => applyImporterDefaults({ ...current, items: mode === "append" ? [...current.items, ...importedItems] : importedItems }))
     setActiveItemId(importedItems[0].id)
     if (viewMode === "form") setFormTab("items")
     else selectTab("items")
@@ -1542,8 +1564,19 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
 
   useEffect(() => {
     if (!declarationId) return
+    // Acceptance is not the last operational update: iCustoms can subsequently
+    // report release or clearance, including changes made in its own workspace.
+    // Read our persisted webhook state while visible, without calling the provider.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void readLocalCustomsState()
+    }, 60_000)
+    return () => window.clearInterval(timer)
+  }, [declarationId, readLocalCustomsState])
+
+  useEffect(() => {
+    if (!declarationId) return
     const refreshOnReturn = () => {
-      if (document.visibilityState !== "visible" || !shouldCheckLocalWebhookState(iCustomsState)) return
+      if (document.visibilityState !== "visible") return
       const now = Date.now()
       if (now - lastFocusRefreshAtRef.current < 1_500) return
       lastFocusRefreshAtRef.current = now
@@ -1676,7 +1709,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
       {referenceData.loading ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><p className="text-[11px] text-[var(--md-text)]">{t("Loading Customs reference data")}</p></Surface> : null}
       {referenceData.error ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><div className="flex items-center gap-2 text-[11px] text-[var(--md-red)]"><CircleAlert className="size-4 shrink-0" /><span><strong>{t("Customs reference data unavailable")}</strong> {t("Selection fields remain locked until the database catalogue is available.")}</span></div></Surface> : null}
 
-      {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
+      {viewMode === "form" && formTab === "general" ? <GeneralFormView customsState={iCustomsState} draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
       {viewMode === "form" && formTab === "items" ? <ItemsSection declarationCategory={draft.declarationCategory} items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
       {viewMode === "form" && formTab === "notes" ? <LifecycleNotes subjectType="customs" subjectId={declarationId ?? null} /> : null}
       {viewMode === "tabs" ? <div className="relative min-w-0 overflow-x-clip">
@@ -1691,7 +1724,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
             transition={reduceMotion(shouldReduceMotion, mdMotion.micro)}
             className="min-w-0"
           >
-            {tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} t={t} /> : null}
+            {tab === "declaration" ? <DeclarationSection customsState={iCustomsState} draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} t={t} /> : null}
             {tab === "parties" ? <PartiesSection draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
@@ -1738,6 +1771,7 @@ function useReferenceOptions(catalogue: CustomsCatalogCode, t: (text: string) =>
 }
 
 type SectionProps = {
+  customsState?: ICustomsWorkspaceState | null
   draft: StandaloneExportDraft
   update: <K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) => void
   showDataElements: boolean
@@ -1757,7 +1791,88 @@ function GeneralFormView(props: SectionProps & { showOptional: boolean; updateMa
   </CompactCustomsFormContext.Provider>
 }
 
-function DeclarationSection({ draft, update, showDataElements, issues, highlightedField, t }: SectionProps) {
+function DeclarationSection({ draft, update, showDataElements, issues, highlightedField, t, customsState }: SectionProps) {
+  return draft.direction === "export"
+    ? <ExportDeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issues} highlightedField={highlightedField} t={t} />
+    : <ImportDeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issues} highlightedField={highlightedField} t={t} customsState={customsState} />
+}
+
+function ImportDeclarationSection({ draft, update, showDataElements, issues, highlightedField, t, customsState }: SectionProps) {
+  const countries = useReferenceOptions("country", t, "Select country")
+  const goodsLocationTypes = useReferenceOptions("goods_location_type", t, "Select type")
+  const [preferences, setPreferences] = useState<CustomsReferencePreferencesState | null>(null)
+  const [preferencesError, setPreferencesError] = useState("")
+  const [preferencesAttempt, setPreferencesAttempt] = useState(0)
+  const [populationEvent, setPopulationEvent] = useState<number | null>(null)
+  useEffect(() => {
+    let active = true
+    setPreferencesError("")
+    getCustomsReferencePreferences().then((value) => { if (active) setPreferences(value) })
+      .catch((reason: Error) => { if (active) setPreferencesError(reason.message) })
+    return () => { active = false }
+  }, [preferencesAttempt])
+  const officeId = draft.customsOfficeId ?? preferences?.settings.defaultOfficeId ?? ""
+  const eori = preferences?.settings.officeEoris[officeId] || preferences?.settings.eori || ""
+  const allocationYear = draft.ducrAllocationYear ?? new Date().getFullYear()
+  const proposedDucr = generateDucr(eori, draft.jobReference, allocationYear)
+  const nextDucr = preferences && customsState ? ducrToAutoPopulate({ current: draft.ducr, previouslyGenerated: draft.autoGeneratedDucr, eori, jobReference: draft.jobReference, allocationYear, submitted: Boolean(customsState.declaration.provider?.submittedAt) }) : null
+  useEffect(() => {
+    if (nextDucr !== null) {
+      setPopulationEvent(Date.now())
+      update("ducr", nextDucr)
+      update("autoGeneratedDucr", nextDucr)
+      update("ducrAllocationYear", allocationYear)
+    }
+  }, [nextDucr, allocationYear, update])
+  const ducrError = (draft.ducr || issues.has("ducr")) ? ducrFormatError(draft.ducr) : null
+  const ducrRef = useAutoPopulationMorph<HTMLSpanElement>(Boolean(populationEvent), draft.ducr, undefined, populationEvent)
+  const badges = preferences?.settings.badges.filter((badge) => badge.active) ?? []
+  const savedBadgeMatches = badges.some((badge) => badge.id === draft.badgeConfigurationId && badge.code === draft.badgeId && badge.provider === draft.badgeProvider && badge.portCode === draft.badgePortCode)
+  const badgeValue = savedBadgeMatches ? draft.badgeConfigurationId! : draft.badgeId ? `saved:${draft.badgeConfigurationId || draft.badgeId}` : ""
+  const badgeOptions: CustomsReferenceOptionTuple[] = badges.map((badge) => [badge.id, `${badge.code} - ${badge.portName} · ${badge.provider} · ${badge.portCode}`])
+  if (badgeValue && !badges.some((badge) => badge.id === badgeValue)) badgeOptions.push([badgeValue, `${draft.badgeId} - ${t("Saved badge")}`])
+  const badgeCode = (value: string) => badges.find((badge) => badge.id === value)?.code || draft.badgeId || value
+  const pendingMappings = ([["badgeId", "Badge code"], ["declarantReference", "Declarant’s reference"], ["agentReference", "Agent’s reference"]] as const).filter(([field]) => draft[field]?.trim()).map(([, label]) => t(label))
+  const declarationCategories = useReferenceOptions("declaration_category", t, "Select category")
+  const declarationTypes = useReferenceOptions("declaration_type", t, "Select type")
+  return <SectionFrame title={t("Declaration details")} description={t("Core identity and references for this import declaration.")}>
+    <FieldGrid>
+      <FieldShell label="MRN" showDataElements={showDataElements}><Input readOnly value={customsState?.declaration.provider?.mrn ?? ""} placeholder={t("Not assigned")} /></FieldShell>
+      <FieldShell label={t("Status")} showDataElements={showDataElements}><Input readOnly value={t(titleCase(customsState?.declaration.provider?.status ?? customsState?.declaration.status ?? "draft"))} /></FieldShell>
+      <SelectField label={t("Declaration category")} dataElement="1/1" customsBox="1" required showDataElements={showDataElements} value={draft.declarationCategory} onChange={(value) => update("declarationCategory", value)} options={declarationCategories} />
+      <SelectField label={t("Type of declaration")} dataElement="1/2" customsBox="1" required showDataElements={showDataElements} value={draft.declarationType} onChange={(value) => update("declarationType", value)} options={declarationTypes} />
+      <FieldShell label={t("Badge code")} required showDataElements={showDataElements} fieldKey="badgeId" invalid={issues.has("badgeId")} highlighted={highlightedField === "badgeId"}>
+        <CustomsReferenceCombobox label={t("Badge code")} required value={badgeValue} options={badgeOptions} optionCode={badgeCode} placeholder={t(preferences ? "Select badge" : preferencesError ? "Setup unavailable" : "Loading badges…")} disabled={!preferences || !badgeOptions.length} invalid={issues.has("badgeId")} onChange={(value) => {
+          const badge = badges.find((entry) => entry.id === value)
+          if (!badge) return
+          update("badgeId", badge.code)
+          update("badgeConfigurationId", badge.id)
+          update("badgeProvider", badge.provider)
+          update("badgePortCode", badge.portCode)
+        }} />
+      </FieldShell>
+      <TextField label={t("Job reference")} showDataElements={showDataElements} value={draft.jobReference} onChange={(value) => update("jobReference", value)} />
+      <TextField label={t("Trader reference number")} dataElement="2/4" customsBox="44" showDataElements={showDataElements} value={draft.traderReference} onChange={(value) => update("traderReference", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 19))} invalid={issues.has("traderReference")} fieldKey="traderReference" highlighted={highlightedField === "traderReference"} maxLength={19} />
+      <TextField label={t("Declarant’s reference")} showDataElements={showDataElements} value={draft.declarantReference} onChange={(value) => update("declarantReference", value)} />
+      <TextField label={t("Agent’s reference")} showDataElements={showDataElements} value={draft.agentReference} onChange={(value) => update("agentReference", value)} />
+      <FieldShell label="DUCR" required showDataElements={showDataElements} fieldKey="ducr" invalid={Boolean(ducrError)} highlighted={highlightedField === "ducr"}>
+        <span ref={ducrRef} className="block"><Input value={draft.ducr} aria-required="true" aria-invalid={Boolean(ducrError)} aria-describedby={ducrError ? "customs-ducr-error" : "customs-ducr-help"} onChange={(event) => { setPopulationEvent(null); update("autoGeneratedDucr", undefined); update("ducr", event.target.value.toUpperCase()) }} /></span>
+      </FieldShell>
+      <FieldShell label={t("LRN (customs code)")} showDataElements={showDataElements}><Input readOnly value={customsState?.declaration.provider?.lrn ?? ""} placeholder={t("Not assigned")} /></FieldShell>
+      <TextField label="MUCR / UCN" showDataElements={showDataElements} value={draft.ucn} onChange={(value) => update("ucn", value)} />
+      <SelectField label={t("Type of location")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsLocationType} onChange={(value) => update("goodsLocationType", value)} options={goodsLocationTypes} />
+      <><SelectField label={t("Type of address")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsAddressType ?? "U"} onChange={(value) => update("goodsAddressType", value)} options={[["", t("Select type")], ["U", t("U - UN/LOCODE")], ["Y", t("Y - Authorisation Number")]]} /><SelectField label={t("Goods location country")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsLocationCountry ?? draft.destinationCountry} onChange={(value) => update("goodsLocationCountry", value)} options={countries} /><TextField label={t("Goods location additional identifier")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsLocationAdditionalIdentifier ?? ""} onChange={(value) => update("goodsLocationAdditionalIdentifier", value.replace(/[^0-9]/g, "").slice(0, 3))} maxLength={3} /></>
+    </FieldGrid>
+    {preferences?.offices.length ? <div className="mt-3"><SelectField label={t("Customs office")} showDataElements={false} value={officeId} options={[["", t("Company EORI")], ...preferences.offices.map((office) => [office.id, office.name] as const)]} onChange={(value) => update("customsOfficeId", value)} /></div> : null}
+    {ducrError ? <p id="customs-ducr-error" role="alert" className="mt-2 text-[11px] text-[var(--md-red)]">{t(ducrError)}</p> : null}
+    <p id="customs-ducr-help" className="mt-2 text-[11px] text-[var(--md-subtle)]">{t(draft.ducr ? "DUCR is retained for the declaration audit trail. Check it before submitting." : !draft.jobReference ? "Add the job reference to generate the DUCR from your registered EORI." : !eori ? "Configure the registered company or office EORI in Admin → System Preferences → Customs preferences." : !proposedDucr ? "The EORI or job reference cannot form a valid DUCR. Check Customs preferences and the job reference." : "DUCR uses the allocation year, registered EORI and job reference.")}</p>
+    {preferences && !badges.length ? <p className="mt-2 text-[11px] text-[var(--md-amber)]">{t("No active badges are configured. Add badge codes in Admin → System Preferences → Customs preferences.")}</p> : null}
+    {preferencesError ? <p role="alert" className="mt-2 text-[11px] text-[var(--md-red)]">{t(preferencesError)} <button type="button" className="underline" onClick={() => setPreferencesAttempt((value) => value + 1)}>{t("Try again")}</button></p> : null}
+    {pendingMappings.length ? <p role="status" className="mt-3 text-[12px] text-[var(--md-amber)]">{t("Saved with this draft, but awaiting iCustoms mapping:")} {pendingMappings.join(", ")}. {t("These values cannot be sent to iCustoms yet.")}</p> : null}
+  </SectionFrame>
+}
+
+function ExportDeclarationSection({ draft, update, showDataElements, issues, highlightedField, t }: SectionProps) {
   const direction = useContext(CustomsDirectionContext)
   const allDeclarationCategories = useReferenceOptions("declaration_category", t, "Select category")
   const declarationCategories = direction === "import"
@@ -1780,10 +1895,12 @@ function DeclarationSection({ draft, update, showDataElements, issues, highlight
   </SectionFrame>
 }
 
-type CustomsOrganisationParty = "importer" | "exporter" | "consignee" | "declarant" | "carrier" | "representative"
+type CustomsOrganisationParty = "importer" | "exporter" | "consignee" | "declarant" | "carrier" | "representative" | "seller" | "buyer"
 type CustomsAddressParty = Extract<CustomsOrganisationParty, "importer" | "exporter" | "consignee" | "declarant">
 
 const customsOrganisationTypesByParty: Record<CustomsOrganisationParty, readonly string[]> = {
+  seller: ["Seller", "Exporter", "Consignor/Shipper", "Supplier"],
+  buyer: ["Buyer", "Importer", "Consignee", "Customer", "Key Customer Account"],
   importer: ["Importer", "Consignee", "Customer", "Key Customer Account"],
   exporter: ["Exporter", "Consignor/Shipper", "Supplier"],
   consignee: ["Consignee", "Customer", "Potential Customer", "Key Customer Account"],
@@ -1817,6 +1934,7 @@ function customsPartyPatch(party: CustomsAddressParty, organisation: ApiCustomer
     [`${party}City`]: address?.townCity ?? "",
     [`${party}Postcode`]: address?.postZipCode ?? "",
     [`${party}Country`]: address?.countryCode?.toUpperCase() ?? "",
+    ...(party === "declarant" ? { declarantEori: typeof organisation.operations?.customs?.eoriNumber === "string" ? organisation.operations.customs.eoriNumber : "" } : {}),
   } as Partial<StandaloneExportDraft>
 }
 
@@ -1825,32 +1943,119 @@ function PartiesSection({ draft, update, updateMany, showDataElements, showOptio
   const compact = useContext(CompactCustomsFormContext)
   const representationTypes = useReferenceOptions("representation_type", t, "Not specified")
   const countries = useReferenceOptions("country", t, "Select country")
+  const [importerCompany, setImporterCompany] = useState<ApiCustomerDetail | null>(null)
+  const [importerLookupError, setImporterLookupError] = useState(false)
+  const [importerLookupAttempt, setImporterLookupAttempt] = useState(0)
+  const [importerPopulationEvent, setImporterPopulationEvent] = useState<number | null>(null)
+  const [editingImporterAddress, setEditingImporterAddress] = useState(false)
+  const [exporterCompany, setExporterCompany] = useState<ApiCustomerDetail | null>(null)
+  const [exporterLookupError, setExporterLookupError] = useState(false)
+  const [exporterLookupAttempt, setExporterLookupAttempt] = useState(0)
+  const [exporterPopulationEvent, setExporterPopulationEvent] = useState<number | null>(null)
+  const [editingExporterAddress, setEditingExporterAddress] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setExporterCompany(null)
+    setExporterLookupError(false)
+    if (!draft.exporterOrganisationId) return
+    getCustomer(draft.exporterOrganisationId).then(company => { if (!cancelled) setExporterCompany(company) }).catch(() => { if (!cancelled) setExporterLookupError(true) })
+    return () => { cancelled = true }
+  }, [draft.exporterOrganisationId, exporterLookupAttempt])
+  const selectExporter = (company: ApiCustomerDetail, addressId?: string) => {
+    setExporterCompany(company)
+    setExporterLookupError(false)
+    setExporterPopulationEvent(event => (event ?? 0) + 1)
+    updateMany(exporterCompanyPatch(company, addressId))
+  }
+  const exporterAddressInvalid = ["exporterName", "exporterAddressLine", "exporterCity", "exporterPostcode", "exporterCountry"].some(key => issues.has(key))
+  const [declarantCompany, setDeclarantCompany] = useState<ApiCustomerDetail | null>(null)
+  const [declarantLookupError, setDeclarantLookupError] = useState(false)
+  const [declarantLookupAttempt, setDeclarantLookupAttempt] = useState(0)
+  const [declarantPopulationEvent, setDeclarantPopulationEvent] = useState<number | null>(null)
+  const [editingDeclarantAddress, setEditingDeclarantAddress] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setDeclarantCompany(null)
+    setDeclarantLookupError(false)
+    if (!draft.declarantOrganisationId) return
+    getCustomer(draft.declarantOrganisationId).then(company => { if (!cancelled) setDeclarantCompany(company) }).catch(() => { if (!cancelled) setDeclarantLookupError(true) })
+    return () => { cancelled = true }
+  }, [draft.declarantOrganisationId, declarantLookupAttempt])
+  const selectDeclarant = (company: ApiCustomerDetail, addressId?: string) => {
+    setDeclarantCompany(company)
+    setDeclarantLookupError(false)
+    setDeclarantPopulationEvent(event => (event ?? 0) + 1)
+    updateMany(declarantCompanyPatch(company, addressId))
+  }
+  const declarantAddressInvalid = ["declarantName", "declarantAddressLine", "declarantCity", "declarantPostcode", "declarantCountry"].some(key => issues.has(key))
+  const latestDraft = useRef(draft)
+  latestDraft.current = draft
+  useEffect(() => {
+    let cancelled = false
+    if (!draft.importerOrganisationId) { setImporterCompany(null); return }
+    setImporterLookupError(false)
+    getCustomer(draft.importerOrganisationId).then(company => { if (!cancelled) setImporterCompany(company) }).catch(() => { if (!cancelled) setImporterLookupError(true) })
+    return () => { cancelled = true }
+  }, [draft.importerOrganisationId, importerLookupAttempt])
+  const selectImporter = (company: ApiCustomerDetail, addressId?: string) => {
+    setImporterCompany(company)
+    setImporterLookupError(false)
+    setImporterPopulationEvent(event => (event ?? 0) + 1)
+    const next = applyImporterDefaults({ ...latestDraft.current, ...importerCompanyPatch(company, addressId) })
+    updateMany(next)
+  }
+  const addressText = formattedImporterAddress(draft)
+  const addressInvalid = ["importerName", "importerAddressLine", "importerCity", "importerPostcode", "importerCountry"].some(key => issues.has(key))
   const chooseOrganisation = (party: CustomsAddressParty) => (organisation: ApiCustomerDetail) => updateMany(customsPartyPatch(party, organisation))
   return <section aria-labelledby="customs-party-details-heading" className="min-w-0">
     <header className={cn("flex flex-col gap-1 px-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6", compact ? "mb-2" : "mb-3")}>
       <h2 id="customs-party-details-heading" className={cn("shrink-0 font-medium text-[var(--md-ink)]", compact ? "text-[13px]" : "text-[15px]")}>{t("Party details")}</h2>
-      <p className={cn("text-[var(--md-subtle)]", compact ? "text-[10.5px] leading-4" : "text-[12px] leading-5 sm:max-w-[65%] sm:text-end")}>{t(direction === "import" ? "Importer, exporter, declarant and representation." : "Exporter, consignee, declarant and representation.")}</p>
     </header>
-    <div className="grid min-w-0 gap-3 xl:grid-cols-2">
+    <div className={cn("grid min-w-0 gap-3", direction === "import" ? "xl:grid-cols-3" : "xl:grid-cols-2")}>
       {direction === "import" ? <>
-        <PartyFieldsGroup title={t("Importer")}>
+        <PartyFieldsGroup title={t("Importer")} fieldsClassName="sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
           <PartyContactWarning values={[draft.importerName, draft.importerAddressLine, draft.importerCity, draft.importerPostcode, draft.importerCountry]} fields={["importerName", "importerAddressLine", "importerCity", "importerPostcode", "importerCountry"]} issues={issues} t={t} />
-          <CustomsOrganisationField party="importer" label={t("Importer")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importer} onChange={(value) => update("importer", value)} onSelect={chooseOrganisation("importer")} invalid={issues.has("importer")} fieldKey="importer" highlighted={highlightedField === "importer"} />
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+            <CustomsOrganisationField party="importer" label={t("Company")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importer} onChange={(value) => updateMany({ importer: value, importerName: value, importerOrganisationId: undefined, importerAddressId: undefined, importerEori: "", importerPaymentDefaults: undefined, ...(draft.importerOrganisationId ? { importerAddressLine: "", importerCity: "", importerPostcode: "", importerCountry: "" } : {}) })} onSelect={selectImporter} invalid={issues.has("importer")} fieldKey="importer" highlighted={highlightedField === "importer"} />
+            <FieldShell label={t("EORI number")} dataElement="3/16" customsBox="8" showDataElements={showDataElements} invalid={issues.has("importerEori")} fieldKey="importerEori"><AutoPopulatedInput aria-label={t("Importer EORI number")} readOnly={Boolean(draft.importerOrganisationId)} value={draft.importerEori ?? ""} onChange={event => update("importerEori", event.target.value.toUpperCase())} autoPopulated={Boolean(draft.importerOrganisationId)} autoPopulationEvent={importerPopulationEvent} autoPopulationDescription={t("Filled from the selected company's Customs tab and address.")} placeholder={t("Not recorded")} className="h-8 border-0 bg-[var(--md-field-bg)] text-[12px] shadow-[var(--md-shadow-line)]" /></FieldShell>
+          </div>
+          {importerCompany && importerCompany.id === draft.importerOrganisationId && importerCompany.addresses.length > 1 ? <SelectField label={t("Office / address")} showDataElements={false} value={draft.importerAddressId ?? ""} options={importerCompany.addresses.map(address => [address.id, [address.name, address.line1, address.townCity].filter(Boolean).join(" · ")])} onChange={id => selectImporter(importerCompany, id)} /> : null}
+          <div className="min-w-0">
+            <div className="mb-1 flex items-center justify-between gap-2"><span className="text-[11px] text-[var(--md-text)]">{t("Address")} <span className="text-[var(--md-red)]">*</span></span><Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" aria-expanded={editingImporterAddress} onClick={() => setEditingImporterAddress(current => !current)}>{t(editingImporterAddress ? "Done" : "Edit address")}</Button></div>
+            <AutoPopulatedTextarea aria-label={t("Importer formatted address")} readOnly value={addressText} rows={3} autoPopulated={Boolean(draft.importerOrganisationId)} autoPopulationEvent={importerPopulationEvent} autoPopulationDescription={t("Filled from the company address. Use Edit address to change this declaration only.")} aria-invalid={addressInvalid || undefined} placeholder={t("Select a company or enter an address")} className="min-h-20 resize-none border-0 bg-[var(--md-field-bg)] px-3 py-2 text-[12px] leading-5 shadow-[var(--md-shadow-line)]" />
+          </div>
+          {editingImporterAddress || addressInvalid ? <div className="grid gap-2 sm:grid-cols-2">
           <TextField label={t("Importer legal name")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importerName} onChange={(value) => update("importerName", value)} invalid={issues.has("importerName")} fieldKey="importerName" highlighted={highlightedField === "importerName"} />
           <TextField label={t("Importer street address")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerAddressLine} onChange={(value) => update("importerAddressLine", value)} invalid={issues.has("importerAddressLine")} fieldKey="importerAddressLine" highlighted={highlightedField === "importerAddressLine"} />
           <TextField label={t("Importer town or city")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerCity} onChange={(value) => update("importerCity", value)} invalid={issues.has("importerCity")} fieldKey="importerCity" highlighted={highlightedField === "importerCity"} />
           <TextField label={t("Importer postcode")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerPostcode} onChange={(value) => update("importerPostcode", value)} invalid={issues.has("importerPostcode")} fieldKey="importerPostcode" highlighted={highlightedField === "importerPostcode"} />
           <SelectField label={t("Importer country")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerCountry} onChange={(value) => update("importerCountry", value)} invalid={issues.has("importerCountry")} fieldKey="importerCountry" highlighted={highlightedField === "importerCountry"} options={countries} />
+          </div> : null}
+          {draft.importerOrganisationId && !draft.importerEori ? <p className="text-[11px] text-[var(--md-subtle)]">{t("Add the registered EORI in the company's Customs tab.")}</p> : null}
+          {importerLookupError ? <p role="alert" className="text-[11px] text-[var(--md-red)]">{t("Company details unavailable. Saved declaration values are unchanged.")} <Button type="button" variant="link" size="sm" onClick={() => setImporterLookupAttempt(attempt => attempt + 1)}>{t("Retry")}</Button></p> : null}
+          {draft.importerPaymentDefaults?.dutyPaymentMethod || draft.importerPaymentDefaults?.vatPaymentMethod ? <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]"><span className="text-[var(--md-subtle)]">{t("Company payment defaults fill empty tax fields. Existing entries are kept.")}</span><Button type="button" variant="outline" size="sm" onClick={() => updateMany(applyImporterDefaults(latestDraft.current))}>{t("Apply to all items")}</Button></div> : null}
         </PartyFieldsGroup>
       </> : null}
-      <PartyFieldsGroup title={t("Exporter")}>
+      <PartyFieldsGroup title={t("Exporter")} fieldsClassName="sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
         <PartyContactWarning values={[draft.exporterName, draft.exporterAddressLine, draft.exporterCity, draft.exporterPostcode, draft.exporterCountry]} fields={["exporterName", "exporterAddressLine", "exporterCity", "exporterPostcode", "exporterCountry"]} issues={issues} t={t} />
-        <CustomsOrganisationField party="exporter" label={t("Exporter")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporter} onChange={(value) => update("exporter", value)} onSelect={chooseOrganisation("exporter")} invalid={issues.has("exporter")} fieldKey="exporter" highlighted={highlightedField === "exporter"} />
+        <div className={cn("grid min-w-0 gap-2", direction === "export" && "sm:grid-cols-2")}>
+          <CustomsOrganisationField party="exporter" label={t("Company")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporter} onChange={(value) => updateMany({ exporter: value, exporterName: value, exporterOrganisationId: undefined, exporterAddressId: undefined, exporterEori: "", ...(draft.exporterOrganisationId ? { exporterAddressLine: "", exporterCity: "", exporterPostcode: "", exporterCountry: "" } : {}) })} onSelect={selectExporter} invalid={issues.has("exporter")} fieldKey="exporter" highlighted={highlightedField === "exporter"} />
+          {direction === "export" ? <FieldShell label={t("EORI number")} dataElement="3/2" customsBox="2" showDataElements={showDataElements} invalid={issues.has("exporterEori")} fieldKey="exporterEori"><AutoPopulatedInput aria-label={t("Exporter EORI number")} readOnly={Boolean(draft.exporterOrganisationId)} value={draft.exporterEori ?? ""} onChange={event => update("exporterEori", event.target.value.toUpperCase().replace(/\s/g, ""))} maxLength={17} autoPopulated={Boolean(draft.exporterOrganisationId)} autoPopulationEvent={exporterPopulationEvent} autoPopulationDescription={t("Filled from the selected company's Customs tab and address.")} placeholder={t("Not recorded")} className="h-8 border-0 bg-[var(--md-field-bg)] text-[12px] shadow-[var(--md-shadow-line)]" /></FieldShell> : null}
+        </div>
+        {exporterCompany && exporterCompany.id === draft.exporterOrganisationId && exporterCompany.addresses.length > 1 ? <SelectField label={t("Office / address")} showDataElements={false} value={draft.exporterAddressId ?? ""} options={exporterCompany.addresses.map(address => [address.id, [address.name, address.line1, address.townCity].filter(Boolean).join(" · ")])} onChange={id => selectExporter(exporterCompany, id)} /> : null}
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center justify-between gap-2"><span className="text-[11px] text-[var(--md-text)]">{t("Address")} <span className="text-[var(--md-red)]">*</span></span><Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" aria-expanded={editingExporterAddress} onClick={() => setEditingExporterAddress(current => !current)}>{t(editingExporterAddress ? "Done" : "Edit address")}</Button></div>
+          <AutoPopulatedTextarea aria-label={t("Exporter formatted address")} readOnly value={formattedExporterAddress(draft)} rows={3} autoPopulated={Boolean(draft.exporterOrganisationId)} autoPopulationEvent={exporterPopulationEvent} autoPopulationDescription={t("Filled from the company address. Use Edit address to change this declaration only.")} aria-invalid={exporterAddressInvalid || undefined} placeholder={t("Select a company or enter an address")} className="min-h-20 resize-none border-0 bg-[var(--md-field-bg)] px-3 py-2 text-[12px] leading-5 shadow-[var(--md-shadow-line)]" />
+        </div>
+        {editingExporterAddress || exporterAddressInvalid ? <div className="grid gap-2 sm:grid-cols-2">
         <TextField label={t("Exporter legal name")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporterName} onChange={(value) => update("exporterName", value)} invalid={issues.has("exporterName")} fieldKey="exporterName" highlighted={highlightedField === "exporterName"} />
-        <TextField label={t("Exporter street address")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterAddressLine} onChange={(value) => update("exporterAddressLine", value)} invalid={issues.has("exporterAddressLine")} fieldKey="exporterAddressLine" highlighted={highlightedField === "exporterAddressLine"} />
-        <TextField label={t("Exporter town or city")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCity} onChange={(value) => update("exporterCity", value)} invalid={issues.has("exporterCity")} fieldKey="exporterCity" highlighted={highlightedField === "exporterCity"} />
-        <TextField label={t("Exporter postcode")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterPostcode} onChange={(value) => update("exporterPostcode", value)} invalid={issues.has("exporterPostcode")} fieldKey="exporterPostcode" highlighted={highlightedField === "exporterPostcode"} />
-        <SelectField label={t("Exporter country")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCountry} onChange={(value) => update("exporterCountry", value)} invalid={issues.has("exporterCountry")} fieldKey="exporterCountry" highlighted={highlightedField === "exporterCountry"} options={countries} />
+        <TextField label={t("Exporter street address")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporterAddressLine} onChange={(value) => update("exporterAddressLine", value)} invalid={issues.has("exporterAddressLine")} fieldKey="exporterAddressLine" highlighted={highlightedField === "exporterAddressLine"} />
+        <TextField label={t("Exporter town or city")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCity} onChange={(value) => update("exporterCity", value)} invalid={issues.has("exporterCity")} fieldKey="exporterCity" highlighted={highlightedField === "exporterCity"} />
+        <TextField label={t("Exporter postcode")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporterPostcode} onChange={(value) => update("exporterPostcode", value)} invalid={issues.has("exporterPostcode")} fieldKey="exporterPostcode" highlighted={highlightedField === "exporterPostcode"} />
+        <SelectField label={t("Exporter country")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCountry} onChange={(value) => update("exporterCountry", value)} invalid={issues.has("exporterCountry")} fieldKey="exporterCountry" highlighted={highlightedField === "exporterCountry"} options={countries} />
+        </div> : null}
+        {direction === "export" && draft.exporterOrganisationId && !draft.exporterEori ? <p className="text-[11px] text-[var(--md-subtle)]">{t("Add the registered EORI in the company's Customs tab.")}</p> : null}
+        {exporterLookupError ? <p role="alert" className="text-[11px] text-[var(--md-red)]">{t("Company details unavailable. Saved declaration values are unchanged.")} <Button type="button" variant="link" size="sm" onClick={() => setExporterLookupAttempt(attempt => attempt + 1)}>{t("Retry")}</Button></p> : null}
       </PartyFieldsGroup>
       {direction === "export" ? <PartyFieldsGroup title={t("Consignee")}>
         <PartyContactWarning values={[draft.consigneeName, draft.consigneeAddressLine, draft.consigneeCity, draft.consigneePostcode, draft.consigneeCountry]} fields={["consigneeName", "consigneeAddressLine", "consigneeCity", "consigneePostcode", "consigneeCountry"]} issues={issues} t={t} />
@@ -1861,16 +2066,32 @@ function PartiesSection({ draft, update, updateMany, showDataElements, showOptio
         <TextField label={t("Consignee postcode")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneePostcode} onChange={(value) => update("consigneePostcode", value)} invalid={issues.has("consigneePostcode")} fieldKey="consigneePostcode" highlighted={highlightedField === "consigneePostcode"} />
         <SelectField label={t("Consignee country")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeCountry} onChange={(value) => update("consigneeCountry", value)} invalid={issues.has("consigneeCountry")} fieldKey="consigneeCountry" highlighted={highlightedField === "consigneeCountry"} options={countries} />
       </PartyFieldsGroup> : null}
-      <PartyFieldsGroup title={t("Declarant")} className="xl:col-span-2" fieldsClassName="xl:grid-cols-3 2xl:grid-cols-3">
+      <PartyFieldsGroup title={t("Declarant")} fieldsClassName="sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
         <PartyContactWarning values={[draft.declarantName, draft.declarantAddressLine, draft.declarantCity, draft.declarantPostcode, draft.declarantCountry]} fields={["declarantName", "declarantAddressLine", "declarantCity", "declarantPostcode", "declarantCountry"]} issues={issues} t={t} />
-        <CustomsOrganisationField party="declarant" label={t("Declarant")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarant} onChange={(value) => update("declarant", value)} onSelect={chooseOrganisation("declarant")} invalid={issues.has("declarant")} fieldKey="declarant" highlighted={highlightedField === "declarant"} />
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+          <CustomsOrganisationField party="declarant" label={t("Company")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarant} onChange={(value) => updateMany({ declarant: value, declarantName: value, declarantOrganisationId: undefined, declarantAddressId: undefined, declarantEori: "", ...(draft.declarantOrganisationId ? { declarantAddressLine: "", declarantCity: "", declarantPostcode: "", declarantCountry: "" } : {}) })} onSelect={selectDeclarant} invalid={issues.has("declarant")} fieldKey="declarant" highlighted={highlightedField === "declarant"} />
+          <FieldShell label={t("EORI number")} dataElement="3/18" customsBox="14" showDataElements={showDataElements} invalid={issues.has("declarantEori")} fieldKey="declarantEori"><AutoPopulatedInput aria-label={t("Declarant EORI number")} readOnly={Boolean(draft.declarantOrganisationId)} value={draft.declarantEori ?? ""} onChange={event => update("declarantEori", event.target.value.toUpperCase().replace(/\s/g, ""))} maxLength={17} autoPopulated={Boolean(draft.declarantOrganisationId)} autoPopulationEvent={declarantPopulationEvent} autoPopulationDescription={t("Filled from the selected company's Customs tab and address.")} placeholder={t("Not recorded")} className="h-8 border-0 bg-[var(--md-field-bg)] text-[12px] shadow-[var(--md-shadow-line)]" /></FieldShell>
+        </div>
+        {declarantCompany && declarantCompany.id === draft.declarantOrganisationId && declarantCompany.addresses.length > 1 ? <SelectField label={t("Office / address")} showDataElements={false} value={draft.declarantAddressId ?? ""} options={declarantCompany.addresses.map(address => [address.id, [address.name, address.line1, address.townCity].filter(Boolean).join(" · ")])} onChange={id => selectDeclarant(declarantCompany, id)} /> : null}
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center justify-between gap-2"><span className="text-[11px] text-[var(--md-text)]">{t("Address")} <span className="text-[var(--md-red)]">*</span></span><Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" aria-expanded={editingDeclarantAddress} onClick={() => setEditingDeclarantAddress(current => !current)}>{t(editingDeclarantAddress ? "Done" : "Edit address")}</Button></div>
+          <AutoPopulatedTextarea aria-label={t("Declarant formatted address")} readOnly value={formattedDeclarantAddress(draft)} rows={3} autoPopulated={Boolean(draft.declarantOrganisationId)} autoPopulationEvent={declarantPopulationEvent} autoPopulationDescription={t("Filled from the company address. Use Edit address to change this declaration only.")} aria-invalid={declarantAddressInvalid || undefined} placeholder={t("Select a company or enter an address")} className="min-h-20 resize-none border-0 bg-[var(--md-field-bg)] px-3 py-2 text-[12px] leading-5 shadow-[var(--md-shadow-line)]" />
+        </div>
+        {editingDeclarantAddress || declarantAddressInvalid ? <div className="grid gap-2 sm:grid-cols-2">
         <TextField label={t("Declarant legal name")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarantName} onChange={(value) => update("declarantName", value)} invalid={issues.has("declarantName")} fieldKey="declarantName" highlighted={highlightedField === "declarantName"} />
-        <TextField label={t("Declarant street address")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantAddressLine} onChange={(value) => update("declarantAddressLine", value)} invalid={issues.has("declarantAddressLine")} fieldKey="declarantAddressLine" highlighted={highlightedField === "declarantAddressLine"} />
-        <TextField label={t("Declarant town or city")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCity} onChange={(value) => update("declarantCity", value)} invalid={issues.has("declarantCity")} fieldKey="declarantCity" highlighted={highlightedField === "declarantCity"} />
-        <TextField label={t("Declarant postcode")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantPostcode} onChange={(value) => update("declarantPostcode", value)} invalid={issues.has("declarantPostcode")} fieldKey="declarantPostcode" highlighted={highlightedField === "declarantPostcode"} />
-        <SelectField label={t("Declarant country")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCountry} onChange={(value) => update("declarantCountry", value)} invalid={issues.has("declarantCountry")} fieldKey="declarantCountry" highlighted={highlightedField === "declarantCountry"} options={countries} />
+        <TextField label={t("Declarant street address")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarantAddressLine} onChange={(value) => update("declarantAddressLine", value)} invalid={issues.has("declarantAddressLine")} fieldKey="declarantAddressLine" highlighted={highlightedField === "declarantAddressLine"} />
+        <TextField label={t("Declarant town or city")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCity} onChange={(value) => update("declarantCity", value)} invalid={issues.has("declarantCity")} fieldKey="declarantCity" highlighted={highlightedField === "declarantCity"} />
+        <TextField label={t("Declarant postcode")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarantPostcode} onChange={(value) => update("declarantPostcode", value)} invalid={issues.has("declarantPostcode")} fieldKey="declarantPostcode" highlighted={highlightedField === "declarantPostcode"} />
+        <SelectField label={t("Declarant country")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCountry} onChange={(value) => update("declarantCountry", value)} invalid={issues.has("declarantCountry")} fieldKey="declarantCountry" highlighted={highlightedField === "declarantCountry"} options={countries} />
+        </div> : null}
+        {draft.declarantOrganisationId && !draft.declarantEori ? <p className="text-[11px] text-[var(--md-subtle)]">{t("Add the registered EORI in the company's Customs tab.")}</p> : null}
+        {declarantLookupError ? <p role="alert" className="text-[11px] text-[var(--md-red)]">{t("Company details unavailable. Saved declaration values are unchanged.")} <Button type="button" variant="link" size="sm" onClick={() => setDeclarantLookupAttempt(attempt => attempt + 1)}>{t("Retry")}</Button></p> : null}
       </PartyFieldsGroup>
-      <PartyFieldsGroup title={t(direction === "export" ? "Carrier & representation" : "Representation")} className="xl:col-span-2" fieldsClassName="xl:grid-cols-3 2xl:grid-cols-3">
+      {direction === "import" ? (["representative", "seller", "buyer"] as const).map(party => <AdditionalPartySection key={party} party={party} draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} issues={issues} t={t} />) : null}
+      <PartyFieldsGroup title={t(direction === "export" ? "Carrier & representation" : "Representation")} className="col-span-full" fieldsClassName="xl:grid-cols-3 2xl:grid-cols-3">
+      {direction === "import" ? (["primaryDefermentAccount", "secondaryDefermentAccount"] as const).map((field, index) => <TextField key={field} label={t(index === 0 ? "DAN 1" : "DAN 2")} dataElement="2/6" showDataElements={showDataElements} value={draft[field]} onChange={value => update(field, value)} invalid={issues.has(field)} fieldKey={field} maxLength={7} />) : null}
+        {direction === "import" && (showOptional || issues.has("additionalAuthorisationHolders") || Boolean(draft.additionalAuthorisationHolders?.length)) ? <div className="col-span-full flex justify-end"><Button type="button" variant="outline" size="sm" onClick={() => update("additionalAuthorisationHolders", [...(draft.additionalAuthorisationHolders ?? []), { id: repeatableCustomsEntryId("holder"), category: "", identifier: "" }])}><Plus className="size-3.5" />{t("Add authorisation holder")}</Button></div> : null}
+        {direction === "import" ? (draft.additionalAuthorisationHolders ?? []).map(holder => <div key={holder.id} className="col-span-full flex min-w-0 flex-wrap items-end gap-2" data-customs-field="additionalAuthorisationHolders"><div className="w-32"><TextField label={t("Authorisation type")} dataElement="3/39" showDataElements={showDataElements} value={holder.category} maxLength={4} onChange={category => update("additionalAuthorisationHolders", draft.additionalAuthorisationHolders?.map(entry => entry.id === holder.id ? { ...entry, category: category.toUpperCase() } : entry))} invalid={issues.has("additionalAuthorisationHolders")} /></div><div className="min-w-40 flex-1"><TextField label={`${holder.category} ${t("holder EORI")}`} dataElement="3/39" showDataElements={showDataElements} value={holder.identifier} onChange={identifier => update("additionalAuthorisationHolders", draft.additionalAuthorisationHolders?.map(entry => entry.id === holder.id ? { ...entry, identifier: identifier.toUpperCase() } : entry))} invalid={issues.has("additionalAuthorisationHolders")} /></div><Button type="button" variant="ghost" size="sm" aria-label={`${t("Remove")} ${holder.category || t("authorisation holder")}`} onClick={() => update("additionalAuthorisationHolders", draft.additionalAuthorisationHolders?.filter(entry => entry.id !== holder.id))}><Trash2 className="size-3.5" /></Button></div>) : null}
         {direction === "export" ? <CustomsOrganisationField party="carrier" label={t("Carrier")} required showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} onSelect={(organisation) => update("carrier", organisation.name)} invalid={issues.has("carrier")} fieldKey="carrier" highlighted={highlightedField === "carrier"} /> : null}
         {direction === "export" ? <TextField label={t("Carrier identifier (EORI)")} required showDataElements={showDataElements} value={draft.carrierIdentifier} onChange={(value) => update("carrierIdentifier", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17))} invalid={issues.has("carrierIdentifier")} fieldKey="carrierIdentifier" highlighted={highlightedField === "carrierIdentifier"} /> : null}
         {direction === "export" ? <CustomsOrganisationField party="representative" label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} onSelect={(organisation) => update("representative", organisation.name)} /> : null}
@@ -1881,10 +2102,54 @@ function PartiesSection({ draft, update, updateMany, showDataElements, showOptio
   </section>
 }
 
+function AdditionalPartySection({ party, draft, update, updateMany, showDataElements, issues, t }: SectionProps & { party: AdditionalCustomsParty; updateMany: (values: Partial<StandaloneExportDraft>) => void }) {
+  const title = party === "seller" ? "Seller" : party === "buyer" ? "Buyer" : "Representative"
+  const [nameDE, eoriDE, box] = party === "seller" ? ["3/24", "3/25", "2"] : party === "buyer" ? ["3/26", "3/27", "8"] : ["3/19", "3/20", "14"]
+  const countries = useReferenceOptions("country", t, "Select country")
+  const [editing, setEditing] = useState(false)
+  const [company, setCompany] = useState<ApiCustomerDetail | null>(null)
+  const [lookupError, setLookupError] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const [populationEvent, setPopulationEvent] = useState<number | null>(null)
+  const organisationId = draft[`${party}OrganisationId`]
+  useEffect(() => {
+    let cancelled = false
+    setCompany(null)
+    setLookupError(false)
+    if (!organisationId) return
+    getCustomer(organisationId).then(value => { if (!cancelled) setCompany(value) }).catch(() => { if (!cancelled) setLookupError(true) })
+    return () => { cancelled = true }
+  }, [organisationId, attempt])
+  const select = (value: ApiCustomerDetail, addressId?: string) => {
+    setCompany(value)
+    setLookupError(false)
+    setPopulationEvent(event => (event ?? 0) + 1)
+    updateMany(additionalPartyCompanyPatch(party, value, addressId))
+  }
+  const addressInvalid = ["Name", "AddressLine", "City", "Postcode", "Country"].some(suffix => issues.has(`${party}${suffix}`))
+  return <PartyFieldsGroup title={t(title)} fieldsClassName="sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
+    <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+      <CustomsOrganisationField party={party} label={t("Company")} dataElement={nameDE} customsBox={box} showDataElements={showDataElements} value={draft[party]} onChange={value => updateMany({ ...clearAdditionalParty(party), [party]: value, [`${party}Name`]: value })} onSelect={select} invalid={issues.has(party)} fieldKey={party} />
+      <FieldShell label={t("EORI number")} dataElement={eoriDE} customsBox={box} showDataElements={showDataElements} invalid={issues.has(`${party}Eori`)} fieldKey={`${party}Eori`}><AutoPopulatedInput aria-label={t(`${title} EORI number`)} readOnly={Boolean(organisationId)} value={draft[`${party}Eori`] ?? ""} onChange={event => update(`${party}Eori`, event.target.value.toUpperCase().replace(/\s/g, ""))} maxLength={17} autoPopulated={Boolean(organisationId)} autoPopulationEvent={populationEvent} placeholder={t("Not recorded")} className="h-8 border-0 bg-[var(--md-field-bg)] text-[12px] shadow-[var(--md-shadow-line)]" /></FieldShell>
+    </div>
+    {company?.id === organisationId && company && company.addresses.length > 1 ? <SelectField label={t("Office / address")} showDataElements={false} value={draft[`${party}AddressId`] ?? ""} options={company.addresses.map(address => [address.id, [address.name, address.line1, address.townCity].filter(Boolean).join(" · ")])} onChange={id => select(company, id)} /> : null}
+    <div className="min-w-0">
+      <div className="mb-1 flex items-center justify-between gap-2"><span className="text-[11px] text-[var(--md-text)]">{t("Address")}</span><Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" aria-expanded={editing} onClick={() => setEditing(value => !value)}>{t(editing ? "Done" : "Edit address")}</Button></div>
+      <AutoPopulatedTextarea aria-label={t(`${title} formatted address`)} readOnly value={formattedAdditionalPartyAddress(party, draft)} rows={3} autoPopulated={Boolean(organisationId)} autoPopulationEvent={populationEvent} autoPopulationDescription={t("Filled from the company address. Use Edit address to change this declaration only.")} aria-invalid={addressInvalid || undefined} placeholder={t("Select a company or enter an address")} className="min-h-20 resize-none border-0 bg-[var(--md-field-bg)] px-3 py-2 text-[12px] leading-5 shadow-[var(--md-shadow-line)]" />
+    </div>
+    {editing || addressInvalid ? <div className="grid gap-2 sm:grid-cols-2">
+      {([ ["Name", "Legal name"], ["AddressLine", "Street address"], ["City", "Town or city"], ["Postcode", "Postcode"] ] as const).map(([suffix,label]) => <TextField key={suffix} label={t(`${title} ${label.toLowerCase()}`)} dataElement={nameDE} customsBox={box} showDataElements={showDataElements} value={draft[`${party}${suffix}`] ?? ""} onChange={value => update(`${party}${suffix}`, value)} invalid={issues.has(`${party}${suffix}`)} fieldKey={`${party}${suffix}`} />)}
+      <SelectField label={t(`${title} country`)} dataElement={nameDE} customsBox={box} showDataElements={showDataElements} value={draft[`${party}Country`] ?? ""} onChange={value => update(`${party}Country`, value)} options={countries} invalid={issues.has(`${party}Country`)} fieldKey={`${party}Country`} />
+    </div> : null}
+    {lookupError ? <p role="alert" className="text-[11px] text-[var(--md-red)]">{t("Company details unavailable. Saved declaration values are unchanged.")} <Button type="button" variant="link" size="sm" onClick={() => setAttempt(value => value + 1)}>{t("Retry")}</Button></p> : null}
+    {draft[party] || draft[`${party}Name`] || draft[`${party}Eori`] || draft[`${party}AddressLine`] ? <Button type="button" variant="ghost" size="sm" onClick={() => { updateMany(clearAdditionalParty(party)); setEditing(false) }}>{t(`Clear ${title.toLowerCase()}`)}</Button> : null}
+  </PartyFieldsGroup>
+}
+
 function PartyFieldsGroup({ title, children, className, fieldsClassName }: { title: string; children: ReactNode; className?: string; fieldsClassName?: string }) {
   const compact = useContext(CompactCustomsFormContext)
   return <section aria-label={title} className={cn("min-w-0 max-w-full bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", compact ? "rounded-[var(--md-radius-md)] p-3" : "rounded-[var(--md-radius-lg)] p-4", className)}>
-    <h3 className={cn("font-medium text-[var(--md-ink)]", compact ? "mb-2 text-[11px] leading-4" : "mb-3 text-[12px] leading-5")}>{title}</h3>
+    <h3 className={cn("border-b border-[var(--md-line)] pb-2 font-semibold tracking-[-0.01em] text-[var(--md-ink)]", compact ? "mb-2 text-[12px] leading-4" : "mb-3 text-[14px] leading-5")}>{title}</h3>
     <div className="min-w-0">
       <FieldGrid className={cn("min-w-0 grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2", fieldsClassName)}>{children}</FieldGrid>
     </div>
@@ -1913,20 +2178,35 @@ function TransportSection({ draft, update, showDataElements, showOptional, issue
   const containerIndicators = useReferenceOptions("container_indicator", t, "Select option")
   return <SectionFrame title={t("Transport and location")} description={t("Routing, border movement and goods location.")}>
     <FieldGrid>
+      {direction === "import" ? <>
+        <TextField label={t("Total packages")} dataElement="6/18" customsBox="6" required showDataElements={showDataElements} value={draft.totalPackages} onChange={(value) => update("totalPackages", value)} invalid={issues.has("totalPackages")} fieldKey="totalPackages" highlighted={highlightedField === "totalPackages"} />
+        <TextField label={t("Total gross mass")} dataElement="6/5" customsBox="35" required showDataElements={showDataElements} value={draft.totalGrossMass} onChange={(value) => update("totalGrossMass", value)} invalid={issues.has("totalGrossMass")} fieldKey="totalGrossMass" highlighted={highlightedField === "totalGrossMass"} suffix="kg" />
+      </> : null}
       <SelectField label={t("Export country")} dataElement="5/14" customsBox="15" required showDataElements={showDataElements} value={draft.exportCountry} onChange={(value) => update("exportCountry", value)} options={countries} />
       <SelectField label={t("Country of destination")} dataElement="5/8" customsBox="17" required showDataElements={showDataElements} value={draft.destinationCountry} onChange={(value) => update("destinationCountry", value)} invalid={issues.has("destinationCountry")} fieldKey="destinationCountry" highlighted={highlightedField === "destinationCountry"} options={countries} />
-      {direction === "export" ? <SelectField label={t("Inland transport mode")} dataElement="7/5" customsBox="26" showDataElements={showDataElements} value={draft.inlandMode} onChange={(value) => update("inlandMode", value)} options={transportModes} /> : null}
+      <SelectField label={t("Inland transport mode")} dataElement="7/5" customsBox="26" required={direction === "import"} invalid={issues.has("inlandMode")} fieldKey="inlandMode" showDataElements={showDataElements} value={draft.inlandMode} onChange={(value) => update("inlandMode", value)} options={transportModes} />
       <SelectField label={t("Mode at border")} dataElement="7/4" customsBox="25" required showDataElements={showDataElements} value={draft.borderMode} onChange={(value) => update("borderMode", value)} options={transportModes} />
-      <SelectField label={t("Border transport nationality")} dataElement="7/15" customsBox="21" showDataElements={showDataElements} value={draft.borderNationality} onChange={(value) => update("borderNationality", value)} options={countries} />
+      <SelectField label={t("Border transport nationality")} dataElement="7/15" customsBox="21" required={direction === "import"} invalid={issues.has("borderNationality")} fieldKey="borderNationality" showDataElements={showDataElements} value={draft.borderNationality} onChange={(value) => update("borderNationality", value)} options={countries} />
       <TextField label={t("Border identification number")} dataElement="7/14" customsBox="21" showDataElements={showDataElements} value={draft.borderIdentificationNumber} onChange={(value) => update("borderIdentificationNumber", value)} />
-      {direction === "import" ? <><TextField label={t("Arrival transport type")} dataElement="7/9" customsBox="18" showDataElements={showDataElements} value={draft.arrivalIdentificationType} onChange={(value) => update("arrivalIdentificationType", value)} /><TextField label={t("Arrival identification number")} dataElement="7/7" customsBox="18" showDataElements={showDataElements} value={draft.arrivalIdentificationNumber} onChange={(value) => update("arrivalIdentificationNumber", value)} /></> : <TextField label={t("Departure identification number")} dataElement="7/7" customsBox="18" showDataElements={showDataElements} value={draft.departureIdentificationNumber} onChange={(value) => update("departureIdentificationNumber", value)} />}
-      <SelectField label={t("Type of location")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsLocationType} onChange={(value) => update("goodsLocationType", value)} options={goodsLocationTypes} />
+      {direction === "import" ? <><SelectField label={t("Arrival transport type")} dataElement="7/9" customsBox="18" showDataElements={showDataElements} value={draft.arrivalIdentificationType} onChange={(value) => update("arrivalIdentificationType", value)} options={[["", t("Select type")], ...customsArrivalTransportTypes.map(([code, description]) => [code, `${code} - ${t(description)}`] as const)]} fieldKey="arrivalIdentificationType" invalid={issues.has("arrivalIdentificationType")} /><TextField label={t("Transport ID")} dataElement="7/9" customsBox="18" showDataElements={showDataElements} value={draft.arrivalIdentificationNumber} onChange={(value) => update("arrivalIdentificationNumber", value)} /></> : <TextField label={t("Departure identification number")} dataElement="7/7" customsBox="18" showDataElements={showDataElements} value={draft.departureIdentificationNumber} onChange={(value) => update("departureIdentificationNumber", value)} />}
+      {direction === "import" ? <TextField label={t("Loading location ID")} dataElement="5/21" customsBox="44" showDataElements={showDataElements} value={draft.loadingLocationId ?? ""} onChange={(value) => update("loadingLocationId", value)} /> : null}
+      {direction === "export" ? <SelectField label={t("Type of location")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsLocationType} onChange={(value) => update("goodsLocationType", value)} options={goodsLocationTypes} /> : null}
       <TextField label={t("Name of place")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsLocationName} onChange={(value) => update("goodsLocationName", value)} />
       <TextField label={t("Goods location identifier")} dataElement="5/23" customsBox="30" required={direction === "import"} showDataElements={showDataElements} value={draft.goodsLocationIdentifier} onChange={(value) => update("goodsLocationIdentifier", value)} invalid={issues.has("goodsLocationIdentifier")} fieldKey="goodsLocationIdentifier" highlighted={highlightedField === "goodsLocationIdentifier"} />
       <SelectField label={t("Transported in container")} dataElement="7/2" customsBox="19" showDataElements={showDataElements} value={draft.isContainerised} onChange={(value) => update("isContainerised", value)} options={containerIndicators} />
       {draft.isContainerised === "1" ? <><TextField label={t("Container ID")} dataElement="7/10" customsBox="31" required showDataElements={showDataElements} value={draft.containerId} onChange={(value) => update("containerId", value)} invalid={issues.has("containerId")} fieldKey="containerId" highlighted={highlightedField === "containerId"} /><TextField label={t("Seal identifier")} dataElement="7/18" customsBox="31" showDataElements={showDataElements} value={draft.sealIdentifier} onChange={(value) => update("sealIdentifier", value)} /></> : null}
-      {showOptional && direction === "export" ? <><TextField label={t("GVMS AI code")} showDataElements={showDataElements} value={draft.gvmsCode} onChange={(value) => update("gvmsCode", value)} /><TextField label={t("GVMS AI code value")} showDataElements={showDataElements} value={draft.gvmsValue} onChange={(value) => update("gvmsValue", value)} /><TextField label={t("Routing country")} showDataElements={showDataElements} value={draft.routingCountry} onChange={(value) => update("routingCountry", value)} /></> : null}
+      <SelectField label={t("GVMS AI code")} dataElement="2/2" customsBox="44" showDataElements={showDataElements} value={draft.gvmsCode} onChange={(value) => update("gvmsCode", value)} options={[["", t("Select code")], ["RRS01", "RRS01"]]} />
+      <TextField label={t("GVMS AI code value (haulier EORI or name)")} dataElement="2/2" customsBox="44" showDataElements={showDataElements} value={draft.gvmsValue} onChange={(value) => update("gvmsValue", value)} />
+      {showOptional && direction === "export" ? <TextField label={t("Routing country")} showDataElements={showDataElements} value={draft.routingCountry} onChange={(value) => update("routingCountry", value)} /> : null}
     </FieldGrid>
+    {draft.isContainerised === "1" ? <div className="mt-3 space-y-2">
+      {(draft.additionalContainerIds ?? []).map((id, index) => <div key={index} className="flex max-w-sm items-end gap-2">
+        <TextField label={t("Container ID") + " " + (index + 2)} dataElement="7/10" customsBox="31" showDataElements={showDataElements} value={id} onChange={(value) => update("additionalContainerIds", (draft.additionalContainerIds ?? []).map((current, i) => i === index ? value : current))} />
+        <Button type="button" variant="ghost" onClick={() => update("additionalContainerIds", (draft.additionalContainerIds ?? []).filter((_, i) => i !== index))} aria-label={t("Remove container") + " " + (index + 2)}>{t("Remove")}</Button>
+      </div>)}
+      <Button type="button" variant="ghost" disabled={!draft.containerId} onClick={() => update("containerId", "")}>{t("Clear first container ID")}</Button>
+      <Button type="button" variant="outline" disabled={!draft.containerId.trim() || (draft.additionalContainerIds ?? []).some((id) => !id.trim())} onClick={() => update("additionalContainerIds", [...(draft.additionalContainerIds ?? []), ""])}>{t("Add container ID")}</Button>
+    </div> : null}
   </SectionFrame>
 }
 
@@ -1942,6 +2222,10 @@ function DocumentsSection({ draft, update, showDataElements, showOptional, issue
   ], [t])
   return <SectionFrame title={t(direction === "import" ? "Import terms" : "Documents and customs offices")} description={t(direction === "import" ? "Trade terms and the transaction details applied to every goods item." : "Previous documents, controlling offices and guarantees.")}>
     <FieldGrid>
+      {direction === "import" ? <>
+        <TextField label={t("Total amount")} dataElement="4/11" customsBox="22" required showDataElements={showDataElements} value={draft.totalAmount} onChange={(value) => update("totalAmount", value)} invalid={issues.has("totalAmount")} fieldKey="totalAmount" highlighted={highlightedField === "totalAmount"} />
+        <SelectField label={t("Currency code")} dataElement="4/10" customsBox="22" required showDataElements={showDataElements} value={draft.currency} onChange={(value) => update("currency", value)} options={currencies} />
+      </> : null}
       {direction === "export" ? <><SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} options={previousDocumentCategories} /><SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} /><TextField label={t("Document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9-]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} /></> : null}
       <TextField label={t("Additional information code")} dataElement="2/2" customsBox="44" showDataElements={showDataElements} value={draft.headerAdditionalInformationCode} onChange={(value) => update("headerAdditionalInformationCode", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5))} invalid={issues.has("headerAdditionalInformationCode")} fieldKey="headerAdditionalInformationCode" highlighted={highlightedField === "headerAdditionalInformationCode"} maxLength={5} />
       <TextField label={t("Additional information description")} dataElement="2/2" customsBox="44" showDataElements={showDataElements} value={draft.headerAdditionalInformationDescription} onChange={(value) => update("headerAdditionalInformationDescription", value.slice(0, 512))} invalid={issues.has("headerAdditionalInformationDescription")} fieldKey="headerAdditionalInformationDescription" highlighted={highlightedField === "headerAdditionalInformationDescription"} maxLength={512} />
@@ -2782,7 +3066,7 @@ function exactReferenceOption(options: ReadonlyArray<CustomsReferenceOptionTuple
   })
 }
 
-function CustomsReferenceCombobox({ label, value, onChange, options, placeholder, disabled, invalid, variant = "field" }: {
+function CustomsReferenceCombobox({ label, value, onChange, options, placeholder, disabled, invalid, required, variant = "field", autoPopulated = false, autoPopulationEvent, optionCode }: {
   label: string
   value: string
   onChange: (value: string) => void
@@ -2790,7 +3074,11 @@ function CustomsReferenceCombobox({ label, value, onChange, options, placeholder
   placeholder: string
   disabled?: boolean
   invalid?: boolean
+  required?: boolean
   variant?: "field" | "table"
+  autoPopulated?: boolean
+  autoPopulationEvent?: number | null
+  optionCode?: (value: string) => string
 }) {
   const { direction, t } = useLanguage()
   const [open, setOpen] = useState(false)
@@ -2801,12 +3089,16 @@ function CustomsReferenceCombobox({ label, value, onChange, options, placeholder
   const helpId = `${listId}-help`
   const referenceOptions = useMemo(() => options.filter(([code]) => Boolean(code)), [options])
   const selected = referenceOptions.find(([code]) => code === value)
+  const selectedText = optionCode && value ? optionCode(value) : selected
+    ? /^[A-Z0-9][A-Z0-9 /.-]*$/.test(selected[0]) ? selected[0] : referenceOptionName(selected[1])
+    : value || placeholder
+  const populationRef = useAutoPopulationMorph<HTMLSpanElement>(autoPopulated, selectedText, undefined, autoPopulationEvent)
   const hasBlankOption = options.some(([code]) => !code)
   const normalizedQuery = normalizedReferenceTerm(query)
   const matches = referenceOptions.filter(([code, optionLabel]) => {
     if (!normalizedQuery) return true
     return normalizedReferenceTerm(`${code} ${optionLabel}`).includes(normalizedQuery)
-  })
+  }).slice(0, 100)
   const optionId = highlightedIndex >= 0 && matches[highlightedIndex] ? `${listId}-option-${highlightedIndex}` : undefined
 
   useEffect(() => {
@@ -2856,8 +3148,9 @@ function CustomsReferenceCombobox({ label, value, onChange, options, placeholder
     }
     if (event.key === "Enter") {
       event.preventDefault()
+      const codeMatches = optionCode ? referenceOptions.filter(([code]) => normalizedReferenceTerm(optionCode(code)) === normalizedReferenceTerm(query)) : []
       const exact = exactReferenceOption(referenceOptions, query)
-      const option = highlightedIndex >= 0 ? matches[highlightedIndex] : exact
+      const option = highlightedIndex >= 0 ? matches[highlightedIndex] : codeMatches.length === 1 ? codeMatches[0] : exact
       if (option) choose(option)
       else setManualEntryError(true)
       return
@@ -2874,9 +3167,13 @@ function CustomsReferenceCombobox({ label, value, onChange, options, placeholder
         type="button"
         role="combobox"
         aria-label={label}
+        aria-required={required || undefined}
         aria-expanded={open}
         aria-controls={listId}
         aria-invalid={invalid || undefined}
+        title={selected ? referenceOptionName(selected[1]) : undefined}
+        data-auto-populated={autoPopulated || undefined}
+        aria-description={autoPopulated ? t("Filled from the linked booking. You can select another port.") : undefined}
         disabled={disabled}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -2893,15 +3190,16 @@ function CustomsReferenceCombobox({ label, value, onChange, options, placeholder
           }
         }}
         className={cn(
-          "flex w-full min-w-0 items-center justify-between gap-2 border-0 bg-[var(--md-field-bg)] text-start shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow] hover:bg-[var(--md-field-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-50",
+          "flex w-fit min-w-11 max-w-full items-center justify-between gap-2 border-0 bg-[var(--md-field-bg)] text-start shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow] hover:bg-[var(--md-field-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-50",
           variant === "table"
             ? "h-10 rounded-[var(--md-radius-xs)] px-2 text-[11px] md:h-7 md:px-1.5 md:text-[10px]"
             : "h-11 rounded-[var(--md-radius-md)] px-3 text-base sm:h-9 sm:text-[13px]",
           invalid && "ring-1 ring-[var(--md-red)]",
+          "relative md-auto-populated-control",
         )}
       >
-        <span className={cn("min-w-0 truncate", !selected && "text-[var(--md-subtle)]")}>
-          {selected ? <><bdi dir="ltr" className="font-medium">{selected[0]}</bdi><span className="text-[var(--md-subtle)]"> - </span>{referenceOptionName(selected[1])}</> : value || placeholder}
+        <span ref={populationRef} className={cn("relative min-w-0 truncate", !selected && "text-[var(--md-subtle)]")}>
+          <bdi dir="ltr" className={selected ? "font-medium" : undefined}>{selectedText}</bdi>
         </span>
         <ChevronDown className="size-3.5 shrink-0 text-[var(--md-subtle)]" aria-hidden="true" />
       </button>
@@ -2952,7 +3250,7 @@ function CustomsReferenceCombobox({ label, value, onChange, options, placeholder
             index === highlightedIndex && "bg-[var(--md-hover)] ring-1 ring-inset ring-[var(--md-accent-a18)]",
           )}
         >
-          <bdi dir="ltr" className="shrink-0 font-medium text-[var(--md-accent)]">{option[0]}</bdi>
+          <bdi dir="ltr" className="shrink-0 font-medium text-[var(--md-accent)]">{optionCode ? optionCode(option[0]) : option[0]}</bdi>
           <span className="min-w-0 flex-1">{referenceOptionName(option[1])}</span>
           {option[0] === value ? <CheckCircle2 className="ms-auto size-3.5 shrink-0 text-[var(--md-accent)]" aria-hidden="true" /> : null}
         </button>)}
@@ -3111,10 +3409,13 @@ type ReviewFieldMeta = {
   maxLength?: number
 }
 
-function reviewSectionForField(field: string): Exclude<EditorTab, "items" | "review"> {
-  if (["importer", "exporter", "consignee", "carrier", "carrierIdentifier", "declarant", "representative", "seller", "buyer", "representationType", "authorisationIdentifier", "authorisationCategory"].includes(field) || /^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/.test(field)) return "parties"
-  if (["exportCountry", "destinationCountry", "borderMode", "inlandMode", "containerId", "goodsLocationName", "goodsLocationIdentifier"].includes(field)) return "transport"
-  if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "headerAdditionalInformationCode", "headerAdditionalInformationDescription", "transactionNature", "tradeTerms", "customsValuationMethod", "freightChargeAmount", "freightChargeCurrency", "freightChargeApportionment", "vatValueAdjustmentAmount", "vatValueAdjustmentCurrency", "vatValueAdjustmentApportionment", "insuranceCostAmount", "insuranceCostCurrency", "containerPackingCostAmount", "containerPackingCostCurrency"].includes(field)) return "documents"
+function reviewSectionForField(field: string, direction: DeclarationKind): Exclude<EditorTab, "items" | "review"> {
+  if (field === "borderNationality") return "transport"
+  if (/^(seller|buyer|representative)/.test(field) || ["primaryDefermentAccount", "secondaryDefermentAccount"].includes(field)) return "parties"
+  if (field === "declarantEori" || field === "exporterEori") return "parties"
+  if (["importer", "importerEori", "additionalAuthorisationHolders", "exporter", "consignee", "carrier", "carrierIdentifier", "declarant", "representative", "seller", "buyer", "representationType", "authorisationIdentifier", "authorisationCategory"].includes(field) || /^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/.test(field)) return "parties"
+  if (["exportCountry", "destinationCountry", "borderMode", "inlandMode", "containerId", "goodsLocationName", "goodsLocationIdentifier"].includes(field) || (direction === "import" && ["totalPackages", "totalGrossMass"].includes(field))) return "transport"
+  if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "headerAdditionalInformationCode", "headerAdditionalInformationDescription", "transactionNature", "tradeTerms", "customsValuationMethod", "freightChargeAmount", "freightChargeCurrency", "freightChargeApportionment", "vatValueAdjustmentAmount", "vatValueAdjustmentCurrency", "vatValueAdjustmentApportionment", "insuranceCostAmount", "insuranceCostCurrency", "containerPackingCostAmount", "containerPackingCostCurrency"].includes(field) || (direction === "import" && ["totalAmount", "currency"].includes(field))) return "documents"
   return "declaration"
 }
 
@@ -3122,7 +3423,7 @@ function reviewFixSectionLabel(draft: StandaloneExportDraft, issue: DeclarationI
   const itemNumber = issue?.itemNumber ?? providerIssue?.itemNumber
   if (issue?.scope === "item" || itemNumber) return itemNumber ? `${t("Items")} · ${t("Item")} ${itemNumber}` : t("Items")
   const field = issue?.field ?? (providerIssue ? providerIssueTarget(providerIssue) : "")
-  const section = reviewSectionForField(field)
+  const section = reviewSectionForField(field, draft.direction)
   if (section === "parties") return t("Parties")
   if (section === "transport") return t("Transport")
   if (section === "documents") return t(draft.direction === "import" ? "Import terms" : "Documents & offices")
@@ -3139,6 +3440,8 @@ function ReviewFixSectionHeader({ draft, issue, providerIssue, t }: {
 }
 
 const reviewFieldMetaByKey: Record<string, ReviewFieldMeta> = {
+  badgeId: { label: "Badge code" },
+  ducr: { label: "DUCR", maxLength: 35 },
   declarationCategory: { label: "Declaration category", dataElement: "1/1", customsBox: "1", catalog: "declaration_category" },
   declarationType: { label: "Type of declaration", dataElement: "1/2", customsBox: "1", catalog: "declaration_type" },
   traderReference: { label: "Trader reference number", dataElement: "2/4", customsBox: "44", maxLength: 19 },
@@ -3150,8 +3453,10 @@ const reviewFieldMetaByKey: Record<string, ReviewFieldMeta> = {
   totalNetMass: { label: "Total net mass", dataElement: "6/1", customsBox: "38", suffix: "kg" },
   importer: { label: "Importer", dataElement: "3/16", customsBox: "8" },
   exporter: { label: "Exporter", dataElement: "3/1", customsBox: "2" },
+  exporterEori: { label: "Exporter EORI number", dataElement: "3/2", customsBox: "2", maxLength: 17 },
   consignee: { label: "Consignee", dataElement: "3/9", customsBox: "8" },
   declarant: { label: "Declarant", dataElement: "3/17", customsBox: "14" },
+  declarantEori: { label: "Declarant EORI", dataElement: "3/17", customsBox: "14" },
   representationType: { label: "Type of representation", dataElement: "3/21", customsBox: "14", catalog: "representation_type" },
   authorisationIdentifier: { label: "Authorisation identifier" },
   authorisationCategory: { label: "Authorisation category", maxLength: 4 },
@@ -3198,13 +3503,20 @@ const reviewFieldMetaByKey: Record<string, ReviewFieldMeta> = {
 }
 
 function reviewFieldMeta(field: string): ReviewFieldMeta {
+  if (field === "primaryDefermentAccount" || field === "secondaryDefermentAccount") return { label: field === "primaryDefermentAccount" ? "DAN 1" : "DAN 2", dataElement: "2/6", maxLength: 7 }
+  const additionalParty = field.match(/^(seller|buyer|representative)(Name|AddressLine|City|Postcode|Country|Eori)?$/)
+  if (additionalParty) {
+    const [, party, suffix = ""] = additionalParty
+    const [nameDE, eoriDE, box] = party === "seller" ? ["3/24", "3/25", "2"] : party === "buyer" ? ["3/26", "3/27", "8"] : ["3/19", "3/20", "14"]
+    return { label: `${titleCase(party)} ${suffix === "Eori" ? "EORI number" : suffix === "AddressLine" ? "street address" : suffix.toLowerCase()}`.trim(), dataElement: suffix === "Eori" ? eoriDE : nameDE, customsBox: box, ...(suffix === "Country" ? { catalog: "country" as const } : {}) }
+  }
   const contact = field.match(/^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/)
   if (!contact) return reviewFieldMetaByKey[field] ?? { label: titleCase(field) }
   const party = titleCase(contact[1])
   const suffixes: Record<string, string> = { Name: "legal name", AddressLine: "street address", City: "town or city", Postcode: "postcode", Country: "country" }
   const partyElements: Record<string, readonly [string, string]> = {
     importer: ["3/15", "8"],
-    exporter: ["3/2", "2"],
+    exporter: ["3/1", "2"],
     consignee: ["3/10", "8"],
     declarant: ["3/18", "14"],
   }
@@ -3265,7 +3577,7 @@ function ReviewFixField({ draft, itemId, field, update, updateItem, t }: {
   const procedureCodes = useReferenceOptions("procedure_code", t, "Select procedure")
   const additionalProcedureCodes = useReferenceOptions("additional_procedure_code", t, "Select procedure")
   const optionsByCatalog: Partial<Record<CustomsCatalogCode, ReadonlyArray<readonly [string, string]>>> = {
-    declaration_category: draft.direction === "import" ? declarationCategories.filter(([code]) => !code || code === "H1") : declarationCategories,
+    declaration_category: declarationCategories,
     declaration_type: declarationTypes,
     currency: currencies,
     country: countries,
@@ -3281,6 +3593,7 @@ function ReviewFixField({ draft, itemId, field, update, updateItem, t }: {
   }
   const item = itemId ? draft.items.find((candidate) => candidate.id === itemId) : undefined
   const rawValue = item ? item[field as keyof ExportDeclarationItem] : draft[field as keyof StandaloneExportDraft]
+  if (field === "additionalAuthorisationHolders") return <p className="text-[11px] text-[var(--md-text)]">{t("Open Parties to complete the authorisation holders.")}</p>
   if (Array.isArray(rawValue)) {
     return <p className="rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-3 text-[11px] leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("Open this goods line in Items to complete the highlighted repeatable rows.")}</p>
   }
@@ -3319,7 +3632,7 @@ function providerIssueTarget(issue: ICustomsProviderIssue) {
   }
   const fields: Record<string, string> = {
     "3/1": "exporter",
-    "3/2": "exporterAddressLine",
+    "3/2": "exporterEori",
     "3/9": "consignee",
     "3/10": "consigneeAddressLine",
     "3/15": "importerAddressLine",
@@ -3435,7 +3748,11 @@ function SectionFrame({ title, description, children }: { title: string; descrip
 
 function FieldGrid({ children, className }: { children: ReactNode; className?: string }) {
   const compact = useContext(CompactCustomsFormContext)
-  return <div className={cn("grid", compact ? "gap-1.5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" : "gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4", className)}>{children}</div>
+  return <div className={cn(
+    className ? "grid" : compact ? "grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))]" : "flex flex-wrap [&>label]:basis-full sm:[&>label]:basis-[180px] sm:[&>label]:grow sm:[&>label:has(button[role=combobox])]:basis-auto sm:[&>label:has(button[role=combobox])]:grow-0",
+    compact ? "gap-2" : "gap-x-3 gap-y-3",
+    className,
+  )}>{children}</div>
 }
 
 function FieldShell({ label, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className, children }: { label: string; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string; children: ReactNode }) {
@@ -3561,7 +3878,6 @@ function CustomsOrganisationCombobox({ party, label, value, onChange, onSelect, 
     if (selectingId) return
     setSelectingId(organisation.id)
     setSelectionError(false)
-    onChange(organisation.name)
     try {
       const detail = await getCustomer(organisation.id)
       onSelect(detail)

@@ -13,6 +13,7 @@ import {
   routeParts,
 } from "../_shared/backend.ts"
 import { resolveAccountScoreExplanations } from "./score-explanations.ts"
+import { customsImporterProfileErrors } from "../_shared/customs-importer-profile.ts"
 
 type Row = Record<string, any>
 type OrganisationType = "company" | "customer" | "supplier"
@@ -808,10 +809,14 @@ async function upsertRelatedPartyDefault(admin: any, current: Row, permissions: 
 async function replaceAccountOperations(admin: any, current: Row, permissions: string[], accountId: string, payload: Row) {
   const { data: existingProfile, error: existingError } = await admin
     .from("CRM_AccountOperationalProfiles")
-    .select("CRMAccountOps_InvoicePreferencesJSON")
+    .select("CRMAccountOps_InvoicePreferencesJSON, CRMAccountOps_CustomsJSON")
     .eq("CRMAccountOps_OrgID", accountId)
     .maybeSingle()
   if (existingError && existingError.code !== "PGRST116") throw new HttpError(500, existingError.message)
+  if (JSON.stringify(objectValue(existingProfile?.CRMAccountOps_CustomsJSON)) !== JSON.stringify(objectValue(payload.customs))) {
+    const customsErrors = customsImporterProfileErrors(payload.customs)
+    if (customsErrors.length) throw new HttpError(400, customsErrors.join(" "))
+  }
   const currentFinance = objectValue(existingProfile?.CRMAccountOps_InvoicePreferencesJSON)
   const nextFinance = objectValue(payload.invoicePreferences)
   if (JSON.stringify(currentFinance) !== JSON.stringify(nextFinance) && !permissions.includes("Finance.Configuration.Manage")) {

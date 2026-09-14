@@ -2,6 +2,19 @@ import { createExportDeclarationItem, createStandaloneDeclarationDraft, type Dec
 import { invalidateRegisterPages, readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"
 import type { UserProfilePhoto } from "@/lib/profile-photo"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
+import { getApiCurrentUser } from "@/lib/api"
+import { getCustomsReferencePreferences } from "@/lib/customs-reference-preferences"
+
+export async function loadTenantDeclarantDefault() {
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in again to load your company’s declarant details.")
+  const profile = await getApiCurrentUser(session.access_token)
+  if (!profile.company || profile.actorType === "customer") return null
+  // Missing rollout/configuration must not invent an EORI or prevent saving a draft.
+  const preferences = await getCustomsReferencePreferences().catch(() => null)
+  const settings = preferences?.settings
+  return { name: profile.company.name, eori: settings?.officeEoris[settings.defaultOfficeId] || settings?.eori || "" }
+}
 
 type SavedItemRow = {
   CUSTI_ItemNumber: number
@@ -222,7 +235,7 @@ export async function loadStandaloneDeclarationDraft(
   const client = requireSupabase()
   const declarationQuery = client
     .from("Customs_Declarations")
-    .select("CUST_id, CUST_LocalReferenceNumber, CUST_iCustomsExternalID, CUST_GenericPayloadJSON")
+    .select("CUST_id, CUST_LocalReferenceNumber, CUST_iCustomsExternalID, CUST_GenericPayloadJSON, CUST_SourceSnapshot")
     .eq("CUST_id", declarationId)
     .eq("CUST_Direction", direction)
     .eq("CUST_DeclarationKind", `cds_${direction}`)
@@ -257,6 +270,7 @@ export async function loadStandaloneDeclarationDraft(
   return {
     ...createStandaloneDeclarationDraft(direction),
     ...saved,
+    sourceBookingReference: scope === "job-related" ? String(record(declaration.CUST_SourceSnapshot).bookingReference ?? "") : "",
     multideckReference: declaration.CUST_LocalReferenceNumber ?? declaration.CUST_id,
     iCustomsCorrelationId: declaration.CUST_iCustomsExternalID,
     items: items.length ? items : [createExportDeclarationItem()],

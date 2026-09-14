@@ -1,4 +1,5 @@
 import { defaultPaginationPageSize } from "@/lib/pagination"
+import { AdminCustomsPreferences } from "@/pages/admin-customs-preferences"
 import { collectExportPages } from "@/lib/table-export"
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
@@ -774,6 +775,7 @@ function SystemPreferencesContent() {
     <div className="min-w-0 px-[var(--md-page-pad)] py-[var(--md-page-pad)]">
       <div className="mx-auto max-w-[960px] space-y-5 pb-[var(--md-page-bottom-pad)]">
         {header}
+        <AdminCustomsPreferences />
         <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">

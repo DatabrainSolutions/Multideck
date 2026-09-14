@@ -1,4 +1,5 @@
 import type { SupabaseClient, User } from "npm:@supabase/supabase-js@2.108.2";
+import { requiredImportReferences } from "../_shared/customs-ducr.mts";
 import {
   adminClient,
   authenticate,
@@ -941,6 +942,7 @@ async function submitDeclaration(
     ) as ExportDeclarationInput,
     direction,
   );
+  if (direction === "import") submissionIssues.push(...requiredImportReferences(providerRecord(declaration.CUST_GenericPayloadJSON)));
   if (submissionIssues.length) {
     throw new CustomsSubmissionGateError(submissionIssues);
   }
@@ -1304,6 +1306,7 @@ Deno.serve(async (request) => {
         ) as ExportDeclarationInput,
         direction,
       );
+      if (direction === "import") issues.push(...requiredImportReferences(providerRecord(declaration.CUST_GenericPayloadJSON)));
       return json(request, { ready: issues.length === 0, issues });
     }
     if (method === "POST" && parts[2] === "provider-draft") {

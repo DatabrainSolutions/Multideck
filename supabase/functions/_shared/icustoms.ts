@@ -1,3 +1,8 @@
+import { ducrFormatError } from "./customs-ducr.mts";
+
+import { importDefermentIssues } from "./customs-importer-profile.ts";
+import { additionalCustomsPartyIssues } from "./customs-parties.mts";
+
 export type ICustomsEnvironment = "sandbox" | "production";
 
 export type ICustomsConfig = {
@@ -111,24 +116,50 @@ export type ExportDeclarationInput = {
   declarationType?: unknown;
   traderReference?: unknown;
   internalReference?: unknown;
+  jobReference?: unknown;
+  ducr?: unknown;
+  ucn?: unknown;
+  badgeId?: unknown;
+  declarantReference?: unknown;
+  agentReference?: unknown;
   totalAmount?: unknown;
   currency?: unknown;
   totalPackages?: unknown;
   totalGrossMass?: unknown;
   totalNetMass?: unknown;
   exporter?: unknown;
+  exporterEori?: unknown;
   exporterName?: unknown;
   exporterAddressLine?: unknown;
   exporterCity?: unknown;
   exporterPostcode?: unknown;
   exporterCountry?: unknown;
   importer?: unknown;
+  importerEori?: unknown;
   importerName?: unknown;
   importerAddressLine?: unknown;
   importerCity?: unknown;
   importerPostcode?: unknown;
   importerCountry?: unknown;
   seller?: unknown;
+  sellerName?: unknown;
+  sellerAddressLine?: unknown;
+  sellerCity?: unknown;
+  sellerPostcode?: unknown;
+  sellerCountry?: unknown;
+  sellerEori?: unknown;
+  buyerName?: unknown;
+  buyerAddressLine?: unknown;
+  buyerCity?: unknown;
+  buyerPostcode?: unknown;
+  buyerCountry?: unknown;
+  buyerEori?: unknown;
+  representativeName?: unknown;
+  representativeAddressLine?: unknown;
+  representativeCity?: unknown;
+  representativePostcode?: unknown;
+  representativeCountry?: unknown;
+  representativeEori?: unknown;
   buyer?: unknown;
   consignee?: unknown;
   consigneeName?: unknown;
@@ -139,6 +170,7 @@ export type ExportDeclarationInput = {
   carrier?: unknown;
   carrierIdentifier?: unknown;
   declarant?: unknown;
+  declarantEori?: unknown;
   declarantName?: unknown;
   declarantAddressLine?: unknown;
   declarantCity?: unknown;
@@ -148,6 +180,7 @@ export type ExportDeclarationInput = {
   representationType?: unknown;
   authorisationIdentifier?: unknown;
   authorisationCategory?: unknown;
+  additionalAuthorisationHolders?: unknown;
   exportCountry?: unknown;
   destinationCountry?: unknown;
   borderNationality?: unknown;
@@ -159,6 +192,13 @@ export type ExportDeclarationInput = {
   departureIdentificationType?: unknown;
   arrivalIdentificationNumber?: unknown;
   arrivalIdentificationType?: unknown;
+  loadingLocationId?: unknown;
+  goodsAddressType?: unknown;
+  goodsLocationCountry?: unknown;
+  goodsLocationAdditionalIdentifier?: unknown;
+  additionalContainerIds?: unknown;
+  gvmsCode?: unknown;
+  gvmsValue?: unknown;
   goodsLocationType?: unknown;
   goodsLocationName?: unknown;
   goodsLocationIdentifier?: unknown;
@@ -409,6 +449,20 @@ export function validateICustomsDeclaration(
     issues.push("Add an internal reference.");
   }
   const traderReference = clean(input.traderReference, 80);
+  if (direction === "import") {
+    if (String(input.jobReference ?? "").trim().length > 35) {
+      issues.push("Use up to 35 characters for the job reference.");
+    }
+    if (clean(input.ducr, 80) && ducrFormatError(String(input.ducr))) {
+      issues.push(ducrFormatError(String(input.ducr))!);
+    }
+    if (clean(input.ucn, 80) && !/^[A-Z0-9()\-/]{1,35}$/i.test(clean(input.ucn, 80))) {
+      issues.push("Use up to 35 letters, numbers, parentheses, hyphens or slashes for MUCR / UCN.");
+    }
+    for (const [field, label] of [["badgeId", "Badge code"], ["declarantReference", "Declarant’s reference"], ["agentReference", "Agent’s reference"]] as const) {
+      if (clean(input[field], 200)) issues.push(`${label} cannot yet be sent through the connected iCustoms API. Its provider mapping must be confirmed before this declaration can be sent.`);
+    }
+  }
   if (traderReference && !/^[A-Z0-9]{1,19}$/.test(traderReference)) {
     issues.push(
       "Use up to 19 uppercase letters and numbers for the trader reference.",
@@ -433,6 +487,8 @@ export function validateICustomsDeclaration(
     issues.push("Total net mass cannot exceed total gross mass.");
   }
   if (!clean(input.exporter, 70)) issues.push("Add the exporter name or EORI.");
+  if (direction === "import") issues.push(...additionalCustomsPartyIssues(input as Record<string, unknown>).map(issue => issue.message));
+  if (clean(input.exporterEori) && !/^[A-Z]{2}[A-Z0-9]{3,15}$/.test(String(input.exporterEori).trim())) issues.push("Enter a valid exporter EORI: two country letters followed by up to 15 letters or numbers.");
   if (direction === "import" && !clean(input.importer, 70)) {
     issues.push("Add the importer name or EORI.");
   }
@@ -461,6 +517,18 @@ export function validateICustomsDeclaration(
     );
   }
   const importerContactMissing = contactMissing(input, "importer");
+  if (direction === "import" && clean(input.importerEori, 100) && !/^[A-Z]{2}[A-Z0-9]{3,15}$/.test(upper(input.importerEori, 100))) {
+    issues.push("Check the importer EORI number in the company Customs tab.");
+  }
+  if (direction === "import") {
+    issues.push(...importDefermentIssues(input).map(issue => issue.message));
+    for (const entry of repeatableInputs(input.additionalAuthorisationHolders)) {
+      if (!/^[A-Z0-9]{1,4}$/.test(upper(entry.category, 100)) || !/^[A-Z]{2}[A-Z0-9]{3,15}$/.test(upper(entry.identifier, 100))) issues.push("Complete every additional authorisation category and holder EORI.");
+    }
+    for (const account of [input.primaryDefermentAccount, input.secondaryDefermentAccount]) {
+      if (clean(account, 100) && !/^\d{7}$/.test(clean(account, 100))) issues.push("Use the seven-digit deferment account number.");
+    }
+  }
   if (direction === "import" && importerContactMissing.length) {
     issues.push(
       `This contact is missing: ${importerContactMissing.join(", ")}.`,
@@ -478,7 +546,7 @@ export function validateICustomsDeclaration(
       `This contact is missing: ${declarantContactMissing.join(", ")}.`,
     );
   }
-  if (!/^[A-Z0-9]{3,17}$/.test(upper(input.declarant, 17))) {
+  if (!/^[A-Z0-9]{3,17}$/.test(upper(input.declarantEori ?? input.declarant, 18))) {
     issues.push(
       "Add the declarant EORI or customs identifier (3 to 17 letters and numbers).",
     );
@@ -488,6 +556,10 @@ export function validateICustomsDeclaration(
   }
   if (!/^[A-Z]{2}$/.test(upper(input.destinationCountry, 2))) {
     issues.push("Choose a valid destination country.");
+  }
+  if (direction === "import") {
+    if (!clean(input.inlandMode)) issues.push("Select the inland transport mode.");
+    if (!clean(input.borderNationality)) issues.push("Select the border transport nationality.");
   }
   if (!/^\d$/.test(clean(input.borderMode, 1))) {
     issues.push("Choose the one-digit transport mode at the border.");
@@ -597,6 +669,12 @@ export function validateICustomsDeclaration(
     input.headerAdditionalInformationCode,
     5,
   );
+  if ((clean(input.gvmsCode, 5) || clean(input.gvmsValue, 512)) && (input.gvmsCode !== "RRS01" || !clean(input.gvmsValue, 512))) {
+    issues.push("Select RRS01 and enter the haulier EORI or name for GVMS.");
+  }
+  if (clean(input.goodsLocationAdditionalIdentifier, 35) && !/^\d{1,3}$/.test(String(input.goodsLocationAdditionalIdentifier))) {
+    issues.push("Goods location additional identifier must contain up to three digits.");
+  }
   const headerAdditionalInformationDescription = clean(
     input.headerAdditionalInformationDescription,
     512,
@@ -1012,7 +1090,7 @@ function party(
 
 function partyContact(
   input: ExportDeclarationInput,
-  prefix: "importer" | "exporter" | "consignee" | "declarant",
+  prefix: "importer" | "exporter" | "consignee" | "declarant" | "seller" | "buyer" | "representative",
 ) {
   return {
     name: input[`${prefix}Name`],
@@ -1097,7 +1175,11 @@ export function buildICustomsDeclarationXml(
       .map((entry) =>
         group(
           "DutyTaxFee",
-          [
+          (direction === "import" ? [
+            element("SpecificTaxBaseQuantity", decimal(entry.baseQuantity, 6), { unitCode: upper(entry.unitCode, 4) }),
+            element("TypeCode", upper(entry.taxType, 3)),
+            group("Payment", [element("MethodCode", upper(entry.paymentMethod, 1)), element("PaymentAmount", decimal(entry.declaredTax, 2), { currencyID: itemCurrency })].join("")),
+          ] : [
             element("TypeCode", upper(entry.taxType, 3)),
             element("PaymentMethodCode", upper(entry.paymentMethod, 2)),
             element("TaxBaseQuantity", decimal(entry.baseQuantity, 6), {
@@ -1106,7 +1188,7 @@ export function buildICustomsDeclarationXml(
             element("PaymentAmount", decimal(entry.declaredTax, 2), {
               currencyID: itemCurrency,
             }),
-          ].join(""),
+          ]).join(""),
         )
       ).join("");
     const commodity = group(
@@ -1409,12 +1491,12 @@ export function buildICustomsDeclarationXml(
     : "";
 
   const transportEquipment = isContainerised
-    ? group(
+    ? [input.containerId, ...(Array.isArray(input.additionalContainerIds) ? input.additionalContainerIds : [])].filter((id) => clean(id, 17)).map((id, index) => group(
       "TransportEquipment",
       [
-        element("SequenceNumeric", "1"),
-        element("ID", input.containerId),
-        clean(input.sealIdentifier, 20)
+        element("SequenceNumeric", String(index + 1)),
+        element("ID", id),
+        index === 0 && clean(input.sealIdentifier, 20)
           ? group(
             "Seal",
             [
@@ -1424,7 +1506,7 @@ export function buildICustomsDeclarationXml(
           )
           : "",
       ].join(""),
-    )
+    )).join("")
     : "";
   const goodsLocation = group(
     "GoodsLocation",
@@ -1438,18 +1520,18 @@ export function buildICustomsDeclarationXml(
       // which accepts only up to three digits rather than a UN/LOCODE.
       direction === "export"
         ? element("ID", input.goodsLocationIdentifier)
-        : "",
+        : element("ID", input.goodsLocationAdditionalIdentifier),
       element("TypeCode", upper(input.goodsLocationType, 1)),
       group(
         "Address",
         [
-          element("TypeCode", "U"),
+          element("TypeCode", upper(input.goodsAddressType, 1) || "U"),
           element(
             "CountryCode",
             upper(
-              direction === "import"
+              input.goodsLocationCountry || (direction === "import"
                 ? input.destinationCountry
-                : input.exportCountry,
+                : input.exportCountry),
               2,
             ),
           ),
@@ -1466,7 +1548,7 @@ export function buildICustomsDeclarationXml(
             ? input.arrivalIdentificationNumber
             : input.departureIdentificationNumber,
           27,
-        )
+        ) || (direction === "import" && clean(input.inlandMode, 1))
         ? group(
           direction === "import"
             ? "ArrivalTransportMeans"
@@ -1487,10 +1569,12 @@ export function buildICustomsDeclarationXml(
                 2,
               ),
             ),
+            element("ModeCode", input.inlandMode),
           ].join(""),
         )
         : "",
       goodsLocation,
+      clean(input.loadingLocationId, 35) ? group("LoadingLocation", element("ID", input.loadingLocationId)) : "",
       transportEquipment,
     ].join(""),
   );
@@ -1522,11 +1606,13 @@ export function buildICustomsDeclarationXml(
         }`,
       ),
       element("GoodsItemQuantity", String(items.length)),
+      direction === "import" ? element("InternalJobReference", clean(input.jobReference, 35)) : "",
       element("InvoiceAmount", decimal(input.totalAmount, 2), {
         currencyID: currency,
       }),
       element("TotalGrossMassMeasure", decimal(input.totalGrossMass)),
       element("TotalPackageQuantity", decimal(input.totalPackages, 0)),
+      ...(direction === "import" ? [input.primaryDefermentAccount, input.secondaryDefermentAccount].map((account, index) => clean(account, 7) ? group("AdditionalDocument", [element("CategoryCode", String(index + 1)), element("ID", account), element("TypeCode", "DAN")].join("")) : "") : []),
       clean(input.headerAdditionalInformationCode, 5)
         ? group(
           "AdditionalInformation",
@@ -1542,8 +1628,9 @@ export function buildICustomsDeclarationXml(
           ].join(""),
         )
         : "",
+      clean(input.gvmsCode, 5) ? group("AdditionalInformation", [element("StatementCode", upper(input.gvmsCode, 5)), element("StatementDescription", clean(input.gvmsValue, 512))].join("")) : "",
       clean(input.representative, 70)
-        ? party("Agent", input.representative, partyContact(input, "declarant"))
+        ? party("Agent", input.representativeEori ?? input.representative, { ...partyContact(input, "representative"), name: input.representativeName || input.representative })
         : "",
       clean(input.representationType, 1)
         ? element("AgentFunctionCode", clean(input.representationType, 1))
@@ -1558,6 +1645,7 @@ export function buildICustomsDeclarationXml(
           ].join(""),
         )
         : "",
+      ...(direction === "import" ? repeatableInputs(input.additionalAuthorisationHolders).filter((entry, index, entries) => !(upper(entry.category, 4) === upper(input.authorisationCategory, 4) && upper(entry.identifier, 17) === upper(input.authorisationIdentifier, 17)) && entries.findIndex(candidate => upper(candidate.category, 4) === upper(entry.category, 4) && upper(candidate.identifier, 17) === upper(entry.identifier, 17)) === index).map(entry => group("AuthorisationHolder", [element("ID", upper(entry.identifier, 17)), element("CategoryCode", upper(entry.category, 4))].join(""))) : []),
       borderTransport,
       direction === "export"
         ? group(
@@ -1567,16 +1655,17 @@ export function buildICustomsDeclarationXml(
         : "",
       party(
         "Declarant",
-        input.declarant,
+        input.declarantEori ?? input.declarant,
         partyContact(input, "declarant"),
       ),
       direction === "export"
         ? group("ExitOffice", element("ID", upper(input.exitOffice, 8)))
         : "",
-      party("Exporter", input.exporter, partyContact(input, "exporter")),
+      party("Exporter", input.exporterEori ?? input.exporter, partyContact(input, "exporter")),
       group(
         "GoodsShipment",
         [
+          direction === "import" && clean(input.buyer, 70) ? party("Buyer", input.buyerEori ?? input.buyer, { ...partyContact(input, "buyer"), name: input.buyerName || input.buyer }) : "",
           direction === "export"
             ? element(
               "TransactionNatureCode",
@@ -1597,11 +1686,16 @@ export function buildICustomsDeclarationXml(
           direction === "import"
             ? party(
               "Importer",
-              input.importer,
+              clean(input.importerEori, 17) || input.importer,
               partyContact(input, "importer"),
             )
             : "",
-          direction === "import" ? importPreviousDocuments : group(
+          direction === "import" ? [
+            importPreviousDocuments,
+            ...([["DCR", input.ducr], ["MCR", input.ucn]] as const).map(([type, reference]) => clean(reference, 35)
+              ? group("PreviousDocument", element("CategoryCode", "Z") + element("ID", upper(reference, 35)) + element("TypeCode", type))
+              : ""),
+          ].join("") : group(
             "PreviousDocument",
             [
               element("CategoryCode", upper(input.previousDocumentCategory, 1)),
@@ -1609,6 +1703,7 @@ export function buildICustomsDeclarationXml(
               element("TypeCode", upper(input.previousDocumentType, 3)),
             ].join(""),
           ),
+          direction === "import" && clean(input.seller, 70) ? party("Seller", input.sellerEori ?? input.seller, { ...partyContact(input, "seller"), name: input.sellerName || input.seller }) : "",
           direction === "import"
             ? group(
               "TradeTerms",

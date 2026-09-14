@@ -188,6 +188,7 @@ export const galleryComponents = [
     description: "An editable field state for values copied or derived from linked records, with quiet provenance and a reversible manual override.",
     details: "All editable autofill controls share a left-to-right letter stagger, including inputs, comboboxes, codes, contacts and multiline notes. The real value updates immediately while the visual reveal plays without overlapping text. Long values have a bounded duration, and reduced motion shows the value immediately. Accent tint and stroke distinguish derived values without taking space from the text. Screen readers can read the source description; editing a value removes its derived state. Keep inherited, locked fields separate.",
     foundOn: [
+      { label: "Customs declaration", route: "/customs/standalone/import/new" },
       { label: "Booking details", route: "/bookings/je0991133" },
       { label: "Quote details", route: "/quotes/jq20015" },
       { label: "New booking", route: "/bookings/new" },
