@@ -1891,13 +1891,13 @@ begin
       "Job_ID", "JobCostingLine_Number", "JobCostingLine_SupplierID", "JobCostingLine_Description", "JobCostingLine_InternalNotes",
       "JobCostingLine_CustomerNotes", "JobCostingLine_CostROE", "JobCostingLine_CostAmountCurrency", "JobCostingLine_CostAmountLocal",
       "JobCostingLine_RevenueROE", "JobCostingLine_RevenueAmountCurrency", "JobCostingLine_RevenueAmountLocal",
-      "JobCostingLine_ShowToCustomer", "JobCostingLine_CreatedBy", "JobCostingLine_UpdatedBy"
+      "JobCostingLine_ShowToCustomer", "JobCostingLine_CreatedBy", "JobCostingLine_UpdatedBy", "JobCostingLine_DomainCode"
     ) values (
       job_id, charge_number, nullif(charge->>'supplierId', '')::uuid, left(coalesce(nullif(btrim(charge->>'description'), ''), 'Charge'), 240),
       nullif(charge->>'internalNotes', ''), nullif(charge->>'customerNotes', ''), greatest(coalesce(nullif(charge->>'costRoe', '')::numeric, 1), 0.00001),
       coalesce(nullif(charge->>'costAmount', '')::numeric, 0), coalesce(nullif(charge->>'costLocal', '')::numeric, 0),
       greatest(coalesce(nullif(charge->>'sellRoe', '')::numeric, 1), 0.00001), coalesce(nullif(charge->>'sellAmount', '')::numeric, 0),
-      coalesce(nullif(charge->>'sellLocal', '')::numeric, 0), coalesce((charge->>'showToCustomer')::boolean, true), actor_user_id, actor_user_id
+      coalesce(nullif(charge->>'sellLocal', '')::numeric, 0), coalesce((charge->>'showToCustomer')::boolean, true), actor_user_id, actor_user_id, 'freight'
     );
   end loop;
 
