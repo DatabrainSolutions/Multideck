@@ -10,7 +10,7 @@ import {
   type SignatureTemplate,
   type SignatureValues,
   validateSignatureDocument,
-} from "../../../shared/email-signatures.ts";
+} from "../_shared/email-signatures.ts";
 import {
   base64Encode,
   cleanString,
