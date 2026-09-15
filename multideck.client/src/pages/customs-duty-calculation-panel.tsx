@@ -160,6 +160,7 @@ export function DutyCalculationPanel({ itemId, declaredTaxes, onDeclaredTaxesCha
 }) {
   const context = useContext(DutyCalculationContext)
   const [latest, setLatest] = useState<CustomsCalculationAudit | null>(null)
+  const [latestComplete, setLatestComplete] = useState<CustomsCalculationAudit | null>(null)
   const [itemOverride, setItemOverride] = useState<CustomsCalculationAudit | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -182,8 +183,13 @@ export function DutyCalculationPanel({ itemId, declaredTaxes, onDeclaredTaxesCha
     readCalculationHistoryAtRevision(() => getCustomsCalculationHistory(...args), () => historyRevision.current), [])
   const applyHistory = useCallback((response: CustomsCalculationHistory | null) => {
     if (!response) return
-    setLatest(response.latestCalculation); setItemOverride(response.latestItemOverride); setHistoryNeedsRefresh(false)
-  }, [])
+    const complete = response.history.find(entry => {
+      if (entry.kind !== "calculation") return false
+      const savedLine = entry.evidence.result?.lines.find(row => row.itemId === itemId)
+      return savedLine?.customsValue !== undefined && savedLine.duty !== undefined && savedLine.vat !== undefined
+    }) ?? null
+    setLatest(response.latestCalculation); setLatestComplete(complete); setItemOverride(response.latestItemOverride); setHistoryNeedsRefresh(false)
+  }, [itemId])
   useEffect(() => {
     const invalidate = (event: Event) => {
       const detail = (event as CustomEvent<{ declarationId: string; sourceItemId?: string }>).detail
@@ -207,7 +213,7 @@ export function DutyCalculationPanel({ itemId, declaredTaxes, onDeclaredTaxesCha
   }, [declarationId, itemId, applyHistory, readHistory])
   useEffect(() => {
     const current = ++generation.current
-    setLatest(null); setItemOverride(null); setLoaded(false); setError(""); setOverrideOpen(false); setOverrideCalculationId(null); setHistoryNeedsRefresh(false)
+    setLatest(null); setLatestComplete(null); setItemOverride(null); setLoaded(false); setError(""); setOverrideOpen(false); setOverrideCalculationId(null); setHistoryNeedsRefresh(false)
     if (declarationId) void readHistory(declarationId, { itemId }).then(response => {
       if (current === generation.current) { applyHistory(response); setLoaded(true) }
     }).catch(() => {
@@ -238,6 +244,13 @@ export function DutyCalculationPanel({ itemId, declaredTaxes, onDeclaredTaxesCha
   const stale = live ? false : !!latest && auditStale
   const result = live ? live.result : latest?.evidence.result
   const line = result?.lines.find(row => row.itemId === itemId)
+  const retainedLine = latestComplete?.evidence.result?.lines.find(row => row.itemId === itemId)
+  const summaryLine = line?.customsValue !== undefined && line.duty !== undefined && line.vat !== undefined
+    ? line
+    : retainedLine?.customsValue !== undefined && retainedLine.duty !== undefined && retainedLine.vat !== undefined
+      ? retainedLine
+      : line
+  const showingPreviousEstimate = summaryLine === retainedLine && summaryLine !== line
   const itemIssueMessages = new Set(result?.lines.flatMap(row => row.issues) ?? [])
   const visibleIssues = [...new Set([...(result?.issues ?? live?.issues ?? []).filter(issue => !itemIssueMessages.has(issue) || line?.issues.includes(issue)), ...(line?.issues ?? [])])]
   const replacement = !auditStale && itemOverride?.parent_id === latest?.id ? itemOverride : null
@@ -309,11 +322,12 @@ export function DutyCalculationPanel({ itemId, declaredTaxes, onDeclaredTaxesCha
   return <section aria-label={t("Duty and VAT calculations")} className="customs-item-calculations min-w-0 space-y-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)] text-[12px] leading-5 text-[var(--md-text)]">
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><h3 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Duty and VAT")}</h3><span role="status" className="text-[var(--md-text)]">{t(live ? live.status === "calculating" ? "Calculating…" : live.status === "error" ? "Estimate unavailable" : replacement ? "Overridden" : visibleIssues.length || !line || line.status === "needs-information" ? "Needs information" : "Estimate" : busy ? "Updating…" : error ? "Needs attention" : !loaded && declarationId ? "Loading…" : stale ? "Out of date" : replacement ? "Overridden" : line?.status === "needs-information" || visibleIssues.length ? "Needs information" : previousOverride ? "Override needs review" : line ? "Estimate" : "Not calculated")}</span></div>
-      <dl aria-label={t(stale ? "Previous item estimate" : "Item estimate")} className="flex flex-wrap gap-x-5 gap-y-1">
-        <div className="flex items-baseline gap-2"><dt>{t("Customs value")}</dt><dd className="font-medium tabular-nums text-[var(--md-ink)]">{line?.customsValue !== undefined ? `£${line.customsValue}` : "—"}</dd></div>
-        <div className="flex items-baseline gap-2"><dt>{t("Estimated duty")}</dt><dd className="font-medium tabular-nums text-[var(--md-ink)]">{line?.duty !== undefined ? `£${replacement?.evidence.replacement?.duty ?? line.duty}` : "—"}</dd></div>
-        <div className="flex items-baseline gap-2"><dt>{t("Estimated VAT")}</dt><dd className="font-medium tabular-nums text-[var(--md-ink)]">{line?.vat !== undefined ? `£${replacement?.evidence.replacement?.vat ?? line.vat}` : "—"}</dd></div>
+      <dl aria-label={t(showingPreviousEstimate || stale ? "Previous item estimate" : "Item estimate")} className="flex flex-wrap gap-x-5 gap-y-1">
+        <div className="flex items-baseline gap-2"><dt>{t("Customs value")}</dt><dd className="font-medium tabular-nums text-[var(--md-ink)]">{summaryLine?.customsValue !== undefined ? `£${summaryLine.customsValue}` : "—"}</dd></div>
+        <div className="flex items-baseline gap-2"><dt>{t("Estimated duty")}</dt><dd className="font-medium tabular-nums text-[var(--md-ink)]">{summaryLine?.duty !== undefined ? `£${showingPreviousEstimate ? summaryLine.duty : replacement?.evidence.replacement?.duty ?? summaryLine.duty}` : "—"}</dd></div>
+        <div className="flex items-baseline gap-2"><dt>{t("Estimated VAT")}</dt><dd className="font-medium tabular-nums text-[var(--md-ink)]">{summaryLine?.vat !== undefined ? `£${showingPreviousEstimate ? summaryLine.vat : replacement?.evidence.replacement?.vat ?? summaryLine.vat}` : "—"}</dd></div>
       </dl>
+      {showingPreviousEstimate ? <span className="text-[11px] text-[var(--md-subtle)]">{t("Previous estimate")}</span> : null}
       <div className="sm:ml-auto">
       {live ? live.status === "error" ? <Button type="button" variant="outline" size="sm" onClick={live.retry}>{t("Retry estimate")}</Button> : null : <Button type="button" variant="outline" size="sm" disabled={busy || !loaded || !declarationId} onClick={() => void calculate()}>{busy ? <DotGridLoader className="size-3.5" /> : null}{t(!isSaved ? "Save and calculate" : latest ? "Recalculate" : "Calculate")}</Button>}
       </div>

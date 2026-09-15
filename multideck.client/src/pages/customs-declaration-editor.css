@@ -47,7 +47,10 @@
   :is(.customs-transport-columns, .customs-declaration-columns) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-@container (min-width: 1200px) {
+/* The four declaration groups remain comfortably scannable from a 960px
+ * editor canvas. Waiting until 1200px made common MacBook viewports collapse
+ * into a tall 2 x 2 layout despite each group only containing compact fields. */
+@container (min-width: 960px) {
   :is(.customs-transport-columns, .customs-declaration-columns) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
