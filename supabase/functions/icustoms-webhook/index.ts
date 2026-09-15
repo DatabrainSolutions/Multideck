@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2";
+import { requireProductAccess } from "../_shared/cloud-product-access.ts";
 import {
   adminClient,
   authenticate,
@@ -608,6 +609,7 @@ async function recoverCapturedDelivery(request: Request, deliveryId: string) {
 
   let recoveryAdmin: SupabaseClient | null = null;
   try {
+    await requireProductAccess("icustoms");
     const admin = adminClient();
     recoveryAdmin = admin;
     const { user } = await authenticate(request, admin);
@@ -713,6 +715,13 @@ Deno.serve(async (request) => {
   const supplied = routeSecret(request);
   if (!expected || !supplied || !constantTimeEqual(supplied, expected)) {
     return response({ error: "Not found" }, 404);
+  }
+
+  try {
+    await requireProductAccess("icustoms");
+  } catch (error) {
+    return response({ error: error instanceof HttpError ? error.message : "Product permissions are unavailable." },
+      error instanceof HttpError ? error.status : 503);
   }
 
   // iCustoms verifies a newly entered callback URL with a safe GET before it

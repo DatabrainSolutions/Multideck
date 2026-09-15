@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2";
+import { requireProductAccess } from "../_shared/cloud-product-access.ts";
 import {
   adminClient,
   authenticate,
@@ -4229,6 +4230,8 @@ Deno.serve(async (request) => {
   }
   const parts = routeParts(request, "phone-calls");
   try {
+    // Applies to provider callbacks and scheduled syncs as well as user routes.
+    await requireProductAccess("jenkar_phone");
     if (
       request.method === "POST" && parts[0] === "webhooks" &&
       parts[1] === "elevenlabs" && parts[2] === "personalization"
