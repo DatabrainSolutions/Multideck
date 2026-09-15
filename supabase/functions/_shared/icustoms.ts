@@ -1,4 +1,13 @@
+import { customsInvoiceErrors, customsInvoiceProjectionErrors, resolveCustomsInvoiceDeclaration } from "./customs-invoices.mts";
 import { ducrFormatError } from "./customs-ducr.mts";
+import { commodityQuotas, type CommodityQuota } from "./customs-commodity-quotas.mts";
+import { quotaClaimIssues } from "./customs-quota-claim.mts";
+import { adjustmentUsesMass, importAdjustmentErrors, importAdjustmentsForDraft, isCustomsTradeTerm, isFreightAdjustment, isPercentageAdjustment } from "./customs-import-terms.mts";
+import { importDetailsErrors, importFiscalParties } from "./customs-import-details.mts";
+import { obsoleteImportVatStatementIssue } from "./customs-tax-submission-validation.mts";
+import { niPreferenceCodes } from "./customs-ni-preference-codes.mts";
+import { processingReleaseFilingIssues } from "./customs-processing-filing.mts";
+import { guaranteeErrors, guaranteesForDraft, hasGuaranteeValues } from "./customs-guarantees.mts";
 
 import { importDefermentIssues } from "./customs-importer-profile.ts";
 import { additionalCustomsPartyIssues } from "./customs-parties.mts";
@@ -46,6 +55,7 @@ export type ICustomsCommodityCertificate = {
 };
 
 export type ICustomsCommodityDetail = {
+  quotas: CommodityQuota[];
   code: string;
   description: string;
   declarable: boolean;
@@ -109,9 +119,13 @@ export type ExportDeclarationItemInput = {
   containerId?: unknown;
   customsValuationMethod?: unknown;
   preferenceCode?: unknown;
+  quotaOrderNumber?: unknown;
 };
 
 export type ExportDeclarationInput = {
+  dutyCalculationSetup?: { jurisdiction?: unknown; movement?: unknown };
+  invoiceHeaders?: unknown;
+  customsConversionDate?: unknown;
   declarationCategory?: unknown;
   declarationType?: unknown;
   traderReference?: unknown;
@@ -215,6 +229,17 @@ export type ExportDeclarationInput = {
   transactionNature?: unknown;
   exchangeRate?: unknown;
   tradeTerms?: unknown;
+  tradeTermsLocation?: unknown;
+  importerVatNumber?: unknown;
+  guarantees?: unknown;
+  guaranteeType?: unknown;
+  guaranteeReference?: unknown;
+  guaranteeAccessCode?: unknown;
+  guaranteeOffice?: unknown;
+  guaranteeAmount?: unknown;
+  guaranteeCurrency?: unknown;
+  domesticDutyTaxParties?: unknown;
+  importAdjustments?: unknown;
   customsValuationMethod?: unknown;
   primaryDefermentAccount?: unknown;
   secondaryDefermentAccount?: unknown;
@@ -351,6 +376,16 @@ function importCostAdjustmentsByItem(
     });
   };
 
+  if (Array.isArray(input.importAdjustments)) {
+    for (const entry of importAdjustmentsForDraft(input)) {
+      if (isPercentageAdjustment(entry.code)) {
+        if (positiveNumber(entry.amount)) result.forEach((rows) => rows.push({ code: entry.code, currency: "", amount: entry.amount }));
+      } else {
+        append(entry.amount, entry.currency, entry.code, adjustmentUsesMass(entry.code) ? "gross_mass" : "value");
+      }
+    }
+    return result;
+  }
   const freightBasis = costApportionment(input.freightChargeApportionment);
   append(
     input.freightChargeAmount,
@@ -422,7 +457,8 @@ export function validateICustomsDeclaration(
   input: ExportDeclarationInput,
   direction: "export" | "import" = "export",
 ) {
-  const issues: string[] = [];
+  input = resolveCustomsInvoiceDeclaration(input);
+  const issues: string[] = [...customsInvoiceErrors(input), ...customsInvoiceProjectionErrors(input)].map(issue => issue.message);
   const category = upper(input.declarationCategory, 3);
   const typeCode = upper(input.declarationType, 2);
   const currency = upper(input.currency, 3);
@@ -431,6 +467,21 @@ export function validateICustomsDeclaration(
   const totalGrossMass = positiveNumber(input.totalGrossMass);
   const totalNetMass = positiveNumber(input.totalNetMass);
   const items = itemInputs(input.items);
+  if (direction === "import") {
+    const headerIssue = obsoleteImportVatStatementIssue(input.headerAdditionalInformationCode);
+    if (headerIssue) issues.push(headerIssue);
+    items.forEach((item, index) => {
+      issues.push(...processingReleaseFilingIssues(item, { code: input.headerAdditionalInformationCode, description: input.headerAdditionalInformationDescription }).map(issue => `Item ${index + 1}: ${issue.message}`));
+      issues.push(...niPreferenceCodes({ ...item, headerAdditionalInformationCode: input.headerAdditionalInformationCode, jurisdiction: input.dutyCalculationSetup?.jurisdiction ?? "NI" }).issues.map(issue => `Item ${index + 1}: ${issue}`));
+      repeatableInputs(item.additionalInformationStatements).forEach((entry, entryIndex) => {
+      const issue = obsoleteImportVatStatementIssue(entry.statementCode);
+      if (issue) issues.push(`Item ${index + 1}, additional information ${entryIndex + 1}: ${issue}`);
+      if (entry.statementDescription !== undefined && typeof entry.statementDescription !== "string") issues.push(`Item ${index + 1}: additional information text must be text.`);
+      if (typeof entry.statementDescription === "string" && entry.statementDescription.length > 512) issues.push(`Item ${index + 1}: keep additional information text within 512 characters.`);
+      if (clean(entry.statementDescription) && !clean(entry.statementCode)) issues.push(`Item ${index + 1}: add a statement code for the additional information text.`);
+      });
+    });
+  }
 
   if (category !== (direction === "import" ? "H1" : "B1")) {
     issues.push(
@@ -584,14 +635,24 @@ export function validateICustomsDeclaration(
     if (!/^[23]$/.test(clean(input.representationType, 1))) {
       issues.push("Choose direct or indirect representation.");
     }
-    if (!/^[A-Z]{3}$/.test(upper(input.tradeTerms, 3))) {
+    if (!isCustomsTradeTerm(upper(input.tradeTerms, 3))) {
       issues.push("Add the three-letter trade terms.");
     }
-    if (!clean(input.goodsLocationIdentifier, 35)) {
+    issues.push(...importDetailsErrors(input).map((error) => error.message));
+    issues.push(...guaranteeErrors(input).map((error) => error.message));
+    if (!clean(input.tradeTermsLocation, 35) && !clean(input.goodsLocationIdentifier, 35)) {
       issues.push(
-        "Add the goods location identifier used for the trade terms.",
+        "Add the Incoterms location or UN/LOCODE.",
       );
     }
+    if (Array.isArray(input.importAdjustments)) {
+      for (const error of importAdjustmentErrors(importAdjustmentsForDraft(input))) {
+        issues.push(`Addition or deduction ${error.index + 1}: ${error.message}`);
+      }
+      if (importAdjustmentsForDraft(input).some((row) => ["AR", "AS", "BR", "BS"].includes(row.code) && positiveNumber(row.amount)) && !clean(input.loadingLocationId, 35)) {
+        issues.push("Add the airport of loading in Transport for the air freight adjustment.");
+      }
+    } else {
     const importCosts = [
       [input.freightChargeAmount, input.freightChargeCurrency, "freight costs"],
       [
@@ -623,9 +684,10 @@ export function validateICustomsDeclaration(
         );
       }
     }
+    }
     if (
       clean(input.tradeTerms, 3).toUpperCase() === "EXW" &&
-      !positiveNumber(input.freightChargeAmount)
+      !importAdjustmentsForDraft(input).some((entry) => isFreightAdjustment(entry.code) && positiveNumber(entry.amount))
     ) {
       issues.push("EXW imports require freight costs for CDS valuation.");
     }
@@ -873,6 +935,7 @@ export function validateICustomsDeclaration(
       if (!/^\d{3}$/.test(clean(item.preferenceCode, 3))) {
         issues.push(`${line}: add the three-digit preference code.`);
       }
+      issues.push(...quotaClaimIssues(item.quotaOrderNumber, item.preferenceCode, input.dutyCalculationSetup ?? {}).map(message => `${line}: ${message}`));
     }
 
     const primaryAdditionalDocument = {
@@ -1113,6 +1176,7 @@ export function buildICustomsDeclarationXml(
   input: ExportDeclarationInput,
   direction: "export" | "import" = "export",
 ) {
+  input = resolveCustomsInvoiceDeclaration(input);
   const issues = validateICustomsDeclaration(input, direction);
   if (issues.length) {
     throw new ICustomsProviderError(
@@ -1178,7 +1242,7 @@ export function buildICustomsDeclarationXml(
           (direction === "import" ? [
             element("SpecificTaxBaseQuantity", decimal(entry.baseQuantity, 6), { unitCode: upper(entry.unitCode, 4) }),
             element("TypeCode", upper(entry.taxType, 3)),
-            group("Payment", [element("MethodCode", upper(entry.paymentMethod, 1)), element("PaymentAmount", decimal(entry.declaredTax, 2), { currencyID: itemCurrency })].join("")),
+            group("Payment", [element("MethodCode", upper(entry.paymentMethod, 1)), element("PaymentAmount", decimal(entry.declaredTax, 2), { currencyID: "GBP" })].join("")),
           ] : [
             element("TypeCode", upper(entry.taxType, 3)),
             element("PaymentMethodCode", upper(entry.paymentMethod, 2)),
@@ -1198,8 +1262,11 @@ export function buildICustomsDeclarationXml(
         group("Classification", classification),
         direction === "import"
           ? group(
-            "Preferences",
-            element("DutyRegimeCode", upper(item.preferenceCode, 3)),
+            "DutyTaxFee",
+            // HMRC CDS DSSD v2.32, partial quota allocation example:
+            // Commodity/DutyTaxFee contains both treatment and quota order.
+            element("DutyRegimeCode", upper(item.preferenceCode, 3)) +
+              element("QuotaOrderID", upper(item.quotaOrderNumber, 6)),
           )
           : "",
         group(
@@ -1316,7 +1383,7 @@ export function buildICustomsDeclarationXml(
       .map((entry) =>
         group(
           "AdditionalInformation",
-          element("StatementCode", upper(entry.statementCode, 5)),
+          [element("StatementCode", upper(entry.statementCode, 5)), direction === "import" ? element("StatementDescription", clean(entry.statementDescription, 512)) : ""].join(""),
         )
       )
       .join("");
@@ -1357,7 +1424,7 @@ export function buildICustomsDeclarationXml(
             "ValuationAdjustment",
             [
               element("AdditionCode", upper(entry.code, 4)),
-              element("Amount", decimal(entry.amount, 2), {
+              element("Amount", decimal(entry.amount, 2), isPercentageAdjustment(upper(entry.code, 4)) ? undefined : {
                 currencyID: upper(entry.currency, 3) || itemCurrency,
               }),
             ].join(""),
@@ -1647,6 +1714,8 @@ export function buildICustomsDeclarationXml(
         : "",
       ...(direction === "import" ? repeatableInputs(input.additionalAuthorisationHolders).filter((entry, index, entries) => !(upper(entry.category, 4) === upper(input.authorisationCategory, 4) && upper(entry.identifier, 17) === upper(input.authorisationIdentifier, 17)) && entries.findIndex(candidate => upper(candidate.category, 4) === upper(entry.category, 4) && upper(candidate.identifier, 17) === upper(entry.identifier, 17)) === index).map(entry => group("AuthorisationHolder", [element("ID", upper(entry.identifier, 17)), element("CategoryCode", upper(entry.category, 4))].join(""))) : []),
       borderTransport,
+      clean(input.exchangeRate)
+        ? group("CurrencyExchange", element("RateNumeric", clean(input.exchangeRate))) : "",
       direction === "export"
         ? group(
           "Consignment",
@@ -1681,6 +1750,9 @@ export function buildICustomsDeclarationXml(
             : "",
           consignment,
           group("Destination", element("CountryCode", destinationCountry)),
+          ...(direction === "import" ? importFiscalParties(input.domesticDutyTaxParties)
+            .filter((row) => row.partyId || row.roleCode || row.useCustomer)
+            .map((row) => group("DomesticDutyTaxParty", element("ID", row.useCustomer ? clean(input.importerVatNumber, 17) : row.partyId) + element("RoleCode", row.roleCode))) : []),
           group("ExportCountry", element("ID", upper(input.exportCountry, 2))),
           goodsItems,
           direction === "import"
@@ -1709,7 +1781,7 @@ export function buildICustomsDeclarationXml(
               "TradeTerms",
               [
                 element("ConditionCode", upper(input.tradeTerms, 3)),
-                element("LocationID", upper(input.goodsLocationIdentifier, 35)),
+                element("LocationID", clean(input.tradeTermsLocation, 35) || upper(input.goodsLocationIdentifier, 35)),
               ].join(""),
             )
             : "",
@@ -1720,8 +1792,22 @@ export function buildICustomsDeclarationXml(
               upper(input.traderReference, 19),
             ),
           ),
+          direction === "import" && (clean(input.warehouseType) || clean(input.warehouseIdentifier))
+            ? group("Warehouse", element("ID", clean(input.warehouseIdentifier, 35)) + element("TypeCode", clean(input.warehouseType, 1))) : "",
         ].join(""),
       ),
+      ...(direction === "import" ? guaranteesForDraft(input).filter(hasGuaranteeValues).map(row => group("ObligationGuarantee", [
+        element("AmountAmount", row.amount, { currencyID: row.currency }),
+        element("ID", row.guaranteeId),
+        element("ReferenceID", row.grn),
+        element("SecurityDetailsCode", row.type),
+        element("AccessCode", row.accessCode),
+        row.office ? group("GuaranteeOffice", element("ID", row.office)) : "",
+      ].join(""))) : []),
+      direction === "import" && clean(input.presentationOffice)
+        ? group("PresentationOffice", element("ID", upper(input.presentationOffice, 8))) : "",
+      direction === "import" && clean(input.supervisingOffice)
+        ? group("SupervisingOffice", element("ID", upper(input.supervisingOffice, 8))) : "",
     ].join(""),
   );
 
@@ -2179,6 +2265,7 @@ export function iCustomsCommodityDetail(
     dutyRate,
     vatOptions,
     certificates: Array.from(certificatesByCode.values()),
+    quotas: commodityQuotas(value, direction),
   };
 }
 

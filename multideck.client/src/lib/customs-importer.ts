@@ -28,6 +28,8 @@ export function importerCompanyPatch(company: ApiCustomerDetail, addressId?: str
     importer: company.name, importerName: company.name,
     importerOrganisationId: company.id, importerAddressId: address?.id ?? "",
     importerEori: customsText(overrides, address?.id ?? "") || customsText(customs, "eoriNumber"),
+    importerVatNumber: customsText(customs, "vatNumber"),
+    importerUseCustomerTaxPartyDefault: customs.domesticDutyTaxUseCustomerByDefault === true,
     importerAddressLine: [address?.line1, address?.line2].filter(Boolean).join("\n"),
     importerCity: address?.townCity ?? "", importerPostcode: address?.postZipCode ?? "",
     importerCountry: address?.countryCode?.toUpperCase() ?? "",
@@ -63,6 +65,7 @@ export function applyImporterItemDefaults(item: ExportDeclarationItem, defaults?
 }
 
 export function applyImporterDefaults(draft: StandaloneExportDraft): StandaloneExportDraft {
+  draft = applyImporterTaxPartyDefault(draft)
   const defaults = draft.importerPaymentDefaults
   if (draft.direction !== "import" || !defaults) return draft
   const items = draft.items.map(item => applyImporterItemDefaults(item, defaults))
@@ -74,4 +77,20 @@ export function applyImporterDefaults(draft: StandaloneExportDraft): StandaloneE
     holders.push({ id: `importer-default-${category}`, category, identifier })
   }
   return { ...draft, items, primaryDefermentAccount: draft.primaryDefermentAccount || (anyDeferred ? defaults.defermentAccount : ""), additionalAuthorisationHolders: holders }
+}
+
+export function applyImporterTaxPartyDefault(draft: StandaloneExportDraft): StandaloneExportDraft {
+  const companyId = draft.importerOrganisationId
+  if (draft.direction !== "import" || !companyId || !draft.importerUseCustomerTaxPartyDefault || draft.importerTaxPartyDefaultAppliedFor === companyId) return draft
+  const rows = [...(draft.domesticDutyTaxParties ?? [])]
+  const customerIndex = rows.findIndex(row => row.useCustomer)
+  if (customerIndex >= 0 && !rows[customerIndex].roleCode) rows[customerIndex] = { ...rows[customerIndex], partyId: draft.importerVatNumber ?? "", roleCode: "FR1" }
+  // Apply once per selected company. Subsequent edits and deletions are operator choices.
+  if (!rows.some(row => row.useCustomer)) {
+    const emptyIndex = rows.findIndex(row => !row.partyId && !row.roleCode)
+    const row = { id: emptyIndex >= 0 ? rows[emptyIndex].id : `customer-tax-party-${companyId}`, partyId: draft.importerVatNumber ?? "", roleCode: "FR1", useCustomer: true }
+    if (emptyIndex >= 0) rows[emptyIndex] = row
+    else rows.push(row)
+  }
+  return { ...draft, domesticDutyTaxParties: rows, importerTaxPartyDefaultAppliedFor: companyId }
 }

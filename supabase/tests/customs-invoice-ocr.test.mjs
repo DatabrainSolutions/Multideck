@@ -1,3 +1,4 @@
+import { emptyCustomsInvoiceHeader } from "../functions/_shared/customs-invoices.mts"
 import assert from "node:assert/strict"
 import test from "node:test"
 import {
@@ -120,7 +121,7 @@ test("filters non-item annotations", () => {
     currency: null,
     lines: [{ description: "  " }, { description: null }],
   })
-  assert.deepEqual(result, { invoiceNumber: "", lines: [] })
+  assert.deepEqual(result, { invoiceNumber: "", invoiceHeader: emptyCustomsInvoiceHeader(""), lines: [] })
 })
 
 test("turns provider blocks into page-fraction boxes for the review screen", () => {
@@ -178,4 +179,20 @@ test("keeps block text inside a budget without losing the boxes", () => {
 test("returns no evidence when the provider sends no pages", () => {
   assert.deepEqual(normalizeInvoiceEvidencePages({}), [])
   assert.deepEqual(normalizeInvoiceEvidencePages(null), [])
+})
+
+test("commercial header extracts only explicit fields and never trusts an ordinary document exchange rate", () => {
+  const { invoiceHeader } = normalizeCommercialInvoiceAnnotation({ invoice_number: "INV-1", invoice_date: "2026-09-14", currency: "EUR", invoice_amount: 345.67, incoterms: "DAP", incoterms_place: "Leeds", transaction_nature: "11", gross_mass_kg: 20, net_mass_kg: 18, letter_of_credit_exchange_rate: 1.25, package_count: 3, package_kind: "CT", exchange_rate: 999, lines: [] })
+  assert.equal(invoiceHeader.totalAmount, "345.67")
+  assert.equal(invoiceHeader.invoiceDate, "2026-09-14")
+  assert.equal(invoiceHeader.tradeTermsLocation, "Leeds")
+  assert.equal(invoiceHeader.grossMass, "20")
+  assert.equal(invoiceHeader.netMass, "18")
+  assert.equal(invoiceHeader.letterOfCreditExchangeRate, "1.25")
+  assert.equal(invoiceHeader.packageCount, "3")
+  assert.equal(invoiceHeader.exchangeRate, "")
+  const absent = normalizeCommercialInvoiceAnnotation({ invoice_number: "INV-2", lines: [{ description: "Item", quantity: 2, unit_price: 99, currency: "USD" }] }).invoiceHeader
+  assert.equal(absent.totalAmount, "")
+  assert.equal(absent.currency, "")
+  assert.equal(absent.invoiceDate, "")
 })

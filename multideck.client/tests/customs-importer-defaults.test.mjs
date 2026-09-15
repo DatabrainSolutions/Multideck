@@ -12,6 +12,21 @@ function sourceModule(path) {
 const { importerCompanyPatch, formattedImporterAddress, applyImporterDefaults } = sourceModule('../src/lib/customs-importer.ts')
 const { createStandaloneDeclarationDraft, createExportDeclarationItem } = sourceModule('../src/lib/customs-declaration.ts')
 const defaults = { dutyPaymentMethod: 'E', vatPaymentMethod: 'E', defermentAccount: '1234567', cguDocumentId: 'GBCGU12345', dpoDocumentId: 'GBDPO67890', cguHolderEori: 'GB123456789000', dpoHolderEori: 'GB123456789000' }
+test('company tax-party preference uses VAT and FR1, retaining manual parties and later overrides', () => {
+  const company = { id: 'customer-one', name: 'Customer Name', addresses: [], operations: { customs: { vatNumber: 'GB123456789', eoriNumber: 'GB999999999000', domesticDutyTaxUseCustomerByDefault: true } } }
+  const source = { ...createStandaloneDeclarationDraft('import'), ...importerCompanyPatch(company) }
+  const initial = applyImporterDefaults(source)
+  assert.equal(initial.domesticDutyTaxParties.length, 1)
+  assert.deepEqual(initial.domesticDutyTaxParties[0], { id: source.domesticDutyTaxParties[0].id, partyId: 'GB123456789', roleCode: 'FR1', useCustomer: true })
+  const manual = { id: 'manual', partyId: 'FR123456789', roleCode: 'FR3' }
+  const appended = applyImporterDefaults({ ...source, domesticDutyTaxParties: [manual] })
+  assert.deepEqual(appended.domesticDutyTaxParties[0], manual)
+  assert.equal(appended.domesticDutyTaxParties[1].roleCode, 'FR1')
+  const overridden = { ...initial, domesticDutyTaxParties: [{ ...initial.domesticDutyTaxParties[0], useCustomer: false, roleCode: 'FR2' }] }
+  assert.deepEqual(applyImporterDefaults(JSON.parse(JSON.stringify(overridden))).domesticDutyTaxParties, overridden.domesticDutyTaxParties)
+  assert.deepEqual(applyImporterDefaults({ ...initial, domesticDutyTaxParties: [] }).domesticDutyTaxParties, [])
+  assert.deepEqual(applyImporterDefaults({ ...source, importerUseCustomerTaxPartyDefault: false }).domesticDutyTaxParties, source.domesticDutyTaxParties)
+})
 function draftWithLines(count) {
   return { ...createStandaloneDeclarationDraft('import'), importerPaymentDefaults: defaults, items: Array.from({ length: count }, (_, index) => ({ ...createExportDeclarationItem(index + 1), dutyCalculations: [{ id: `tax-${index}`, taxType: 'A00', paymentMethod: '', baseQuantity: '1', unitCode: 'KGM', declaredTax: '' }] })) }
 }

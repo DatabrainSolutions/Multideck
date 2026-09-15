@@ -30,6 +30,48 @@ Deno.test("import declaration references reach their documented XML fields", () 
   assert(!changed.includes("JOB-REF-0001") && !changed.includes("GB/TEST-MASTER") && !changed.includes("5GB021111237000-ICUSTOMSIMPORT"), "Previous references leaked into update");
 });
 
+Deno.test("NI EUPRF statement text reaches item XML and incomplete statements fail validation", () => {
+  const draft = validImportDeclaration();
+  draft.headerAdditionalInformationCode = "NIIMP";
+  draft.headerAdditionalInformationDescription = "Synthetic NI movement";
+  const item = (draft.items as Array<Record<string, unknown>>)[0];
+  item.preferenceCode = "300";
+  item.preferentialOrigin = "CN";
+  item.additionalInformationStatements = [{ statementCode: "EUPRF", statementDescription: "100" }, { statementCode: "TEST1", statementDescription: "Evidence & reference <retained>" }];
+  const before = JSON.stringify(draft), xml = buildICustomsH1ImportXml(draft);
+  assert(xml.includes("<StatementCode>EUPRF</StatementCode><StatementDescription>100</StatementDescription>"), "EU preference text omitted");
+  assert(xml.includes("Evidence &amp; reference &lt;retained&gt;"), "Statement text must be XML escaped");
+  assert(JSON.stringify(draft) === before, "Builder changed the saved draft");
+  assert(!validateICustomsH1Import(draft).some(issue => /EUPRF|additional information text/.test(issue)), "Valid statement rejected");
+  delete draft.headerAdditionalInformationCode;
+  assert(validateICustomsH1Import(draft).some(issue => /NIIMP/.test(issue)), "Missing NIIMP accepted");
+  item.additionalInformationStatements = [{ statementCode: "TEST1", statementDescription: "x".repeat(513) }];
+  assert(validateICustomsH1Import(draft).some(issue => /512/.test(issue)), "Overlong text silently truncated");
+  item.additionalInformationStatements = [{ statementCode: "", statementDescription: "Do not discard me" }];
+  assert(validateICustomsH1Import(draft).some(issue => /statement code/.test(issue)), "Uncoded text silently dropped");
+});
+
+Deno.test("processing claim validation preserves GEN86 and 9WKS without manufacturing a tax override", () => {
+  const draft = validImportDeclaration();
+  const item = (draft.items as Array<Record<string, unknown>>)[0];
+  Object.assign(item, { procedureCode: "4051", additionalProcedureCode: "F44", additionalInformationStatements: [] });
+  assert(validateICustomsH1Import(draft).some(issue => /GEN86/.test(issue)), "Missing processing statement accepted");
+  assert(validateICustomsH1Import(draft).some(issue => /9WKS/.test(issue)), "Missing worksheet accepted");
+  Object.assign(item, {
+    additionalInformationStatements: [{ statementCode: "GEN86", statementDescription: "Article 86(3)" }],
+    additionalDocuments: [{ category: "9", type: "WKS", reference: "QA-01 see attached worksheet", lpcoExemptionCode: "AC" }],
+  });
+  const before = JSON.stringify(draft);
+  assert(!validateICustomsH1Import(draft).some(issue => /GEN86|9WKS/.test(issue)), "Complete processing fields rejected");
+  const xml = buildICustomsH1ImportXml(draft);
+  assert(xml.includes("<StatementCode>GEN86</StatementCode><StatementDescription>Article 86(3)</StatementDescription>"), "GEN86 text lost");
+  assert(xml.includes("<ID>QA-01 see attached worksheet</ID>") && xml.includes("<TypeCode>WKS</TypeCode><LPCOExemptionCode>AC</LPCOExemptionCode>"), "Worksheet fields lost");
+  assert(!xml.includes("OVR01"), "Estimate created a manual tax override");
+  assert(JSON.stringify(draft) === before, "Processing validation changed declaration");
+  item.additionalDocuments = [];
+  assert(!validateICustomsB1Export({ ...draft, declarationCategory: "B1" }).some(issue => /GEN86|9WKS/.test(issue)), "Import processing rules leaked into exports");
+});
+
 Deno.test("import references with unconfirmed mappings cannot be silently dropped", () => {
   for (const field of ["badgeId", "declarantReference", "agentReference"]) {
     const issues = validateICustomsH1Import({ ...validImportDeclaration(), [field]: "TEST" });
@@ -59,6 +101,25 @@ Deno.test("exporter EORI is separate from its display name and rejects malformed
   assert(validateICustomsH1Import({ ...draft, exporterEori: "invalid value" }).some(issue => issue.includes("valid exporter EORI")), "Malformed exporter identifier must not be silently dropped");
 });
 
+Deno.test("import quota number uses the documented duty group without leaking into exports", () => {
+  const draft = validImportDeclaration();
+  const item = (draft.items as Array<Record<string, unknown>>)[0];
+  item.preferenceCode = "320"; item.quotaOrderNumber = "051867";
+  const xml = buildICustomsH1ImportXml(draft);
+  assert(xml.includes("<DutyTaxFee><DutyRegimeCode>320</DutyRegimeCode><QuotaOrderID>051867</QuotaOrderID></DutyTaxFee>"), "Quota and treatment must use the documented duty group");
+  assert(!xml.includes("<Preferences>"), "Obsolete preference wrapper must not be emitted");
+  const exportDraft = validDeclaration();
+  (exportDraft.items as Array<Record<string, unknown>>)[0].quotaOrderNumber = "051867";
+  assert(!buildICustomsB1ExportXml(exportDraft).includes("QuotaOrderID"), "Import quota must not leak into exports");
+  item.quotaOrderNumber = "0518670";
+  assert(validateICustomsH1Import(draft).some(issue => issue.includes("six-character")), "Do not silently truncate a different quota");
+  item.quotaOrderNumber = "";
+  assert(validateICustomsH1Import(draft).some(issue => issue.includes("Add the quota")), "Missing claimed quota must be explained");
+  item.quotaOrderNumber = "051867";
+  draft.dutyCalculationSetup = { jurisdiction: "NI", movement: "GB-to-NI" };
+  assert(validateICustomsH1Import(draft).some(issue => issue.includes("GB-to-NI")), "GB-to-NI must reject DE 8/1");
+});
+
 Deno.test("declarant company selection sends the registered identifier, not the display name", () => {
   const draft = { ...validImportDeclaration(), declarant: "Tenant company", declarantName: "Tenant company", declarantEori: "GB123456789000" };
   const xml = buildICustomsH1ImportXml(draft);
@@ -78,6 +139,20 @@ Deno.test("importer EORI, deferment accounts and repeated holders use documented
   assert(xml.includes("<Payment><MethodCode>E</MethodCode><PaymentAmount currencyID=\"GBP\">10</PaymentAmount></Payment>"), "Import payment must be nested in Payment");
   assert(!xml.includes("<PaymentMethodCode>"), "Legacy export payment tag leaked into import");
   assert(validateICustomsH1Import({ ...draft, importerEori: "not valid" }).some(issue => issue.includes("importer EORI")), "Invalid EORI accepted");
+});
+
+Deno.test("import validation rejects obsolete PVA01 without rewriting VAT or affecting exports", () => {
+  const draft = validImportDeclaration();
+  draft.headerAdditionalInformationCode = " pva01 ";
+  draft.headerAdditionalInformationDescription = "Legacy workaround";
+  const items = draft.items as Array<Record<string, unknown>>;
+  items[0].additionalInformationStatements = [{ statementCode: "PVA01" }];
+  items[0].dutyCalculations = [{ taxType: "B00", paymentMethod: "G", baseQuantity: "100", unitCode: "GBP", declaredTax: "0" }];
+  const before = JSON.stringify(draft);
+  const issues = validateICustomsH1Import(draft).filter(issue => issue.includes("PVA01"));
+  assert(issues.length === 2 && issues.some(issue => issue.includes("Item 1")), "Header and item obsolete codes must both be identified");
+  assert(JSON.stringify(draft) === before, "Validation must not rewrite submitted tax data");
+  assert(!validateICustomsB1Export({ ...draft, declarationCategory: "B1" }).some(issue => issue.includes("PVA01")), "Import safeguard must not alter export validation");
 });
 
 function occurrences(value: string, fragment: string) {
@@ -196,6 +271,7 @@ function validImportDeclaration(): ExportDeclarationInput {
     goodsLocationType: "A",
     transactionNature: "11",
     tradeTerms: "CIF",
+    tradeTermsLocation: "GBWLA",
     isContainerised: "0",
     items: [{
       commodityCode: "0803101000",
@@ -257,6 +333,12 @@ Deno.test("buildICustomsH1ImportXml follows the documented H1 contract", () => {
     xml.includes("<ConditionCode>CIF</ConditionCode>") &&
       xml.includes("<LocationID>GBWLA</LocationID>"),
     "Expected the documented trade terms.",
+  );
+  const manuallyLocated = validImportDeclaration();
+  manuallyLocated.tradeTermsLocation = "Seller's warehouse";
+  assert(
+    buildICustomsH1ImportXml(manuallyLocated).includes("<LocationID>Seller&apos;s warehouse</LocationID>"),
+    "Expected a manually entered Incoterms location to be preserved.",
   );
   assert(
     !xml.includes("<TotalNetMass"),
@@ -992,8 +1074,8 @@ Deno.test("buildICustomsH1ImportXml maps repeatable iCustoms item groups in ente
     "Expected two additional information statements.",
   );
   assert(
-    occurrences(xml, "<DutyTaxFee>") === 2,
-    "Expected two duty calculations.",
+    occurrences(xml, "<DutyTaxFee>") === 3 && occurrences(xml, "<DutyRegimeCode>") === 1 && occurrences(xml, "<SpecificTaxBaseQuantity") === 2,
+    "Expected one treatment group and two distinct duty calculations.",
   );
   assert(
     occurrences(xml, "<ValuationAdjustment>") === 2,

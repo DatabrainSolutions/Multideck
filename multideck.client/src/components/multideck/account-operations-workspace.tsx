@@ -1657,6 +1657,8 @@ function Customs({ account, draft, setDraft }: Props) {
       </div>
       <div className="mt-5">
         <SectionTitle title="Payment defaults" detail="Fill empty payment fields on matching import tax lines. Existing line entries are kept." />
+        <label className="mb-3 flex items-center gap-2 text-[12px] text-[var(--md-text)]"><Switch checked={data.domesticDutyTaxUseCustomerByDefault === true} onCheckedChange={checked => update("domesticDutyTaxUseCustomerByDefault", checked)} />{t("Domestic duty tax parties: use customer by default")}</label>
+        <p className="mb-3 text-[11px] text-[var(--md-subtle)]">{t("Adds the company VAT number as an FR1 tax party when selected as the importer. You can change this on each declaration.")}</p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Customs duty payment method"><Input value={value(data, "dutyPaymentMethod")} maxLength={1} onChange={event => update("dutyPaymentMethod", event.target.value.toUpperCase())} className={fieldClass} placeholder="E" /></Field>
           <Field label="Import VAT payment method"><Input value={value(data, "vatPaymentMethod")} maxLength={1} onChange={event => update("vatPaymentMethod", event.target.value.toUpperCase())} className={fieldClass} /></Field>

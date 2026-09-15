@@ -1,3 +1,5 @@
+import { resolveCustomsInvoiceDeclaration } from "../../../supabase/functions/_shared/customs-invoices.mts"
+import { restoreCustomsInvoiceHeaders } from "@/lib/customs-invoices"
 import { createExportDeclarationItem, createStandaloneDeclarationDraft, type DeclarationDirection, type ExportDeclarationItem, type StandaloneExportDraft } from "@/lib/customs-declaration"
 import { invalidateRegisterPages, readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"
 import type { UserProfilePhoto } from "@/lib/profile-photo"
@@ -267,14 +269,21 @@ export async function loadStandaloneDeclarationDraft(
     } as ExportDeclarationItem
   })
 
-  return {
+  return restoreCustomsInvoiceHeaders({
     ...createStandaloneDeclarationDraft(direction),
     ...saved,
+    invoiceHeaders: saved.invoiceHeaders as StandaloneExportDraft["invoiceHeaders"],
+    // Older import drafts stored the DE 4/1 location in the transport field.
+    tradeTermsLocation: typeof saved.tradeTermsLocation === "string"
+      ? saved.tradeTermsLocation
+      : direction === "import" && typeof saved.goodsLocationIdentifier === "string"
+        ? saved.goodsLocationIdentifier
+        : "",
     sourceBookingReference: scope === "job-related" ? String(record(declaration.CUST_SourceSnapshot).bookingReference ?? "") : "",
     multideckReference: declaration.CUST_LocalReferenceNumber ?? declaration.CUST_id,
     iCustomsCorrelationId: declaration.CUST_iCustomsExternalID,
     items: items.length ? items : [createExportDeclarationItem()],
-  } as StandaloneExportDraft
+  } as StandaloneExportDraft)
 }
 
 export async function reopenRejectedCustomsDeclaration(declarationId: string) {
@@ -294,7 +303,7 @@ export async function saveStandaloneDeclarationDraft(
   const { data, error } = await client
     .rpc(draft.direction === "import" ? "save_customs_import_draft" : "save_customs_export_draft", {
       p_declaration_id: declarationId ?? null,
-      p_draft: draft,
+      p_draft: resolveCustomsInvoiceDeclaration(draft),
     })
     .single()
 
@@ -316,7 +325,7 @@ export async function saveJobRelatedDeclarationDraft(
   const client = requireSupabase()
   const { data, error } = await client.rpc("save_job_customs_draft", {
     p_declaration_id: declarationId,
-    p_draft: draft,
+    p_draft: resolveCustomsInvoiceDeclaration(draft),
   }).single()
   if (error) throw error
   const saved = data as SaveDraftResultRow

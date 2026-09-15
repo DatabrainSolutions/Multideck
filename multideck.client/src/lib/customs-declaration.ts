@@ -1,4 +1,13 @@
+import { customsInvoiceErrors, customsInvoiceProjectionErrors, resolveCustomsInvoiceDeclaration, type CustomsInvoiceHeader } from "../../../supabase/functions/_shared/customs-invoices.mts"
+import type { CalculationSetup } from "../../../supabase/functions/_shared/customs-calculation-draft.mts"
 import { ducrFormatError } from "./customs-ducr.ts"
+import { importAdjustmentErrors, importAdjustmentsForDraft, isCustomsTradeTerm, isFreightAdjustment } from "../../../supabase/functions/_shared/customs-import-terms.mts"
+import { importDetailsErrors } from "../../../supabase/functions/_shared/customs-import-details.mts"
+import { obsoleteImportVatStatementIssue } from "../../../supabase/functions/_shared/customs-tax-submission-validation.mts"
+import { niPreferenceCodes } from "../../../supabase/functions/_shared/customs-ni-preference-codes.mts"
+import { processingReleaseFilingIssues } from "../../../supabase/functions/_shared/customs-processing-filing.mts"
+import { quotaClaimIssues } from "../../../supabase/functions/_shared/customs-quota-claim.mts"
+import { guaranteeErrors, type CustomsGuarantee } from "../../../supabase/functions/_shared/customs-guarantees.mts"
 import { additionalCustomsPartyIssues } from "../../../supabase/functions/_shared/customs-parties.mts"
 import type { ImporterPaymentDefaults } from "./customs-importer"
 import { importDefermentIssues } from "../../../supabase/functions/_shared/customs-importer-profile.ts"
@@ -34,7 +43,7 @@ export type CustomsAdditionalDocumentEntry = {
   writeOff: string
   validityDate: string
 }
-export type CustomsAdditionalInformationEntry = { id: string; statementCode: string }
+export type CustomsAdditionalInformationEntry = { id: string; statementCode: string; statementDescription?: string }
 export type CustomsDutyCalculationEntry = {
   id: string
   taxType: string
@@ -45,10 +54,11 @@ export type CustomsDutyCalculationEntry = {
 }
 export type CustomsValuationAdjustmentEntry = { id: string; code: string; currency: string; amount: string }
 export type CustomsPartyEntry = { id: string; partyId: string }
-export type CustomsFiscalPartyEntry = { id: string; partyId: string; roleCode: string }
+export type CustomsFiscalPartyEntry = { id: string; partyId: string; roleCode: string; useCustomer?: boolean }
 
 export type ExportDeclarationItem = {
   id: string
+  invoiceHeaderId?: string
   commodityCode: string
   description: string
   dangerousGoodsCode: string
@@ -101,12 +111,20 @@ export type ExportDeclarationItem = {
   freightPaymentMethod: string
   customsValuationMethod: string
   preferenceCode: string
+  quotaOrderNumber?: string
 }
 
 export type StandaloneExportDraft = {
+  dutyCalculationSetup?: CalculationSetup
+  invoiceHeaders?: CustomsInvoiceHeader[]
+  invoiceLegacySummary?: Record<string, string>
+  customsConversionDate?: string
   importerOrganisationId?: string
   importerAddressId?: string
   importerEori?: string
+  importerVatNumber?: string
+  importerUseCustomerTaxPartyDefault?: boolean
+  importerTaxPartyDefaultAppliedFor?: string
   importerPaymentDefaults?: ImporterPaymentDefaults
   additionalAuthorisationHolders?: { id: string; category: string; identifier: string }[]
   direction: DeclarationDirection
@@ -228,6 +246,8 @@ export type StandaloneExportDraft = {
   transactionNature: string
   exchangeRate: string
   tradeTerms: string
+  tradeTermsLocation: string
+  importAdjustments?: CustomsValuationAdjustmentEntry[]
   customsValuationMethod: string
   primaryDefermentAccount: string
   secondaryDefermentAccount: string
@@ -243,10 +263,12 @@ export type StandaloneExportDraft = {
   containerPackingCostCurrency: string
   exitOffice: string
   supervisingOffice: string
+  domesticDutyTaxParties: CustomsFiscalPartyEntry[]
   presentationOffice: string
   warehouseType: string
   warehouseIdentifier: string
   guaranteeType: string
+  guarantees?: CustomsGuarantee[]
   guaranteeReference: string
   guaranteeAccessCode: string
   guaranteeOffice: string
@@ -319,6 +341,7 @@ export function createExportDeclarationItem(index = 1): ExportDeclarationItem {
     freightPaymentMethod: "",
     customsValuationMethod: "",
     preferenceCode: "",
+    quotaOrderNumber: "",
   }
 }
 
@@ -402,6 +425,7 @@ export function createStandaloneDeclarationDraft(direction: DeclarationDirection
     transactionNature: "11",
     exchangeRate: "",
     tradeTerms: "",
+    tradeTermsLocation: "",
     customsValuationMethod: "",
     primaryDefermentAccount: "",
     secondaryDefermentAccount: "",
@@ -417,6 +441,7 @@ export function createStandaloneDeclarationDraft(direction: DeclarationDirection
     containerPackingCostCurrency: "",
     exitOffice: "",
     supervisingOffice: "",
+    domesticDutyTaxParties: [{ id: "header-tax-party-1", partyId: "", roleCode: "" }],
     presentationOffice: "",
     warehouseType: "",
     warehouseIdentifier: "",
@@ -450,7 +475,11 @@ function validPreviousDocumentReference(reference: string, type: string) {
 }
 
 export function validateStandaloneExportDraft(draft: StandaloneExportDraft): DeclarationIssue[] {
-  const issues: DeclarationIssue[] = []
+  draft = resolveCustomsInvoiceDeclaration(draft)
+  const issues: DeclarationIssue[] = [...customsInvoiceErrors(draft), ...customsInvoiceProjectionErrors(draft)].map((issue, index) => ({
+    id: `invoice-${index}`, scope: issue.itemIndex == null ? "general" : "item", field: issue.field, message: issue.message,
+    ...(issue.itemIndex == null ? {} : { itemId: draft.items[issue.itemIndex].id, itemNumber: issue.itemIndex + 1 }),
+  }))
   const requireGeneral = (field: keyof StandaloneExportDraft, message: string) => {
     const value = draft[field]
     if (typeof value === "string" && !value.trim()) issues.push({ id: `general-${String(field)}`, scope: "general", field: String(field), message })
@@ -519,8 +548,14 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
   if (draft.direction === "import") {
     requireGeneral("representationType", "Select the type of representation.")
     requireGeneral("tradeTerms", "Add the trade terms.")
-    requireGeneral("goodsLocationIdentifier", "Add the goods location identifier used for the trade terms.")
-    if (draft.tradeTerms.trim() && !/^[A-Z]{3}$/.test(draft.tradeTerms.trim())) {
+    requireGeneral("tradeTermsLocation", "Add the Incoterms location or UN/LOCODE.")
+    for (const error of guaranteeErrors(draft)) {
+      issues.push({ id: `general-${error.field}`, scope: "general", ...error })
+    }
+    for (const error of importDetailsErrors(draft)) {
+      issues.push({ id: `general-${error.field}`, scope: "general", ...error })
+    }
+    if (draft.tradeTerms.trim() && !isCustomsTradeTerm(draft.tradeTerms.trim())) {
       issues.push({ id: "general-trade-terms-format", scope: "general", field: "tradeTerms", message: "Use the three-letter trade terms code." })
     }
     if (draft.authorisationIdentifier.trim() || draft.authorisationCategory.trim()) {
@@ -529,6 +564,14 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
       }
     }
 
+    if (Array.isArray(draft.importAdjustments)) {
+      for (const error of importAdjustmentErrors(importAdjustmentsForDraft(draft))) {
+        issues.push({ id: `general-import-adjustment-${error.index}-${error.field}`, scope: "general", field: `importAdjustments.${error.index}.${error.field}`, message: `Addition or deduction ${error.index + 1}: ${error.message}` })
+      }
+      if (draft.importAdjustments.some((row) => ["AR", "AS", "BR", "BS"].includes(row.code) && positive(row.amount)) && !draft.loadingLocationId?.trim()) {
+        issues.push({ id: "general-air-adjustment-loading", scope: "general", field: "loadingLocationId", message: "Add the airport of loading in Transport for the air freight adjustment." })
+      }
+    } else {
     const importCosts = [
       ["freightChargeAmount", "freightChargeCurrency", draft.freightChargeAmount, draft.freightChargeCurrency, "freight costs"],
       ["vatValueAdjustmentAmount", "vatValueAdjustmentCurrency", draft.vatValueAdjustmentAmount, draft.vatValueAdjustmentCurrency, "VAT value adjustment"],
@@ -552,8 +595,9 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     if (!(["value", "gross_mass"] as const).includes(draft.vatValueAdjustmentApportionment)) {
       issues.push({ id: "general-vat-value-apportionment", scope: "general", field: "vatValueAdjustmentApportionment", message: "Choose how the VAT value adjustment is apportioned." })
     }
-    if (draft.tradeTerms.trim().toUpperCase() === "EXW" && !positive(draft.freightChargeAmount)) {
-      issues.push({ id: "general-exw-freight", scope: "general", field: "freightChargeAmount", message: "EXW imports require freight costs for CDS valuation." })
+    }
+    if (draft.tradeTerms.trim().toUpperCase() === "EXW" && !importAdjustmentsForDraft(draft).some((entry) => isFreightAdjustment(entry.code) && positive(entry.amount))) {
+      issues.push({ id: "general-exw-freight", scope: "general", field: "importAdjustments", message: "EXW imports require freight costs for CDS valuation." })
     }
   }
   if (draft.direction === "export") requireGeneral("exitOffice", "Select the customs office of exit.")
@@ -566,6 +610,8 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     }
   }
   if (draft.headerAdditionalInformationCode.trim() || draft.headerAdditionalInformationDescription.trim()) {
+    const obsoleteVatIssue = draft.direction === "import" ? obsoleteImportVatStatementIssue(draft.headerAdditionalInformationCode) : null
+    if (obsoleteVatIssue) issues.push({ id: "general-obsolete-vat-statement", scope: "general", field: "headerAdditionalInformationCode", message: obsoleteVatIssue })
     if (!/^[A-Z0-9]{1,5}$/.test(draft.headerAdditionalInformationCode.trim().toUpperCase()) || !draft.headerAdditionalInformationDescription.trim()) {
       issues.push({
         id: "general-header-additional-information",
@@ -616,6 +662,16 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
       message,
     })
     const commodityCodeLength = draft.direction === "export" ? 8 : 10
+    if (draft.direction === "import") {
+      processingReleaseFilingIssues(item, { code: draft.headerAdditionalInformationCode, description: draft.headerAdditionalInformationDescription }).forEach(issue => push(issue.field, issue.message))
+      niPreferenceCodes({ ...item, headerAdditionalInformationCode: draft.headerAdditionalInformationCode, jurisdiction: draft.dutyCalculationSetup?.jurisdiction ?? "NI" }).issues.forEach(issue => push("additionalInformationStatements", issue))
+      item.additionalInformationStatements.forEach(entry => {
+      const issue = obsoleteImportVatStatementIssue(entry.statementCode)
+      if (issue) push("additionalInformationStatements", issue)
+      if ((entry.statementDescription?.length ?? 0) > 512) push("additionalInformationStatements", "Keep additional information text within 512 characters.")
+      if (entry.statementDescription?.trim() && !entry.statementCode.trim()) push("additionalInformationStatements", "Add a statement code for the additional information text.")
+      })
+    }
     if (!new RegExp(`^\\d{${commodityCodeLength}}$`).test(item.commodityCode)) push("commodityCode", `Enter ${commodityCodeLength === 8 ? "an" : "a"} ${commodityCodeLength}-digit commodity code.`)
     if (!item.description.trim()) push("description", "Add a goods description.")
     if (draft.direction === "export" && draft.declarationCategory !== "B1" && !item.consignor.trim()) push("consignor", "Add the consignor for this goods item.")
@@ -638,6 +694,8 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     if (item.previousDocumentReference.trim() && !validPreviousDocumentReference(item.previousDocumentReference, item.previousDocumentType)) push("previousDocumentReference", item.previousDocumentType === "DCR" ? "Use the DUCR format: year, country, 12-character EORI, hyphen and unique reference." : "Use up to 35 letters and numbers for the previous document reference.")
     if (draft.direction === "import" && !item.customsValuationMethod.trim()) push("customsValuationMethod", "Add the customs valuation method.")
     if (draft.direction === "import" && !/^\d{3}$/.test(item.preferenceCode.trim())) push("preferenceCode", "Add the three-digit preference code.")
+    if (draft.direction === "import" && /^[234]\d{2}$/.test(item.preferenceCode.trim()) && !item.preferentialOrigin?.trim()) push("preferentialOrigin", "Select the preferential origin shown on the proof of origin for this claim.")
+    if (draft.direction === "import") quotaClaimIssues(item.quotaOrderNumber, item.preferenceCode, draft.dutyCalculationSetup).forEach(message => push("quotaOrderNumber", message))
     item.additionalPackageDetails.forEach((entry) => {
       if ((entry.kind || entry.marks || entry.count) && (!entry.kind || !entry.marks.trim() || !positive(entry.count) || !Number.isInteger(Number(entry.count)))) push("additionalPackageDetails", "Complete every added package detail.")
     })
@@ -658,7 +716,7 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
       if ((entry.code || entry.currency || entry.amount) && (!entry.code || !entry.currency || !positive(entry.amount))) push("valuationAdjustments", "Complete every addition or deduction.")
     })
     if (draft.direction === "import") {
-      const headerCostCodes = new Set([
+      const headerCostCodes = new Set(Array.isArray(draft.importAdjustments) ? draft.importAdjustments.filter((entry) => positive(entry.amount)).map((entry) => entry.code) : [
         positive(draft.freightChargeAmount) ? (draft.freightChargeApportionment === "gross_mass" ? "AQ" : "AP") : "",
         positive(draft.vatValueAdjustmentAmount) ? (draft.vatValueAdjustmentApportionment === "gross_mass" ? "AW" : "AV") : "",
         positive(draft.insuranceCostAmount) ? "AK" : "",

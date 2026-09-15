@@ -1,3 +1,4 @@
+import { normalizeCustomsInvoiceHeader, type CustomsInvoiceHeader } from "../../../supabase/functions/_shared/customs-invoices.mts"
 import {
   refreshWorkspaceSession,
   getSupabaseSession,
@@ -34,6 +35,7 @@ export type InvoiceDocumentMetadata = {
 }
 
 export type CommercialInvoiceExtractionResult = {
+  invoiceHeader: CustomsInvoiceHeader
   extractionId: string
   invoiceNumber: string
   lines: ExtractedInvoiceLine[]
@@ -364,6 +366,9 @@ async function errorMessage(response: Response, fallback: string) {
 function normalizeResult(payload: unknown): CommercialInvoiceExtractionResult {
   const result = asRecord(payload)
   const extractionId = text(result.extractionId)
+  if (!result.invoiceHeader || typeof result.invoiceHeader !== "object" || Array.isArray(result.invoiceHeader)) {
+    throw new CommercialInvoiceExtractionError("This saved extraction does not include invoice header details. Upload the invoice again to extract its date, currency and totals.", 409)
+  }
   const sourceLines = Array.isArray(result.lines) ? result.lines : []
   const lines = sourceLines.map(normalizeLine).filter((line): line is ExtractedInvoiceLine => line !== null)
   if (!uuidPattern.test(extractionId) || !lines.length) {
@@ -372,6 +377,7 @@ function normalizeResult(payload: unknown): CommercialInvoiceExtractionResult {
   return {
     extractionId,
     invoiceNumber: text(result.invoiceNumber),
+    invoiceHeader: normalizeCustomsInvoiceHeader(result.invoiceHeader),
     lines,
     model: text(result.model),
     requestedModel: text(result.requestedModel),

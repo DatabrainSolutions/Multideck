@@ -4,6 +4,7 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { currentFunction } from './operational-access-source.mjs'
 
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
@@ -118,6 +119,39 @@ test('approval accepts current/legacy server claims and denies browser, scope, s
         exception when insufficient_privilege then null; end;
       end$$;
       reset role;
+      create schema private;
+      alter table public."AI_DexterPreparedActions" add column "AIDexterPrepared_ActionCode" text;
+      create table public."sys_AIDexterActions" (
+        "AIDexterAction_Code" text primary key, "AIDexterAction_DomainCode" text,
+        "AIDexterAction_Name" text, "AIDexterAction_Description" text, "AIDexterAction_Function" text,
+        "AIDexterAction_ParametersJSON" jsonb, "AIDexterAction_SortOrder" integer,
+        "AIDexterAction_IsActive" boolean, "AIDexterAction_RequiredPermissionsJSON" jsonb,
+        "AIDexterAction_IntentFamily" text, "AIDexterAction_HasExternalEffect" boolean,
+        "AIDexterAction_UpdatedAt" timestamptz, "AIDexterAction_AlwaysRequiresApproval" boolean
+      );
+      ${readMigration('20260914180000_customs_calculation_dexter_actions')}
+      ${readMigration('20260914235436_customs_assessment_dexter_action')}
+      ${currentFunction('private', 'multideck_dexter_guard_mandatory_approval').sql}
+      create trigger approval_guard before update on public."AI_DexterPreparedActions"
+        for each row execute function private.multideck_dexter_guard_mandatory_approval();
+      do $$declare code text; prepared public."AI_DexterPreparedActions"; begin
+        foreach code in array array['calculate_customs_duties','override_customs_calculation','record_customs_assessment_comparison'] loop
+          if not exists(select 1 from public."sys_AIDexterActions" where "AIDexterAction_Code"=code
+            and "AIDexterAction_AlwaysRequiresApproval" and "AIDexterAction_IsActive"
+            and "AIDexterAction_RequiredPermissionsJSON"='["Customs.Write"]'::jsonb
+            and "AIDexterAction_Function"='multideck_dexter_action_icustoms_edge_only') then
+            raise exception 'Calculation action registration is not approval-safe'; end if;
+          update public."AI_DexterPreparedActions" set "AIDexterPrepared_ActionCode"=code,
+            "AIDexterPrepared_Status"='prepared', "AIDexterPrepared_ApprovedAt"=null;
+          begin
+            update public."AI_DexterPreparedActions" set "AIDexterPrepared_Status"='executing';
+            raise exception 'Calculation action executed without approval';
+          exception when insufficient_privilege then null; end;
+          select * into prepared from public."AI_DexterPreparedActions" limit 1;
+          if not public.multideck_dexter_approve_prepared_action(prepared."AIDexterPrepared_ID", prepared."AIDexterPrepared_CompanyID", prepared."AIDexterPrepared_UserID", prepared."AIDexterPrepared_ConversationID") then raise exception 'Calculation approval failed'; end if;
+          update public."AI_DexterPreparedActions" set "AIDexterPrepared_Status"='executing';
+        end loop;
+      end$$;
     `
     run('psql', ['-h', directory, '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], sql)
   } finally {
