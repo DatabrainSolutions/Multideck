@@ -536,6 +536,9 @@ verify_jwt = false
 [functions.icustoms-api]
 verify_jwt = true
 
+[functions.multideck-cloud-product]
+verify_jwt = true
+
 [functions.icustoms-webhook]
 verify_jwt = false
 
@@ -598,3 +601,10 @@ verify_jwt = false
 
 [functions.live-grant-admin]
 verify_jwt = false
+
+# Explicit package settings; both handlers also authorise the active user.
+[functions.customs-declaration-document]
+verify_jwt = true
+
+[functions.dexter-file-upload]
+verify_jwt = true

@@ -1,4 +1,5 @@
 import type { SupabaseClient, User } from "npm:@supabase/supabase-js@2.108.2";
+import { requireProductAccess } from "../_shared/cloud-product-access.ts";
 import { requiredImportReferences } from "../_shared/customs-ducr.mts";
 import {
   adminClient,
@@ -1260,6 +1261,7 @@ Deno.serve(async (request) => {
     const admin = adminClient();
     const { user, token } = await authenticate(request, admin);
     const actor = await currentInternalUser(admin, user) as Actor;
+    await requireProductAccess("icustoms");
     const parts = routeParts(request, "icustoms-api");
     const method = request.method.toUpperCase();
 
