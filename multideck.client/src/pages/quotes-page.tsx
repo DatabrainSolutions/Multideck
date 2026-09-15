@@ -88,7 +88,6 @@ import { createProfilePhotoSignedUrl, createProfilePhotoSignedUrls } from "@/lib
 import { authSupabase, supabase } from "@/lib/supabase"
 import {
   loadUnlocodeDirectory,
-  loadUnlocodeDirectoryMetadata,
   unlocodeKind,
   type UnlocodeDirectoryRecord,
 } from "@/lib/unlocode-directory"
@@ -1246,7 +1245,7 @@ function QuoteField({
   const stringValue = typeof value === "string" || typeof value === "number" ? String(value) : ""
 
   return (
-    <div className="min-w-0">
+    <div className="md-horizontal-field min-w-0">
       <p className="text-[11px] font-medium leading-4 text-[var(--md-subtle)]">{t(label)}</p>
       {editable && options ? (
         <Select value={stringValue || undefined} onValueChange={(nextValue) => onChange?.(nextValue)}>
@@ -1255,7 +1254,7 @@ function QuoteField({
             aria-required={required || undefined}
             aria-invalid={invalid || undefined}
             className={cn(
-              "mt-1 h-8 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] px-2 text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+              "h-8 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] px-2 text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
               invalid && "ring-1 ring-[var(--md-red)]",
             )}
           >
@@ -1268,6 +1267,7 @@ function QuoteField({
       ) : editable ? (
         <Input
           value={stringValue}
+          aria-label={t(label)}
           onChange={(event) => onChange?.(event.target.value)}
           required={required}
           aria-invalid={invalid || undefined}
@@ -1275,7 +1275,7 @@ function QuoteField({
           data-i18n-skip={skipTranslation || undefined}
           dir="auto"
           className={cn(
-            "mt-1 h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+            "h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
             invalid && "ring-1 ring-[var(--md-red)]",
           )}
         />
@@ -1284,7 +1284,7 @@ function QuoteField({
           data-i18n-skip={skipTranslation || undefined}
           dir="auto"
           className={cn(
-            "mt-1 flex min-h-8 items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 py-1.5 text-[11px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+            "flex min-h-8 items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 py-1.5 text-[11px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
             muted && "text-[var(--md-subtle)]",
             invalid && "ring-1 ring-[var(--md-red)]",
           )}
@@ -1313,7 +1313,7 @@ function QuoteMultiSelectField({
   const { t } = useLanguage()
 
   return (
-    <div className="grid min-w-0 gap-1">
+    <div className="md-horizontal-field grid min-w-0 gap-1">
       <p className="text-[11px] font-medium leading-3 text-[var(--md-subtle)]">{t(label)}</p>
       <MultiSelectMenu
         value={parseTransportModes(value)}
@@ -3837,7 +3837,6 @@ function QuoteDetailsPanelV2({
   const overallModeCancelRef = useRef<HTMLButtonElement>(null)
   const [unlocodeDirectory, setUnlocodeDirectory] = useState<readonly UnlocodeDirectoryRecord[]>([])
   const [unlocodeDirectoryStatus, setUnlocodeDirectoryStatus] = useState<"loading" | "ready" | "error">("loading")
-  const [unlocodeDirectoryCount, setUnlocodeDirectoryCount] = useState(0)
   const organisations = useMemo(() => lookups?.organisations ?? [], [lookups?.organisations])
   const currencies = useMemo(() => lookups?.currencies.map((option) => option.code) ?? ["GBP", "EUR", "USD"], [lookups?.currencies])
   const modes = useMemo(() => lookups?.modes.map((option) => option.name) ?? cargoWiseModeOptions, [lookups?.modes])
@@ -3855,11 +3854,10 @@ function QuoteDetailsPanelV2({
   useEffect(() => {
     let cancelled = false
     setUnlocodeDirectoryStatus("loading")
-    void Promise.all([loadUnlocodeDirectory(), loadUnlocodeDirectoryMetadata()])
-      .then(([records, metadata]) => {
+    void loadUnlocodeDirectory()
+      .then((records) => {
         if (cancelled) return
         setUnlocodeDirectory(records)
-        setUnlocodeDirectoryCount(metadata.recordCount)
         setUnlocodeDirectoryStatus("ready")
       })
       .catch(() => {
@@ -4418,14 +4416,14 @@ function QuoteDetailsPanelV2({
         key={role}
         title={title}
         meta={role === "consignee" ? (selectedId ? "Linked" : "Manual entry") : undefined}
-        className="[&>header]:h-8 [&>header]:overflow-hidden"
+        className="md-party-section [&>header]:h-8 [&>header]:overflow-hidden"
         action={headerAction ?? (
           <Button type="button" variant="ghost" size="sm" disabled={!editable || !quote.customer} onClick={() => useCustomerForParty(role)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]">
             <Copy className="size-3" aria-hidden="true" />{t("Use customer")}
           </Button>
         )}
       >
-        <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
+        <div className="md-party-fields">
           <CompactCombobox
             label="Company"
             value={name}
@@ -4438,7 +4436,7 @@ function QuoteDetailsPanelV2({
             placeholder={`Search ${roleSearchLabel} or type manually`}
             disabled={!editable}
             width="full"
-            className="col-span-12"
+            className="md-party-name"
             onValueChange={(value) => {
               onQuoteChange(role === "shipper" ? "shipperName" : role === "consignee" ? "consigneeName" : "agentName", value)
               const selected = organisations.find((item) => item.id === selectedId)
@@ -4446,11 +4444,11 @@ function QuoteDetailsPanelV2({
             }}
             onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)}
           />
-          <CompactCombobox label="Account code" value={code} options={codeOptions} placeholder="Search account codes" allLabel={`All ${roleSearchLabel} codes`} emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-7 [&_input]:tracking-tight" autoPopulated={matchesAutoPopulation(code, selectedOrganisation?.code)} autoPopulationDescription={autoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode(role, value)) return; onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value); const selected = organisations.find((item) => item.id === selectedId); if (selected && selected.code !== value) onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)} />
-          <QuoteCompactInput label={`${title} ref`} value={reference} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperReference" : role === "consignee" ? "consigneeReference" : "agentReference", value)} />
+          <CompactCombobox label="Account code" value={code} options={codeOptions} placeholder="Search account codes" allLabel={`All ${roleSearchLabel} codes`} emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="md-party-code [&_input]:tracking-tight" autoPopulated={matchesAutoPopulation(code, selectedOrganisation?.code)} autoPopulationDescription={autoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode(role, value)) return; onQuoteChange(role === "shipper" ? "shipperCode" : role === "consignee" ? "consigneeCode" : "agentCode", value); const selected = organisations.find((item) => item.id === selectedId); if (selected && selected.code !== value) onQuoteChange(role === "shipper" ? "shipperOrgId" : role === "consignee" ? "consigneeOrgId" : "agentOrgId", "") }} onOptionSelect={(option) => option.id && selectOrganisation(role, option.id)} />
+          <QuoteCompactInput label={`${title} ref`} value={reference} width="full" className="md-party-reference" disabled={!editable} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperReference" : role === "consignee" ? "consigneeReference" : "agentReference", value)} />
           <CompactCombobox label="Address" value={address} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(address, selectedOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={autoPopulationDescription} options={addresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress(role, option.id)} onValueChange={(value) => onQuoteChange(role === "shipper" ? "shipperAddress" : role === "consignee" ? "consigneeAddress" : "agentAddress", value)} />
-          <CompactCombobox label="Operational contact" value={contact} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(contact, selectedContact?.name)} autoPopulationDescription={autoPopulationDescription} options={operationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact(role, option.id)} onValueChange={(value) => onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", value)} />
-          <QuoteCompactInput label="Email" value={email} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(email, selectedContact?.email)} autoPopulationDescription={autoPopulationDescription} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", value)} />
+          <CompactCombobox label="Operational contact" value={contact} width="full" className="md-party-contact" disabled={!editable} autoPopulated={matchesAutoPopulation(contact, selectedContact?.name)} autoPopulationDescription={autoPopulationDescription} options={operationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact(role, option.id)} onValueChange={(value) => onQuoteChange(role === "shipper" ? "shipperContact" : role === "consignee" ? "consigneeContact" : "agentContact", value)} />
+          <QuoteCompactInput label="Email" value={email} type="email" width="full" className="md-party-email" disabled={!editable} autoPopulated={matchesAutoPopulation(email, selectedContact?.email)} autoPopulationDescription={autoPopulationDescription} onChange={(value) => onQuoteChange(role === "shipper" ? "shipperEmail" : role === "consignee" ? "consigneeEmail" : "agentEmail", value)} />
         </div>
       </CompactSectionShell>
     )
@@ -4510,15 +4508,15 @@ function QuoteDetailsPanelV2({
       </CompactSectionShell>
 
       <div className="grid items-stretch gap-2 @min-[40rem]/quote-details:grid-cols-2 @min-[72rem]/quote-details:grid-cols-3">
-        {leadSourceParty === "customer" ? <CompactSectionShell title="Customer / Billing" action={leadSourceToggle} className="[&>header]:h-8 [&>header]:overflow-hidden">
-          <div className="grid min-w-0 grid-cols-12 gap-x-2 gap-y-1.5">
-            <CompactCombobox label="Customer" value={quote.customer} options={organisationDirectories.customer.options} clearable={!quote.customerId} onValueChange={(value) => { if (quote.customerId && customerOrganisation?.name !== value) return; const clearOrganisation = Boolean(customerOrganisation && customerOrganisation.name !== value); onQuotePatch({ customer: value, payerName: value, ...(clearOrganisation ? { customerId: "", payerOrgId: "" } : {}) }) }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="col-span-12" />
-            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationDirectories.customer.codes} clearable={!quote.customerId} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; if (quote.customerId && customerOrganisation?.code !== value) return; const clearOrganisation = Boolean(customerOrganisation && customerOrganisation.code !== value); onQuotePatch({ clientCode: value, payerCode: value, ...(clearOrganisation ? { customerId: "", payerOrgId: "" } : {}) }) }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="col-span-7 [&_input]:tracking-tight" />
-            <QuoteCompactInput label="Customer PO" value={quote.customerPO ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("customerPO", value)} />
+        {leadSourceParty === "customer" ? <CompactSectionShell title="Customer / Billing" action={leadSourceToggle} className="md-party-section [&>header]:h-8 [&>header]:overflow-hidden">
+          <div className="md-party-fields">
+            <CompactCombobox label="Customer" value={quote.customer} options={organisationDirectories.customer.options} clearable={!quote.customerId} onValueChange={(value) => { if (quote.customerId && customerOrganisation?.name !== value) return; const clearOrganisation = Boolean(customerOrganisation && customerOrganisation.name !== value); onQuotePatch({ customer: value, payerName: value, ...(clearOrganisation ? { customerId: "", payerOrgId: "" } : {}) }) }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search customers or type manually" allLabel="All customers" emptyLabel="No matching customer company" disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customer.trim()} width="full" className="md-party-name" />
+            <CompactCombobox label="Account code" value={quote.clientCode ?? ""} options={organisationDirectories.customer.codes} clearable={!quote.customerId} autoPopulated={matchesAutoPopulation(quote.clientCode, customerOrganisation?.code)} autoPopulationDescription={customerAutoPopulationDescription} onValueChange={(value) => { if (selectOrganisationByCode("customer", value)) return; if (quote.customerId && customerOrganisation?.code !== value) return; const clearOrganisation = Boolean(customerOrganisation && customerOrganisation.code !== value); onQuotePatch({ clientCode: value, payerCode: value, ...(clearOrganisation ? { customerId: "", payerOrgId: "" } : {}) }) }} onOptionSelect={(option) => option.id && selectOrganisation("customer", option.id)} placeholder="Search account codes" allLabel="All customer codes" emptyLabel="No matching account code" disabled={!editable} width="full" valueDirection="ltr" className="md-party-code [&_input]:tracking-tight" />
+            <QuoteCompactInput label="Customer PO" value={quote.customerPO ?? ""} width="full" className="md-party-short" disabled={!editable} onChange={(value) => onQuoteChange("customerPO", value)} />
+            <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="md-party-short" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
             <CompactCombobox label="Billing address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerAutoPopulationDescription} options={customerAddresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress("customer", option.id)} onValueChange={(value) => onQuotePatch({ customerAddress: value, payerAddress: value })} />
-            <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="col-span-5" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
-            <CompactCombobox label="Billing contact" value={quote.customerContact ?? ""} width="full" className="col-span-7" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => onQuotePatch({ customerContact: value, payerContact: value, ...(value !== quote.customerContact ? { contactId: "" } : {}) })} />
-            <QuoteCompactInput label="Billing email" value={quote.customerEmail ?? ""} type="email" width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuotePatch({ customerEmail: value, payerEmail: value })} />
+            <CompactCombobox label="Billing contact" value={quote.customerContact ?? ""} width="full" className="md-party-contact" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => onQuotePatch({ customerContact: value, payerContact: value, ...(value !== quote.customerContact ? { contactId: "" } : {}) })} />
+            <QuoteCompactInput label="Billing email" value={quote.customerEmail ?? ""} type="email" width="full" className="md-party-email" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuotePatch({ customerEmail: value, payerEmail: value })} />
           </div>
         </CompactSectionShell> : roleCard("agent", leadSourceToggle)}
         {roleCard("shipper")}
@@ -4540,7 +4538,7 @@ function QuoteDetailsPanelV2({
               {containerRequests.map((request, index) => {
                 const rowInvalid = requireCoreFields && validationAttempted && (!request.quantity || !request.type.trim())
                 return (
-                  <div key={request.id} className="grid min-w-0 items-start gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(7rem,0.5fr)_minmax(11rem,1.15fr)_minmax(5rem,0.35fr)_minmax(10rem,0.8fr)_2rem_7.5rem] @min-[80rem]/quote-details:grid-cols-[18rem_minmax(0,1fr)_6rem_12rem_2rem_7.5rem]">
+                  <div key={request.id} className="md-freight-container-row flex min-w-0 flex-wrap items-center gap-2">
                     {index === 0 ? (
                       <>
                         <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
@@ -4594,7 +4592,7 @@ function QuoteDetailsPanelV2({
               ) : null}
             </div>
           ) : (
-            <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(8rem,0.55fr)_minmax(18rem,1.6fr)]">
+            <div className="md-quote-terms-grid">
               <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
               <QuoteCompactInput label={incotermNamedPlaceLabel} value={quote.incotermPlace ?? ""} width="full" required={Boolean(incotermDefinition)} invalid={requireCoreFields && validationAttempted && incotermNamedPlaceMissing} disabled={!editable} onChange={(value) => onQuoteChange("incotermPlace", value)} />
             </div>
@@ -4606,16 +4604,16 @@ function QuoteDetailsPanelV2({
               <QuoteCompactSelect label="Customs clearance" value={quote.customsIncluded ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customsIncluded?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("customsIncluded", value)} />
             </div>
           ) : null}
-          <div className="grid gap-2 xl:grid-cols-2">
-            <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
-            <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} directoryCount={unlocodeDirectoryCount} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
+          <div className="md-quote-locations-grid">
+            <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
+            <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
           </div>
-          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,0.72fr)_minmax(10rem,0.72fr)_minmax(10rem,0.7fr)_minmax(24rem,1.7fr)] @min-[80rem]/quote-details:grid-cols-6 xl:items-start">
+          <div className="md-quote-routing-grid">
             <QuoteCompactInput label="Via" value={quote.via} width="full" disabled={!editable} onChange={(value) => onQuoteChange("via", value)} />
-            <QuoteCompactDatePicker label="ETD" value={quote.estimatedDeparture ?? ""} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(0, { estimatedDeparture: value }) : onQuotePatch({ estimatedDeparture: value, transitDays: quoteTransitDays(value, quote.estimatedArrival), transitUnit: "Days" })} />
-            <QuoteCompactDatePicker label="ETA" value={quote.estimatedArrival ?? ""} minDate={quote.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(routingLegs.length - 1, { estimatedArrival: value }) : onQuotePatch({ estimatedArrival: value, transitDays: quoteTransitDays(quote.estimatedDeparture, value), transitUnit: "Days" })} />
+            <QuoteCompactDatePicker label="ETD" width="full" value={quote.estimatedDeparture ?? ""} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(0, { estimatedDeparture: value }) : onQuotePatch({ estimatedDeparture: value, transitDays: quoteTransitDays(value, quote.estimatedArrival), transitUnit: "Days" })} />
+            <QuoteCompactDatePicker label="ETA" width="full" value={quote.estimatedArrival ?? ""} minDate={quote.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(routingLegs.length - 1, { estimatedArrival: value }) : onQuotePatch({ estimatedArrival: value, transitDays: quoteTransitDays(quote.estimatedDeparture, value), transitUnit: "Days" })} />
             <NumberUnitField label="Transit time" value={{ value: quoteTransitDays(quote.estimatedDeparture, quote.estimatedArrival) || quote.transitDays || "", unit: "Days" }} units={[{ value: "Days", label: "Days" }]} width="full" disabled onChange={() => undefined} />
-            <div className="min-w-0 @min-[80rem]/quote-details:col-span-2"><RecurrenceBuilder value={recurrence} onChange={updateRecurrence} disabled={!editable} /></div>
+            <div className="min-w-0"><RecurrenceBuilder value={recurrence} onChange={updateRecurrence} disabled={!editable} /></div>
           </div>
           {routingLegs.length > 0 ? (
             <div className="grid gap-1.5" role="group" aria-label={t("Planned routing legs")}>
@@ -4629,7 +4627,7 @@ function QuoteDetailsPanelV2({
                 </Button>
               </div>
               {routingLegs.map((leg, index) => (
-                <div key={leg.id} className="grid min-w-0 gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)] xl:grid-cols-[5.5rem_minmax(10rem,1fr)_minmax(10rem,1fr)_9rem_9rem_minmax(11rem,1fr)_8rem] xl:items-end">
+                <div key={leg.id} className="grid min-w-0 gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)] grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] items-center">
                   <QuoteCompactSelect label={`Leg ${index + 1} mode`} value={leg.mode} options={modes} width="full" disabled={!editable} dataOptions onChange={(value) => updateRoutingLeg(index, { mode: value })} />
                   <CompactCombobox label={`Leg ${index + 1} origin`} value={leg.origin.unlocode || leg.origin.place} options={routeLocationOptions} recommendedOptionLimit={3} placeholder="Search place or UN/LOCODE" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLocation(index, "origin", value)} onOptionSelect={(option) => updateRoutingLocation(index, "origin", option.value, option)} />
                   <CompactCombobox label={`Leg ${index + 1} destination`} value={leg.destination.unlocode || leg.destination.place} options={routeLocationOptions} recommendedOptionLimit={3} placeholder="Search place or UN/LOCODE" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLocation(index, "destination", value)} onOptionSelect={(option) => updateRoutingLocation(index, "destination", option.value, option)} />

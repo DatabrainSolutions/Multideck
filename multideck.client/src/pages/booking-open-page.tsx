@@ -75,7 +75,7 @@ export function BookingOpenPage({ navigate, initialMode, onCancel, returnFocus }
           if (error) retry()
           else setRequestedDirection(direction)
         }}>
-          <div className="space-y-2">
+          <div className="md-horizontal-field">
             <label htmlFor="booking-opening-direction" className="text-[13px] font-medium">{t("Direction")}</label>
             <Select value={direction} onValueChange={value => setDirection(value as BookingOpeningDirection)} disabled={Boolean(requestedDirection)}>
               <SelectTrigger id="booking-opening-direction" aria-required="true" className="w-full">

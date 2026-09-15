@@ -58,9 +58,9 @@ import {
 export type CompactFieldWidth = "code" | "short" | "medium" | "long" | "grow" | "full"
 
 const compactFieldWidthClass: Record<CompactFieldWidth, string> = {
-  code: "w-full sm:w-[9rem] sm:max-w-[11rem] sm:flex-none",
-  short: "w-full sm:w-[12rem] sm:max-w-[15rem] sm:flex-none",
-  medium: "w-full sm:w-[17rem] sm:max-w-[22rem] sm:flex-none",
+  code: "w-full sm:w-[15rem] sm:max-w-[17rem] sm:flex-none",
+  short: "w-full sm:w-[18rem] sm:max-w-[21rem] sm:flex-none",
+  medium: "w-full sm:w-[22rem] sm:max-w-[26rem] sm:flex-none",
   long: "w-full sm:w-[24rem] sm:max-w-[32rem] sm:flex-none",
   grow: "w-full sm:min-w-[17rem] sm:flex-[1_1_22rem]",
   full: "w-full flex-[1_0_100%]",
@@ -123,9 +123,9 @@ export function CompactFieldShell({
   const { t } = useLanguage()
 
   return (
-    <div className={cn("grid min-w-0 content-start gap-1", compactFieldWidthClass[width], className)}>
-      <div className="flex min-h-4 items-baseline justify-between gap-2">
-        <label htmlFor={htmlFor} className="min-w-0 truncate text-[10.5px] font-medium leading-4 text-[var(--md-text)]">
+    <div className={cn("md-compact-field grid min-w-0 content-start gap-1", compactFieldWidthClass[width], className)}>
+      <div className="md-compact-field-label flex min-h-4 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <label htmlFor={htmlFor} className="min-w-0 whitespace-normal text-[11px] font-medium leading-4 text-[var(--md-text)]">
           {t(label)}{required ? <span className="ms-0.5 text-[var(--md-red)]" aria-hidden="true">*</span> : null}
         </label>
         {hint ? <span className="truncate text-[10px] leading-4 text-[var(--md-subtle)]">{t(hint)}</span> : null}
@@ -794,7 +794,7 @@ export function RecurrenceBuilder({
   return (
     <div className={cn("grid min-w-0 gap-2", className)}>
       <div className="flex min-w-0 flex-wrap items-end gap-1.5">
-        <div className="grid w-full min-w-0 content-start gap-1 sm:w-[10rem] sm:max-w-[12rem] sm:flex-none">
+        <div className="md-horizontal-field grid w-full min-w-0 content-start gap-1 sm:w-[18rem] sm:flex-none">
           <div className="flex min-h-4 items-baseline justify-between gap-2">
             <span className="min-w-0 truncate text-[10.5px] font-medium leading-4 text-[var(--md-text)]">{t("Frequency")}</span>
           </div>
@@ -857,7 +857,6 @@ export function LocationFields({
   options,
   countries,
   directoryStatus,
-  directoryCount,
   recommendedLocationIds,
   onChange,
   disabled,
@@ -871,7 +870,6 @@ export function LocationFields({
   options: readonly LocationOption[]
   countries: readonly CountryReferenceOption[]
   directoryStatus?: "loading" | "ready" | "error"
-  directoryCount?: number
   recommendedLocationIds?: ReadonlySet<string>
   onChange: (value: LocationValue) => void
   disabled?: boolean
@@ -942,21 +940,20 @@ export function LocationFields({
   }
 
   return (
-    <fieldset className={cn("min-w-0", className)}>
+    <fieldset className={cn("md-location-fields min-w-0", className)}>
       <legend className="mb-1.5 flex items-baseline gap-1.5 text-[11px] font-medium text-[var(--md-ink)]">
         {t(label)}
         {directoryStatus ? (
           <span className="font-normal text-[10px] text-[var(--md-subtle)]">
             {directoryStatus === "loading" ? t("Loading official UN/LOCODE directory…") : null}
-            {directoryStatus === "ready" && directoryCount ? <><span data-i18n-skip>{directoryCount.toLocaleString()}</span> {t("official locations")}</> : null}
             {directoryStatus === "error" ? t("Official directory unavailable – manual entry still works") : null}
           </span>
         ) : null}
       </legend>
-      <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(8rem,0.85fr)_minmax(12rem,1.35fr)_minmax(7rem,0.55fr)]">
+      <div className="md-location-fields-grid">
         <CompactCombobox label="Country" value={value.countryName} options={countryOptions} recommendedOptions={recommendedCountries} onValueChange={applyCountryInput} placeholder="Country name or code" disabled={disabled} required={required} invalid={invalid && !value.countryName} width="full" />
         <CompactCombobox label="Town, city or port" value={value.place} options={placeOptions} recommendedOptions={recommendedPlaces} onValueChange={(input) => onChange(resolveLinkedLocation(options, value, "place", input))} onOptionSelect={applySelectedOption} placeholder={selectedCountryReference ? "Type a place" : "Select country first"} disabled={disabled || !selectedCountryReference} required={required} invalid={invalid && !value.place} width="full" />
-        <AutoFilledField label="UN/LOCODE" value={value.unlocode} emptyLabel="Select country and location" width="full" valueDirection="ltr" autoPopulated={unlocodeAutoPopulated} disabled={disabled} onChange={(input) => onChange({ ...value, unlocode: input.toLocaleUpperCase().replace(/\s+/g, "") })} />
+        <AutoFilledField className="md-location-code" label="UN/LOCODE" value={value.unlocode} emptyLabel="Select country and location" width="full" valueDirection="ltr" autoPopulated={unlocodeAutoPopulated} disabled={disabled} onChange={(input) => onChange({ ...value, unlocode: input.toLocaleUpperCase().replace(/\s+/g, "") })} />
       </div>
     </fieldset>
   )

@@ -107,6 +107,7 @@ import {
   AmountCurrencyField,
   CargoCharacteristicsField,
   CompactCombobox,
+  CompactFieldShell,
   CompactFieldRow,
   CompactSectionShell,
   CargoWiseGroup,
@@ -1975,12 +1976,16 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
   const [previewCalendarLayers, setPreviewCalendarLayers] = useState(["Operational dates", "Personal events"])
-  const previewAutoPopulationSource = "1 Harbour Exchange Square, London, E14 9GE, GB"
-  const previewAutoPopulationCodeSource = "GBLON"
-  const previewAutoPopulationNotesSource = "Collect from the loading bay.\nCall the office on arrival."
-  const [previewAutoPopulationValue, setPreviewAutoPopulationValue] = useState("")
-  const [previewAutoPopulationCode, setPreviewAutoPopulationCode] = useState("")
-  const [previewAutoPopulationNotes, setPreviewAutoPopulationNotes] = useState("")
+  const previewAutoPopulationSources = [
+    { name: "Harbour Trading", address: "1 Harbour Exchange Square, London, E14 9GE, GB", code: "GBLON", contact: "Alex Morgan", email: "alex@example.com", notes: "Collect from the loading bay.\nCall the office on arrival." },
+    { name: "Northern Freight", address: "Unit 24, Riverside Distribution Centre, Trafford Park, Manchester, M17 1AA, GB", code: "GB", contact: "Sam Taylor", email: "operations@example.com", notes: "Use the east entrance for collection. Keep all pallets upright and report to the transport office before unloading.\nReference: NF-2048." },
+  ]
+  const [previewAutoPopulation, setPreviewAutoPopulation] = useState({ name: "", address: "", code: "", contact: "", email: "", notes: "", event: null as number | null })
+  const previewAutoPopulationSource = previewAutoPopulationSources.find((source) => source.name === previewAutoPopulation.name)
+  function fillPreviewFromCustomer(name: string) {
+    const source = previewAutoPopulationSources.find((item) => item.name === name)
+    if (source) setPreviewAutoPopulation((current) => ({ ...source, event: (current.event ?? 0) + 1 }))
+  }
   const [previewDictionaryTerms, setPreviewDictionaryTerms] = useState(["Multideck", "Jenkar", "UN/LOCODE", "Incoterms"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
@@ -2052,38 +2057,47 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "auto-populated-field" ? (
-        <div className="grid w-full max-w-[520px] gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
-          <label htmlFor="gallery-auto-populated-address" className="text-[12px] font-medium text-[var(--md-ink)]">Customer address</label>
-          <AutoPopulatedInput
-            id="gallery-auto-populated-address"
-            value={previewAutoPopulationValue}
-            onChange={(event) => setPreviewAutoPopulationValue(event.target.value)}
-            autoPopulated={matchesAutoPopulation(previewAutoPopulationValue, previewAutoPopulationSource)}
-            autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."
-          />
-          <label htmlFor="gallery-auto-populated-code" className="text-[12px] font-medium text-[var(--md-ink)]">UN/LOCODE</label>
-          <AutoPopulatedInput
-            id="gallery-auto-populated-code"
-            value={previewAutoPopulationCode}
-            onChange={(event) => setPreviewAutoPopulationCode(event.target.value)}
-            autoPopulated={matchesAutoPopulation(previewAutoPopulationCode, previewAutoPopulationCodeSource)}
-            autoPopulationDescription="Filled from the selected location. Edit this field to override it."
-          />
-          <label htmlFor="gallery-auto-populated-notes" className="text-[12px] font-medium text-[var(--md-ink)]">Collection notes</label>
-          <AutoPopulatedTextarea
-            id="gallery-auto-populated-notes"
-            value={previewAutoPopulationNotes}
-            onChange={(event) => setPreviewAutoPopulationNotes(event.target.value)}
-            autoPopulated={matchesAutoPopulation(previewAutoPopulationNotes, previewAutoPopulationNotesSource)}
-            autoPopulationDescription="Filled from the collection address. Edit this field to override it."
-          />
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] leading-4 text-[var(--md-subtle)]">Fill the fields to preview the letter stagger. Edit any value to override it.</p>
-            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]" onClick={() => {
-              setPreviewAutoPopulationValue(previewAutoPopulationSource)
-              setPreviewAutoPopulationCode(previewAutoPopulationCodeSource)
-              setPreviewAutoPopulationNotes(previewAutoPopulationNotesSource)
-            }}>Fill from linked records</Button>
+        <div className="grid w-full max-w-[600px] gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+          <CompactCombobox label="Customer" value={previewAutoPopulation.name} width="full" allowCustom={false} placeholder="Select a customer"
+            options={previewAutoPopulationSources.map((source) => ({ value: source.name, label: source.name }))}
+            onValueChange={fillPreviewFromCustomer} />
+          <CompactFieldShell label="Address" htmlFor="gallery-auto-populated-address" width="full">
+            <AutoPopulatedInput id="gallery-auto-populated-address" value={previewAutoPopulation.address}
+              onChange={(event) => setPreviewAutoPopulation((current) => ({ ...current, address: event.target.value }))}
+              autoPopulated={matchesAutoPopulation(previewAutoPopulation.address, previewAutoPopulationSource?.address)} autoPopulationEvent={previewAutoPopulation.event}
+              autoPopulationDescription="Filled from the selected customer. Edit this field to override it." />
+          </CompactFieldShell>
+          <CompactFieldShell label="Location code" htmlFor="gallery-auto-populated-code" width="full">
+            <div className="w-[calc(5ch+1.375rem)]">
+              <AutoPopulatedInput id="gallery-auto-populated-code" value={previewAutoPopulation.code}
+                onChange={(event) => setPreviewAutoPopulation((current) => ({ ...current, code: event.target.value }))}
+                autoPopulated={matchesAutoPopulation(previewAutoPopulation.code, previewAutoPopulationSource?.code)} autoPopulationEvent={previewAutoPopulation.event}
+                autoPopulationDescription="Filled from the selected location. Edit this field to override it." />
+            </div>
+          </CompactFieldShell>
+          <CompactCombobox label="Contact" value={previewAutoPopulation.contact} width="full"
+            options={previewAutoPopulationSources.map((source) => ({ value: source.contact, label: source.contact }))}
+            onValueChange={(contact) => setPreviewAutoPopulation((current) => ({ ...current, contact }))}
+            onOptionSelect={(option) => {
+              const source = previewAutoPopulationSources.find((item) => item.contact === option.value)
+              if (source) setPreviewAutoPopulation((current) => ({ ...current, email: source.email, event: (current.event ?? 0) + 1 }))
+            }}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulation.contact, previewAutoPopulationSource?.contact)} autoPopulationEvent={previewAutoPopulation.event} />
+          <CompactFieldShell label="Email" htmlFor="gallery-auto-populated-email" width="full">
+            <AutoPopulatedInput id="gallery-auto-populated-email" type="email" value={previewAutoPopulation.email}
+              onChange={(event) => setPreviewAutoPopulation((current) => ({ ...current, email: event.target.value }))}
+              autoPopulated={matchesAutoPopulation(previewAutoPopulation.email, previewAutoPopulationSources.find((source) => source.contact === previewAutoPopulation.contact)?.email)} autoPopulationEvent={previewAutoPopulation.event} />
+          </CompactFieldShell>
+          <CompactFieldShell label="Collection notes" htmlFor="gallery-auto-populated-notes" width="full">
+            <AutoPopulatedTextarea id="gallery-auto-populated-notes" value={previewAutoPopulation.notes}
+              onChange={(event) => setPreviewAutoPopulation((current) => ({ ...current, notes: event.target.value }))}
+              autoPopulated={matchesAutoPopulation(previewAutoPopulation.notes, previewAutoPopulationSource?.notes)} autoPopulationEvent={previewAutoPopulation.event}
+              autoPopulationDescription="Filled from the collection address. Edit this field to override it." />
+          </CompactFieldShell>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="max-w-[36ch] text-[11px] leading-4 text-[var(--md-subtle)]">Choose either customer to fill the fields. Switch again during the reveal or edit a value to override it.</p>
+            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]"
+              onClick={() => fillPreviewFromCustomer(previewAutoPopulation.name === previewAutoPopulationSources[0].name ? previewAutoPopulationSources[1].name : previewAutoPopulationSources[0].name)}>Switch customer</Button>
           </div>
         </div>
       ) : null}
