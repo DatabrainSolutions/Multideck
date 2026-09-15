@@ -8,6 +8,7 @@ const bin=process.env.PG_TEST_BIN||'/opt/homebrew/opt/postgresql@17/bin'
 const available=spawnSync(join(bin,'initdb'),['--version']).status===0
 const migration=readFileSync(new URL('../migrations/20260910151110_booking_provisional_lifecycle.sql',import.meta.url),'utf8')
 const financeMigration=readFileSync(new URL('../migrations/20260910151116_provisional_no_financial_records.sql',import.meta.url),'utf8')
+const chargeDomainMigration=readFileSync(new URL('../migrations/20260915174500_booking_quote_charge_domain.sql',import.meta.url),'utf8')
 const baseline=readFileSync(new URL('../baseline/public-schema.sql',import.meta.url),'utf8')
 const tableStart=baseline.indexOf('CREATE TABLE IF NOT EXISTS "public"."Job_Costing_Lines" (')
 const costingTable=baseline.slice(tableStart,baseline.indexOf('\n);',tableStart)+3)
@@ -75,8 +76,9 @@ test('real lifecycle migration: same record, validation rollback, scope, concurr
  -- Explicit pre-migration historical fixture; never create this state through the new guard.
  alter table public."FIN_DocumentLineJobLinks" add column "FINDocLineJob_JobCostingLineID" uuid;
  insert into public."Job_Header"("Job_ID","Job_Status") values('00000000-0000-4000-8000-000000000001','draft');
- insert into public."Job_Costing_Lines"("JobCostingLine_ID","Job_ID","JobCostingLine_Number","JobCostingLine_Description") values('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001',1,'Historical charge');
+ insert into public."Job_Costing_Lines"("JobCostingLine_ID","Job_ID","JobCostingLine_Number","JobCostingLine_Description","JobCostingLine_DomainCode") values('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001',1,'Historical charge','freight');
  ${financeMigration}
+ ${chargeDomainMigration}
  do $$begin
  begin insert into public."FIN_DocumentLineJobLinks"("FINDocLineJob_JobCostingLineID") values('00000000-0000-4000-8000-000000000002');raise exception 'Indirect historical charge bypass';exception when sqlstate '22023' then null;end;
  if not exists(select 1 from public."Job_Costing_Lines" where "JobCostingLine_ID"='00000000-0000-4000-8000-000000000002') then raise exception 'Historical evidence removed';end if;
@@ -92,7 +94,7 @@ test('real lifecycle migration: same record, validation rollback, scope, concurr
  begin insert into public."FIN_DocumentLineJobLinks"("FINDocLineJob_JobID") values(job);raise exception 'Mixed invoice allocation accepted';exception when sqlstate '22023' then null;end;
  begin insert into public."FIN_WIPItems" values(job);raise exception 'Provisional WIP accepted';exception when sqlstate '22023' then null;end;
  begin insert into public."FIN_Accruals" values(job);raise exception 'Provisional accrual accepted';exception when sqlstate '22023' then null;end;
- begin insert into public."Job_Costing_Lines"("Job_ID","JobCostingLine_Number","JobCostingLine_Description") values(job,1,'Provisional charge');raise exception 'Provisional cost line accepted';exception when sqlstate '22023' then null;end;
+ begin insert into public."Job_Costing_Lines"("Job_ID","JobCostingLine_Number","JobCostingLine_Description","JobCostingLine_DomainCode") values(job,1,'Provisional charge','freight');raise exception 'Provisional cost line accepted';exception when sqlstate '22023' then null;end;
  if booking_api.convert_accepted_quote_before_sync_review_20260904(null,null,null)<>0 then raise exception 'Quote conversion still copies provisional charges';end if;
  if exists(select 1 from public."FIN_JobFinanceSummary") or exists(select 1 from public."FIN_JobChargeFinanceSummary") then raise exception 'Provisional job included';end if;
  begin perform public.booking_workflow_save(actor,job,'{"status":"complete"}');raise exception 'Skipped progression';exception when sqlstate '22023' then null;end;
