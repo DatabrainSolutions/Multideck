@@ -1,3 +1,5 @@
+set search_path = public, booking_api, document_api, quote_api, report_api, private, private_live_gateway, extensions, pg_catalog;
+
 revoke all on function booking_api.allocate_reference(uuid,text) from public, anon, authenticated, service_role;
 grant execute on function booking_api.allocate_reference(uuid,text) to service_role;
 revoke all on function booking_api.allocate_reference(uuid,text,text) from public, anon, authenticated, service_role;
@@ -2732,4 +2734,3 @@ revoke all on function report_api.signal_change() from public, anon, authenticat
 revoke all on function report_api.source_rows(uuid,text) from public, anon, authenticated, service_role;
 
 revoke all on function report_api.watch_allowed(uuid,uuid,uuid) from public, anon, authenticated, service_role;
-
