@@ -42,7 +42,7 @@ const crmCreateActions: Partial<Record<string, CrmCreateAction>> = {
   "/crm/leads": { label: "New lead", eventName: topBarActionEvents.createCrmLead },
   "/crm/accounts": { label: "New company", eventName: topBarActionEvents.createCrmAccount },
   "/crm/contacts": { label: "New contact", eventName: topBarActionEvents.createCrmContact },
-  "/crm/contact-cards": { label: "New card", eventName: topBarActionEvents.createCrmContactCard },
+  "/crm/contact-cards": { label: "New business card", eventName: topBarActionEvents.createCrmContactCard },
   "/crm/deals": { label: "New deal", eventName: topBarActionEvents.createCrmDeal },
 }
 
@@ -180,7 +180,7 @@ export function TopBar({
   const isQuotes = route === "/quotes"
   const isTodo = route === "/to-do"
   const isCalendar = route === "/calendar"
-  const isBookingLinks = route === "/calendar/booking-links"
+  const isBookingLinks = route === "/calendar/booking-links" || route === "/calendar/meetings"
   const isWarehouse = route.startsWith("/warehouse")
   const isFinance = route.startsWith("/finance/")
   const isStandaloneExportRegister = route === "/customs/standalone/export"

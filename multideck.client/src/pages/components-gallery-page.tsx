@@ -1,4 +1,5 @@
 import { SignatureBuilder } from "@/components/multideck/signature-builder"
+import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck/dexter-voice-controls"
 import { SignatureBlockGlyph } from "@/components/multideck/signature-block-glyph"
 import { EmailSignatureControl } from "@/components/multideck/email-signature-control"
 import { newSignatureDocument, renderSignature, signatureKinds, type SignatureBlockKind, type SignatureSelection } from "@/lib/email-signatures"
@@ -298,7 +299,7 @@ import { SuggestedUpdateReview } from "@/components/multideck/suggested-update-r
 import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
-import { InlineField, InlineFieldCard, InlineSelectField } from "@/components/multideck/inline-field"
+import { InlineField, InlineFieldCard, InlineFieldGroup, InlineSelectField } from "@/components/multideck/inline-field"
 import { SideDrawer } from "@/components/multideck/side-drawer"
 import { WizardDialog } from "@/components/multideck/wizard-dialog"
 import { ScreenshotCaptureEditor, SupportTicketAttachmentPreview } from "@/components/multideck/support-ticket-dialog"
@@ -397,6 +398,21 @@ const previewHomeSuggestions: HomePromptSuggestion[] = [
   { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
   { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
 ]
+
+function DexterVoiceControlsPreview() {
+  const [muted, setMuted] = useState(false)
+  const [ended, setEnded] = useState(false)
+  const [limitReached, setLimitReached] = useState(false)
+  return <div className="w-full max-w-[520px]">
+    <Button variant="ghost" className="mb-4" onClick={()=>setLimitReached(value=>!value)}>{limitReached ? "Reset voice preview" : "Preview daily limit"}</Button>
+    <DexterVoiceLimitNotice visible={limitReached} />
+    <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3">
+    {limitReached ? <textarea aria-label="Continue typing" placeholder="Carry on typing…" className="min-h-16 w-full resize-none rounded-lg bg-transparent p-2 text-[13px] text-[var(--md-ink)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]" /> :
+    <DexterVoicePanel autoFocus={false} voice={{phase:ended ? "ended" : "listening", muted, working:false,
+      active:!ended, error:null, endReason:null, end:()=>setEnded(true), dismiss:()=>setEnded(false), toggleMute:()=>setMuted(value=>!value)}} />}
+    </div>
+  </div>
+}
 
 function createGalleryTicketScreenshot() {
   const canvas = document.createElement("canvas")
@@ -2039,7 +2055,7 @@ function ComponentPreview({ id }: { id: string }) {
     <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-[var(--md-gap-xl)]">
       {id === "conversation-attachments" ? <TicketAttachmentsPreview /> : null}
       {id === "inline-fields" ? (
-        <div className="w-full max-w-[620px]">
+        <div className="grid w-full max-w-[620px] gap-4">
           <InlineFieldCard title="Account facts" meta="Select a value to edit it">
             <InlineField label="Account name" value={previewInlineCompany} required onSave={setPreviewInlineCompany} />
             <InlineSelectField
@@ -2053,6 +2069,14 @@ function ComponentPreview({ id }: { id: string }) {
               onSave={setPreviewInlineType}
             />
           </InlineFieldCard>
+          <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+            <h3 className="mb-3 text-[13px] font-medium text-[var(--md-ink)]">Compact side labels</h3>
+            <InlineFieldGroup compact>
+              <InlineField label="Company" value={previewInlineCompany} required onSave={setPreviewInlineCompany} />
+              <InlineSelectField label="Relationship" width="medium" value={previewInlineType} options={[{ value: "Customer", label: "Customer" }, { value: "Prospect", label: "Prospect" }, { value: "Partner", label: "Partner" }]} onSave={setPreviewInlineType} />
+              <InlineField label="Tier" width="short" value="B" readOnly />
+            </InlineFieldGroup>
+          </section>
         </div>
       ) : null}
 
@@ -2479,6 +2503,10 @@ function ComponentPreview({ id }: { id: string }) {
           </div>
           <p className="max-w-[520px] text-center text-[11.5px] leading-5 text-[var(--md-subtle)]">{t("The bottom-centred pill is the only visible dictation feedback. Its width and indicator morph continuously between speaking, polishing, completion, allowance and failure states.")}</p>
         </div>
+      ) : null}
+
+      {id === "dexter-voice-controls" ? (
+        <DexterVoiceControlsPreview />
       ) : null}
 
       {id === "dexter-summon-prompt" ? (

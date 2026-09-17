@@ -24,6 +24,8 @@ export type DexterMessage = {
   /** Client-only identity retained across the final stream acknowledgement. */
   renderKey?: string
   serverId?: string | null
+  /** Client presentation of live/saved speech; never an actionable provider record. */
+  voiceTranscript?: boolean
   role: "user" | "assistant" | "system" | "tool"
   content: string
   createdAt: string

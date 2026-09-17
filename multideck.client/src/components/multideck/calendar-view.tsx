@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type PointerEvent as ReactPointerEvent } from "react"
-import { CalendarClock, CalendarDays, ChevronLeft, ChevronRight, Link2 } from "@/components/icons/hugeicons"
+import { CalendarClock, CalendarDays, ChevronLeft, ChevronRight, Users } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
@@ -146,16 +146,21 @@ function EventBlock({ event, compact = false, overlapBoundary = false, contained
   </button>
 }
 
-export function CalendarDayRibbon({ ribbon, navigate }: { ribbon: CalendarRibbon; navigate: (path: string) => void }) {
+export function CalendarDayRibbon({ ribbon, navigate, compact = false }: { ribbon: CalendarRibbon; navigate: (path: string) => void; compact?: boolean }) {
   return (
     <a
       href={ribbon.route}
+      title={ribbon.title}
       onClick={(event) => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
         event.preventDefault()
         navigate(ribbon.route)
       }}
-      className={cn("md-calendar-day-ribbon flex min-h-8 w-full min-w-0 items-center rounded-[var(--md-radius-lg)] px-2.5 py-1.5 text-start text-[12px] font-medium leading-5 whitespace-normal [overflow-wrap:anywhere] hover:underline underline-offset-2", ribbonTones[ribbon.tone])}
+      className={cn(
+        "md-calendar-day-ribbon flex w-full min-w-0 items-center rounded-[var(--md-radius-lg)] px-2.5 text-start text-[12px] font-medium leading-5 hover:underline underline-offset-2",
+        compact ? "h-8 truncate whitespace-nowrap" : "min-h-8 py-1.5 whitespace-normal [overflow-wrap:anywhere]",
+        ribbonTones[ribbon.tone],
+      )}
     >
       {ribbon.title}
     </a>
@@ -376,7 +381,7 @@ export function CalendarView({
         <SegmentedControl options={viewModes} value={view} onChange={setView} ariaLabel="Calendar view" className="h-8 p-0.5 [&>button]:h-7 [&>button]:rounded-[calc(var(--md-radius-lg)-2px)] [&>button]:px-2.5 [&>button]:text-[12px]" />
         <div className="flex items-center gap-1">
           <CalendarUtilityAction label="Availability settings" icon={CalendarClock} onClick={() => navigate("/settings?tab=availability")} />
-          <CalendarUtilityAction label="Booking links" icon={Link2} onClick={() => navigate("/calendar/booking-links")} />
+          <Button type="button" variant="outline" onClick={() => navigate("/calendar/meetings")} className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]"><Users className="size-3.5" />Meetings</Button>
         </div>
       </div>
     </div>
@@ -393,7 +398,7 @@ export function CalendarView({
 
     {view === "Week" ? <div className="hidden overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] md:block">
       <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-[var(--md-line)]"><div /><>{days.map((day) => { const key = calendarDateKey(day); return <div key={key} className={cn("min-w-0 border-s border-[var(--md-line)] px-2 py-3 text-center transition-colors duration-200", key === todayKey && "bg-[var(--md-accent-a06)]", weekDrag.preview?.dateKey === key && "bg-[var(--md-accent-a10)]")}><p className="text-[10px] uppercase tracking-[.06em] text-[var(--md-subtle)]">{new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(day)}</p><p className={cn("mt-1 text-[17px] font-medium text-[var(--md-ink)]", key === todayKey && "text-[var(--md-accent)]")}>{day.getDate()}</p></div> })}</></div>
-      <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-[var(--md-line)] bg-[var(--md-surface-tint)]"><div className="px-2 py-2 text-[9px] uppercase tracking-[.06em] text-[var(--md-subtle)]">Dates</div>{days.map((day) => <div key={calendarDateKey(day)} className="grid min-h-10 gap-1 border-s border-[var(--md-line)] p-1.5">{(groupedRibbons.get(calendarDateKey(day)) ?? []).slice(0, 3).map((ribbon) => <CalendarDayRibbon key={ribbon.id} ribbon={ribbon} navigate={navigate} />)}</div>)}</div>
+      <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-[var(--md-line)] bg-[var(--md-surface-tint)]"><div className="px-2 py-2 text-[9px] uppercase tracking-[.06em] text-[var(--md-subtle)]">Dates</div>{days.map((day) => <div key={calendarDateKey(day)} className="grid min-h-10 content-start gap-1 border-s border-[var(--md-line)] p-1.5">{(groupedRibbons.get(calendarDateKey(day)) ?? []).slice(0, 3).map((ribbon) => <CalendarDayRibbon key={ribbon.id} ribbon={ribbon} navigate={navigate} compact />)}</div>)}</div>
       <div ref={timeScrollRef} role="region" aria-label="Calendar time slots" tabIndex={0} className="max-h-[780px] h-[max(240px,calc(100dvh_-_300px))] overflow-x-hidden overflow-y-auto overscroll-contain py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent)]"><div ref={gridRef} className="relative grid grid-cols-[56px_repeat(7,minmax(0,1fr))]" style={{ height: GRID_HEIGHT }}><div className="relative">{Array.from({ length: GRID_END_HOUR - GRID_START_HOUR + 1 }, (_, index) => index + GRID_START_HOUR).map((hour) => <span key={hour} className="absolute end-2 -translate-y-1/2 text-[9.5px] tabular-nums text-[var(--md-subtle)]" style={{ top: (hour - GRID_START_HOUR) * HOUR_HEIGHT }}>{String(hour).padStart(2, "0")}:00</span>)}</div>{days.map((day) => { const key = calendarDateKey(day); const dropTarget = weekDrag.preview?.dateKey === key; return <div key={key} className={cn("relative border-s border-[var(--md-line)] bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_59px,var(--md-line)_60px)] transition-colors duration-200", dropTarget && "bg-[var(--md-accent-a04)]")}>{Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, index) => { const hour = index + GRID_START_HOUR; const label = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(day); return <button key={hour} type="button" tabIndex={dragging ? -1 : undefined} data-calendar-create="" aria-label={`Add meeting on ${label} at ${String(hour).padStart(2, "0")}:00`} className={cn("absolute inset-x-0 z-0 border-0 bg-transparent transition-colors focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a20)]", !dragging && "hover:bg-[var(--md-accent-a06)]")} style={{ top: index * HOUR_HEIGHT, height: HOUR_HEIGHT }} onPointerDown={(event) => { if (!dragging && !dismissOnlyCreatePointer.current) createDrag.begin(event, key) }} onClick={(event) => { if (suppressCreateForDismiss() || createDrag.suppressClick() || Date.now() < suppressOpenUntil.current) return; const rect = event.currentTarget.getBoundingClientRect(); const minute = event.detail === 0 ? 0 : Math.min(45, Math.max(0, Math.floor((event.clientY - rect.top) / 15) * 15)); createAt(day, hour, minute) }} /> })}{layoutCalendarEvents(groupedEvents.get(key) ?? []).map(({ event: calendarEvent, overlap, zIndex }) => { const start = timeParts(calendarEvent.startAt, timeZone); const end = timeParts(calendarEvent.endAt, timeZone); const top = Math.max(0, (start.hour - GRID_START_HOUR) * HOUR_HEIGHT + start.minute); const endMinutes = dateKeyForZone(calendarEvent.endAt, timeZone) === key ? end.hour * 60 + end.minute : GRID_END_HOUR * 60; const height = Math.max(28, Math.min(GRID_HEIGHT - top, endMinutes - start.hour * 60 - start.minute)); const visualHeight = overlap === "contained" ? Math.max(24, height - 4) : height; const isDragging = weekDrag.preview?.eventId === calendarEvent.id; return <div key={calendarEvent.id} className="absolute pb-1" style={{ top, height: visualHeight, left: overlap === "contained" ? 8 : 4, right: overlap === "contained" ? 8 : 4, zIndex: isDragging ? 40 : zIndex }}><EventBlock event={calendarEvent} compact={visualHeight < 50} overlapBoundary={overlap !== "none"} contained={overlap === "contained"} dragging={isDragging} timeZone={timeZone} onOpen={openEvent} onGrip={weekGrip(calendarEvent)} /></div> })}</div> })}
         <div ref={createDrag.previewRef} aria-hidden="true" data-calendar-create-preview="" className="pointer-events-none invisible absolute z-50 overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-selected-bg)] px-2 text-[11px] font-medium tabular-nums text-[var(--md-selected-text)] ring-1 ring-inset ring-[var(--md-accent)]">
           <span ref={createDrag.labelRef} className="block truncate leading-[15px]" />

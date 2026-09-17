@@ -7,6 +7,10 @@ import { previewDexterDocument } from "@/lib/dexter-api"
 import { deferredWorkState, deferredWorkPrompt } from "@/lib/dexter-deferred-work"
 import { readDexterRecovery, writeDexterRecovery, clearDexterRecovery, type DexterRecovery } from "@/lib/dexter-request-recovery"
 import { mergeSteeringStatus } from "@/lib/dexter-steering-status"
+import { mergeVoiceTranscript } from "@/lib/dexter-voice-transcript"
+import { useDexterVoice } from "@/hooks/use-dexter-voice"
+import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck/dexter-voice-controls"
+import { hasReachedDailyVoiceLimit } from "@/lib/dexter-voice-presentation"
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
 import { dexterArtifactReferences, retainDexterRenderKeys, structureDexterMeetingBrief } from "@/lib/dexter-response-presentation"
 import {
@@ -1315,11 +1319,12 @@ function ConversationStream({
   const userMessageOffset = direction === "rtl" ? -14 : 14
   const messageTransition = reduceMotion(Boolean(shouldReduceMotion), mdMotion.enter)
   const { responsesByUserId, pairedAssistantIds } = useMemo(
-    () => responseGroupsFor(messages),
+    // Voice utterances are consecutive speech, never retry alternatives.
+    () => responseGroupsFor(messages.filter(message => !message.voiceTranscript)),
     [messages],
   )
   const visibleMessages = useMemo(
-    () => conversationBranchFor(messages, selectedResponseMessageIds),
+    () => messages.some(message => message.voiceTranscript) ? messages : conversationBranchFor(messages, selectedResponseMessageIds),
     [messages, selectedResponseMessageIds],
   )
   const [deferredDismissError, setDeferredDismissError] = useState<{id:string;message:string} | null>(null)
@@ -1837,15 +1842,21 @@ export function AgentDexterPage({
     message: string
   } | null>(null)
   const [activeConversation, setActiveConversation] = useState<DexterConversation | null>(null)
+  const conversationIntentRef = useRef({
+    id: initialConversationIdRef.current,
+    version: 0,
+  })
   const taskAgents = useTaskAgents()
-  const taskAgent = taskAgents.agents.find(agent => agent.conversation_id === (activeConversation?.id ?? initialConversationIdRef.current))
+  const taskAgent = taskAgents.agents.find(agent => agent.conversation_id === conversationIntentRef.current.id)
   useTaskResultViewed(taskAgent, (activeConversation?.messages ?? []).map(message => persistedDexterMessageId(message) ?? message.id))
   useEffect(() => {
     if (!taskAgent?.message_id || activeConversation?.messages.some(message => persistedDexterMessageId(message) === taskAgent.message_id)) return
+    const intentVersion = conversationIntentRef.current.version
     let cancelled = false
+    const isCurrent = () => !cancelled && conversationIntentRef.current.version === intentVersion
     void getDexterConversation(taskAgent.conversation_id).then(conversation => {
-      if (!cancelled) setActiveConversation(conversation)
-    }).catch(() => { if (!cancelled) setError(t('The task result could not be loaded. Reopen the conversation to try again.')) })
+      if (isCurrent()) setActiveConversation(conversation)
+    }).catch(() => { if (isCurrent()) setError(t('The task result could not be loaded. Reopen the conversation to try again.')) })
     return () => { cancelled = true }
   }, [taskAgent?.conversation_id, taskAgent?.message_id, activeConversation?.id])
 
@@ -1895,15 +1906,46 @@ export function AgentDexterPage({
   const accessModeRequestInFlightRef = useRef(false)
   const promptSubmissionInFlightRef = useRef(false)
   const activePromptAbortControllerRef = useRef<AbortController | null>(null)
-  const conversationIntentRef = useRef({
-    id: initialConversationIdRef.current,
-    version: 0,
-  })
   const attachedItems = useAttachedItems(selectedAttachmentIds)
   const generatedDocumentHandoffRef = useRef(false)
   const taskHandoffRef = useRef(false)
   const homeHandoffConsumedRef = useRef(false)
   const [pendingHomePrompt, setPendingHomePrompt] = useState<string | null>(null)
+  const voice = useDexterVoice({
+    conversationId: activeConversation?.id,
+    onConversation: id => {
+      if (conversationIntentRef.current.id === id) return
+      conversationIntentRef.current = {...conversationIntentRef.current, id}
+      setActiveConversation({id, title:"Voice conversation", summary:"", updatedAt:new Date().toISOString(), messages:[]})
+      rememberOpenDexterConversation(id)
+      announceDexterConversationsChanged()
+    },
+    onRequest: async prompt => {
+      const conversation = await submitPrompt(prompt)
+      if (!conversation) throw new Error("Check the current request in chat before continuing.")
+      const answer = [...conversation.messages].reverse().find(message => message.role === "assistant")
+      const needsApproval = Boolean(answer?.pendingAction || answer?.pendingActions?.some(action => action.status === "pending"))
+      return { conversationId: conversation.id, content: needsApproval
+        ? "There is a proposed action ready in chat. Please review and approve its card before it can run. " + (answer?.content || "").slice(0,700)
+        : (answer?.content || "The result is available in chat.").slice(0,1000) }
+    },
+    onUpdate: async prompt => {
+      if (!activeRunId || !isSending || steeringInFlightRef.current) throw new Error("Current request cannot accept a follow-up yet.")
+      await updateActiveRequest(prompt)
+      const submitted=steeringRequestRef.current
+      if(!submitted || submitted.input!==prompt)throw new Error("Follow-up could not be confirmed.")
+      const run=await getDexterActiveRun({runId:submitted.runId,clientSessionId:dexterClientSessionIdRef.current})
+      const input=run.inputs.find(item=>item.id===submitted.id)
+      if(!input || !["submitted","queued","claimed","incorporated"].includes(input.status))throw new Error("Follow-up could not be confirmed.")
+      return {content:"Your follow-up has been passed to the current request. Wait for its result; this is not confirmation of a completed action."}
+    },
+  })
+  // Select the persisted text branch before adding the linear voice timeline.
+  // Running branch selection on captions would hide consecutive spoken replies.
+  const displayedMessages=mergeVoiceTranscript(
+    conversationBranchFor(activeConversation?.messages ?? [],selectedResponseMessageIds),voice.transcriptSessions)
+  const voiceLimitReached = hasReachedDailyVoiceLimit(voice)
+  const showVoicePanel = voice.phase !== "idle" && (!voiceLimitReached || voice.active)
 
   useEffect(() => () => {
     activePromptAbortControllerRef.current?.abort()
@@ -2253,6 +2295,7 @@ export function AgentDexterPage({
   }
 
   function enterDexterMode(mode: "chat" | "watch", preserveDraft = false) {
+    if (mode !== "chat") voice.reset()
     setDexterMode(mode)
     if (!preserveDraft) {
       setComposerValue("")
@@ -2433,6 +2476,14 @@ export function AgentDexterPage({
     if (!currentUser?.id) return
     const intent = {id: record.conversationId, version: conversationIntentRef.current.version + 1}
     conversationIntentRef.current = intent
+    // Recovery can also be opened from a different thread in history.
+    setActiveConversation(current => current?.id === record.conversationId ? current : null)
+    setConversationRenderKey(`dexter-conversation-${record.conversationId ?? record.runId}`)
+    setSelectedResponseMessageIds({})
+    setStreamingMessageId(null)
+    liveReasoningRef.current = ""
+    setLiveReasoning("")
+    rememberOpenDexterConversation(record.conversationId)
     recoveryRef.current = record
     dexterClientSessionIdRef.current = record.clientSessionId
     steeringRequestRef.current = record.correction ?? null
@@ -2893,6 +2944,7 @@ export function AgentDexterPage({
       rememberOpenDexterConversation(conversation.id)
       announceDexterConversationsChanged()
       setFailedPrompt(null)
+      return conversation
     } catch (requestError) {
       if (
         conversationIntentRef.current.version !== submissionIntent.version ||
@@ -3327,6 +3379,7 @@ export function AgentDexterPage({
   }
 
   async function handleHistorySelect(id: string) {
+    voice.reset()
     const stored = currentUser?.id ? readDexterRecovery(currentUser.id) : null
     if (stored?.conversationId === id) { void recoverRequest(stored); return }
     recoveryRef.current = null
@@ -3346,6 +3399,11 @@ export function AgentDexterPage({
     setFullAccessGrantId(null)
     setStage("conversation")
     rememberOpenDexterConversation(id)
+    // Clear the previous thread in the same update as the selection, before
+    // waiting for history. A slow or failed request must never show its messages.
+    setActiveConversation(null)
+    liveReasoningRef.current = ""
+    setLiveReasoning("")
     setConversationRenderKey(`dexter-conversation-${id}`)
     setIsLoadingConversation(true)
     setError(null)
@@ -3425,6 +3483,7 @@ export function AgentDexterPage({
   }
 
   function startNewConversation() {
+    voice.reset()
     recoveryRef.current = null
     setRecoveryNotice(null)
     setRecoveryNeedsCheck(false)
@@ -3606,6 +3665,7 @@ export function AgentDexterPage({
                 transition={mdMotion.spring}
                 style={{ willChange: "transform" }}
               >
+                <DexterVoiceLimitNotice visible={voiceLimitReached} />
                 <DexterPromptComposer
                   value={composerValue}
                   specialists={defaultDexterSpecialists}
@@ -3647,6 +3707,9 @@ export function AgentDexterPage({
                     } else toggleAttachment(id)
                   }}
                   onSend={prompt => { void (isSending && activeRunId ? updateActiveRequest(prompt) : submitPrompt(prompt)) }}
+                  onStartVoice={() => { setStage("conversation"); void voice.start() }}
+                  voiceActive={voice.active}
+                  voicePanel={showVoicePanel ? <DexterVoicePanel voice={voice} /> : undefined}
                   isSending={isWorking || recoveryNeedsCheck}
                   isUploading={isUploadingDocument}
                   uploadError={uploadError}
@@ -3760,7 +3823,7 @@ export function AgentDexterPage({
               // Follow live text, never the height added by completed artifacts.
               // The saved response can replace its streaming ID before request
               // cleanup finishes, so check the message itself as well.
-              autoScroll={Boolean(streamingMessageId && activeConversation?.messages.some(message => message.id === streamingMessageId))}
+              autoScroll={voice.active || Boolean(streamingMessageId && activeConversation?.messages.some(message => message.id === streamingMessageId))}
               defaultScrollPosition="end"
               scrollMargin={88}
             >
@@ -3794,7 +3857,7 @@ export function AgentDexterPage({
                         </div>
                       ) : null}
                       <ConversationStream
-                        messages={activeConversation?.messages ?? []}
+                        messages={displayedMessages}
                         isWorking={isWorking}
                         streamingMessageId={streamingMessageId}
                         reasoningContent={liveReasoning}
@@ -3914,6 +3977,7 @@ export function AgentDexterPage({
                       transition={mdMotion.spring}
                       style={{ willChange: "transform" }}
                     >
+                      <DexterVoiceLimitNotice visible={voiceLimitReached} />
                       <DexterPromptComposer
                         compact
                         taskAgentName={taskAgent?.name}
@@ -3957,6 +4021,9 @@ export function AgentDexterPage({
                           } else toggleAttachment(id)
                         }}
                         onSend={prompt => { void (isSending && activeRunId ? updateActiveRequest(prompt) : submitPrompt(prompt)) }}
+                        onStartVoice={() => { setStage("conversation"); void voice.start() }}
+                        voiceActive={voice.active}
+                        voicePanel={showVoicePanel ? <DexterVoicePanel voice={voice} /> : undefined}
                         isSending={isWorking || recoveryNeedsCheck || taskAgent?.status==='working'}
                   isUploading={isUploadingDocument}
                   uploadError={uploadError}

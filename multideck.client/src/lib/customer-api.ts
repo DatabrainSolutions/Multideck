@@ -274,6 +274,7 @@ export type ApiContactDetail = ApiContact & {
 }
 
 export type ApiCustomerDetail = ApiCustomer & {
+  crmAccountId?: string | null
   editVersion: number
   status: string
   customerSince: string

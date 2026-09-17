@@ -172,11 +172,15 @@ test("account editing uses existing CRM reference data and preserves the current
   assert.match(accountDetail, /<AccountOperationsPanel[\s\S]*?account=\{currentAccount\}/)
   assert.doesNotMatch(accountDetail, /MarketingOptInControl|<Zone title=\{t\("Communication preferences"\)/)
   assert.match(accountDetail, /ContactPreferencesPopover/)
-  assert.match(accountDetail, /<AddCustomField onAdd=\{\(label, value\) => patch\(\{ customFields:/)
+  assert.match(accountDetail, /<AddCustomField onAdd=\{\(label, value\) => patch\(current =>/)
+  assert.match(accountDetail, /A field with this name already exists/)
   assert.match(customers, /CRM_AccountProfiles/)
   assert.match(customers, /CRM_CustomerEngagementPreferences/)
   assert.match(accountDetail, /CustomerWarehouseAccess customerId=\{currentAccount\.id\}/)
-  assert.match(accountDetail, /<Zone title=\{t\("Profile"\)}>\s*<InlineFieldGroup stacked directEdit>/)
+  assert.match(accountDetail, /hidden=\{activeTab !== "details"\}/)
+  assert.match(accountDetail, /<Zone title=\{t\("Company information"\)}>\s*<InlineFieldGroup compact>/)
+  assert.match(accountDetail, /<Zone title=\{t\("Main contact & address"\)}>\s*<InlineFieldGroup compact>/)
+  assert.match(accountDetail, /<Zone title=\{t\("Relationship & service"\)\}/)
 })
 
 test("account score explanations require current, permission-visible evidence and remain accessible", () => {

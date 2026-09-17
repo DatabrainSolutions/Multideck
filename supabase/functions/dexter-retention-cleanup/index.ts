@@ -18,6 +18,8 @@ Deno.serve(async (request) => {
   if (!expected || !supplied || !(await constantTimeEqual(expected, supplied))) return json(request, { code: "not_found" }, 404)
 
   const admin = adminClient()
+  const { data: voiceReconciled, error: voiceError } = await admin.rpc("multideck_voice_reconcile", { p_company_id: null })
+  if (voiceError) return json(request, { code: "voice_retention_failed" }, 503)
   const now = new Date().toISOString()
   const { data, error } = await admin.from("AI_DexterUploads")
     .select("AIDexterUpload_ID,AIDexterUpload_StoredObjectID,DOC_StoredObjects(DOCStoredObject_Container,DOCStoredObject_BlobName)")
@@ -37,5 +39,5 @@ Deno.serve(async (request) => {
   }
   await admin.from("AI_DexterIntentPlans").delete().lt("AIDexterIntent_ExpiresAt", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
   await admin.from("AI_DexterUploadReservations").delete().lt("AIDexterUploadReservation_ExpiresAt", now)
-  return json(request, { deleted })
+  return json(request, { deleted, voiceReconciled })
 })

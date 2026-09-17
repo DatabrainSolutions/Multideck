@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import {
   ChartAnalysis,
+  AudioWaveform,
   FileCheck2,
   ScanText,
   ShieldCheck,
@@ -17,7 +18,7 @@ import { mdMotion, reduceMotion } from "@/lib/motion"
 import { createProfilePhotoSignedUrls, type UserProfilePhoto } from "@/lib/profile-photo"
 import { cn } from "@/lib/utils"
 
-export type UsageAllowanceUnit = "percent" | "pages" | "shipments" | "documents" | "declarations"
+export type UsageAllowanceUnit = "percent" | "pages" | "shipments" | "documents" | "declarations" | "minutes"
 
 export type UsageContributor = {
   userId: string
@@ -29,7 +30,7 @@ export type UsageContributor = {
 }
 
 export type UsageAllowanceCategory = {
-  id: "ai" | "ocr" | "tracking" | "documents" | "customs"
+  id: "ai" | "ocr" | "tracking" | "documents" | "customs" | "voice"
   label: string
   description: string
   unit: UsageAllowanceUnit
@@ -48,6 +49,12 @@ const categoryPresentation: Record<UsageAllowanceCategory["id"], {
   iconSurfaceClassName: string
   fillClassName: string
 }> = {
+  voice: {
+    icon: AudioWaveform,
+    iconClassName: "text-[var(--md-blue)]",
+    iconSurfaceClassName: "bg-[color-mix(in_srgb,var(--md-blue)_11%,var(--md-surface))]",
+    fillClassName: "bg-[var(--md-blue)]",
+  },
   ai: {
     icon: ChartAnalysis,
     iconClassName: "text-[var(--md-accent)]",
@@ -82,6 +89,7 @@ const categoryPresentation: Record<UsageAllowanceCategory["id"], {
 
 function unitLabel(unit: UsageAllowanceUnit, value: number) {
   if (unit === "percent") return "%"
+  if (unit === "minutes") return value === 1 ? "minute" : "minutes"
   if (unit === "pages") return value === 1 ? "page" : "pages"
   if (unit === "shipments") return value === 1 ? "shipment" : "shipments"
   if (unit === "documents") return value === 1 ? "document" : "documents"
@@ -91,6 +99,7 @@ function unitLabel(unit: UsageAllowanceUnit, value: number) {
 function formatAmount(value: number, unit: UsageAllowanceUnit, locale: string) {
   const safeValue = Math.max(0, Number.isFinite(value) ? value : 0)
   if (unit === "percent") return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(safeValue)}%`
+  if (unit === "minutes") return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(safeValue)} ${unitLabel(unit, safeValue)}`
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Math.round(safeValue))} ${unitLabel(unit, Math.round(safeValue))}`
 }
 

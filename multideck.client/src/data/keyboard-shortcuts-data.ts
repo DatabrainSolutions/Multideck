@@ -200,8 +200,8 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
   {
     id: "goto.contactCards",
     group: "navigation",
-    label: "Go to Contact cards",
-    description: "Open shareable contact cards.",
+    label: "Go to Digital business cards",
+    description: "Open shareable digital business cards.",
     defaultBinding: sequence("G", "V"),
   },
   {

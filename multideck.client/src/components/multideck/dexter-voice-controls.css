@@ -1,0 +1,26 @@
+.md-voice-panel { padding: 4px 0; color: var(--md-ink); }
+.md-voice-limit-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(100%, 420px);
+  margin-block-end: 12px;
+  padding: 14px;
+  border-radius: var(--md-radius-xl);
+  background: var(--md-surface);
+  box-shadow: var(--md-shadow-soft);
+  transform-origin: bottom left;
+}
+.md-voice-limit-notice__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--md-amber-strong);
+  background: color-mix(in srgb, var(--md-amber) 12%, transparent);
+}
+.md-voice-choice { display: flex; align-items: center; border-radius: 12px; transition: background-color 220ms ease; }
+.md-voice-choice:hover { background: var(--md-hover); }
+.md-voice-choice--selected { background: color-mix(in srgb, var(--md-accent) 7%, transparent); }
+@media (prefers-reduced-motion: reduce) { .md-voice-choice { transition: none; } }

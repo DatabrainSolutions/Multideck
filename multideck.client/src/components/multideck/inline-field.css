@@ -1,0 +1,15 @@
+/* Match the compact record controls while retaining 16px touch input text.
+   Explicit sizing overrides the app's unlayered input font inheritance. */
+.md-inline-field-compact input,
+.md-inline-field-compact textarea {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+@media (min-width: 640px) {
+  .md-inline-field-compact input,
+  .md-inline-field-compact textarea {
+    font-size: 13px;
+  }
+}

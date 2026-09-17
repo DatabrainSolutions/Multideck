@@ -608,3 +608,8 @@ verify_jwt = true
 
 [functions.dexter-file-upload]
 verify_jwt = true
+
+# Browser WebSockets authenticate in their first frame; HTTP uses a bearer.
+# Both paths validate Auth and the active Dexter actor before provider access.
+[functions.dexter-voice]
+verify_jwt = false
