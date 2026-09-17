@@ -2398,6 +2398,10 @@ function AgentDexterTab() {
           </div>
         </SettingsPanel>
 
+        <SettingsPanel title={t("Speak to Dexter")}>
+          <DexterVoiceSettings />
+        </SettingsPanel>
+
         <SettingsPanel title={t("Voice and transcription")}>
           <div className="grid items-start gap-x-6 gap-y-5 px-5 py-5 md:grid-cols-2">
             {transcriptionError ? (
@@ -2454,7 +2458,7 @@ function AgentDexterTab() {
 
         <SettingsPanel title={t("Privacy and control")}>
           <div className="grid gap-x-6 gap-y-5 px-5 py-5 md:grid-cols-2 lg:grid-cols-3">
-            <DexterFieldGroup label={t("Recording handling")} description={t("Audio is sent securely for transcription and is not kept in Multideck. Transcript history is not stored by this feature.")} />
+            <DexterFieldGroup label={t("Recording handling")} description={t("Audio is processed securely and is not kept in Multideck. Dictation recordings are not added to history. Live voice captions stay private to your conversation for 30 days; requests, results and usage records follow normal chat retention.")} />
             <DexterFieldGroup label={t("Sending approval")} description={personalised("Dexter never sends automatically. Only selecting the paper plane on an editable draft sends the email.")} />
             <DexterFieldGroup label={t("Reset writing profile")} description={t("Delete the derived profile and stop future refreshes. Your original sent emails remain in their provider and Inbox history.")}>
               <Button type="button" variant="ghost" disabled={!profile?.exists || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.12)]" onClick={() => setResetOpen(true)}>
@@ -4810,10 +4814,12 @@ export function AdminAiUsageContent() {
 
     void loadUsage()
     window.addEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refreshUsage)
+    window.addEventListener("multideck:voice-usage-changed", refreshUsage)
     window.addEventListener("focus", refreshUsage)
     document.addEventListener("visibilitychange", refreshVisibleUsage)
     return () => {
       window.removeEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refreshUsage)
+      window.removeEventListener("multideck:voice-usage-changed", refreshUsage)
       window.removeEventListener("focus", refreshUsage)
       document.removeEventListener("visibilitychange", refreshVisibleUsage)
     }
@@ -5351,3 +5357,4 @@ export function SettingsPage({
     </div>
   )
 }
+import { DexterVoiceSettings } from "@/components/multideck/dexter-voice-controls"

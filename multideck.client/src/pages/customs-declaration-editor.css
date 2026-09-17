@@ -384,10 +384,6 @@
 }
 
 
-/* A DUCR can be 35 characters; keep it readable across the paired grid. */
-.customs-field-wide { grid-column: 1 / -1; }
-.customs-field-wide [data-customs-field] { max-width: 400px; }
-
 .customs-import-editor [data-customs-party] { container: customs-party / inline-size; }
 .customs-import-editor [data-customs-party] [data-customs-grid="explicit"] { grid-template-columns: minmax(0, 1fr); }
 .customs-import-editor [data-customs-party] [data-customs-grid="explicit"] > :not([data-customs-field-shell]) { grid-column: 1 / -1; }

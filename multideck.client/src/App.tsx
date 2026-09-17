@@ -46,7 +46,7 @@ const EmailSignaturesPage = lazy(() => import("@/pages/email-signatures-page").t
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
 const ToDoPage = lazy(() => import("@/pages/to-do-page").then((module) => ({ default: module.ToDoPage })))
 const CalendarPage = lazy(() => import("@/pages/calendar-page").then((module) => ({ default: module.CalendarPage })))
-const BookingLinksPage = lazy(() => import("@/pages/booking-links-page").then((module) => ({ default: module.BookingLinksPage })))
+const MeetingsPage = lazy(() => import("@/pages/meetings-page").then((module) => ({ default: module.MeetingsPage })))
 const PublicBookingPage = lazy(() => import("@/pages/public-booking-page").then((module) => ({ default: module.PublicBookingPage })))
 const MeetingManagePage = lazy(() => import("@/pages/meeting-manage-page").then((module) => ({ default: module.MeetingManagePage })))
 const DocumentsPage = lazy(() => import("@/pages/documents-page").then((module) => ({ default: module.DocumentsPage })))
@@ -142,6 +142,7 @@ const validRoutes = new Set([
   "/to-do",
   "/calendar",
   "/calendar/booking-links",
+  "/calendar/meetings",
   "/documents",
   "/documents/templates",
   "/customs/standalone/export",
@@ -875,7 +876,7 @@ export default function App() {
                   {route === "/admin/email-signatures" ? <EmailSignaturesPage navigate={navigate} /> : null}
                   {route === "/to-do" ? <ToDoPage operatorName={currentUser?.name} /> : null}
                   {route === "/calendar" ? <CalendarPage navigate={navigate} /> : null}
-                  {route === "/calendar/booking-links" ? <BookingLinksPage navigate={navigate} /> : null}
+                  {route === "/calendar/meetings" || route === "/calendar/booking-links" ? <MeetingsPage navigate={navigate} view={route === "/calendar/booking-links" ? "Booking links" : "Appointments"} /> : null}
                   {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}
                   {route.startsWith("/customs/") ? <CustomsDeclarationsPage route={route} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/compliance/screening" ? <ScreeningPage /> : null}

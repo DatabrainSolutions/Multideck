@@ -666,6 +666,7 @@ function CustomisableSidebarSection({
 function routePatternMatches(item: NavItem, route: string) {
   if (!item.route) return false
   if (item.route === "/") return route === "/"
+  if (item.route === "/calendar/meetings") return route === "/calendar/meetings" || route === "/calendar/booking-links"
   if (item.route === "/finance/administration") {
     return /^\/finance\/(administration|systems|currencies|ledger|tax|documents|mappings|compliance|controls)(\/|$)/.test(route)
   }
@@ -1524,7 +1525,7 @@ export function AppSidebar({
     <SidebarSectionItem>
       <SidebarNavItem
         item={calendarNavItem}
-        isActive={route === "/calendar" || route.startsWith("/calendar/")}
+        isActive={route === "/calendar"}
         onIntent={() => { if (typeof window !== "undefined") void import("@/pages/calendar-page") }}
         onClick={() => navigate("/calendar")}
         collapsed={collapsed}

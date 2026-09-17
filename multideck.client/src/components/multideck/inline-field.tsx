@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
+import "./inline-field.css"
 
 export type InlineFieldKind = "text" | "textarea" | "number" | "email" | "tel" | "url" | "date"
 
@@ -93,8 +94,10 @@ const rowShellClass = "group grid grid-cols-[minmax(96px,0.7fr)_minmax(0,1fr)] i
 // Stacked puts the label over its control so a field survives a narrow grid
 // column. No negative margin: in a grid cell it would spill past the gutter.
 const stackedShellClass = "group grid content-start gap-1 py-1"
+const compactShellClass = "md-inline-field-compact group grid min-w-0 grid-cols-[var(--md-inline-label-width,100px)_minmax(0,1fr)] items-start gap-x-3 gap-y-1 py-1"
+const fieldWidths = { short: "max-w-28", medium: "max-w-60", full: "w-full" }
 
-type InlineFieldSettings = { directEdit: boolean; stacked: boolean }
+type InlineFieldSettings = { directEdit: boolean; stacked: boolean; compact?: boolean }
 const InlineFieldContext = createContext<InlineFieldSettings>({ directEdit: false, stacked: false })
 
 /**
@@ -120,6 +123,7 @@ export function InlineField({
   directEdit: directEditProp,
   stacked: stackedProp,
   colSpan,
+  width = "full",
 }: {
   label: string
   /** The stored value. Empty string renders the placeholder in a quiet tone. */
@@ -143,6 +147,8 @@ export function InlineField({
    * street never stretches the width of the page. `"full"` is for prose.
    */
   colSpan?: 2 | "full"
+  /** Bound short values without shortening their label or changing saved data. */
+  width?: keyof typeof fieldWidths
 }) {
   const { t } = useLanguage()
   const fieldId = useId()
@@ -155,6 +161,7 @@ export function InlineField({
   const settings = useContext(InlineFieldContext)
   const directEdit = directEditProp ?? settings.directEdit
   const stacked = stackedProp ?? settings.stacked
+  const compact = settings.compact && !stacked
 
   // A value changed elsewhere – a save on another field, a refetch – replaces the
   // draft only while the operator is not part-way through typing into it.
@@ -209,6 +216,7 @@ export function InlineField({
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    if (savingRef.current && event.key === "Escape") { event.preventDefault(); return }
     if (event.key === "Escape") { event.preventDefault(); revert(); return }
     // A textarea keeps Enter for new lines, so it commits on the modifier instead.
     if (event.key === "Enter" && (kind !== "textarea" || event.metaKey || event.ctrlKey)) {
@@ -229,39 +237,47 @@ export function InlineField({
   return (
     <div
       className={cn(
-        stacked ? stackedShellClass : rowShellClass,
+        compact ? compactShellClass : stacked ? stackedShellClass : rowShellClass,
         !stacked && !locked && !directEdit && "hover:bg-[var(--md-hover)]",
         colSpan === "full" && "col-span-full",
         colSpan === 2 && "sm:col-span-2",
       )}
     >
-      <label htmlFor={editing || (directEdit && !locked) ? fieldId : undefined} className={cn(labelClass, stacked ? "" : directEdit ? "pt-2" : "pt-px")}>{t(label)}</label>
+      <label htmlFor={editing || state === "error" || (directEdit && !locked) ? fieldId : undefined} className={cn(labelClass, stacked ? "" : directEdit ? "pt-2" : "pt-px", compact && "text-end")}>{t(label)}</label>
 
-      <div className="grid min-w-0 gap-1">
+      <div className={cn("grid min-w-0 gap-1", fieldWidths[width])}>
         <div className={cn("flex min-w-0 items-start gap-2", alignEnd && !editing && !directEdit ? "justify-end" : "justify-between")}>
-          {editing || (directEdit && !locked) ? (
+          {editing || state === "error" || (directEdit && !locked) ? (
             kind === "textarea" ? (
               <Textarea
                 id={fieldId}
                 ref={inputRef as React.Ref<HTMLTextAreaElement>}
-                value={editing ? draft : value}
+                value={editing || state === "error" || state === "saving" ? draft : value}
+                aria-invalid={state === "error" || undefined}
+                aria-describedby={message ? `${fieldId}-error` : undefined}
+                readOnly={state === "saving"}
+                aria-busy={state === "saving" || undefined}
                 dir="auto"
                 onChange={(event) => setDraft(event.target.value)}
-                onFocus={() => { if (state !== "error") setDraft(value); setEditing(true) }}
+                onFocus={() => { if (state !== "error" && state !== "saving") setDraft(value); setEditing(true) }}
                 onBlur={() => void commit()}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder ? t(placeholder) : undefined}
-                className={cn(valueClass, "min-h-20 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-2 py-1.5 text-base shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] sm:text-[13px]")}
+                className={cn(valueClass, "min-h-20 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-2 py-1.5 text-base shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] sm:text-[13px]", compact && "min-h-16 resize-y font-normal")}
               />
             ) : (
               <Input
                 id={fieldId}
                 ref={inputRef as React.Ref<HTMLInputElement>}
                 type={kind === "number" ? "number" : kind === "date" ? "date" : kind}
-                value={editing ? draft : value}
+                value={editing || state === "error" || state === "saving" ? draft : value}
+                aria-invalid={state === "error" || undefined}
+                aria-describedby={message ? `${fieldId}-error` : undefined}
+                readOnly={state === "saving"}
+                aria-busy={state === "saving" || undefined}
                 dir={isLtr ? "ltr" : "auto"}
                 onChange={(event) => setDraft(event.target.value)}
-                onFocus={() => { if (state !== "error") setDraft(value); setEditing(true) }}
+                onFocus={() => { if (state !== "error" && state !== "saving") setDraft(value); setEditing(true) }}
                 onBlur={() => void commit()}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder ? t(placeholder) : undefined}
@@ -275,7 +291,7 @@ export function InlineField({
               <span
                 data-i18n-skip
                 dir={isLtr ? "ltr" : "auto"}
-                className={cn(valueClass, "flex min-h-8 w-full min-w-0 items-center rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 py-1.5 shadow-[var(--md-shadow-line)]", alignEnd && "justify-end text-end", isNumeric && "tabular-nums")}
+                className={cn(valueClass, "flex min-h-8 w-full min-w-0 items-center rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 py-1.5 shadow-[var(--md-shadow-line)]", compact && "bg-transparent font-normal shadow-none", alignEnd && "justify-end text-end", isNumeric && "tabular-nums")}
               >
                 {displayValue || "–"}
               </span>
@@ -301,7 +317,7 @@ export function InlineField({
 
         {message ? (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p role="alert" className="min-w-0 flex-1 text-[11.5px] leading-4 text-[var(--md-red)]">{message}</p>
+            <p id={`${fieldId}-error`} role="alert" className="min-w-0 flex-1 text-[11.5px] leading-4 text-[var(--md-red)]">{message}</p>
             <span className="flex shrink-0 items-center gap-1">
               <button type="button" className="min-h-7 rounded-[var(--md-radius-sm)] px-2 text-[11.5px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]" onClick={() => void commit()}>{t("Retry")}</button>
               <button type="button" className="min-h-7 rounded-[var(--md-radius-sm)] px-2 text-[11.5px] text-[var(--md-text)] hover:bg-[var(--md-hover)]" onClick={revert}>{t("Cancel changes")}</button>
@@ -625,6 +641,7 @@ export function InlineSelectField({
   onSave,
   placeholder,
   readOnly = false,
+  width = "full",
 }: {
   label: string
   value: string
@@ -632,11 +649,12 @@ export function InlineSelectField({
   onSave: (next: string) => Promise<void> | void
   placeholder?: string
   readOnly?: boolean
+  width?: keyof typeof fieldWidths
 }) {
   const { t } = useLanguage()
   const { state, message, setState, setMessage, markSaved } = useSaveState()
   const current = options.find((option) => option.value === value)
-  const { directEdit, stacked } = useContext(InlineFieldContext)
+  const { directEdit, stacked, compact } = useContext(InlineFieldContext)
 
   async function choose(next: string) {
     if (next === value) return
@@ -651,9 +669,9 @@ export function InlineSelectField({
   }
 
   return (
-    <div className={cn(stacked ? stackedShellClass : rowShellClass, !stacked && !readOnly && !directEdit && "hover:bg-[var(--md-hover)]")}>
-      <span className={cn(labelClass, stacked ? "" : directEdit ? "pt-2" : "pt-px")}>{t(label)}</span>
-      <div className="grid min-w-0 gap-1">
+    <div className={cn(compact ? compactShellClass : stacked ? stackedShellClass : rowShellClass, !stacked && !readOnly && !directEdit && "hover:bg-[var(--md-hover)]")}>
+      <span className={cn(labelClass, stacked ? "" : directEdit ? "pt-2" : "pt-px", compact && "text-end")}>{t(label)}</span>
+      <div className={cn("grid min-w-0 gap-1", fieldWidths[width])}>
         <div className={cn("flex min-w-0 items-center gap-2", stacked ? "justify-between" : "justify-end")}>
           {readOnly ? (
             <span className={cn(valueClass, "truncate")}>{current ? t(current.label) : "–"}</span>
@@ -661,7 +679,7 @@ export function InlineSelectField({
             <Select value={value} onValueChange={(next) => void choose(next)}>
               <SelectTrigger
                 aria-label={t(label)}
-                className={cn(valueClass, "h-8 min-w-0 gap-1.5 rounded-[var(--md-radius-md)] border-0 px-2 transition-colors duration-150 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]", stacked ? "justify-between" : "justify-end", directEdit || stacked ? "w-full bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] data-[state=open]:bg-[var(--md-field-bg-hover)]" : "w-auto bg-transparent shadow-none hover:bg-[var(--md-surface-soft)] data-[state=open]:bg-[var(--md-surface-soft)]")}
+                className={cn(valueClass, "h-8 min-w-0 gap-1.5 rounded-[var(--md-radius-md)] border-0 px-2 transition-colors duration-150 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]", stacked || compact ? "justify-between" : "justify-end", directEdit || stacked ? "w-full bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] data-[state=open]:bg-[var(--md-field-bg-hover)]" : "w-auto bg-transparent shadow-none hover:bg-[var(--md-surface-soft)] data-[state=open]:bg-[var(--md-surface-soft)]")}
               >
                 <SelectValue placeholder={placeholder ? t(placeholder) : t("Choose")} />
               </SelectTrigger>
@@ -757,8 +775,8 @@ export function InlineSwitchField({
  * (label beside value) or stack their labels above always-visible controls, which
  * is what a field needs once it is sharing a page-width grid with others.
  */
-export function InlineFieldGroup({ stacked = false, directEdit = false, children }: { stacked?: boolean; directEdit?: boolean; children: ReactNode }) {
-  return <InlineFieldContext.Provider value={{ stacked, directEdit: directEdit || stacked }}>{children}</InlineFieldContext.Provider>
+export function InlineFieldGroup({ stacked = false, directEdit = false, compact = false, children }: { stacked?: boolean; directEdit?: boolean; compact?: boolean; children: ReactNode }) {
+  return <InlineFieldContext.Provider value={{ stacked: stacked && !compact, compact, directEdit: directEdit || stacked || compact }}>{children}</InlineFieldContext.Provider>
 }
 
 /**

@@ -6,6 +6,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import type { LucideIcon } from "@/components/icons/hugeicons"
 import {
   AiBrain,
+  AudioWaveform,
   ArrowRight,
   ArrowLeft,
   BarChart3,
@@ -1395,6 +1396,9 @@ export function DexterPromptComposer({
   onRemoveAttachment,
   onSend,
   isSending = false,
+  onStartVoice,
+  voiceActive = false,
+  voicePanel,
   canUpdateRequest = false,
   updatePending = false,
   updateStatus,
@@ -1435,6 +1439,9 @@ export function DexterPromptComposer({
   onCommand?: (command: DexterSlashCommand) => void
   onRemoveAttachment?: (id: string) => void
   onSend: (value?: string) => void
+  onStartVoice?: () => void
+  voiceActive?: boolean
+  voicePanel?: ReactNode
   isSending?: boolean
   canUpdateRequest?: boolean
   updatePending?: boolean
@@ -1488,6 +1495,8 @@ export function DexterPromptComposer({
   }
   const [internalMentions, setInternalMentions] = useState<DexterMentionItem[]>([])
   const canSend = !dictating && value.trim().length > 0 && !isUploading && !hasFailedUploads && !updatePending && (!isSending || canUpdateRequest)
+  const showVoiceAction = mode === "chat" && !taskAgentName && !value.trim() && Boolean(onStartVoice)
+  const canStartVoice = showVoiceAction && !dictating && !voiceActive && !isUploading && !isSending && !updatePending && !hasFailedUploads && attachments.length === 0
   const minRows = compact ? 52 : 76
   const maxRows = compact ? 168 : 232
   const activeMentions = selectedMentions ?? internalMentions
@@ -1518,7 +1527,7 @@ export function DexterPromptComposer({
       </span>
       <span aria-hidden="true" className="md-composer-bloom__contrast" />
 
-      <div className="md-dexter-role-container relative z-[2] flex h-[44px] min-w-0 items-center px-3 sm:px-3.5">
+      <div className={cn("md-dexter-role-container relative z-[2] flex h-[44px] min-w-0 items-center px-3 sm:px-3.5", voicePanel && "hidden")}>
         {mode === "watch" || taskAgentName ? (
           <span className="md-composer-lead inline-flex h-8 items-center rounded-full px-2.5 text-[13px] font-medium text-white dark:text-[var(--md-ink)]">
             {taskAgentName ?? t("Watcher")}
@@ -1528,7 +1537,7 @@ export function DexterPromptComposer({
         )}
       </div>
 
-      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)] shadow-[inset_0_0_0_1px_var(--md-composer-panel-line)]">
+      <div className={cn("relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)] shadow-[inset_0_0_0_1px_var(--md-composer-panel-line)]", voicePanel && "mt-1.5")}>
         <div className="flex flex-col px-4 pb-3 pt-3.5 sm:px-5 sm:pb-3.5">
           <div>
           <AnimatePresence initial={false}>
@@ -1589,7 +1598,8 @@ export function DexterPromptComposer({
             ) : null}
           </AnimatePresence>
 
-          <DexterMentionInput
+          {voicePanel}
+          {!voicePanel ? <DexterMentionInput
             value={value}
             items={mentionItems}
             commands={commands}
@@ -1604,14 +1614,14 @@ export function DexterPromptComposer({
             onCommand={onCommand}
             onSend={(liveValue) => { if (canSend) onSend(liveValue) }}
             animateProgrammaticMentions={animateProgrammaticMentions}
-          />
+          /> : null}
 
           {isUploading ? <p role="status" className="mt-2 text-[12px] text-[var(--md-text)]">{t("Uploading files… Your message will be ready to send when this finishes.")}</p> : null}
           {uploadError ? <p role="alert" className="mt-2 text-[12px] text-[var(--md-red)]">{uploadError}</p> : null}
           {hasFailedUploads && onRetryUpload ? <Button type="button" variant="ghost" className="mt-1 self-start" onClick={onRetryUpload}>{t("Retry upload")}</Button> : null}
           {updateStatus ? <p role="status" className="mt-2 text-[12px] text-[var(--md-text)]">{t(updateStatus)}</p> : null}
           </div>
-          <div className="-mx-2 mt-3 flex flex-wrap items-center gap-1 sm:mx-0 sm:gap-2">
+          <div className={cn("-mx-2 mt-3 flex flex-wrap items-center gap-1 sm:mx-0 sm:gap-2", voicePanel && "hidden")}>
             <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
             <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             {!taskAgentName ? <Button
@@ -1655,7 +1665,7 @@ export function DexterPromptComposer({
                 }}
                 aria-label={t(dictation.phase === "polishing" ? "Transcribing recording" : dictation.phase === "transcribing" ? "Stop recording" : dictating ? "Cancel recording" : "Start voice input")}
                 title={t(dictation.phase === "polishing" ? "Transcribing recording" : dictation.phase === "transcribing" ? "Stop recording" : dictating ? "Cancel recording" : "Start voice input")}
-                disabled={dictating ? dictation.phase === "polishing" : isUploading || (isSending && !canUpdateRequest) || updatePending}
+                disabled={voiceActive || (dictating ? dictation.phase === "polishing" : isUploading || (isSending && !canUpdateRequest) || updatePending)}
                 className="md-composer-chip size-10 shrink-0 rounded-full text-[var(--md-text)] hover:text-[var(--md-ink)] active:scale-95 motion-reduce:active:scale-100">
                 {dictating
                   ? <span aria-hidden="true" className="size-3 rounded-[3px] bg-current" />
@@ -1663,13 +1673,13 @@ export function DexterPromptComposer({
               </Button>
               <motion.div
                 className="flex shrink-0 items-center gap-2"
-                animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
+                animate={{ scale: canSend || canStartVoice ? 1 : 0.94, opacity: canSend || canStartVoice ? 1 : 0.55 }}
                 transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
               >
                 <DexterActionPill
                   type="button"
                   iconElement={
-                    <HugeiconsIcon
+                    showVoiceAction ? <AudioWaveform aria-hidden="true" className="relative z-10 size-4" /> : <HugeiconsIcon
                       aria-hidden="true"
                       className="relative z-10 size-3.5 shrink-0"
                       icon={SendHorizontalIcon}
@@ -1677,11 +1687,11 @@ export function DexterPromptComposer({
                     />
                   }
                   iconOnly
-                  label={`${t(canUpdateRequest ? "Update request" : "Send prompt")} (${sendShortcutModifier} + Enter)`}
-                  aria-keyshortcuts="Meta+Enter Control+Enter"
+                  label={showVoiceAction ? t("Speak to Dexter") : `${t(canUpdateRequest ? "Update request" : "Send prompt")} (${sendShortcutModifier} + Enter)`}
+                  aria-keyshortcuts={showVoiceAction ? undefined : "Meta+Enter Control+Enter"}
                   className="size-10 min-w-0 rounded-full p-0"
-                  onClick={() => onSend()}
-                  disabled={!canSend}
+                  onClick={() => showVoiceAction ? onStartVoice?.() : onSend()}
+                  disabled={showVoiceAction ? !canStartVoice : !canSend}
                 />
               </motion.div>
             </div>

@@ -35,7 +35,8 @@ import {
 
 export type AccountDetailTab =
   | "overview"
-  | "setup"
+  | "notes"
+  | "details"
   | "live"
   | "contacts"
   | "addresses"
@@ -56,7 +57,7 @@ const blankOperations: AccountOperations = {
   addressOperations: [],
 };
 const fieldClass =
-  "h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[13px]";
+  "h-8 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-2 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[13px]";
 const roleFields: Record<string, Array<[string, string]>> = {
   customer: [
     ["customerReference", "Customer reference"],
@@ -192,8 +193,8 @@ export function AccountDetailTabs({
   );
   const tabs = [
     { id: "overview", label: t("Overview") },
-    { id: "setup", label: t("Setup") },
-    { id: "live", label: "Multideck Live" },
+    { id: "details", label: t("Details") },
+    { id: "notes", label: t("Notes") },
     {
       id: "addresses",
       label: t("Addresses"),
@@ -221,6 +222,7 @@ export function AccountDetailTabs({
       ),
     },
     { id: "privacy", label: t("Privacy") },
+    { id: "live", label: "Multideck Live" },
   ];
   return (
     <Surface
@@ -247,7 +249,7 @@ export function AccountOperationsPanel({
   onChange,
 }: {
   account: ApiCustomerDetail;
-  activeTab: Exclude<AccountDetailTab, "overview" | "setup" | "live">;
+  activeTab: Exclude<AccountDetailTab, "overview" | "details" | "live" | "notes">;
   canManageFinancial: boolean;
   canManageBankDetails: boolean;
   currencyOptions: Array<{ code: string; name: string }>;
@@ -386,9 +388,9 @@ function SectionTitle({ title, detail }: { title: string; detail?: string }) {
 function Field({ label, children }: { label: string; children: ReactNode }) {
   const { t } = useLanguage();
   return (
-    <label className="grid min-w-0 gap-1.5 text-[11.5px] font-medium text-[var(--md-text)]">
-      <span>{t(label)}</span>
-      {children}
+    <label className="grid min-w-0 grid-cols-[min(32%,120px)_minmax(0,1fr)] items-start gap-2 text-[11.5px] text-[var(--md-text)]">
+      <span className="pt-2 text-end leading-4">{t(label)}</span>
+      <span className="company-form-value block min-w-0">{children}</span>
     </label>
   );
 }
@@ -402,9 +404,9 @@ function ControlField({
 }) {
   const { t } = useLanguage();
   return (
-    <div className="grid min-w-0 gap-1.5 text-[11.5px] font-medium text-[var(--md-text)]">
-      <span>{t(label)}</span>
-      {children}
+    <div className="grid min-w-0 grid-cols-[min(32%,120px)_minmax(0,1fr)] items-start gap-2 text-[11.5px] text-[var(--md-text)]">
+      <span className="pt-2 text-end leading-4">{t(label)}</span>
+      <div className="company-form-value min-w-0">{children}</div>
     </div>
   );
 }
@@ -544,7 +546,7 @@ function Addresses({ account, draft, setDraft }: Props) {
                       .join(" · ")
                   : t("No regular opening hours recorded")}
               </p>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid items-start gap-x-5 gap-y-2 lg:grid-cols-2 xl:grid-cols-3">
                 <label className="flex items-center gap-2 text-[11.5px] text-[var(--md-text)]">
                   <Switch
                     checked={details.appointmentRequired}
@@ -963,7 +965,7 @@ function Financial({
         >
         {activeFinancialTab === "receivables" ? (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid items-start gap-x-5 gap-y-2 lg:grid-cols-2 xl:grid-cols-3">
               <ControlField label="Customer accounting status">
                 <Select
                   value={value(data, "customerAccountingStatusCode") || "active"}
@@ -1184,7 +1186,7 @@ function Financial({
           </>
         ) : activeFinancialTab === "payables" ? (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid items-start gap-x-5 gap-y-2 lg:grid-cols-2 xl:grid-cols-3">
               <ControlField label="Supplier accounting status">
                 <Select value={value(data, "supplierAccountingStatusCode") || "active"} onValueChange={(supplierAccountingStatusCode) => update("supplierAccountingStatusCode", supplierAccountingStatusCode)}>
                   <SelectTrigger aria-label={t("Supplier accounting status")} className={fieldClass}><SelectValue /></SelectTrigger>
@@ -1417,7 +1419,7 @@ function Financial({
                         </Button>
                       </div>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="grid items-start gap-x-5 gap-y-2 lg:grid-cols-2 xl:grid-cols-3">
                       <Field label="Account name">
                         <Input
                           value={bank.accountName}
@@ -1600,7 +1602,7 @@ function Customs({ account, draft, setDraft }: Props) {
       <SectionTitle
         title="Customs identifiers"
       />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid items-start gap-x-5 gap-y-2 lg:grid-cols-2 xl:grid-cols-3">
         <Field label="VAT number">
           <Input
             value={value(data, "vatNumber")}
@@ -1653,13 +1655,13 @@ function Customs({ account, draft, setDraft }: Props) {
       </div>
       <div className="mt-5">
         <SectionTitle title="Office EORI numbers" detail="Use the registered EORI for each address. Leave blank to use the company EORI." />
-        {account.addresses.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{account.addresses.map(address => <Field key={address.id} label={[address.name, address.line1, address.townCity].filter(Boolean).join(" · ") || t("Address")}><Input aria-label={`${t("EORI for")} ${address.name || address.line1 || address.id}`} value={value(addressEoris, address.id)} placeholder={value(data, "eoriNumber") || t("Company EORI")} maxLength={17} onChange={event => update("addressEoris", { ...addressEoris, [address.id]: event.target.value.toUpperCase() })} className={fieldClass} dir="ltr" /></Field>)}</div> : <p className="text-[12px] text-[var(--md-subtle)]">{t("Add an address in the Addresses tab first.")}</p>}
+        {account.addresses.length ? <div className="grid gap-3 lg:grid-cols-2">{account.addresses.map(address => <Field key={address.id} label={[address.name, address.line1, address.townCity].filter(Boolean).join(" · ") || t("Address")}><Input aria-label={`${t("EORI for")} ${address.name || address.line1 || address.id}`} value={value(addressEoris, address.id)} placeholder={value(data, "eoriNumber") || t("Company EORI")} maxLength={17} onChange={event => update("addressEoris", { ...addressEoris, [address.id]: event.target.value.toUpperCase() })} className={fieldClass} dir="ltr" /></Field>)}</div> : <p className="text-[12px] text-[var(--md-subtle)]">{t("Add an address in the Addresses tab first.")}</p>}
       </div>
       <div className="mt-5">
         <SectionTitle title="Payment defaults" detail="Fill empty payment fields on matching import tax lines. Existing line entries are kept." />
         <label className="mb-3 flex items-center gap-2 text-[12px] text-[var(--md-text)]"><Switch checked={data.domesticDutyTaxUseCustomerByDefault === true} onCheckedChange={checked => update("domesticDutyTaxUseCustomerByDefault", checked)} />{t("Domestic duty tax parties: use customer by default")}</label>
         <p className="mb-3 text-[11px] text-[var(--md-subtle)]">{t("Adds the company VAT number as an FR1 tax party when selected as the importer. You can change this on each declaration.")}</p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid items-start gap-x-5 gap-y-2 lg:grid-cols-2 xl:grid-cols-3">
           <Field label="Customs duty payment method"><Input value={value(data, "dutyPaymentMethod")} maxLength={1} onChange={event => update("dutyPaymentMethod", event.target.value.toUpperCase())} className={fieldClass} placeholder="E" /></Field>
           <Field label="Import VAT payment method"><Input value={value(data, "vatPaymentMethod")} maxLength={1} onChange={event => update("vatPaymentMethod", event.target.value.toUpperCase())} className={fieldClass} /></Field>
         </div>
@@ -1667,7 +1669,7 @@ function Customs({ account, draft, setDraft }: Props) {
       </div>
       <div className="mt-5">
         <SectionTitle title="Duty deferment authorisations" detail="Full registered references only. C505 / C506 and CGU / DPO are used for deferred customs duty, not VAT-only deferment. Guarantee exemptions must be entered and reviewed on the declaration." />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid items-start gap-x-5 gap-y-2 lg:grid-cols-2 xl:grid-cols-3">
           {[["cguDocumentId", "C505 document ID"], ["dpoDocumentId", "C506 document ID"], ["cguHolderEori", "CGU holder EORI"], ["dpoHolderEori", "DPO holder EORI"]].map(([key, label]) => <Field key={key} label={label}><Input value={value(data, key)} onChange={event => update(key, event.target.value.toUpperCase())} maxLength={key.endsWith("Eori") ? 17 : 35} className={fieldClass} dir="ltr" /></Field>)}
         </div>
       </div>
@@ -2313,7 +2315,7 @@ function Privacy({ draft, setDraft }: Omit<Props, "account">) {
         title="Privacy and retention"
         detail="Account defaults do not override an individual contact's consent or legal rights."
       />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid items-start gap-x-5 gap-y-2 lg:grid-cols-2 xl:grid-cols-3">
         <Field label="Lawful basis">
           <Input
             value={value(data, "lawfulBasis")}

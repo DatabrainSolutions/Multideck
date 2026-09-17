@@ -24,6 +24,7 @@ const tests = [
   'notification-permissions-db.test.mjs',
   'reporting-workspace-db.test.mjs',
   'dexter-actor-context-postgres.test.mjs',
+  'dexter-voice-postgres.test.mjs',
   'dexter-approval-role-postgres.test.mjs',
   'dexter-deal-watch-postgres.test.mjs',
   'dexter-address-watch-postgres.test.mjs',

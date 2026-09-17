@@ -558,6 +558,7 @@ async function accountDetail(admin: any, companyId: string, userId: string, perm
   })
   return {
     ...summary,
+    crmAccountId: accountId,
     customerSince: profile?.CRMAccount_CreatedAt ?? org.Org_CRMUpdatedAt,
     status: profile?.CRMAccount_RelationshipStatusCode ?? org.Org_CRMRelationshipStatusCode ?? "active_customer",
     tier: profile?.CRMAccount_Tier ?? null,
