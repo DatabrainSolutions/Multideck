@@ -105,7 +105,7 @@ export const homeNavItem: NavItem = { label: "Home", icon: Home03, route: "/" }
  * Sales & CRM / Marketing / Email marketing, which is outbound campaign work.
  */
 export const inboxNavItem: NavItem = { label: "Inbox", icon: Inbox, route: "/inbox" }
-export const todoNavItem: NavItem = { label: "To Do list", icon: ClipboardCheck, route: "/to-do" }
+export const todoNavItem: NavItem = { label: "Tasks", icon: ClipboardCheck, route: "/to-do" }
 export const calendarNavItem: NavItem = { label: "Calendar", icon: CalendarDays, route: "/calendar" }
 
 export const sidebarAreas: SidebarArea[] = [
@@ -163,7 +163,6 @@ export const sidebarAreas: SidebarArea[] = [
         children: [
           { label: "Bookings overview", icon: LayoutDashboard, route: "/bookings" },
           { label: "Road control", icon: Truck, route: "/road-control" },
-          { label: "Provisional booking", icon: Clock3, route: "/bookings/provisional" },
         ],
       },
       { id: "transport-planning", label: "Transport planning", icon: Plane },
@@ -310,6 +309,7 @@ export const sidebarAreas: SidebarArea[] = [
       { id: "admin-broadcast", label: "Broadcast", icon: Megaphone, route: "/admin/broadcast" },
       { id: "admin-billing", label: "Billing", icon: CreditCard, route: "/admin/billing" },
       { id: "admin-branding", label: "Branding", icon: Palette, route: "/admin/branding" },
+      { id: "admin-email-signatures", label: "Email signatures", icon: Palette, route: "/admin/email-signatures" },
       { id: "admin-system-preferences", label: "System Preferences", icon: Settings2, route: "/admin/system-preferences" },
       { id: "admin-activity-log", label: "Active log", icon: Clock3, route: "/admin/activity" },
       { id: "admin-detailed-log", label: "Detailed log", icon: ListOrdered, route: "/admin/detailed-log" },
@@ -319,7 +319,7 @@ export const sidebarAreas: SidebarArea[] = [
 
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
-  { label: "To Do list", icon: ClipboardCheck, route: "/to-do" },
+  { label: "Tasks", icon: ClipboardCheck, route: "/to-do" },
   { label: "Warehouse", icon: Forklift, route: "/warehouse" },
   { label: "Customers", icon: Users, route: "/customers" },
   { label: "CRM", icon: BriefcaseBusiness, route: "/crm" },
@@ -328,7 +328,7 @@ export const sidebarPrimary: NavItem[] = [
 
 export const sidebarSecondary: NavItem[] = [
   { label: "Quotes", icon: ReceiptText, route: "/quotes" },
-  { label: "Pre-booking", icon: PackageCheck, route: "/bookings/provisional" },
+  { label: "New booking", icon: PackageCheck, route: "/bookings/new" },
   { label: "Customs", icon: ClipboardCheck },
   { label: "Reports", icon: ChartAnalysis, route: "/reports" },
   { label: "Components", icon: Component, route: "/components" },

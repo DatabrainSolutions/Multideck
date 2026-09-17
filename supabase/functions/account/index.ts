@@ -1,14 +1,21 @@
-import { authenticate, body, corsHeaders, failure, HttpError, json } from "../_shared/backend.ts"
+import { authenticate, body, corsHeaders, failure, HttpError, json, routeParts } from "../_shared/backend.ts"
 import { workspaceBootstrap } from "../_shared/workspace-bootstrap.ts"
+import { accountOnboarding } from "./onboarding.ts"
+import { readOnboardingState } from "../_shared/account-onboarding.ts"
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     const { admin, user } = await authenticate(request)
+    const parts = routeParts(request, "account")
+    if (parts.length === 1 && parts[0] === "onboarding") return await accountOnboarding(request, admin, user)
+    if (parts.length) throw new HttpError(404, "Account page not found.")
     if (request.method === "GET") {
       const workspace = await workspaceBootstrap(admin, user)
+      const onboarding = readOnboardingState(user.app_metadata?.multideck_onboarding)
       return json(request, {
         authenticated: true,
+        onboardingRequired: workspace.profile?.actorType === "internal" && Boolean(onboarding && !onboarding.completedAt),
         user: { id: user.id, email: user.email ?? null, role: user.role ?? null, audience: user.aud ?? null },
         profile: workspace.profile,
         workspace: { preferences: workspace.preferences, profileMedia: workspace.profileMedia },

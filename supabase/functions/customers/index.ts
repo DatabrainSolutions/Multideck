@@ -13,6 +13,7 @@ import {
   routeParts,
 } from "../_shared/backend.ts"
 import { resolveAccountScoreExplanations } from "./score-explanations.ts"
+import { customsImporterProfileErrors } from "../_shared/customs-importer-profile.ts"
 
 type Row = Record<string, any>
 type OrganisationType = "company" | "customer" | "supplier"
@@ -260,6 +261,11 @@ async function contactRows(admin: any, companyId: string, search?: string | null
     if (error) throw new HttpError(500, error.message)
     if (!exactContact) return []
     exactAccountId = exactContact.Org_ID
+    if (!exactAccountId) {
+      const access = await admin.rpc("_multideck_crm_require_contact_access", { p_actor_user_id: actorUserId, p_contact_id: contactId })
+      if (access.error) throw new HttpError(access.error.code === "P0002" ? 404 : access.error.code === "42501" ? 403 : 500, "This contact is not available to your account.")
+      scopedContactIdsOverride = [contactId]
+    }
   }
   if (exactAccountId && actorUserId) await requireExactAccountAccess(admin, actorUserId, exactAccountId)
   const accessibleIds = scopedContactIdsOverride || (exactAccountId && actorUserId) ? [] : await accessibleAccountIds(admin, companyId)
@@ -278,7 +284,7 @@ async function contactRows(admin: any, companyId: string, search?: string | null
   const { data: contacts, error } = await query
   if (error) throw new HttpError(500, error.message)
   const contactIds = (contacts ?? []).map((item: Row) => item.OrgContact_ID)
-  const orgIds = [...new Set((contacts ?? []).map((item: Row) => item.Org_ID))]
+  const orgIds = [...new Set((contacts ?? []).map((item: Row) => item.Org_ID).filter(Boolean))]
   const [organisationResult, emailResult, profileResult, identityResult, addressResult] = await Promise.all([
     orgIds.length ? admin.from("Org_Master").select("Org_id,Org_Name").in("Org_id", orgIds) : Promise.resolve({ data: [] }),
     contactIds.length ? admin.from("OrgContact_Emails").select("*").in("OrgContact_ID", contactIds).eq("OrgContactEmail_IsActive", true).order("OrgContactEmail_IsPrimary", { ascending: false }).order("OrgContactEmail_ValidFrom", { ascending: false }) : Promise.resolve({ data: [] }),
@@ -803,10 +809,14 @@ async function upsertRelatedPartyDefault(admin: any, current: Row, permissions: 
 async function replaceAccountOperations(admin: any, current: Row, permissions: string[], accountId: string, payload: Row) {
   const { data: existingProfile, error: existingError } = await admin
     .from("CRM_AccountOperationalProfiles")
-    .select("CRMAccountOps_InvoicePreferencesJSON")
+    .select("CRMAccountOps_InvoicePreferencesJSON, CRMAccountOps_CustomsJSON")
     .eq("CRMAccountOps_OrgID", accountId)
     .maybeSingle()
   if (existingError && existingError.code !== "PGRST116") throw new HttpError(500, existingError.message)
+  if (JSON.stringify(objectValue(existingProfile?.CRMAccountOps_CustomsJSON)) !== JSON.stringify(objectValue(payload.customs))) {
+    const customsErrors = customsImporterProfileErrors(payload.customs)
+    if (customsErrors.length) throw new HttpError(400, customsErrors.join(" "))
+  }
   const currentFinance = objectValue(existingProfile?.CRMAccountOps_InvoicePreferencesJSON)
   const nextFinance = objectValue(payload.invoicePreferences)
   if (JSON.stringify(currentFinance) !== JSON.stringify(nextFinance) && !permissions.includes("Finance.Configuration.Manage")) {

@@ -1,5 +1,7 @@
+import { TicketAttachmentList } from "./ticket-attachments"
+import { requestDictation, type InlineDictationState } from "@/lib/dictation-command"
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
-import { SentIcon as SendHorizontalIcon } from "@hugeicons/core-free-icons"
+import { Mic01Icon as DictationMicrophoneIcon, SentIcon as SendHorizontalIcon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import type { LucideIcon } from "@/components/icons/hugeicons"
 import {
@@ -32,7 +34,6 @@ import {
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
-import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import {
   Context,
   ContextContent,
@@ -111,7 +112,9 @@ export type DexterAttachment = {
   meta: string
   tone: StatusTone
   icon: LucideIcon
-  /** Present only for local image uploads that can open without another request. */
+  /** Local file URL, kept in the browser only. */
+  mimeType?: string
+  sizeBytes?: number
   previewUrl?: string
 }
 
@@ -1269,14 +1272,111 @@ export function DexterMentionInput({
   )
 }
 
+function DexterRecordingWaveform({ level, phase }: {
+  level: { current: number }
+  phase: InlineDictationState["phase"]
+}) {
+  const { t } = useLanguage()
+  const reduce = useReducedMotion()
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const history = useRef<{ time: number; amplitude: number }[]>([])
+  const lastDrawAt = useRef(0)
+  const recording = phase === "transcribing"
+  const processing = phase === "polishing"
+
+  useEffect(() => {
+    const element = canvas.current
+    if (!element) return
+    const context = element.getContext("2d")
+    if (!context) return
+    let frame = 0
+    let previousFrame = 0
+    let smoothedLevel = 0
+    const draw = (now: number) => {
+      const width = element.clientWidth
+      const height = element.clientHeight
+      const ratio = window.devicePixelRatio || 1
+      if (element.width !== Math.round(width * ratio) || element.height !== Math.round(height * ratio)) {
+        element.width = Math.round(width * ratio)
+        element.height = Math.round(height * ratio)
+      }
+      context.setTransform(ratio, 0, 0, ratio, 0, 0)
+      context.clearRect(0, 0, width, height)
+      // New sound enters beside Stop and travels left at a steady speed.
+      // Keep only the visible history, rather than compressing the whole take.
+      const available = Math.max(1, width - 12)
+      const speed = Math.min(180, Math.max(90, available / 3.2))
+      const spacing = 3.5
+      const sampleInterval = spacing / speed * 1000
+      if (recording) {
+        const delta = previousFrame ? Math.min(100, now - previousFrame) : 16
+        const target = Math.min(1, Math.max(0, level.current))
+        const smoothing = 1 - Math.exp(-delta / (target > smoothedLevel ? 30 : 70))
+        smoothedLevel += (target - smoothedLevel) * smoothing
+        const values = history.current
+        let lastSample = values.at(-1)?.time
+        // A backgrounded tab resumes with fresh samples, not a fabricated backlog.
+        if (lastSample === undefined || now - lastSample > 250) {
+          values.push({ time: now, amplitude: smoothedLevel })
+          lastSample = now
+        }
+        while (now - lastSample >= sampleInterval) {
+          lastSample += sampleInterval
+          values.push({ time: lastSample, amplitude: smoothedLevel })
+        }
+        history.current = values.filter(sample => now - sample.time <= (available + spacing) / speed * 1000)
+        lastDrawAt.current = now
+        previousFrame = now
+      }
+      const values = history.current
+      const drawAt = lastDrawAt.current
+      context.strokeStyle = getComputedStyle(element).color
+      context.lineWidth = 2.25
+      context.lineCap = "round"
+      for (let index = 0; index <= Math.floor(available / spacing); index += 1) {
+        // Reduced motion retains live volume feedback without horizontal travel.
+        const sample = values[values.length - 1 - index]
+        const offset = !reduce && sample ? (drawAt - sample.time) / 1000 * speed : index * spacing
+        const x = width - 6 - offset
+        if (offset > available) continue
+        const amplitude = reduce ? smoothedLevel : sample?.amplitude ?? 0
+        const half = 0.75 + Math.pow(amplitude, 0.6) * (height / 2 - 8)
+        context.globalAlpha = Math.min(1, (available - offset + 4) / 16) * (sample || reduce ? 0.9 : 0.18)
+        context.beginPath()
+        context.moveTo(x, height / 2 - half)
+        context.lineTo(x, height / 2 + half)
+        context.stroke()
+      }
+      context.globalAlpha = 1
+      if (recording) frame = requestAnimationFrame(draw)
+    }
+    frame = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(frame)
+  }, [level, recording, reduce])
+
+  return (
+    <motion.div
+      className="pointer-events-none absolute inset-0 flex items-center pe-2 ps-1"
+      initial={reduce ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={reduceMotion(Boolean(reduce), mdMotion.enter)}
+      aria-label={t("Voice input")}
+    >
+      <canvas ref={canvas} aria-hidden="true" className={cn("h-10 w-full text-[var(--md-accent)]", !recording && "opacity-30")} />
+      <span role="status" className={recording ? "sr-only" : "absolute inset-x-2 truncate bg-[var(--md-composer-panel-bg)] text-[12px] text-[var(--md-subtle)]"}>
+        {t(recording ? "Recording" : processing ? "Transcribing…" : "Waiting for microphone…")}
+      </span>
+    </motion.div>
+  )
+}
+
 export function DexterPromptComposer({
   value,
+  taskAgentName,
   specialists = defaultDexterSpecialists,
   selectedSpecialistId,
   models = dexterModels,
   selectedModelId,
-  accessMode,
-  pendingAccessMode = null,
   contextUsedTokens = 0,
   contextMaxTokens = 128_000,
   attachments = [],
@@ -1291,18 +1391,25 @@ export function DexterPromptComposer({
   attachmentActionLabel = "Attach context",
   onSelectSpecialist,
   onSelectModel,
-  onAccessModeChange,
-  isAccessModeChanging = false,
   onCommand,
   onRemoveAttachment,
   onSend,
   isSending = false,
+  canUpdateRequest = false,
+  updatePending = false,
+  updateStatus,
+  isUploading = false,
+  uploadError,
+  hasFailedUploads = false,
+  onRetryUpload,
   mode = "chat",
   compact = false,
   animateProgrammaticMentions = false,
   className,
 }: {
   value: string
+  /** Background tasks use their saved agent and fixed cloud model. Reference mentions stay available. */
+  taskAgentName?: string
   specialists?: DexterSpecialist[]
   selectedSpecialistId: DexterSpecialistId
   models?: DexterModel[]
@@ -1329,6 +1436,13 @@ export function DexterPromptComposer({
   onRemoveAttachment?: (id: string) => void
   onSend: (value?: string) => void
   isSending?: boolean
+  canUpdateRequest?: boolean
+  updatePending?: boolean
+  updateStatus?: string
+  isUploading?: boolean
+  uploadError?: string | null
+  hasFailedUploads?: boolean
+  onRetryUpload?: () => void
   /** Watch mode has one deterministic job, so it does not expose role routing. */
   mode?: "chat" | "watch"
   compact?: boolean
@@ -1338,8 +1452,42 @@ export function DexterPromptComposer({
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const sendShortcutModifier = useSendShortcutModifier()
+  const composerRef = useRef<HTMLDivElement>(null)
+  const microphoneButton = useRef<HTMLButtonElement>(null)
+  const dictationTarget = useRef<HTMLElement | null>(null)
+  const microphoneLevel = useRef(0)
+  const [dictation, setDictation] = useState<InlineDictationState>({ phase: "idle", level: 0, message: null })
+  const dictating = ["requesting", "transcribing", "polishing"].includes(dictation.phase)
+  const dictationActive = useRef(false)
+
+  useEffect(() => {
+    if (!dictationActive.current && dictating) microphoneButton.current?.focus({ preventScroll: true })
+    if (dictationActive.current && !dictating) dictationTarget.current?.focus({ preventScroll: true })
+    dictationActive.current = dictating
+  }, [dictating])
+  useEffect(() => () => {
+    if (dictationTarget.current) requestDictation({ action: "cancel", target: dictationTarget.current })
+  }, [])
+
+  const cancelDictation = () => {
+    if (dictationTarget.current) requestDictation({ action: "cancel", target: dictationTarget.current })
+    setDictation({ phase: "idle", level: 0, message: null })
+  }
+  const startDictation = () => {
+    const target = composerRef.current?.querySelector<HTMLElement>("[contenteditable='true']")
+    if (!target) return
+    dictationTarget.current = target
+    setDictation({ phase: "requesting", level: 0, message: null })
+    requestDictation({ action: "start", request: { target, onState: (next) => {
+      microphoneLevel.current = next.level
+      setDictation(current => {
+        if (next.phase === "idle" && (current.phase === "error" || current.phase === "allowance")) return current
+        return current.phase === next.phase && current.message === next.message ? current : { ...next, level: 0 }
+      })
+    } } })
+  }
   const [internalMentions, setInternalMentions] = useState<DexterMentionItem[]>([])
-  const canSend = value.trim().length > 0
+  const canSend = !dictating && value.trim().length > 0 && !isUploading && !hasFailedUploads && !updatePending && (!isSending || canUpdateRequest)
   const minRows = compact ? 52 : 76
   const maxRows = compact ? 168 : 232
   const activeMentions = selectedMentions ?? internalMentions
@@ -1350,12 +1498,20 @@ export function DexterPromptComposer({
 
   return (
     <div
+      ref={composerRef}
       className={cn(
         // `overflow-hidden` keeps the shared Dexter shader inside the shell's
         // rounded top corners.
         "md-composer md-composer-bloom relative overflow-hidden rounded-[26px]",
         className,
       )}
+      onKeyDown={(event) => {
+        if (dictating && event.key === "Escape") {
+          event.preventDefault()
+          event.stopPropagation()
+          cancelDictation()
+        }
+      }}
     >
       <span aria-hidden="true" className="md-composer-bloom__shader">
         <SpectralBloomShader shape="composer" />
@@ -1363,9 +1519,9 @@ export function DexterPromptComposer({
       <span aria-hidden="true" className="md-composer-bloom__contrast" />
 
       <div className="md-dexter-role-container relative z-[2] flex h-[44px] min-w-0 items-center px-3 sm:px-3.5">
-        {mode === "watch" ? (
+        {mode === "watch" || taskAgentName ? (
           <span className="md-composer-lead inline-flex h-8 items-center rounded-full px-2.5 text-[13px] font-medium text-white dark:text-[var(--md-ink)]">
-            {t("Watcher")}
+            {taskAgentName ?? t("Watcher")}
           </span>
         ) : (
           <DexterRoleMenu specialists={specialists} selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />
@@ -1374,6 +1530,7 @@ export function DexterPromptComposer({
 
       <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)] shadow-[inset_0_0_0_1px_var(--md-composer-panel-line)]">
         <div className="flex flex-col px-4 pb-3 pt-3.5 sm:px-5 sm:pb-3.5">
+          <div>
           <AnimatePresence initial={false}>
             {attachments.length > 0 ? (
               <motion.div
@@ -1384,9 +1541,10 @@ export function DexterPromptComposer({
                 exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0, marginBottom: 0 }}
                 transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.panel)}
               >
+                <TicketAttachmentList items={attachments.flatMap(file => file.type === "uploaded_document" && file.previewUrl ? [{id:file.id, originalName:file.title, mediaType:file.mimeType || "application/octet-stream", byteSize:file.sizeBytes || 0, signedUrl:file.previewUrl}] : [])} onRemove={onRemoveAttachment} disabled={isUploading} />
                 <ImageLightbox items={imageLightboxItems}>
                   {(imageLightbox) => <AnimatePresence initial={false} mode="popLayout">
-                    {attachments.map((attachment) => {
+                    {attachments.filter(attachment => !(attachment.type === "uploaded_document" && attachment.previewUrl)).map((attachment) => {
                       if (attachment.previewUrl) {
                         return <DexterImageAttachmentPreview
                           key={attachment.id}
@@ -1444,25 +1602,33 @@ export function DexterPromptComposer({
             onMentionsChange={handleMentionsChange}
             onUnavailableMention={onUnavailableMention}
             onCommand={onCommand}
-            onSend={(liveValue) => onSend(liveValue)}
+            onSend={(liveValue) => { if (canSend) onSend(liveValue) }}
             animateProgrammaticMentions={animateProgrammaticMentions}
           />
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button
+          {isUploading ? <p role="status" className="mt-2 text-[12px] text-[var(--md-text)]">{t("Uploading files… Your message will be ready to send when this finishes.")}</p> : null}
+          {uploadError ? <p role="alert" className="mt-2 text-[12px] text-[var(--md-red)]">{uploadError}</p> : null}
+          {hasFailedUploads && onRetryUpload ? <Button type="button" variant="ghost" className="mt-1 self-start" onClick={onRetryUpload}>{t("Retry upload")}</Button> : null}
+          {updateStatus ? <p role="status" className="mt-2 text-[12px] text-[var(--md-text)]">{t(updateStatus)}</p> : null}
+          </div>
+          <div className="-mx-2 mt-3 flex flex-wrap items-center gap-1 sm:mx-0 sm:gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            {!taskAgentName ? <Button
               type="button"
               variant="ghost"
               size="icon"
               aria-label={t(attachmentActionLabel)}
-              title={t(attachmentActionLabel)}
+              title={t(canUpdateRequest ? "Finish this request before attaching files" : attachmentActionLabel)}
+              disabled={canUpdateRequest}
               className="md-composer-chip size-9 shrink-0 rounded-full text-[var(--md-text)] hover:text-[var(--md-ink)]"
               onClick={onOpenAttachments}
             >
               <Plus className="size-4" strokeWidth={1.4} />
-            </Button>
-            <PillFrame>
+            </Button> : null}
+            {!taskAgentName ? <PillFrame>
               <DexterModelMenu models={models} selectedId={selectedModelId} onSelect={onSelectModel} />
-            </PillFrame>
+            </PillFrame> : null}
             <Context
               usedTokens={contextUsedTokens}
               maxTokens={contextMaxTokens}
@@ -1475,28 +1641,31 @@ export function DexterPromptComposer({
                 <ContextContentHeader />
               </ContextContent>
             </Context>
-            <div className="ms-auto flex shrink-0 items-center gap-2">
-              <DexterAccessModeToggle
-                mode={accessMode}
-                pendingMode={pendingAccessMode}
-                onChange={onAccessModeChange}
-                disabled={isSending || isAccessModeChanging}
-              />
+            </div>
+            <div className="relative h-10 min-w-0 flex-1 overflow-hidden">
+              {dictating ? <DexterRecordingWaveform level={microphoneLevel} phase={dictation.phase} /> : null}
+            </div>
+            </div>
+            <div className="ms-auto flex shrink-0 items-center gap-1 sm:gap-2">
+              <Button ref={microphoneButton} type="button" variant="ghost" size="icon"
+                onClick={() => {
+                  if (!dictating) startDictation()
+                  else if (dictation.phase === "transcribing" && dictationTarget.current) requestDictation({ action: "stop", target: dictationTarget.current })
+                  else cancelDictation()
+                }}
+                aria-label={t(dictation.phase === "polishing" ? "Transcribing recording" : dictation.phase === "transcribing" ? "Stop recording" : dictating ? "Cancel recording" : "Start voice input")}
+                title={t(dictation.phase === "polishing" ? "Transcribing recording" : dictation.phase === "transcribing" ? "Stop recording" : dictating ? "Cancel recording" : "Start voice input")}
+                disabled={dictating ? dictation.phase === "polishing" : isUploading || (isSending && !canUpdateRequest) || updatePending}
+                className="md-composer-chip size-10 shrink-0 rounded-full text-[var(--md-text)] hover:text-[var(--md-ink)] active:scale-95 motion-reduce:active:scale-100">
+                {dictating
+                  ? <span aria-hidden="true" className="size-3 rounded-[3px] bg-current" />
+                  : <HugeiconsIcon icon={DictationMicrophoneIcon} className="size-4" strokeWidth={1.4} aria-hidden="true" />}
+              </Button>
               <motion.div
                 className="flex shrink-0 items-center gap-2"
                 animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
                 transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
               >
-                <span
-                  aria-hidden="true"
-                  title={`${sendShortcutModifier} + Enter`}
-                  className="hidden h-10 items-center rounded-[var(--md-radius-lg)] px-1.5 sm:inline-flex"
-                >
-                  <KbdGroup dir="ltr" data-i18n-skip>
-                    <Kbd>{sendShortcutModifier}</Kbd>
-                    <Kbd>↵</Kbd>
-                  </KbdGroup>
-                </span>
                 <DexterActionPill
                   type="button"
                   iconElement={
@@ -1508,17 +1677,18 @@ export function DexterPromptComposer({
                     />
                   }
                   iconOnly
-                  label={`${t("Send prompt")} (${sendShortcutModifier} + Enter)`}
+                  label={`${t(canUpdateRequest ? "Update request" : "Send prompt")} (${sendShortcutModifier} + Enter)`}
                   aria-keyshortcuts="Meta+Enter Control+Enter"
                   className="size-10 min-w-0 rounded-full p-0"
                   onClick={() => onSend()}
-                  disabled={!canSend || isSending}
+                  disabled={!canSend}
                 />
               </motion.div>
             </div>
           </div>
         </div>
       </div>
+      {dictation.phase === "error" || dictation.phase === "allowance" ? <p role="alert" className="relative z-[2] px-5 pb-3 text-[12px] text-[var(--md-red)]">{dictation.message}</p> : null}
     </div>
   )
 }

@@ -27,12 +27,19 @@ function ChangeValue({
   label,
   value,
   tone,
+  field,
 }: {
   label: string
   value: string | null | undefined
   tone: "before" | "after"
+  field: string
 }) {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
+  const isDateTime = ["next action due at", "next_action_due_at", "next action due"].includes(field.toLowerCase())
+    && typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
+  const displayValue = isDateTime ? new Intl.DateTimeFormat(language, {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short",
+  }).format(new Date(value!)) : value
   const Icon = tone === "before" ? Minus : Plus
 
   return (
@@ -49,7 +56,7 @@ function ChangeValue({
         {label}
       </span>
       <span className="mt-1.5 block break-words text-[12.5px] leading-5 text-[var(--md-ink)]">
-        <bdi>{value === null || value === undefined || value === "" ? t("Not set") : value}</bdi>
+        <bdi>{value === null || value === undefined || value === "" ? t("Not set") : displayValue}</bdi>
       </span>
     </div>
   )
@@ -67,7 +74,11 @@ export function DexterActionApproval({
   const titleId = useId()
   const descriptionId = useId()
   const errorId = useId()
-  const isProcessing = isPreparing || pendingDecision !== null
+  const resolvedStatus = action.status && action.status !== "prepared" ? action.status : null
+  const statusLabel = resolvedStatus === "succeeded" ? "Completed" : resolvedStatus === "declined" ? "Denied" : resolvedStatus === "superseded" ? "Replaced by your correction" : resolvedStatus === "expired" ? "Expired" : resolvedStatus === "failed" ? "Failed" : resolvedStatus === "approved" || resolvedStatus === "executing" ? "Processing" : "Unavailable"
+  const awaitingPreparation = isPreparing && !resolvedStatus
+  const isProcessing = awaitingPreparation || pendingDecision !== null || resolvedStatus === "approved" || resolvedStatus === "executing"
+  const isDisabled = isProcessing || Boolean(resolvedStatus)
 
   return (
     <motion.section
@@ -76,7 +87,7 @@ export function DexterActionApproval({
       aria-labelledby={titleId}
       className="mt-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)]"
       data-dexter-action={action.id}
-      data-state={isPreparing ? "preparing" : pendingDecision ? "processing" : error ? "error" : "pending"}
+      data-state={awaitingPreparation ? "preparing" : pendingDecision ? "processing" : resolvedStatus ?? (error ? "error" : "pending")}
       initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.985, filter: "blur(10px)" }}
       animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
       transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.34, ease: mdEaseOut }}
@@ -92,6 +103,11 @@ export function DexterActionApproval({
           <h3 id={titleId} className="text-[14px] font-medium text-[var(--md-ink)]">
             {action.title}
           </h3>
+          {action.target ? <p className="mt-1 text-[12.5px] text-[var(--md-ink)]">
+            {action.target.url && /^\/(?!\/)[^\\]*$/.test(action.target.url)
+              ? <a href={action.target.url} className="text-[var(--md-accent)] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4">{action.target.label}</a>
+              : action.target.label}
+          </p> : null}
           <p id={descriptionId} className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">
             {action.description}
           </p>
@@ -145,10 +161,10 @@ export function DexterActionApproval({
                     )}
                   >
                     {kind !== "added" && beforeKnown ? (
-                      <ChangeValue label={t(kind === "removed" ? "Removed" : "Previous value")} value={change.before} tone="before" />
+                      <ChangeValue field={change.field} label={t(kind === "removed" ? "Removed" : "Previous value")} value={change.before} tone="before" />
                     ) : null}
                     {kind !== "removed" ? (
-                      <ChangeValue label={t(kind === "added" ? "Added" : "New value")} value={after} tone="after" />
+                      <ChangeValue field={change.field} label={t(kind === "added" ? "Added" : "New value")} value={after} tone="after" />
                     ) : null}
                   </dd>
                 </motion.div>
@@ -168,18 +184,19 @@ export function DexterActionApproval({
         </p>
       ) : null}
 
-      {isPreparing ? (
+      {awaitingPreparation ? (
         <p className="mt-3 text-[12px] leading-5 text-[var(--md-subtle)]" role="status" aria-live="polite">
           {t("Preparing approval...")}
         </p>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
+      {resolvedStatus ? <p className="mt-3 text-[12px] text-[var(--md-subtle)]" role="status">{t(statusLabel)}</p> : null}
+      <div className={cn("mt-4 flex flex-wrap justify-end gap-2", resolvedStatus && "hidden")}>
         <Button
           type="button"
           variant="outline"
           className="min-h-11 rounded-[var(--md-radius-lg)] px-4"
-          disabled={isProcessing}
+          disabled={isDisabled}
           data-decision="decline"
           onClick={() => onDecision("decline")}
         >
@@ -193,7 +210,7 @@ export function DexterActionApproval({
         <Button
           type="button"
           className="min-h-11 rounded-[var(--md-radius-lg)] px-4"
-          disabled={isProcessing}
+          disabled={isDisabled}
           data-decision="approve"
           onClick={() => onDecision("approve")}
         >

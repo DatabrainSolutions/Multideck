@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { importProcedureSnapshot, importAdditionalProcedureSnapshot, withImportProcedureSnapshot } from "./customs-procedure-snapshot"
 
 export const customsCatalogCodes = [
   "declaration_category",
@@ -60,21 +61,44 @@ export async function loadCustomsReferenceData(direction: "export" | "import") {
   if (cached?.inFlight) return cached.inFlight
 
   const inFlight = (async () => {
-    const { data, error } = await supabase
+    // Page the catalogue: complete provider lists can exceed PostgREST's row cap.
+    // Publish only after every page succeeds; never replace a list with a partial refresh.
+    const rows: CatalogueRow[] = []
+    const pageSize = 500
+    let complete = false
+    for (let page = 0; page < 100; page += 1) {
+      const { data, error } = await supabase
       .from("sys_CustomsOptionCatalogue")
       .select("catalog_code, option_code, option_name, option_description, direction, sort_order")
       .in("catalog_code", [...customsCatalogCodes])
       .in("direction", ["all", direction])
       .order("catalog_code")
-      .order("sort_order")
-      .order("option_name")
+      .order("direction")
+      .order("option_code")
+      .range(page * pageSize, (page + 1) * pageSize - 1)
 
-    if (error) throw error
+      if (error) throw error
+      const batch = (data ?? []) as CatalogueRow[]
+      rows.push(...batch)
+      if (batch.length < pageSize) {
+        complete = true
+        break
+      }
+    }
+    if (!complete) throw new Error("Customs reference catalogues are too large to load safely.")
 
     const catalogues = createEmptyCustomsReferenceData()
-    for (const row of (data ?? []) as CatalogueRow[]) {
+    // Direction-specific definitions take precedence over shared defaults.
+    const unique = new Map<string, CatalogueRow>()
+    for (const row of rows) {
       if (row.direction !== "all" && row.direction !== direction) continue
       if (!customsCatalogCodes.includes(row.catalog_code as CustomsCatalogCode)) continue
+      const key = `${row.catalog_code}:${row.option_code}`
+      if (!unique.has(key) || row.direction === direction) unique.set(key, row)
+    }
+    for (const row of [...unique.values()].sort((a, b) =>
+      a.sort_order - b.sort_order || a.option_name.localeCompare(b.option_name) || a.option_code.localeCompare(b.option_code)
+    )) {
       catalogues[row.catalog_code as CustomsCatalogCode].push({
         code: row.option_code,
         name: row.option_name,
@@ -82,6 +106,10 @@ export async function loadCustomsReferenceData(direction: "export" | "import") {
       })
     }
 
+    if (direction === "import") {
+      catalogues.procedure_code = withImportProcedureSnapshot(catalogues.procedure_code, importProcedureSnapshot)
+      catalogues.additional_procedure_code = withImportProcedureSnapshot(catalogues.additional_procedure_code, importAdditionalProcedureSnapshot)
+    }
     const missingCatalogues = customsCatalogCodes.filter((catalogue) => catalogues[catalogue].length === 0)
     if (missingCatalogues.length) {
       throw new Error(`Customs reference catalogues are incomplete: ${missingCatalogues.join(", ")}`)
@@ -105,9 +133,11 @@ export function useCustomsReferenceData(direction: "export" | "import") {
   const [data, setData] = useState<CustomsReferenceData>(createEmptyCustomsReferenceData)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
+    setData(createEmptyCustomsReferenceData())
     setLoading(true)
     setError(null)
     loadCustomsReferenceData(direction)
@@ -122,7 +152,7 @@ export function useCustomsReferenceData(direction: "export" | "import") {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [direction])
+  }, [direction, attempt])
 
-  return { data, loading, error }
+  return { data, loading, error, retry: () => setAttempt(value => value + 1) }
 }

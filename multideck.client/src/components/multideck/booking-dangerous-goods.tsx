@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,6 +14,7 @@ import { saveBookingDangerousGoods, type BookingDangerousGoods, type BookingDang
 type Props = {
   bookingId: string; bookingReference: string; bookingUpdatedAt: string; cargo: BookingWorkflowCargo
   maritime: boolean; editable: boolean; disabledReason?: string; events?: BookingWorkflowEvent[]
+  renderHandling?: (entry: ReactNode, records: ReactNode, unsaved: boolean) => ReactNode
   onSaved: (workspace: BookingWorkflowWorkspace) => void
   save?: (payload: BookingDangerousGoodsSave) => Promise<BookingWorkflowWorkspace>
 }
@@ -59,25 +60,17 @@ export function BookingDangerousGoodsEditor(props: Props) {
     ref: (element: HTMLElement | null) => { if (element) fields.current.set(key, element); else fields.current.delete(key) } })
   const display = (value: unknown) => value === null || value === undefined || value === '' ? t('Not recorded')
     : typeof value === 'boolean' ? t(value ? 'Yes' : 'No') : String(value)
-  return <section aria-labelledby={`${id}-heading`} className="grid min-w-0 gap-3 py-3 text-[13px] text-[var(--md-ink)]">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <h4 ref={heading} tabIndex={-1} id={`${id}-heading`} className="font-medium">{t('Dangerous-goods evidence')}</h4>
-      <Button type="button" variant="ghost" className="min-h-10 px-2 text-xs" disabled={!canEdit} onClick={event => open(event.currentTarget)}>{t('Record dangerous goods')}</Button>
-    </div>
-    <p className="text-xs leading-5 text-[var(--md-text)]">{t('Supplied details for this cargo line–not classification, completeness or transport approval. Unknown is not No. The cargo hazardous flag is managed separately.')}</p>
-    {props.disabledReason ? <p className="text-xs text-[var(--md-text)]">{t(props.disabledReason)}</p> : null}
-    {!available ? <p>{t('Save the cargo line and reload its evidence before editing.')}</p>
-      : !props.cargo.dangerousGoods!.length ? <p className="text-[var(--md-text)]">{t('No dangerous-goods details recorded for this line.')}</p>
-        : <ol className="grid gap-4">{props.cargo.dangerousGoods!.map(item => <li key={item.id} className="grid min-w-0 gap-2">
+  const records = props.cargo.dangerousGoods?.length ? (<ol className="grid gap-4">{props.cargo.dangerousGoods!.map(item => <li key={item.id} className="min-w-0"><details className="min-w-0 border-b border-[var(--md-line)]">
+          <summary className="min-h-10 cursor-pointer py-2.5 font-medium focus-visible:outline-2"><span data-i18n-skip>{item.unNumber || item.properShippingName || t("Dangerous goods")}</span> · {t(item.status === "voided" ? "Voided source evidence" : "Recorded source evidence")}</summary>
+          <div className="grid gap-2 pb-3 ps-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="min-w-0 break-words"><span data-i18n-skip>{item.unNumber || item.properShippingName || t('Supplied evidence')}</span> · {t(item.status === 'voided' ? 'Voided' : 'Recorded')}</p>
+
             {item.operatorEditable ? <Button type="button" variant="ghost" className="min-h-10 px-2 text-xs" disabled={!canEdit}
               aria-label={`${t('Correct dangerous goods')}: ${item.unNumber || item.properShippingName || item.id}`}
               onClick={event => open(event.currentTarget, item)}>{t('Correct')}</Button> : <span className="text-xs">{t('Read-only')}</span>}
           </div>
           {item.source === 'legacy' ? <p className="text-xs text-[var(--md-text)]">{t('Legacy source. Stored flags are retained; operator confirmation is not recorded.')}</p> : null}
-          <details className="min-w-0 text-xs leading-5">
-            <summary className="cursor-pointer py-2 font-medium">{t('Supplied details, source and recent history')}</summary>
+          <div className="min-w-0 text-xs leading-5">
             <dl className="mt-2 grid gap-2 sm:grid-cols-2">{dangerousGoodsFields.map(field => <div key={field.key} className="min-w-0">
               <dt className="text-[var(--md-text)]">{t(field.label)}</dt><dd className="whitespace-pre-wrap break-words" data-i18n-skip>{display(item[field.key])}</dd>
             </div>)}</dl>
@@ -93,13 +86,21 @@ export function BookingDangerousGoodsEditor(props: Props) {
                     <div key={field.key}><dt className="font-medium">{t(field.label)}</dt><dd>{t('Before:')} <span data-i18n-skip>{display(before?.[field.key])}</span> · {t('After:')} <span data-i18n-skip>{display(after?.[field.key])}</span></dd></div>)}</dl>
                 </li>
               })}</ul>}
-          </details>
-        </li>)}</ol>}
-    <p role="status" className="text-xs text-[var(--md-text)]">{message}</p>
+          </div></div></details>
+        </li>)}</ol>) : null
+  const entry = <div className="grid gap-1 justify-items-start">
+    <Button type="button" variant="ghost" size="sm" disabled={!canEdit} onClick={event => open(event.currentTarget)}>{t('Add source evidence')}</Button>
+    {props.disabledReason ? <p className="text-xs text-[var(--md-text)]">{t(props.disabledReason)}</p> : !available ? <p className="text-xs">{t('Save the cargo line and reload its evidence before editing.')}</p> : null}
+  </div>
+  return <>
+    {props.renderHandling ? props.renderHandling(entry, records, Boolean(props.disabledReason)) : <section aria-labelledby={`${id}-heading`} className="grid min-w-0 gap-3 py-3 text-[13px] text-[var(--md-ink)]">
+      <h4 ref={heading} tabIndex={-1} id={`${id}-heading`} className="font-medium">{t('Dangerous-goods evidence')}</h4>{entry}{records}
+    </section>}
+    {message ? <p role="status" className="text-xs text-[var(--md-text)]">{message}</p> : null}
     <Dialog open={Boolean(editing)} onOpenChange={value => { if (!value) close() }}>
       <DialogContent className="max-h-[85dvh] overflow-y-auto overscroll-contain sm:max-w-xl" onCloseAutoFocus={event => { event.preventDefault(); (trigger.current?.isConnected ? trigger.current : heading.current)?.focus() }}>
         <DialogHeader><DialogTitle>{t(discard ? 'Discard dangerous-goods changes?' : editing?.original ? 'Correct dangerous-goods evidence' : 'Record dangerous-goods evidence')}</DialogTitle>
-          <DialogDescription>{discard ? t('Unsaved entries will be discarded. Saved history is unchanged.') : <><span data-i18n-skip>{props.bookingReference} · {t('Cargo')} {props.cargo.lineNumber ?? 1}</span><br />{t('Copy supplied evidence only. Record its source and reason; do not infer missing details.')}</>}</DialogDescription></DialogHeader>
+          <DialogDescription>{discard ? t('Unsaved entries will be discarded. Saved history is unchanged.') : <><span data-i18n-skip>{props.bookingReference} · {t('Cargo')} {props.cargo.lineNumber ?? 1}</span><br />{t('Copy supplied evidence only. Record its source and reason; do not infer missing details. Unknown is not No. This does not change the hazardous selection or grant transport approval.')}</>}</DialogDescription></DialogHeader>
         {discard ? <DialogFooter><Button type="button" variant="ghost" autoFocus onClick={() => setDiscard(false)}>{t('Keep editing')}</Button><Button type="button" onClick={() => { setDiscard(false); setEditing(null) }}>{t('Discard changes')}</Button></DialogFooter> : null}
         {editing ? <form noValidate hidden={discard} className={discard ? 'hidden' : 'grid min-w-0 gap-4'}
           onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && event.target instanceof HTMLTextAreaElement) { event.preventDefault(); event.currentTarget.requestSubmit() } }}
@@ -137,5 +138,5 @@ export function BookingDangerousGoodsEditor(props: Props) {
         </form> : null}
       </DialogContent>
     </Dialog>
-  </section>
+  </>
 }

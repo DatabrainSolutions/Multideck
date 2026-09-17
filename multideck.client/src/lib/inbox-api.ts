@@ -277,7 +277,7 @@ function codeForStatus(status: number): InboxApiError["code"] {
   return "server"
 }
 
-async function inboxRequest<T>(
+export async function inboxRequest<T>(
   path: string,
   init: RequestInit & { normalize: (payload: unknown) => T },
 ): Promise<T> {

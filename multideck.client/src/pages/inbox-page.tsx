@@ -1655,6 +1655,20 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
 
   /* ----------------------------------------------------------------- composer */
 
+  function openSavedDraft(message: InboxMessage) {
+    const saved = message.draft
+    if (!saved || !canSendFromMailbox) return
+    setRemoteDraftId(message.id)
+    setDraftRestored(false)
+    setRestoredAttachmentNames(message.attachments.filter(file => !file.isInline).map(file => file.fileName))
+    setComposerStatus("idle")
+    setComposerError(null)
+    setComposer({ ...emptyComposerState(saved.mode, "open"), threadId: saved.mode === "new" ? null : message.threadId,
+      sourceMessageId: saved.sourceMessageId, subject: message.subject, bodyText: message.bodyText ?? "", signature: saved.signature,
+      trackOpens: saved.trackOpens, to: saved.addedTo, cc: saved.addedCc, bcc: saved.addedBcc, removedAddresses: saved.removedAddresses,
+      showCc: saved.addedCc.length > 0, showBcc: saved.addedBcc.length > 0 })
+  }
+
   function openComposer(mode: SendMode) {
     const sourceMessage = mode === "new" ? null : latestReplySource(thread?.messages ?? [])
     const draftKey = localDraftKey(mailboxId ?? "", mode === "new" ? null : thread?.id ?? null, mode)
@@ -1676,6 +1690,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         ?? (mode === "forward" && thread ? `Fwd: ${thread.subject}` : ""),
       bodyText: stored?.bodyText ?? "",
       trackOpens: stored?.trackOpens ?? true,
+      signature: stored?.signature,
+      removedAddresses: stored?.removedAddresses ?? [],
       to: stored?.addedTo ?? [],
       cc: stored?.addedCc ?? [],
       bcc: stored?.addedBcc ?? [],
@@ -1685,7 +1701,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
     })
   }
 
-  const persistLocalDraft = useCallback((pendingSync: boolean) => {
+  const persistLocalDraft = useCallback((pendingSync: boolean, savedDraftId = remoteDraftId) => {
     if (!mailboxId) return
     const edits = composerEdits(composer)
     const key = localDraftKey(mailboxId, composer.threadId, composer.mode)
@@ -1699,10 +1715,11 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       threadId: composer.threadId,
       mode: composer.mode,
       sourceMessageId: composer.sourceMessageId,
-      remoteDraftId,
+      remoteDraftId: savedDraftId,
       subject: edits.subject,
       bodyText: edits.bodyText,
       trackOpens: edits.trackOpens,
+      signature: edits.signature,
       addedTo: edits.addedTo,
       addedCc: edits.addedCc,
       addedBcc: edits.addedBcc,
@@ -1738,7 +1755,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       setRemoteDraftId(draft.id)
       setDraftRestored(false)
       setRestoredAttachmentNames([])
-      persistLocalDraft(false)
+      persistLocalDraft(false, draft.id)
       setComposerStatus("idle")
       toast.success(composer.attachments.length > 0
         ? t("Draft saved. Attached files stay in this composer until you send.")
@@ -2445,7 +2462,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
 
               <span aria-hidden="true" className="mx-1.5 h-6 w-px bg-[var(--md-line-strong)]" />
 
-              {(["reply", "reply_all", "forward"] as SendMode[]).map((mode) => (
+              {thread.messages.some(message => message.draft) ? <Button type="button" disabled={!canSendFromMailbox} onClick={() => openSavedDraft(thread.messages.filter(message => message.draft).at(-1)!)}>{t("Edit saved draft")}</Button> : (["reply", "reply_all", "forward"] as SendMode[]).map((mode) => (
                 <Button
                   key={mode}
                   type="button"
@@ -2570,6 +2587,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         <PageSettingsMenu
           title={t("Inbox settings")}
           actions={[{
+            id: "signatures", label: t("Email signatures"), icon: Mail, onSelect: () => _navigate("/inbox/signatures"),
+          }, {
             id: "automatic-reply",
             label: activeAutomaticReply && activeAutomaticReply.status !== "disabled" ? t("Edit out of office") : t("Set out of office"),
             icon: CalendarClock,

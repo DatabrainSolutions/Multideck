@@ -7,6 +7,7 @@ import {
   type FinanceDocumentTaxOption,
 } from "@/components/multideck/finance-document-line-editor"
 import { SettingsPageHeader, SettingsPanel } from "@/components/multideck/settings-components"
+import { ProviderCustomerSetupWizard } from "@/components/multideck/provider-customer-setup-wizard"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -15,10 +16,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
+import { cn } from "@/lib/utils"
 import { downloadFinanceDocumentWorkbook, parseFinanceDocumentWorkbook } from "@/lib/finance-document-excel"
 import { printFinanceProforma } from "@/lib/finance-proforma"
 import {
   approveFinanceDocument,
+  correctFinanceDocumentBillingParty,
   getFinanceDocument,
   getFinanceDraftOptions,
   rejectFinanceDocument,
@@ -87,6 +90,10 @@ function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNod
   return <label htmlFor={htmlFor} className="text-[12px] font-medium text-[var(--md-text)]">{children}</label>
 }
 
+function InvoiceInformationField({ htmlFor, label, children, className }: { htmlFor: string; label: ReactNode; children: ReactNode; className?: string }) {
+  return <div className={cn("grid min-w-0 gap-1 sm:grid-cols-[minmax(92px,auto)_minmax(0,150px)] sm:items-center sm:gap-3", className)}><label htmlFor={htmlFor} className="text-[12px] font-medium text-[var(--md-text)] sm:text-end">{label}</label><div className="min-w-0">{children}</div></div>
+}
+
 function statusTone(status: string): "teal" | "amber" | "red" | "neutral" {
   if (["submitted", "posted", "synced", "completed", "resolved"].includes(status)) return "teal"
   if (["failed", "rejected", "blocked"].includes(status)) return "red"
@@ -149,6 +156,10 @@ export function FinanceDocumentPage({
   const [exchangeRate, setExchangeRate] = useState("1")
   const [accountingPeriodId, setAccountingPeriodId] = useState("")
   const [lines, setLines] = useState<FinanceDocumentLine[]>([])
+  const [mirrorSetupOpen, setMirrorSetupOpen] = useState(false)
+  const [billingPartyOpen, setBillingPartyOpen] = useState(false)
+  const [replacementPartyOrgId, setReplacementPartyOrgId] = useState("")
+  const [billingPartyReason, setBillingPartyReason] = useState("")
 
   const load = useCallback(async (quiet = false) => {
     quiet ? setRefreshing(true) : setLoading(true)
@@ -156,7 +167,7 @@ export function FinanceDocumentPage({
     try {
       const [documentResult, draftOptionsResult] = await Promise.all([
         getFinanceDocument(documentId),
-        canDraft ? getFinanceDraftOptions(ledger).catch(() => null) : Promise.resolve(null),
+        canDraft || canRetry ? getFinanceDraftOptions(ledger).catch(() => null) : Promise.resolve(null),
       ])
       setDetail(documentResult)
       setOptions(draftOptionsResult)
@@ -166,7 +177,7 @@ export function FinanceDocumentPage({
       setLoading(false)
       setRefreshing(false)
     }
-  }, [canDraft, documentId, ledger, t])
+  }, [canDraft, canRetry, documentId, ledger, t])
 
   useEffect(() => { void load() }, [load])
 
@@ -196,6 +207,7 @@ export function FinanceDocumentPage({
   const baseCurrency = (selectedEntity?.FinanceDraftCurrencyCode ?? selectedEntity?.LegalEntity_BaseCurrencyCodeSnapshot ?? currencyCode).toUpperCase()
   const needsExchangeRate = Boolean(currencyCode && baseCurrency && currencyCode !== baseCurrency)
   const selectedParty = options?.parties.find((party) => party.Org_id === partyOrgId)
+  const activeConnection = options?.accountingConnections.find((connection) => connection.ACCIC_LegalEntityID === document?.FINDoc_LegalEntityID && connection.ACCIC_StatusCode === "active") ?? null
   const partyChanged = Boolean(document?.FINDoc_PartyOrgID && partyOrgId !== document.FINDoc_PartyOrgID)
   const displayedBillingAddress = partyChanged ? null : detail?.billingAddress ?? null
   const billingAddressLines = displayedBillingAddress ? [
@@ -207,7 +219,6 @@ export function FinanceDocumentPage({
     displayedBillingAddress.postZipCode,
     displayedBillingAddress.countryName ?? displayedBillingAddress.countryCode,
   ].filter((value): value is string => Boolean(value?.trim())) : []
-  const availableJobs = (options?.jobs ?? []).filter((job) => (!job.Job_LegalEntityID || job.Job_LegalEntityID === document?.FINDoc_LegalEntityID) && Boolean(ledger === "receivables" ? job.Job_Customer : job.Job_Supplier))
   const jobChargeOptions = (options?.jobCostingLines ?? []).filter((line) => line.Job_ID === sourceJobId).map((line) => ({ id: line.JobCostingLine_ID, lineNo: line.JobCostingLine_Number, chargeCode: line.RATECharge_Code, description: line.JobCostingLine_Description, expectedAmount: Number(ledger === "receivables" ? line.JobCostingLine_RevenueAmountLocal : line.JobCostingLine_CostAmountLocal), nominalCode: null }))
   const transactionDirection = ledger === "receivables" ? "sales" : "purchase"
   const chargeOptions = (options?.chargeCodes ?? []).filter((charge) => ["both", transactionDirection].includes(charge.RATECharge_DefaultApplicabilityCode)).map((charge) => ({ id: charge.RATECharge_ID, code: charge.RATECharge_Code, name: charge.RATECharge_Name, description: charge.RATECharge_Description, defaultTaxCode: charge.RATECharge_DefaultTaxCode }))
@@ -269,6 +280,21 @@ export function FinanceDocumentPage({
   }, "Draft sent for finance review")
   const approve = () => runAction("approve", () => approveFinanceDocument(documentId), "Document approved and posted; external mirror checked")
   const retry = () => runAction("retry", () => retryFinanceDocumentPosting(documentId), "External mirror delivery completed")
+
+  const correctBillingParty = async () => {
+    if (!replacementPartyOrgId || !billingPartyReason.trim()) return
+    setPendingAction("correct-party")
+    try {
+      const result = await correctFinanceDocumentBillingParty(documentId, replacementPartyOrgId, billingPartyReason.trim())
+      toast.success(t("Billing party corrected with a reversal and replacement posting"))
+      setBillingPartyOpen(false)
+      navigate(`/finance/${ledger}/documents/${result.replacementDocumentId}`)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("The billing party correction could not be posted."))
+    } finally {
+      setPendingAction(null)
+    }
+  }
 
   const confirmReasonAction = async () => {
     if (!reasonAction || !reason.trim()) return
@@ -333,7 +359,7 @@ export function FinanceDocumentPage({
   const recoveryRoute = (() => {
     const message = detail?.integrationQueue?.FINIntQ_LastError?.toLowerCase() ?? ""
     if (message.includes("tax") || message.includes("vat")) return "/finance/tax"
-    if (message.includes("connection") || message.includes("company") || message.includes("provider")) return "/finance/systems"
+    if (message.includes("connection") || message.includes("company")) return "/finance/systems"
     return "/finance/mappings"
   })()
 
@@ -371,19 +397,23 @@ export function FinanceDocumentPage({
           </div>
         </div>
 
-        {blocked ? <section aria-labelledby="finance-recovery-title" className="rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-red),transparent_92%)] p-5 shadow-[var(--md-shadow-line)]"><div className="flex flex-wrap items-start justify-between gap-5"><div className="flex min-w-0 flex-1 gap-3"><AlertCircle className="mt-0.5 size-5 shrink-0 text-[var(--md-red)]" /><div><h2 id="finance-recovery-title" className="text-[14px] font-medium text-[var(--md-ink)]">{t("External mirror needs attention")}</h2><p className="mt-1 max-w-4xl break-words text-[13px] leading-5 text-[var(--md-text)]">{detail.integrationQueue?.FINIntQ_LastError ?? t("The external accounting mirror did not accept this delivery.")}</p><p className="mt-2 text-[11px] text-[var(--md-subtle)]">{t("Attempts")}: <span data-i18n-skip dir="ltr">{detail.integrationQueue?.FINIntQ_AttemptCount ?? 0}</span>{detail.integrationQueue?.FINIntQ_LastAttemptAt ? <> · {t("Last tried")} <span data-i18n-skip dir="ltr">{dateFormatter.format(new Date(detail.integrationQueue.FINIntQ_LastAttemptAt))}</span></> : null}</p></div></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => navigate(recoveryRoute)}>{t("Fix mirror setup")}</Button>{canRetry && detail.integrationQueue?.retryAvailable ? <Button type="button" disabled={Boolean(pendingAction)} onClick={() => void retry()}>{pendingAction === "retry" ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}{t("Retry mirror")}</Button> : null}{canDraft && canApprove ? <Button type="button" variant="outline" disabled={Boolean(pendingAction)} onClick={() => { setReason(""); setReasonAction("reopen") }}>{t("Return to draft")}</Button> : null}</div></div><p className="mt-4 border-t border-[color-mix(in_srgb,var(--md-red),transparent_80%)] pt-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Fix the named mirror setup issue, then retry delivery of the same authoritative Multideck posting. Return to draft only when the document itself is wrong; doing so revokes its approval before editing.")}</p></section> : null}
+        {blocked ? <section aria-labelledby="finance-recovery-title" className="rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-red),transparent_92%)] p-5 shadow-[var(--md-shadow-line)]"><div className="flex flex-wrap items-start justify-between gap-5"><div className="flex min-w-0 flex-1 gap-3"><AlertCircle className="mt-0.5 size-5 shrink-0 text-[var(--md-red)]" /><div><h2 id="finance-recovery-title" className="text-[14px] font-medium text-[var(--md-ink)]">{t("External mirror needs attention")}</h2><p className="mt-1 max-w-4xl break-words text-[13px] leading-5 text-[var(--md-text)]">{detail.integrationQueue?.FINIntQ_LastError ?? t("The external accounting mirror did not accept this delivery.")}</p><p className="mt-2 text-[11px] text-[var(--md-subtle)]">{t("Attempts")}: <span data-i18n-skip dir="ltr">{detail.integrationQueue?.FINIntQ_AttemptCount ?? 0}</span>{detail.integrationQueue?.FINIntQ_LastAttemptAt ? <> · {t("Last tried")} <span data-i18n-skip dir="ltr">{dateFormatter.format(new Date(detail.integrationQueue.FINIntQ_LastAttemptAt))}</span></> : null}</p></div></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => ledger === "receivables" ? setMirrorSetupOpen(true) : navigate(recoveryRoute)}>{t("Fix mirror setup")}</Button>{posted && canDraft && canApprove ? <Button type="button" variant="outline" onClick={() => { setReplacementPartyOrgId(""); setBillingPartyReason(""); setBillingPartyOpen(true) }}>{t("Change billing party")}</Button> : null}{canRetry && detail.integrationQueue?.retryAvailable ? <Button type="button" disabled={Boolean(pendingAction)} onClick={() => void retry()}>{pendingAction === "retry" ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}{t("Retry mirror")}</Button> : null}</div></div><p className="mt-4 border-t border-[color-mix(in_srgb,var(--md-red),transparent_80%)] pt-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Match the billing party to its Accounts System account, then retry delivery. If the billing party itself is wrong, create a controlled reversal and replacement posting.")}</p></section> : null}
 
         {posted ? <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-teal),transparent_92%)] p-4 text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><span>{t("This document is posted to the Multideck ledger and is immutable. Export and print tools remain available.")}</span>{detail.externalReference ? safeExternalUrl ? <a href={safeExternalUrl} target="_blank" rel="noreferrer" className="font-medium text-[var(--md-accent)] hover:underline">{t("Open external mirror")}</a> : <span data-i18n-skip dir="ltr">{detail.externalReference.ACCIER_ExternalNumber ?? detail.externalReference.ACCIER_ExternalID}</span> : null}</div> : null}
 
-        <SettingsPanel title={t(documentDetailLabels[type])} description={t(editable ? documentEditableDescriptions[type] : documentLockedDescriptions[type])}>
-          <div className="grid lg:grid-cols-[minmax(260px,0.82fr)_minmax(0,2.18fr)]">
-            <section aria-labelledby="finance-detail-party-heading" className="px-4 py-3.5 lg:border-e lg:border-[var(--md-line)]">
+        <section aria-labelledby="finance-detail-heading" className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+          <header className="flex flex-wrap items-start justify-between gap-2 px-4 pb-2 pt-4 lg:px-5">
+            <h2 id="finance-detail-heading" className="text-[16px] font-medium text-[var(--md-ink)]">{t(documentDetailLabels[type])}</h2>
+            <p className="max-w-[68ch] text-[12px] leading-5 text-[var(--md-subtle)] lg:text-end">{t(editable ? documentEditableDescriptions[type] : documentLockedDescriptions[type])}</p>
+          </header>
+          <div className="grid min-h-32 lg:grid-cols-[minmax(280px,1fr)_minmax(560px,1.2fr)]">
+            <section aria-labelledby="finance-detail-party-heading" className="px-4 pb-4 pt-2 lg:px-5">
               <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
                 <MapPin className="size-3.5 text-[var(--md-accent)]" aria-hidden="true" />
                 <h2 id="finance-detail-party-heading">{t(ledger === "receivables" ? "Bill to" : "Supplier")}</h2>
               </div>
               <div className="mt-2">
-                {editable && options ? <Select value={partyOrgId} disabled={sourceKind === "job"} onValueChange={setPartyOrgId}><SelectTrigger id="finance-detail-party" aria-label={t(ledger === "receivables" ? "Customer" : "Supplier")} className="w-full text-[14px] font-medium"><SelectValue /></SelectTrigger><SelectContent>{options.parties.map((party) => <SelectItem key={party.Org_id} value={party.Org_id}>{party.Org_Name}</SelectItem>)}</SelectContent></Select> : <p className="text-[16px] font-medium leading-6 text-[var(--md-ink)]" dir="auto">{selectedParty?.Org_Name ?? document.partyName}</p>}
+                {editable && options ? <Select value={partyOrgId} disabled={sourceKind === "job"} onValueChange={setPartyOrgId}><SelectTrigger id="finance-detail-party" aria-label={t(ledger === "receivables" ? "Customer" : "Supplier")} className="w-full max-w-sm text-[13px] font-medium"><SelectValue /></SelectTrigger><SelectContent>{options.parties.map((party) => <SelectItem key={party.Org_id} value={party.Org_id}>{party.Org_Name}</SelectItem>)}</SelectContent></Select> : <p className="text-[13px] font-medium leading-5 text-[var(--md-ink)]" dir="auto">{selectedParty?.Org_Name ?? document.partyName}</p>}
                 {(selectedParty?.Org_AccCode ?? document.partyAccountCode) ? <p className="mt-1 text-[11.5px] text-[var(--md-subtle)]"><span>{t("Account")}</span> <span data-i18n-skip dir="ltr">{selectedParty?.Org_AccCode ?? document.partyAccountCode}</span></p> : null}
               </div>
               <address className="mt-3 not-italic text-[12px] leading-[18px] text-[var(--md-text)]">
@@ -395,28 +425,54 @@ export function FinanceDocumentPage({
               </div> : null}
             </section>
 
-            <section aria-label={t(documentInformationLabels[type])} className="px-4 py-3.5">
-              <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-number">{t(documentNumberLabels[type])}</FieldLabel><Input id="finance-detail-number" className="h-8" value={document.FINDoc_Number ?? t("Assigned automatically")} disabled data-i18n-skip={document.FINDoc_Number ? "" : undefined} dir="ltr" /></div>
-                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-date">{t(documentDateLabels[type])}</FieldLabel><Input id="finance-detail-date" className="h-8" type="date" value={documentDate} onChange={(event) => setDocumentDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div>
-                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-due">{t("Due date")}</FieldLabel><Input id="finance-detail-due" className="h-8" type="date" value={dueDate} min={documentDate} onChange={(event) => setDueDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div>
-                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-period">{t("Accounting period")}</FieldLabel>{editable && options ? <Select value={accountingPeriodId || "automatic"} onValueChange={(value) => setAccountingPeriodId(value === "automatic" ? "" : value)}><SelectTrigger id="finance-detail-period" className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="automatic">{t("Automatic from invoice date")}</SelectItem>{(options.accountingPeriods ?? []).filter((period) => period.FINPeriod_LegalEntityID === document.FINDoc_LegalEntityID && period.FINPeriod_StatusCode === "open").map((period) => <SelectItem key={period.FINPeriod_ID} value={period.FINPeriod_ID}><span data-i18n-skip dir="ltr">{period.FINPeriod_Code}</span> · {period.FINPeriod_Name}</SelectItem>)}</SelectContent></Select> : <Input id="finance-detail-period" className="h-8" value={detail.accountingPeriod ? `${detail.accountingPeriod.FINPeriod_Code} · ${detail.accountingPeriod.FINPeriod_Name}` : t("Automatic from invoice date")} disabled />}</div>
-                <div className="space-y-1"><FieldLabel htmlFor="finance-detail-currency">{t("Invoice currency")}</FieldLabel><Input id="finance-detail-currency" className="h-8" maxLength={3} value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())} disabled={!editable} data-i18n-skip dir="ltr" /></div>
-                {needsExchangeRate ? <div className="space-y-1"><FieldLabel htmlFor="finance-detail-rate">{t("Invoice ROE to base")} <span data-i18n-skip dir="ltr">({baseCurrency})</span></FieldLabel><Input id="finance-detail-rate" className="h-8" type="number" min="0.0000000001" step="0.0000000001" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></div> : null}
-                {editable || sourceKind === "job" ? <div className="space-y-1 xl:col-span-2"><FieldLabel htmlFor="finance-detail-job">{t("Job reference (optional)")}</FieldLabel>{editable && options ? <Select value={sourceKind === "job" && sourceJobId ? sourceJobId : "not-linked"} onValueChange={(value) => { if (value === "not-linked") { setSourceKind("manual"); setSourceJobId(""); setLines((current) => current.map((line) => ({ ...line, jobCostingLineId: null }))); return } const job = availableJobs.find((item) => item.Job_ID === value); setSourceKind("job"); setSourceJobId(value); setLines((current) => current.map((line) => ({ ...line, jobCostingLineId: null }))); setPartyOrgId(ledger === "receivables" ? job?.Job_Customer ?? "" : job?.Job_Supplier ?? "") }}><SelectTrigger id="finance-detail-job" className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="not-linked">{t("Not linked to a job")}</SelectItem>{availableJobs.map((job) => <SelectItem key={job.Job_ID} value={job.Job_ID}><span data-i18n-skip dir="ltr">{job.Job_Period}-{job.Job_Number}</span> · {t(job.Job_Status)}</SelectItem>)}</SelectContent></Select> : <Input id="finance-detail-job" className="h-8" value={document.jobReference ?? t("Not linked to a job")} disabled />}</div> : null}
+            <section aria-label={t(documentInformationLabels[type])} className="px-4 pb-4 pt-2 lg:px-5">
+              <div className="ms-auto grid w-full max-w-[680px] gap-x-7 gap-y-2.5 sm:grid-cols-2">
+                <InvoiceInformationField htmlFor="finance-detail-number" label={t(documentNumberLabels[type])} className="sm:col-start-2"><Input id="finance-detail-number" className="h-8" value={document.FINDoc_Number ?? t("Assigned automatically")} disabled data-i18n-skip={document.FINDoc_Number ? "" : undefined} dir="ltr" /></InvoiceInformationField>
+                <InvoiceInformationField htmlFor="finance-detail-date" label={t(documentDateLabels[type])}><Input id="finance-detail-date" className="h-8" type="date" value={documentDate} onChange={(event) => setDocumentDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></InvoiceInformationField>
+                <InvoiceInformationField htmlFor="finance-detail-due" label={t("Due date")}><Input id="finance-detail-due" className="h-8" type="date" value={dueDate} min={documentDate} onChange={(event) => setDueDate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></InvoiceInformationField>
+                <InvoiceInformationField htmlFor="finance-detail-period" label={t("Period")}>{editable && options ? <Select value={accountingPeriodId || "automatic"} onValueChange={(value) => setAccountingPeriodId(value === "automatic" ? "" : value)}><SelectTrigger id="finance-detail-period" className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="automatic">{t("Automatic from invoice date")}</SelectItem>{(options.accountingPeriods ?? []).filter((period) => period.FINPeriod_LegalEntityID === document.FINDoc_LegalEntityID && period.FINPeriod_StatusCode === "open").map((period) => <SelectItem key={period.FINPeriod_ID} value={period.FINPeriod_ID}><span data-i18n-skip dir="ltr">{period.FINPeriod_Code}</span> · {period.FINPeriod_Name}</SelectItem>)}</SelectContent></Select> : <Input id="finance-detail-period" className="h-8" value={detail.accountingPeriod ? `${detail.accountingPeriod.FINPeriod_Code} · ${detail.accountingPeriod.FINPeriod_Name}` : t("Automatic from invoice date")} disabled />}</InvoiceInformationField>
+                <InvoiceInformationField htmlFor="finance-detail-currency" label={t("Invoice currency")}><Input id="finance-detail-currency" className="h-8" maxLength={3} value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value.toUpperCase())} disabled={!editable} data-i18n-skip dir="ltr" /></InvoiceInformationField>
+                {needsExchangeRate ? <InvoiceInformationField htmlFor="finance-detail-rate" label={<>{t("Invoice ROE to base")} <span data-i18n-skip dir="ltr">({baseCurrency})</span></>}><Input id="finance-detail-rate" className="h-8" type="number" min="0.0000000001" step="0.0000000001" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} disabled={!editable} data-i18n-skip dir="ltr" /></InvoiceInformationField> : null}
+                {sourceKind === "job" ? <InvoiceInformationField htmlFor="finance-detail-job" label={t("Job reference")} className="sm:col-start-2"><Input id="finance-detail-job" className="h-8" value={document.jobReference ?? ""} disabled /></InvoiceInformationField> : null}
               </div>
             </section>
           </div>
-        </SettingsPanel>
+        </section>
 
-        <FinanceDocumentLineEditor lines={lines} onLinesChange={setLines} taxOptions={taxOptions} chargeOptions={chargeOptions} currencyOptions={currencyOptions} jobChargeOptions={jobChargeOptions} sourceKind={sourceKind} currencyCode={currencyCode} credit={isCredit} disabled={Boolean(pendingAction)} readOnly={!editable} onClear={() => { resetForm(detail); toast.success(t("Unsaved changes cleared")) }} onImport={importExcel} onExport={exportExcel} onPrint={printProforma} />
+        <FinanceDocumentLineEditor lines={lines} onLinesChange={setLines} taxOptions={taxOptions} chargeOptions={chargeOptions} currencyOptions={currencyOptions} jobChargeOptions={jobChargeOptions} sourceKind={sourceKind} currencyCode={currencyCode} appearance="document" showQuantity={ledger !== "receivables"} credit={isCredit} disabled={Boolean(pendingAction)} readOnly={!editable} onClear={() => { resetForm(detail); toast.success(t("Unsaved changes cleared")) }} onImport={importExcel} onExport={exportExcel} onPrint={printProforma} />
 
-        <SettingsPanel title={t("Document history")} description={t("Approval, rejection and recovery changes are retained as lifecycle evidence.")}>
+        <SettingsPanel title={t("Document history")} description={t("Approval, rejection and recovery changes are retained as lifecycle evidence.")} className="rounded-[var(--md-radius-xl)] shadow-[var(--md-shadow-line)]">
           <div className="divide-y divide-[var(--md-line)]">
             {detail.history.map((event) => <div key={event.FINDocStatus_ID} className="grid gap-2 py-3 text-[13px] sm:grid-cols-[24px_minmax(0,1fr)_auto]"><History className="mt-0.5 size-4 text-[var(--md-subtle)]" /><div><p className="font-medium text-[var(--md-ink)]">{t(event.FINDocStatus_ToStatusCode.replaceAll("_", " "))}</p><p className="mt-0.5 text-[12px] text-[var(--md-subtle)]">{event.FINDocStatus_Reason ? t(event.FINDocStatus_Reason) : t("Lifecycle status changed")}</p></div><time className="text-[11px] text-[var(--md-subtle)]" dateTime={event.FINDocStatus_ChangedAt} data-i18n-skip dir="ltr">{dateFormatter.format(new Date(event.FINDocStatus_ChangedAt))}</time></div>)}
           </div>
         </SettingsPanel>
       </div>
+
+      <ProviderCustomerSetupWizard
+        open={mirrorSetupOpen && ledger === "receivables"}
+        connection={activeConnection}
+        organisation={selectedParty ?? null}
+        currencyOptions={currencyOptions}
+        recoveryMessage={detail.integrationQueue?.FINIntQ_LastError}
+        onClose={() => setMirrorSetupOpen(false)}
+        onChangeBillingParty={posted && canDraft && canApprove ? () => { setMirrorSetupOpen(false); setReplacementPartyOrgId(""); setBillingPartyReason(""); setBillingPartyOpen(true) } : undefined}
+        onReady={() => { setMirrorSetupOpen(false); if (detail.integrationQueue?.retryAvailable) void retry() }}
+      />
+
+      <Dialog open={billingPartyOpen} onOpenChange={(open) => { if (!open && !pendingAction) setBillingPartyOpen(false) }}>
+        <DialogContent className="sm:max-w-[620px]">
+          <DialogHeader><DialogTitle>{t("Change billing party")}</DialogTitle><DialogDescription>{t("Multideck will preserve this posted document, post an equal reversal to the current account, and post a replacement to the new billing account. The three records remain linked in the audit history.")}</DialogDescription></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 text-[12px] sm:grid-cols-2">
+              <div><p className="text-[var(--md-subtle)]">{t(ledger === "receivables" ? "Current bill to" : "Current supplier")}</p><p className="mt-1 font-medium text-[var(--md-ink)]">{selectedParty?.Org_Name ?? document.partyName}</p></div>
+              <div className="space-y-2"><FieldLabel htmlFor="replacement-billing-party">{t(ledger === "receivables" ? "New bill to" : "New supplier")}</FieldLabel><Select value={replacementPartyOrgId} onValueChange={setReplacementPartyOrgId}><SelectTrigger id="replacement-billing-party"><SelectValue placeholder={t(ledger === "receivables" ? "Choose customer account" : "Choose supplier account")} /></SelectTrigger><SelectContent>{(options?.parties ?? []).filter((party) => party.Org_id !== document.FINDoc_PartyOrgID).map((party) => <SelectItem key={party.Org_id} value={party.Org_id}>{party.Org_Name}</SelectItem>)}</SelectContent></Select></div>
+            </div>
+            <div className="space-y-2"><FieldLabel htmlFor="billing-party-reason">{t("Correction reason")}</FieldLabel><Textarea id="billing-party-reason" value={billingPartyReason} onChange={(event) => setBillingPartyReason(event.target.value)} maxLength={500} placeholder={t("Explain why the billing party is changing…")} /></div>
+            <p className="text-[12px] leading-5 text-[var(--md-subtle)]">{t("A document with allocated cash cannot be corrected here until the receipt or payment allocation has been reversed or transferred.")}</p>
+          </div>
+          <DialogFooter><Button type="button" variant="outline" onClick={() => setBillingPartyOpen(false)} disabled={Boolean(pendingAction)}>{t("Cancel")}</Button><Button type="button" onClick={() => void correctBillingParty()} disabled={!replacementPartyOrgId || !billingPartyReason.trim() || Boolean(pendingAction)}>{pendingAction === "correct-party" ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />}{t("Reverse & repost")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(reasonAction)} onOpenChange={(open) => { if (!open && !pendingAction) { setReasonAction(null); setReason("") } }}>
         <DialogContent className="sm:max-w-[540px]">

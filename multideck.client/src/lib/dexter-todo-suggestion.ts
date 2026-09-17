@@ -1,4 +1,5 @@
 import type { TodoLink, TodoPriority, TodoTag } from "@/lib/todo-api"
+import { todoText } from "./todo-text.ts"
 
 export type DexterTodoSuggestion = {
   title: string
@@ -65,7 +66,7 @@ function actionableAssistantLine(content: string) {
 }
 
 function cleanTitle(value: string) {
-  const cleaned = value
+  const cleaned = todoText(value).title
     .replace(/^\s*(?:please\s+)?(?:remind me to|add(?: this)? to (?:my )?(?:to[- ]?do|task list)|add (?:a )?(?:to[- ]?do|task)(?: to)?|i need to|we need to|action item[:–-]?)\s*/i, "")
     .replace(/\s+(?:to|on) (?:my )?(?:to[- ]?do|task list)\s*$/i, "")
     .replace(/^[-*#\s]+/, "")
@@ -76,17 +77,7 @@ function cleanTitle(value: string) {
 }
 
 function markdownLinks(content: string) {
-  const result: TodoLink[] = []
-  const seen = new Set<string>()
-  for (const match of content.matchAll(/\[([^\]]{1,120})\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+|\/[^\s)]*)\)/gi)) {
-    const label = match[1].trim()
-    const url = match[2].trim()
-    if (!label || !url || seen.has(url)) continue
-    seen.add(url)
-    result.push({ label, url })
-    if (result.length === 12) break
-  }
-  return result
+  return todoText(content).links
 }
 
 function recordTags(content: string) {
@@ -116,7 +107,7 @@ export function dexterTodoSuggestion(
     title,
     scheduledDate: scheduledDateFrom(user || answer,options.now ?? new Date()),
     priority: priorityFrom(combined),
-    links: markdownLinks(answer),
+    links: markdownLinks(combined),
     tags: recordTags(combined),
   }
 }

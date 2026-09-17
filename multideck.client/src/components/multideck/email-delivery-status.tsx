@@ -4,6 +4,7 @@ import {
   CheckCheck,
   CircleAlert,
   Eye,
+  FilePenLine,
   Reply,
   type LucideIcon,
 } from "@/components/icons/hugeicons"
@@ -31,18 +32,32 @@ function presentationFor(
   t: (value: string) => string,
 ): DeliveryPresentation {
   switch (status) {
+    case "sending":
+      return {
+        icon: CircleAlert,
+        label: t("Awaiting confirmation"),
+        detail: t("The provider has not confirmed sending. Refresh this mailbox to check before sending another copy."),
+        tone: "neutral",
+      }
+    case "draft":
+      return {
+        icon: FilePenLine,
+        label: t("Draft"),
+        detail: t("Saved in the connected mailbox. This message has not been sent. Edit it in your email provider."),
+        tone: "neutral",
+      }
     case "delivered":
       return {
         icon: CheckCheck,
         label: t("Delivered"),
-        detail: t("The provider confirmed delivery."),
+        detail: t("A recipient server confirmed delivery. This does not confirm delivery to every recipient."),
         tone: "positive",
       }
     case "opened_estimated":
       return {
         icon: Eye,
         label: t("Opened (estimated)"),
-        detail: t("At least one recipient's email app requested the tracking image."),
+        detail: t("The tracking image was requested. This is an estimated open signal and does not identify which recipient read the message."),
         tone: "positive",
       }
     case "replied":
@@ -63,7 +78,7 @@ function presentationFor(
       return {
         icon: Ban,
         label: t("Bounced"),
-        detail: t("The provider reported that this message could not be delivered."),
+        detail: t("A recipient server reported a delivery failure. Other recipients may still receive the message."),
         tone: "danger",
       }
     case "no_open_signal":
@@ -173,7 +188,7 @@ export function EmailDeliveryStatus({
           </dl>
         ) : null}
 
-        {delivery.openTrackingEnabled ? (
+        {delivery.status === "draft" ? null : delivery.openTrackingEnabled ? (
           <p className="text-[10.5px] leading-[1.5] text-[var(--md-subtle)]">
             {t("Open tracking is approximate. Image blocking can hide opens, while privacy proxies or viewing the sent copy can create a signal without the recipient reading it.")}
           </p>

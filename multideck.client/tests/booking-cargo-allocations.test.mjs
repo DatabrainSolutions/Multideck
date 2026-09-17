@@ -6,6 +6,8 @@ import { stripTypeScriptTypes } from 'node:module'
 const source = readFileSync(new URL('../src/lib/booking-cargo-allocations.ts', import.meta.url), 'utf8')
 const { analyseCargoAllocations, remainingForAllocation, bookingCargoAllocationPayload, newBookingCargoAllocation } =
   await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(source)).toString('base64')}`)
+const weightSource = readFileSync(new URL('../src/lib/booking-chargeable-weight.ts', import.meta.url), 'utf8')
+const { bookingChargeableWeightError } = await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(weightSource)).toString('base64')}`)
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const cargo = [{ id: id(1), description: 'Machine parts', packageQuantity: '10', grossWeightKg: '1000.5', volumeCbm: '14.25' }]
 const equipment = [{ id: id(2), type: '40GP', verifiedGrossMassKg: '1700' }, { id: id(3), type: '20GP' }]
@@ -88,15 +90,21 @@ const parentSource = readFileSync(new URL('../src/components/multideck/booking-c
 const saveStart = parentSource.indexOf('  async function saveDetails() {')
 assert.ok(saveStart > 0)
 const saveSource = stripTypeScriptTypes(parentSource.slice(saveStart, parentSource.indexOf('  async function sendToCustoms()', saveStart)))
-const realSave = new Function('deps', `const {draftBooking,draftWorkspace,detailsDirty,savingDetails,loadedRecord,toast,t,setAllocationValidationAttempt,analyseCargoAllocations,asRecord,bookingQuoteHandoff,recordText,bookingLookups,currentUser,calculatedDirectionForBooking,setSavingDetails,saveBookingWorkflow,bookingCargoAllocationPayload,bookingModeKey,setLiveJobStarred,applySavedWorkspace}=deps; ${saveSource}; return saveDetails()`)
+const realSave = new Function('deps', `const {saveInFlightRef,canEditBooking,saveGenerationRef,failedSaveFingerprintRef,setSaveError,latestDraftRef,bookingWorkspaceRecord,rebaseBookingDraft,setRecord,setDraftBooking,setDraftWorkspace,getBookingCustomsReadiness,setCustomsReadiness,setCustomsError,bookingChargeableWeightError,setActiveTab,draftBooking,draftWorkspace,detailsDirty,savingDetails,loadedRecord,toast,t,setAllocationValidationAttempt,analyseCargoAllocations,asRecord,bookingQuoteHandoff,recordText,bookingLookups,currentUser,calculatedDirectionForBooking,setSavingDetails,saveBookingWorkflow,bookingCargoAllocationPayload,bookingModeKey,setLiveJobStarred,applySavedWorkspace}=deps; ${saveSource}; return saveDetails()`)
 
 test('actual Booking save handler sends allocation plan with cargo and preserves draft on stale failure', async () => {
   const workspace = { booking: { jobId: id(10), updatedAt: '2026-09-06T10:00:00Z' }, cargo, containers: equipment, routes, parties: [], cargoAllocationState: { jobId: id(10), allocations: [line()] } }
-  const before = structuredClone(workspace), calls = [], busy = [], notices = []
+  const before = structuredClone(workspace), calls = [], busy = [], notices = [], errors = []
   let applied = 0, attempts = 0
   const deps = {
+    saveInFlightRef: { current: false }, canEditBooking: true, saveGenerationRef: { current: 0 }, failedSaveFingerprintRef: { current: null },
+    setSaveError: error => errors.push(error), latestDraftRef: { current: { draftWorkspace: workspace } },
+    bookingWorkspaceRecord: workspace => ({ workspace, booking: {} }), rebaseBookingDraft: saved => saved,
+    setRecord: () => { applied++ }, setDraftBooking() {}, setDraftWorkspace() {},
+    getBookingCustomsReadiness: async () => ({}), setCustomsReadiness() {}, setCustomsError() {},
     draftBooking: { mode: 'OCEAN', value: '', status: 'On track', direction: 'Export' }, draftWorkspace: workspace, detailsDirty: true, savingDetails: false,
     loadedRecord: { workspace, booking: {} }, toast: { error: (...args) => notices.push(args), success: (...args) => notices.push(args) }, t: value => value,
+    bookingChargeableWeightError, setActiveTab: tab => assert.equal(tab, 'Details'),
     setAllocationValidationAttempt: updater => { attempts = updater(attempts) }, analyseCargoAllocations,
     asRecord: value => value ?? {}, bookingQuoteHandoff: () => ({ quote: {} }), recordText: (value, key) => value[key] ?? '', bookingLookups: null, currentUser: null,
     calculatedDirectionForBooking: () => 'export', setSavingDetails: value => busy.push(value), bookingCargoAllocationPayload, bookingModeKey: value => value?.toLowerCase() ?? '',
@@ -110,7 +118,8 @@ test('actual Booking save handler sends allocation plan with cargo and preserves
   assert.deepEqual(calls[0].payload.cargo, cargo)
   assert.deepEqual(calls[0].payload.containers, equipment)
   assert.deepEqual(busy, [true, false])
-  assert.match(notices[0][1].description, /changed since review/)
+  assert.match(errors.at(-1), /changed since review/)
+  assert.ok(deps.failedSaveFingerprintRef.current, "Failed draft must stop automatic retry loops")
   assert.equal(applied, 0)
   assert.deepEqual(workspace, before)
   deps.draftWorkspace = { ...workspace, cargoAllocationState: { ...workspace.cargoAllocationState, allocations: [line({ packageQuantity: '11' })] } }
@@ -121,5 +130,7 @@ test('actual Booking save handler sends allocation plan with cargo and preserves
   deps.saveBookingWorkflow = async (_job, payload) => { assert.deepEqual(payload.cargoAllocations, []);return workspace }
   await realSave(deps)
   assert.equal(applied, 1)
-  assert.equal(notices.at(-1)[0], 'Booking changes saved')
+  assert.equal(errors.at(-1), null)
+  assert.equal(deps.failedSaveFingerprintRef.current, null)
+  assert.deepEqual(notices, [], "Ordinary saves must remain quiet")
 })

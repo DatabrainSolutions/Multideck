@@ -58,9 +58,9 @@ import {
 export type CompactFieldWidth = "code" | "short" | "medium" | "long" | "grow" | "full"
 
 const compactFieldWidthClass: Record<CompactFieldWidth, string> = {
-  code: "w-full sm:w-[9rem] sm:max-w-[11rem] sm:flex-none",
-  short: "w-full sm:w-[12rem] sm:max-w-[15rem] sm:flex-none",
-  medium: "w-full sm:w-[17rem] sm:max-w-[22rem] sm:flex-none",
+  code: "w-full sm:w-[15rem] sm:max-w-[17rem] sm:flex-none",
+  short: "w-full sm:w-[18rem] sm:max-w-[21rem] sm:flex-none",
+  medium: "w-full sm:w-[22rem] sm:max-w-[26rem] sm:flex-none",
   long: "w-full sm:w-[24rem] sm:max-w-[32rem] sm:flex-none",
   grow: "w-full sm:min-w-[17rem] sm:flex-[1_1_22rem]",
   full: "w-full flex-[1_0_100%]",
@@ -123,9 +123,9 @@ export function CompactFieldShell({
   const { t } = useLanguage()
 
   return (
-    <div className={cn("grid min-w-0 content-start gap-1", compactFieldWidthClass[width], className)}>
-      <div className="flex min-h-4 items-baseline justify-between gap-2">
-        <label htmlFor={htmlFor} className="min-w-0 truncate text-[10.5px] font-medium leading-4 text-[var(--md-text)]">
+    <div className={cn("md-compact-field grid min-w-0 content-start gap-1", compactFieldWidthClass[width], className)}>
+      <div className="md-compact-field-label flex min-h-4 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <label htmlFor={htmlFor} className="min-w-0 whitespace-normal text-[11px] font-medium leading-4 text-[var(--md-text)]">
           {t(label)}{required ? <span className="ms-0.5 text-[var(--md-red)]" aria-hidden="true">*</span> : null}
         </label>
         {hint ? <span className="truncate text-[10px] leading-4 text-[var(--md-subtle)]">{t(hint)}</span> : null}
@@ -239,6 +239,7 @@ export function CompactCombobox({
   valueDirection = "auto",
   className,
   autoPopulated = false,
+  autoPopulationEvent,
   autoPopulationDescription,
 }: {
   label: string
@@ -262,6 +263,7 @@ export function CompactCombobox({
   valueDirection?: "auto" | "ltr" | "rtl"
   className?: string
   autoPopulated?: boolean
+  autoPopulationEvent?: number | null
   autoPopulationDescription?: string
 }) {
   const { t } = useLanguage()
@@ -274,7 +276,7 @@ export function CompactCombobox({
   const [activeIndex, setActiveIndex] = useState(0)
   const keyboardNavigationRef = useRef(false)
   const pointerFocusRef = useRef(false)
-  const inputMorphRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated, displayedValue)
+  const inputMorphRef = useAutoPopulationMorph<HTMLInputElement>(autoPopulated && displayedValue === value, value, undefined, autoPopulationEvent)
   const query = open ? search.trim() : ""
   const recommended = useMemo(
     () => deduplicateComboboxOptions(recommendedOptions.filter((option) => matchesComboboxOption(option, query)))
@@ -792,7 +794,7 @@ export function RecurrenceBuilder({
   return (
     <div className={cn("grid min-w-0 gap-2", className)}>
       <div className="flex min-w-0 flex-wrap items-end gap-1.5">
-        <div className="grid w-full min-w-0 content-start gap-1 sm:w-[10rem] sm:max-w-[12rem] sm:flex-none">
+        <div className="md-horizontal-field grid w-full min-w-0 content-start gap-1 sm:w-[18rem] sm:flex-none">
           <div className="flex min-h-4 items-baseline justify-between gap-2">
             <span className="min-w-0 truncate text-[10.5px] font-medium leading-4 text-[var(--md-text)]">{t("Frequency")}</span>
           </div>
@@ -855,7 +857,6 @@ export function LocationFields({
   options,
   countries,
   directoryStatus,
-  directoryCount,
   recommendedLocationIds,
   onChange,
   disabled,
@@ -869,7 +870,6 @@ export function LocationFields({
   options: readonly LocationOption[]
   countries: readonly CountryReferenceOption[]
   directoryStatus?: "loading" | "ready" | "error"
-  directoryCount?: number
   recommendedLocationIds?: ReadonlySet<string>
   onChange: (value: LocationValue) => void
   disabled?: boolean
@@ -940,21 +940,20 @@ export function LocationFields({
   }
 
   return (
-    <fieldset className={cn("min-w-0", className)}>
+    <fieldset className={cn("md-location-fields min-w-0", className)}>
       <legend className="mb-1.5 flex items-baseline gap-1.5 text-[11px] font-medium text-[var(--md-ink)]">
         {t(label)}
         {directoryStatus ? (
           <span className="font-normal text-[10px] text-[var(--md-subtle)]">
             {directoryStatus === "loading" ? t("Loading official UN/LOCODE directory…") : null}
-            {directoryStatus === "ready" && directoryCount ? <><span data-i18n-skip>{directoryCount.toLocaleString()}</span> {t("official locations")}</> : null}
             {directoryStatus === "error" ? t("Official directory unavailable – manual entry still works") : null}
           </span>
         ) : null}
       </legend>
-      <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(8rem,0.85fr)_minmax(12rem,1.35fr)_minmax(7rem,0.55fr)]">
+      <div className="md-location-fields-grid">
         <CompactCombobox label="Country" value={value.countryName} options={countryOptions} recommendedOptions={recommendedCountries} onValueChange={applyCountryInput} placeholder="Country name or code" disabled={disabled} required={required} invalid={invalid && !value.countryName} width="full" />
         <CompactCombobox label="Town, city or port" value={value.place} options={placeOptions} recommendedOptions={recommendedPlaces} onValueChange={(input) => onChange(resolveLinkedLocation(options, value, "place", input))} onOptionSelect={applySelectedOption} placeholder={selectedCountryReference ? "Type a place" : "Select country first"} disabled={disabled || !selectedCountryReference} required={required} invalid={invalid && !value.place} width="full" />
-        <AutoFilledField label="UN/LOCODE" value={value.unlocode} emptyLabel="Select country and location" width="full" valueDirection="ltr" autoPopulated={unlocodeAutoPopulated} disabled={disabled} onChange={(input) => onChange({ ...value, unlocode: input.toLocaleUpperCase().replace(/\s+/g, "") })} />
+        <AutoFilledField className="md-location-code" label="UN/LOCODE" value={value.unlocode} emptyLabel="Select country and location" width="full" valueDirection="ltr" autoPopulated={unlocodeAutoPopulated} disabled={disabled} onChange={(input) => onChange({ ...value, unlocode: input.toLocaleUpperCase().replace(/\s+/g, "") })} />
       </div>
     </fieldset>
   )
@@ -1126,4 +1125,106 @@ function SwitchLabel({ label, checked, onCheckedChange }: { label: string; check
 
 export function CompactSearchIcon() {
   return <Search className="size-3.5 text-[var(--md-subtle)]" aria-hidden="true" />
+}
+
+export function CargoWiseField({
+  label,
+  value,
+  span = false,
+  compact = false,
+  fitValue = false,
+  compactLabel = "fixed",
+  compactPadding = "default",
+  editable = false,
+  className,
+  action,
+  onChange,
+}: {
+  label: string
+  value: string
+  span?: boolean
+  compact?: boolean
+  fitValue?: boolean
+  compactLabel?: "fixed" | "content" | "tight"
+  compactPadding?: "default" | "square"
+  editable?: boolean
+  className?: string
+  action?: ReactNode
+  onChange?: (value: string) => void
+}) {
+  const { t } = useLanguage()
+  const inputId = useId()
+
+  return (
+    <div className={cn(
+      "md-cargowise-field grid min-w-0 items-center",
+      compact
+        ? compactLabel === "content"
+          ? "grid-cols-[max-content_minmax(0,1fr)] gap-1"
+          : compactLabel === "tight"
+            ? "grid-cols-[44px_minmax(0,1fr)] gap-1"
+          : "grid-cols-[64px_minmax(0,1fr)] gap-1"
+        : "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] gap-1.5",
+      span && "md:col-span-2",
+      className,
+    )}>
+      <label htmlFor={inputId} className={cn("min-w-0 whitespace-normal break-words text-[11px] font-medium leading-[1.15] text-[var(--md-text)]", compactLabel === "content" ? "text-start" : "text-end")}>{t(label)}</label>
+      <div className={cn("grid min-w-0", action && "grid-cols-[minmax(0,1fr)_auto] gap-0.5")}>
+        {editable ? <input
+          id={inputId}
+          data-i18n-skip
+          dir="auto"
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
+          className={cn(
+            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
+            compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
+            fitValue && "w-fit max-w-full",
+          )}
+        /> : <span id={inputId} data-i18n-skip dir="auto" className={cn(
+          "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+          compact
+            ? compactPadding === "square"
+              ? "min-h-7 p-1 leading-5"
+              : "min-h-7 px-1.5 py-1 leading-5"
+            : "min-h-8 px-2 py-1.5 leading-5",
+          fitValue && "w-fit max-w-full",
+        )}>{value || "–"}</span>}
+        {action}
+      </div>
+    </div>
+  )
+}
+
+export function CargoWiseGroup({
+  title,
+  children,
+  headerAction,
+  icon: Icon,
+  compact = false,
+  className,
+  contentClassName,
+}: {
+  title: string
+  children: ReactNode
+  headerAction?: ReactNode
+  icon?: typeof Search
+  compact?: boolean
+  className?: string
+  contentClassName?: string
+}) {
+  const { t } = useLanguage()
+
+  return (
+    <section className={cn("h-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", compact ? "p-2" : "p-2.5", className)}>
+      <div className={cn("flex min-w-0 items-center justify-between gap-2", compact ? "mb-1.5" : "mb-2")}>
+        <h3 className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium leading-4 text-[var(--md-ink)]">
+          {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
+          <span>{t(title)}</span>
+        </h3>
+        {headerAction}
+      </div>
+      <div className={cn("grid", compact ? "gap-1.5" : "gap-2", contentClassName)}>{children}</div>
+    </section>
+  )
 }

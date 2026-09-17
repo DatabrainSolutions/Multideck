@@ -1,3 +1,4 @@
+import { signatureRoute } from "./signatures.ts"
 import {
   InboxHttpError,
   assertAllowedRequestOrigin,
@@ -29,6 +30,7 @@ import {
   runtimeClients,
   saveDraft,
   sendMail,
+  sendProviderDraft,
   summarize,
   syncMailbox,
   trashThread,
@@ -71,6 +73,10 @@ Deno.serve(async (request) => {
     const actor = await requireActor(clients.user, clients.admin)
     const path = parseFunctionPath(request.url)
     const method = request.method.toUpperCase()
+
+    if (path[0] === "signatures") {
+      return jsonResponse(request, allowedOrigins, await signatureRoute(clients.admin, actor, path, method, method === "GET" ? {} : await readJson(request, 3_000_000), new URL(request.url)))
+    }
 
     if (method === "GET" && path.length === 1 && path[0] === "providers") {
       return jsonResponse(request, allowedOrigins, await providers())
@@ -166,6 +172,9 @@ Deno.serve(async (request) => {
       // third. `readOutboundAttachments` still holds the real per-file and
       // total limits; this only keeps a legitimate send from being cut off here.
       return jsonResponse(request, allowedOrigins, await sendMail(clients.admin, actor, await readJson(request, 24_000_000), request.headers.get("Idempotency-Key")?.trim() ?? ""))
+    }
+    if (method === "POST" && path.length === 2 && path[0] === "provider-drafts" && path[1] === "send") {
+      return jsonResponse(request, allowedOrigins, await sendProviderDraft(clients.admin, actor, await readJson(request), request.headers.get("Idempotency-Key")?.trim() ?? ""))
     }
     if (method === "POST" && path.length === 1 && path[0] === "provider-drafts") {
       return jsonResponse(

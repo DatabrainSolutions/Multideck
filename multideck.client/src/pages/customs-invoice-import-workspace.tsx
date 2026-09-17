@@ -1,3 +1,5 @@
+import { loadUnlocodeDirectory, resolveInvoiceAgreedPlace } from "@/lib/unlocode-directory"
+import { emptyCustomsInvoiceHeader, type CustomsInvoiceHeader } from "../../../supabase/functions/_shared/customs-invoices.mts"
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { ArrowLeft, Check, CheckCheck, CircleAlert, FileText, Merge, Minus, ScanText, ShieldCheck, Split, Square } from "@/components/icons/hugeicons"
@@ -44,7 +46,7 @@ import type { ExportDeclarationItem } from "@/lib/customs-declaration"
 import { buildAccentRamp, useAccentPresetId } from "@/lib/accent-theme"
 import { cn } from "@/lib/utils"
 
-type ApplyMode = "replace" | "append"
+type ApplyMode = "replace" | "append" | "header"
 type ReviewFilter = "all" | "attention" | "approved"
 type ReviewTab = "lines" | "result"
 
@@ -60,17 +62,31 @@ export function CustomsInvoiceImportWorkspace({
   onClose,
   onApply,
   existingItemCount = 0,
+  importTarget = "items",
 }: {
   recoveryKey: string
   onClose: () => void
-  onApply: (items: ExportDeclarationItem[], mode: ApplyMode, sourceLineCount: number) => void
+  onApply: (items: ExportDeclarationItem[], mode: ApplyMode, sourceLineCount: number, header: CustomsInvoiceHeader) => void
   existingItemCount?: number
+  importTarget?: "header" | "items"
 }) {
   const { t } = useLanguage()
+  const headerOnly = importTarget === "header"
   const recovered = useMemo(() => readCustomsInvoiceImportRecovery(recoveryKey), [recoveryKey])
   const [extractionId, setExtractionId] = useState(() => recovered?.extractionId ?? "")
   const [invoiceName, setInvoiceName] = useState(() => recovered?.invoiceName ?? "")
   const [extractedInvoiceNumber, setExtractedInvoiceNumber] = useState(() => recovered?.extractedInvoiceNumber ?? "")
+  const [extractedHeader, setExtractedHeader] = useState<CustomsInvoiceHeader>(() => recovered?.invoiceHeader ?? emptyCustomsInvoiceHeader(""))
+  useEffect(() => {
+    const source = extractedHeader.tradeTermsLocation
+    if (!source) return
+    let active = true
+    void loadUnlocodeDirectory().then(records => {
+      const code = resolveInvoiceAgreedPlace(source, records)
+      if (active && code && code !== source) setExtractedHeader(current => current.tradeTermsLocation === source ? { ...current, tradeTermsLocation: code, tradeTermsLocationSource: source } : current)
+    }).catch(() => { /* Preserve source text for manual directory selection in Invoice header. */ })
+    return () => { active = false }
+  }, [extractedHeader.tradeTermsLocation])
   const [lines, setLines] = useState<ExtractedInvoiceLine[]>(() => recovered?.lines ?? [])
   const [selections, setSelections] = useState<Record<string, InvoiceLineSelection>>(() => recovered?.selections ?? {})
   const [descriptionOverrides, setDescriptionOverrides] = useState<Record<string, string>>(() => recovered?.descriptionOverrides ?? {})
@@ -105,7 +121,7 @@ export function CustomsInvoiceImportWorkspace({
   const includedCount = lines.filter((line) => selections[line.id]?.include).length
   const attentionCount = lines.filter((line) => attentionLineIds.has(line.id)).length
   const approvedPercent = lines.length ? Math.round((includedCount / lines.length) * 100) : 0
-  const invoiceReference = (extractedInvoiceNumber || invoiceName.replace(/\.[^.]+$/, "")).slice(0, 35).toUpperCase()
+  const invoiceReference = extractedInvoiceNumber.trim()
 
   const visibleGroups = useMemo(() => groups.flatMap((group) => {
     const visible = group.lines.filter((line) => matchesFilter(line, reviewFilter, selections, attentionLineIds))
@@ -220,6 +236,7 @@ export function CustomsInvoiceImportWorkspace({
         if (extractionRequest.current !== requestId) return
         setExtractionId(result.extractionId)
         setExtractedInvoiceNumber(result.invoiceNumber)
+        setExtractedHeader(result.invoiceHeader)
         setLines(result.lines)
         setSelections(Object.keys(recovered.selections).length ? recovered.selections : createDefaultInvoiceSelections(result.lines))
         setEvidencePages(result.evidencePages)
@@ -248,6 +265,8 @@ export function CustomsInvoiceImportWorkspace({
       extractionId,
       invoiceName,
       extractedInvoiceNumber,
+      invoiceHeader: extractedHeader,
+      importTarget,
       lines,
       selections,
       descriptionOverrides,
@@ -257,7 +276,7 @@ export function CustomsInvoiceImportWorkspace({
       reviewFilter,
       reviewTab,
     })
-  }, [activeLineId, descriptionOverrides, documentMetadata, evidencePages, extractedInvoiceNumber, extractionId, invoiceName, lines, recoveryKey, reviewFilter, reviewTab, selections])
+  }, [activeLineId, descriptionOverrides, documentMetadata, evidencePages, extractedInvoiceNumber, extractedHeader, extractionId, invoiceName, importTarget, lines, recoveryKey, reviewFilter, reviewTab, selections])
 
   function updateSelection(lineId: string, update: Partial<InvoiceLineSelection>) {
     setSelections((current) => ({ ...current, [lineId]: { ...current[lineId], ...update } }))
@@ -332,6 +351,7 @@ export function CustomsInvoiceImportWorkspace({
     setExtractionId(nextExtractionId)
     setInvoiceName(file.name)
     setExtractedInvoiceNumber("")
+    setExtractedHeader(emptyCustomsInvoiceHeader(""))
     setLines([])
     setSelections({})
     setDescriptionOverrides({})
@@ -368,6 +388,7 @@ export function CustomsInvoiceImportWorkspace({
       if (!isCurrent()) return
       setExtractionId(result.extractionId)
       setExtractedInvoiceNumber(result.invoiceNumber)
+        setExtractedHeader(result.invoiceHeader)
       setLines(result.lines)
       setSelections(createDefaultInvoiceSelections(result.lines))
       setEvidencePages(result.evidencePages)
@@ -478,13 +499,18 @@ export function CustomsInvoiceImportWorkspace({
   }
 
   function applyToDeclaration(mode: ApplyMode) {
-    if (!output.length) {
+    if (!headerOnly && !output.length) {
       toast.warning(t("Approve at least one invoice line"))
       return
     }
+    if (!invoiceReference || invoiceReference.length > 35) {
+      toast.warning(t("Enter the invoice number before importing."))
+      return
+    }
+    const header = { ...extractedHeader, id: crypto.randomUUID(), invoiceNumber: invoiceReference, exchangeRate: "", sourceExtractionId: extractionId, extractionAppliedAt: Date.now(), extractedFields: Object.entries(extractedHeader).filter(([field, value]) => field !== "id" && field !== "exchangeRate" && typeof value === "string" && Boolean(value)).map(([field]) => field) }
+    onApply(headerOnly ? [] : invoiceOutputToDeclarationItems(output, invoiceReference), headerOnly ? "header" : mode, headerOnly ? 0 : includedCount, header)
     clearCustomsInvoiceImportRecovery(recoveryKey)
     if (extractionId) void cancelCommercialInvoiceExtraction(extractionId)
-    onApply(invoiceOutputToDeclarationItems(output, invoiceReference), mode, includedCount)
   }
 
   function discardAndClose() {
@@ -497,7 +523,8 @@ export function CustomsInvoiceImportWorkspace({
     onClose()
   }
 
-  const showInvoiceDropzone = !extracting && !lines.length
+  const headerReady = headerOnly && Boolean(extractionId) && !extractionError
+  const showInvoiceDropzone = !extracting && !lines.length && !headerReady
 
   return <div
     ref={workspaceRef}
@@ -514,10 +541,10 @@ export function CustomsInvoiceImportWorkspace({
           <div className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><ScanText className="size-5" /></div>
           <span className="min-w-0">
             <span className="flex flex-wrap items-center gap-2">
-              <h1 id="invoice-import-workspace-title" className="text-[21px] font-medium tracking-[-0.025em]">{t("Invoice import")}</h1>
-              {lines.length ? <StatusPill tone="teal">{includedCount} {t("of")} {lines.length} {t("approved")}</StatusPill> : <StatusPill tone="teal">{t("Review before applying")}</StatusPill>}
+              <h1 id="invoice-import-workspace-title" className="text-[21px] font-medium tracking-[-0.025em]">{t(headerOnly ? "Import invoice header" : "Import invoice items")}</h1>
+              {!headerOnly && lines.length ? <StatusPill tone="teal">{includedCount} {t("of")} {lines.length} {t("approved")}</StatusPill> : <StatusPill tone="teal">{t("Review before applying")}</StatusPill>}
             </span>
-            <p className="mt-0.5 truncate text-[11px] text-[var(--md-subtle)]" dir="auto">{invoiceName || t("Review invoice lines, choose what to combine, then add them to the declaration.")}</p>
+            <p className="mt-0.5 truncate text-[11px] text-[var(--md-subtle)]" dir="auto">{invoiceName || t(headerOnly ? "Review the invoice header details before adding them." : "Review invoice lines, choose what to combine, then add them to the declaration.")}</p>
           </span>
         </div>
         <Button type="button" variant="ghost" onClick={discardAndClose}>{t("Cancel")}</Button>
@@ -558,11 +585,26 @@ export function CustomsInvoiceImportWorkspace({
               <span className="mt-2 block text-[18px] font-medium tracking-[-0.015em]">{t(isDraggingInvoice ? "Release to import this invoice" : extractionError ? "Choose another commercial invoice" : "Drop a commercial invoice here")}</span>
               {extractionError ? <span className="mt-2 block max-w-xl text-[12px] leading-5 text-[var(--md-text)]" role="alert">{extractionError}</span> : null}
               <span id="commercial-invoice-upload-detail" className="mt-2 block text-[12px] leading-5 text-[var(--md-text)]">{t("PDF, Excel, CSV, Word or image, up to 10 MB.")}</span>
-              <span id="commercial-invoice-upload-safety" className="mt-1 block max-w-xl text-[10px] leading-4 text-[var(--md-subtle)]">{t("Its item lines will appear for review before anything changes in the declaration.")}</span>
+              <span id="commercial-invoice-upload-safety" className="mt-1 block max-w-xl text-[10px] leading-4 text-[var(--md-subtle)]">{t(headerOnly ? "Only invoice header details will be imported. Import lines separately from Invoice items." : "Its item lines will appear for review before anything changes in the declaration.")}</span>
             </button>
           </Surface> : null}
 
-          {!extracting && lines.length ? <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.04fr)]">
+          {!extracting && headerReady ? <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+            <DocumentEvidenceViewer pages={documentViewerPages} boxes={[]} title={t("Prepared document")} empty={t("The document preview is still being prepared.")} className="h-[58dvh]" />
+            <Surface className="self-start rounded-[var(--md-radius-xl)]">
+              <h2 className="text-[14px] font-medium">{t("Review invoice header")}</h2>
+              <label htmlFor="import-header-number" className="mt-4 block text-[12px] font-medium">{t("Invoice number")}</label>
+              <Input id="import-header-number" className="mt-2" value={extractedInvoiceNumber} maxLength={35} onChange={event => setExtractedInvoiceNumber(event.target.value)} />
+              <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-[12px]">
+                {([["invoiceDate", "Invoice date"], ["currency", "Currency"], ["totalAmount", "Invoice amount"], ["tradeTerms", "Incoterms"], ["tradeTermsLocation", "Agreed place (UN/LOCODE)"], ["transactionNature", "Nature of transaction"], ["grossMass", "Gross weight (kg)"], ["netMass", "Net weight (kg)"], ["packageCount", "Packages"], ["packageKind", "Package type"], ["letterOfCreditExchangeRate", "Letter of credit exchange rate"]] as const).map(([field, label]) => <div key={field}><dt className="text-[var(--md-subtle)]">{t(label)}</dt><dd className="mt-1 break-words">{extractedHeader[field] || t("Not extracted")}</dd></div>)}
+              </dl>
+              {extractedHeader.tradeTermsLocation && !/^[A-Z]{2}[A-Z2-9]{3}$/.test(extractedHeader.tradeTermsLocation) ? <p className="mt-3 text-[11px] text-[var(--md-amber)]">{t("The agreed place needs a UN/LOCODE match. Select its location in Invoice header after import.")}</p> : null}
+              <p className="mt-4 text-[11px] leading-5 text-[var(--md-text)]">{t("Only header details will be added. Missing values remain blank; you can edit them in Invoice header. The customs exchange rate comes from HMRC.")}</p>
+              <Button className="mt-4" type="button" disabled={!invoiceReference} onClick={() => applyToDeclaration("header")}>{t("Import header")}</Button>
+            </Surface>
+          </div> : null}
+
+          {!extracting && !headerOnly && lines.length ? <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.04fr)]">
             <DocumentEvidenceViewer
               className="h-[58dvh] xl:sticky xl:top-0 xl:h-[calc(100dvh-11.5rem)]"
               pages={documentViewerPages}
@@ -589,6 +631,11 @@ export function CustomsInvoiceImportWorkspace({
                   </ul> : null}
                 </div>
               </Surface> : null}
+              <Surface padding="sm" className="rounded-[var(--md-radius-xl)]">
+                <label htmlFor="import-invoice-number" className="text-[12px] font-medium">{t("Invoice number")}</label>
+                <Input id="import-invoice-number" className="mt-2" value={extractedInvoiceNumber} maxLength={35} onChange={event => setExtractedInvoiceNumber(event.target.value)} placeholder={t("Enter the invoice number")} />
+                <p className="mt-2 text-[11px] leading-5 text-[var(--md-text)]">{t("Check the extracted number. A header and its linked items will be added together. Only details found on the invoice are filled. Review its header after import; missing values remain blank. The customs exchange rate comes from HMRC.")}</p>
+              </Surface>
               <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                   <span className="min-w-0">
@@ -685,7 +732,7 @@ export function CustomsInvoiceImportWorkspace({
         </div>
       </main>
 
-      {!extracting && lines.length ? <footer className="border-t border-[var(--md-line)] bg-[var(--md-surface)] px-4 py-3 lg:px-7">
+      {!extracting && !headerOnly && lines.length ? <footer className="border-t border-[var(--md-line)] bg-[var(--md-surface)] px-4 py-3 lg:px-7">
         <div className="mx-auto flex max-w-[1720px] flex-wrap items-center justify-between gap-3">
           <span className="flex min-w-0 items-center gap-3">
             <span className="min-w-0">

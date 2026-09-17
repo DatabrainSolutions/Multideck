@@ -1,3 +1,4 @@
+import { resolveSignature } from "../inbox-api/signatures.ts"
 import { authenticateRequest, corsHeaders, FunctionError, jsonResponse, signedUrlLifetimeSeconds, templateSourcesBucket } from "../_shared/document-functions.ts"
 import {
   buildQuoteResponseUrl,
@@ -24,7 +25,7 @@ import { governedModelFetch } from "../_shared/model-gateway.ts"
 import { isTenantBrandConfigured, readConfiguredTenantBrand, TENANT_BRAND_ASSETS_BUCKET, type TenantBrand } from "../_shared/tenant-branding.ts"
 import { generateQuotePdf, removeGeneratedQuotePdf, type GeneratedQuotePdf, type QuotePdfDataset } from "../_shared/quote-pdf.ts"
 import { quoteDocumentCargo, quoteDocumentCargoTotals, quoteDocumentHandling } from "../_shared/quote-document-cargo.ts"
-import { sendMail as sendConnectedMailbox, type Actor as InboxActor } from "../inbox-api/runtime.ts"
+import { sendMail as sendConnectedMailbox, requireMailbox, type Actor as InboxActor } from "../inbox-api/runtime.ts"
 import { base64Encode, OUTBOUND_ATTACHMENT_LIMITS } from "../inbox-api/core.ts"
 
 type Row = Record<string, unknown>
@@ -1052,7 +1053,7 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
       ? admin.from("CRM_Leads").select("CRMLead_ID,CRMLead_CompanyName,CRMLead_PersonName,CRMLead_Email,CRMLead_ModeCode,CRMLead_DirectionCode,CRMLead_TradeLane").or(leadFilter).eq("CRMLead_IsDeleted", false).neq("CRMLead_StatusCode", "converted").order("CRMLead_UpdatedAt", { ascending: false }).limit(100)
       : Promise.resolve({ data: [], error: null }),
     accessibleOrganisationIds.length
-      ? admin.from("CRM_AccountProfiles").select("CRMAccount_OrgID,CRMAccount_PrimaryModeCode,CRMAccount_PrimaryTradeLane,CRMAccount_MetadataJSON").in("CRMAccount_OrgID", accessibleOrganisationIds).order("CRMAccount_UpdatedAt", { ascending: false }).limit(500)
+      ? admin.from("CRM_AccountProfiles").select("CRMAccount_OrgID,CRMAccount_PrimaryModeCode,CRMAccount_PrimaryTradeLane,CRMAccount_LifetimeValueCurrencyCode,CRMAccount_MetadataJSON").in("CRMAccount_OrgID", accessibleOrganisationIds).order("CRMAccount_UpdatedAt", { ascending: false }).limit(500)
       : noRows(),
     accessibleOrganisationIds.length
       ? admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").in("Org_id", accessibleOrganisationIds).order("Org_Name").limit(500)
@@ -1124,6 +1125,10 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
   ])
   if (activeEmailResult.error || partyHistoryResult.error) throw activeEmailResult.error ?? partyHistoryResult.error
   const organisationNames = new Map((organisationResult.data ?? []).map((row) => [String(row.Org_id), String(row.Org_Name)]))
+  const currencyByOrganisation = new Map((accountResult.data ?? []).map((row) => {
+    const code = String(row.CRMAccount_LifetimeValueCurrencyCode || "").trim().toUpperCase()
+    return [String(row.CRMAccount_OrgID), /^[A-Z]{3}$/.test(code) ? code : null] as const
+  }))
   const quoteTermsByOrganisation = new Map((accountResult.data ?? []).map((row) => {
     const metadata = row.CRMAccount_MetadataJSON && typeof row.CRMAccount_MetadataJSON === "object" ? row.CRMAccount_MetadataJSON as Row : {}
     const quoteTerms = metadata.quoteTerms && typeof metadata.quoteTerms === "object" ? metadata.quoteTerms as Row : {}
@@ -1257,6 +1262,7 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
       id,
       code: String(row.Org_AccCode || ""),
       name: String(row.Org_Name),
+      currencyCode: currencyByOrganisation.get(id) ?? null,
       types: typesByOrganisation.get(id) ?? [],
       addresses: (addressesByOrganisation.get(id) ?? []).map((address) => ({
         id: String(address.OrgAdd_ID),
@@ -1679,6 +1685,9 @@ Deno.serve(async (request) => {
       const subject = requiredText(body.subject, "Email subject", 200)
       const bodyText = requiredText(body.bodyText, "Email body", 6_000)
       const mailboxId = parseUuid(body.mailboxId, "Sending mailbox")
+      const signatureActor: InboxActor = {userId:context.operator.userId,authUserId:context.operator.authUserId,companyId:context.operator.companyId,email:context.operator.email,displayName:context.operator.displayName}
+      const signatureMailbox=await requireMailbox(admin,signatureActor,mailboxId,"send")
+      await resolveSignature(admin,signatureActor,signatureMailbox.mailbox,body.signature as Parameters<typeof resolveSignature>[3])
       const expiryPreset = parseExpiryPreset(body.expiryPreset)
       const token = responseToken()
       const expiresAt = expiryPreset === "never" ? null : new Date(Date.now() + expiryPreset * 86_400_000).toISOString()
@@ -1765,6 +1774,7 @@ Deno.serve(async (request) => {
           draftId: null,
           subject,
           bodyText: rendered.text,
+          signature: body.signature,
           addedTo: [{ address: recipientEmail, displayName: recipientName }],
           addedCc: [],
           addedBcc: [],
@@ -1774,7 +1784,7 @@ Deno.serve(async (request) => {
             mimeType: quoteDocument.mimeType,
             contentBase64: base64Encode(quotePdfBytes),
           }],
-          trackOpens: false,
+          trackOpens: body.trackOpens === true,
         }, `quote:${issued.responseLinkId}`, deliveryMode === "standard" ? { bodyHtml: rendered.html } : {})
         if (delivery.status !== "sent") throw new Error("The connected mail provider did not confirm the quote email as sent.")
         const { data: finalised, error: finaliseError } = await admin.rpc("quote_workflow_finalize_customer_response_v4", {

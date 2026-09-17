@@ -1,4 +1,7 @@
+import { resolveCustomsInvoiceDeclaration } from "./customs-invoices.mts";
 import type { CustomsDocumentDirection } from "./customs-declaration-template.ts";
+import { importAdjustmentsForDraft, isPercentageAdjustment } from "./customs-import-terms.mts";
+import { guaranteesForDraft, hasGuaranteeValues } from "./customs-guarantees.mts";
 
 type Json = Record<string, unknown>;
 
@@ -46,6 +49,10 @@ function join(values: unknown[], separator = " | ") {
 }
 
 function importCostLines(draft: Json) {
+  if (Array.isArray(draft.importAdjustments)) return importAdjustmentsForDraft(draft)
+    .filter((entry) => entry.amount)
+    .map((entry) => join([entry.code, entry.amount, isPercentageAdjustment(entry.code) ? "%" : entry.currency], " "))
+    .join("\n");
   const freightByMass = text(draft.freightChargeApportionment) === "gross_mass";
   const freightCode = text(draft.borderMode) === "4"
     ? freightByMass ? "AS" : "AR"
@@ -430,9 +437,9 @@ export function buildCustomsDeclarationDocumentDataset(
   const snapshotItems = list(acceptedSnapshot.items);
   const hasAcceptedSnapshot = acceptedSnapshot.schemaVersion === 1 &&
     Object.keys(record(snapshotDeclaration.genericPayload)).length > 0;
-  const draft = hasAcceptedSnapshot
+  const draft = resolveCustomsInvoiceDeclaration(hasAcceptedSnapshot
     ? record(snapshotDeclaration.genericPayload)
-    : record(declaration.CUST_GenericPayloadJSON);
+    : record(declaration.CUST_GenericPayloadJSON));
   const directionValue = hasAcceptedSnapshot
     ? snapshotDeclaration.direction
     : declaration.CUST_Direction;
@@ -524,6 +531,8 @@ export function buildCustomsDeclarationDocumentDataset(
     const itemField = <T>(name: string, value: T, fields: string[]) =>
       tracked(`${path}.${name}`, value, itemSources(entry, fields));
     return {
+      invoiceHeaderId: itemField("invoiceHeaderId", text(item.invoiceHeaderId), ["invoiceHeaderId"]),
+      invoiceNumber: tracked(`${path}.invoiceNumber`, text(list(draft.invoiceHeaders).find(header => text(header.id) === text(item.invoiceHeaderId))?.invoiceNumber), [...itemSources(entry, ["invoiceHeaderId"]), ...draftSource("invoiceHeaders")]),
       number: tracked(
         `${path}.number`,
         entry.number,
@@ -836,6 +845,7 @@ export function buildCustomsDeclarationDocumentDataset(
 
   const dataset: CustomsDeclarationDocumentDataset = {
     direction: tracked("direction", direction, directionSource),
+    invoiceHeaders: tracked("invoiceHeaders", list(draft.invoiceHeaders), draftSource("invoiceHeaders")),
     environment: tracked(
       "environment",
       providerEnvironment,
@@ -1101,8 +1111,8 @@ export function buildCustomsDeclarationDocumentDataset(
     ),
     commercialTerm: tracked(
       "commercialTerm",
-      text(isImport ? draft.tradeTerms : draft.routingCountry),
-      draftSource(isImport ? "tradeTerms" : "routingCountry"),
+      isImport ? join([draft.tradeTerms, draft.tradeTermsLocation]) : text(draft.routingCountry),
+      draftSource(...(isImport ? ["tradeTerms", "tradeTermsLocation"] : ["routingCountry"])),
     ),
     borderTransport: tracked(
       "borderTransport",
@@ -1191,6 +1201,7 @@ export function buildCustomsDeclarationDocumentDataset(
       draftSource(
         ...(isImport
           ? [
+            "importAdjustments",
             "freightChargeAmount",
             "freightChargeCurrency",
             "freightChargeApportionment",
@@ -1295,7 +1306,7 @@ export function buildCustomsDeclarationDocumentDataset(
     ),
     guarantee: tracked(
       "guarantee",
-      join([
+      isImport ? guaranteesForDraft(draft).filter(hasGuaranteeValues).map(row => join([row.type, row.grn, row.guaranteeId, row.currency, row.amount, row.office])).join("; ") : join([
         draft.guaranteeType,
         draft.guaranteeReference,
         draft.guaranteeCurrency,
@@ -1303,6 +1314,7 @@ export function buildCustomsDeclarationDocumentDataset(
         draft.guaranteeOffice,
       ]),
       draftSource(
+        "guarantees",
         "guaranteeType",
         "guaranteeReference",
         "guaranteeCurrency",
