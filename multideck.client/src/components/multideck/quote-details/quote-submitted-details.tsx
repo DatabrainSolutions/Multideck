@@ -75,7 +75,7 @@ export function QuoteSubmittedDetails({
   const fields = (items: Fields) => (
     <dl className="grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
       {items.map(([label, value]) => (
-        <div key={label} className="min-w-0 space-y-1">
+        <div key={label} className="md-horizontal-field min-w-0">
           <dt className="text-[12px] text-[var(--md-text)]">{t(label)}</dt>
           <dd
             className="m-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-[var(--md-ink)] [overflow-wrap:anywhere]"

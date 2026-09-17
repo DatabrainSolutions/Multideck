@@ -2464,26 +2464,8 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     background-color: var(--md-accent-a14);
   }
 
-  @keyframes md-auto-populated-token-pop {
-    0% {
-      opacity: 0;
-      filter: blur(2.5px);
-      transform: translateZ(0) scale(0.72);
-    }
-    58% {
-      opacity: 1;
-      filter: blur(0);
-      transform: translateZ(0) scale(1.12);
-    }
-    100% {
-      opacity: 1;
-      filter: blur(0);
-      transform: translateZ(0) scale(1);
-    }
-  }
-
-  /* Comboboxes put the surface class on a wrapper; the reveal owns the input.
-     Mask glyphs without transitioning color or hiding a replacement reveal. */
+  /* The native value is already available to assistive technology. Only its
+     paint is replaced during the reveal; controls and focus never move. */
   [data-auto-population-revealing="true"] {
     -webkit-text-fill-color: transparent;
     caret-color: var(--md-ink);
@@ -2492,32 +2474,22 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   .md-auto-populated-reveal {
     position: absolute;
     z-index: 1;
-    inset: 0;
-    display: flex;
+    display: block;
     min-width: 0;
-    align-items: center;
     overflow: hidden;
     pointer-events: none;
-    white-space: pre;
-  }
-
-  .md-auto-populated-reveal[data-multiline="true"] {
-    display: block;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .md-auto-populated-reveal__token {
-    display: inline-block;
-    flex: none;
-    transform-origin: center;
-    will-change: transform, opacity;
-    animation: md-auto-populated-token-pop 300ms cubic-bezier(0.22, 1, 0.36, 1) var(--md-auto-populated-stagger, 0ms) both;
+    mask-image: linear-gradient(to right, #000 40%, transparent 60%);
+    mask-size: 250% 100%;
+    mask-position: 0% 0;
+    mask-repeat: no-repeat;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .md-auto-populated-reveal__token {
-      animation: none;
+    [data-auto-population-revealing="true"] {
+      -webkit-text-fill-color: currentColor;
+    }
+    .md-auto-populated-reveal {
+      display: none;
     }
   }
 

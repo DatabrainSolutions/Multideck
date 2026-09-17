@@ -23,7 +23,7 @@
 }
 
 :is(.customs-transport-columns, .customs-declaration-columns) > section > h3 {
-  min-height: 36px;
+  min-height: 18px;
   margin-bottom: 12px;
   line-height: 18px;
 }
@@ -34,27 +34,11 @@
   align-items: start;
 }
 
-.customs-import-editor :is(.customs-transport-columns, .customs-declaration-columns) [data-customs-field-shell] > label {
-  display: block;
-}
-
-.customs-import-editor :is(.customs-transport-columns, .customs-declaration-columns) [data-customs-field-shell] > label > span:first-child {
-  min-height: 0;
-  margin-bottom: 3px;
-}
-
 @container (min-width: 640px) {
   :is(.customs-transport-columns, .customs-declaration-columns) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* The four declaration groups remain comfortably scannable from a 960px
- * editor canvas. Waiting until 1200px made common MacBook viewports collapse
- * into a tall 2 x 2 layout despite each group only containing compact fields. */
-@container (min-width: 960px) {
-  :is(.customs-transport-columns, .customs-declaration-columns) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-
-@container customs-transport-card (min-width: 460px) {
+@container customs-transport-card (min-width: 500px) {
   :is(.customs-transport-columns, .customs-declaration-columns) [data-customs-grid="explicit"] {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
@@ -125,39 +109,6 @@
 .customs-import-editor [data-customs-field-shell] input[maxlength="3"],
 .customs-import-editor [data-customs-field-shell] input[maxlength="5"] { max-width: 10rem; }
 
-.customs-import-editor [data-customs-field-shell] { display: block; }
-
-.customs-import-editor [data-customs-field-shell][data-compact] {
-  display: block;
-}
-
-.customs-import-editor [data-customs-field-shell][data-compact] > label {
-  display: grid;
-  grid-template-columns: minmax(92px, 0.42fr) minmax(0, 0.58fr);
-  align-items: center;
-  gap: 1.5px;
-}
-
-.customs-import-editor [data-customs-field-shell] > label > span:first-child {
-  min-height: 0;
-  flex-wrap: wrap;
-  align-items: baseline;
-  font-size: 11px;
-  line-height: 16px;
-  margin-bottom: 3px;
-}
-
-.customs-import-editor [data-customs-field-shell]:not([data-compact]) > label > span:first-child {
-  min-height: 0;
-}
-
-.customs-import-editor [data-customs-field-shell] > label > span:first-child > span:first-child {
-  overflow: visible;
-  white-space: normal;
-  display: inline;
-  -webkit-line-clamp: unset;
-}
-
 .customs-import-editor [data-customs-field-shell] input {
   width: 100%;
   min-height: 32px;
@@ -183,56 +134,6 @@
 }
 .customs-import-editor [data-customs-grid="compact"] > [data-customs-field-shell]:has(button[role="combobox"]) {
   flex-basis: 230px;
-}
-.customs-import-editor [data-customs-field-shell][data-compact] > label > span:first-child {
-  margin-bottom: 0;
-}
-.customs-import-editor [data-customs-field-shell][data-compact] > label > .customs-field-error {
-  grid-column: 2;
-}
-.customs-import-editor [data-customs-field-shell][data-compact] > label > span:first-child > span:has(> span[dir="ltr"]) { margin-inline-start: auto; }
-.customs-import-editor [data-customs-field-shell][data-compact] span[dir="ltr"] { font-size: 10px; }
-.customs-import-editor [data-customs-field-shell][data-has-notice] {
-  display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr);
-  column-gap: 4px;
-  row-gap: 4px;
-  align-items: start;
-}
-.customs-import-editor [data-customs-field-shell][data-has-notice] > label { display: contents; }
-.customs-import-editor [data-customs-field-shell][data-has-notice] > label > span:first-child {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-  min-height: 24px;
-  margin-bottom: 0;
-  align-items: center;
-}
-.customs-import-editor [data-customs-field-shell][data-has-notice] > label > span[data-customs-field] {
-  grid-column: 1 / -1;
-  grid-row: 2;
-}
-.customs-import-editor [data-customs-field-shell][data-has-notice] > label > .customs-field-error {
-  grid-column: 1 / -1;
-  grid-row: 3;
-}
-.customs-import-editor [data-customs-field-shell][data-has-notice] .customs-field-notice {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: center;
-}
-.customs-import-editor [data-customs-field-shell][data-compact][data-has-notice] {
-  grid-template-columns: minmax(76px, 0.42fr) 24px minmax(0, 0.58fr);
-  gap: 6px;
-  align-items: center;
-}
-.customs-import-editor [data-customs-field-shell][data-compact][data-has-notice] > label > span[data-customs-field] {
-  grid-column: 3;
-  grid-row: 1;
-}
-.customs-import-editor [data-customs-field-shell][data-compact][data-has-notice] > label > .customs-field-error {
-  grid-column: 3;
-  grid-row: 2;
 }
 .customs-import-editor[data-customs-view="form"] .customs-field-group { padding-bottom: 12px; }
 
@@ -349,21 +250,21 @@
 /* Expanded goods lines use the natural width of operational values instead of
    stretching every short code or number across half a panel. */
 .customs-item-editor [data-customs-grid="explicit"] {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 220px));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   align-items: start;
 }
 .customs-item-editor [data-customs-grid="explicit"] > [data-customs-field-shell]:has(textarea) {
   grid-column: 1 / -1;
 }
-.customs-item-editor [data-customs-field-shell] > label {
+.customs-item-editor [data-customs-field-shell] > .customs-field-label {
   align-content: start;
 }
 .customs-calculation-fields {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 220px));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
 }
 .customs-item-code-groups {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   align-items: start;
   gap: 12px;
 }
@@ -371,7 +272,7 @@
   flex-wrap: wrap;
 }
 .customs-item-code-groups [data-customs-field-shell] {
-  max-width: 180px;
+  max-width: 280px;
 }
 .customs-item-code-groups [data-customs-field-shell] input {
   max-width: 120px;
@@ -391,15 +292,15 @@
 .customs-item-procedure-groups > section:last-child > [data-customs-field-shell] {
   max-width: none;
 }
-.customs-item-code-groups > section > [data-customs-field-shell] > label {
-  max-width: 180px;
+.customs-item-code-groups > section > [data-customs-field-shell] > .customs-field-label {
+  max-width: 280px;
 }
-.customs-item-procedure-groups > section:last-child > [data-customs-field-shell] > label {
-  max-width: 190px;
+.customs-item-procedure-groups > section:last-child > [data-customs-field-shell] > .customs-field-label {
+  max-width: 290px;
 }
 .customs-item-procedure-groups {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   align-items: start;
   gap: 12px;
 }
@@ -407,28 +308,22 @@
   flex-wrap: wrap;
 }
 .customs-item-procedure-groups > section:first-child [data-customs-grid="explicit"] {
-  grid-template-columns: minmax(0, 80px) minmax(0, 1fr) minmax(0, 85px);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
 }
 .customs-item-procedure-groups > section:first-child [data-customs-grid="explicit"] > :nth-child(3) {
-  max-width: 110px;
+  grid-column: 1 / -1;
+}
+.customs-item-procedure-groups > section:first-child [data-customs-grid="explicit"] > :nth-child(2) input {
+  max-width: 8rem;
 }
 .customs-item-procedure-groups > section:last-child > div.relative [data-customs-field-shell] {
-  max-width: 190px;
+  max-width: 290px;
 }
 
 @container (max-width: 740px) {
   .customs-import-editor [data-customs-grid="fields"] > [data-customs-field-shell] { flex: 1 1 210px; }
-  .customs-import-editor [data-customs-field-shell][data-compact] {
-    display: block;
-  }
-  .customs-import-editor [data-customs-field-shell][data-compact] > label > span:first-child {
-    margin-bottom: 3px;
-    min-height: 0;
-    font-size: 12px;
-  }
   .customs-import-editor [data-customs-grid="compact"] { gap: 16px; }
   .customs-import-editor [data-customs-grid="compact"] > [data-customs-field-shell] { flex: 1 1 230px; }
-  .customs-import-editor [data-customs-party] [data-customs-grid="explicit"] { grid-template-columns: minmax(0, 1fr); }
 }
 
 @container (max-width: 500px) {
@@ -460,4 +355,46 @@
 @media (prefers-reduced-motion: reduce) {
   .customs-disclosure > summary,
   .customs-disclosure > summary > svg { transition: none; }
+}
+
+/* One label column for every field, including fields with notices. */
+[data-customs-field-shell] { --customs-label-width: min(44%, 112px); }
+[data-customs-field-shell] > .customs-field-label {
+  display: grid;
+  grid-template-columns: var(--customs-label-width) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.customs-field-caption { min-width: 0; color: var(--md-text); font-size: 11px; font-weight: 500; line-height: 16px; text-align: end; }
+.customs-field-name { display: block; text-wrap: pretty; }
+.customs-field-name > span { white-space: nowrap; }
+.customs-field-references { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-top: 3px; font-size: 10px; line-height: 12px; font-variant-numeric: tabular-nums; }
+[data-customs-field-shell] input { min-inline-size: calc(5ch + 1rem); }
+[data-customs-field-shell] > .customs-field-label > .customs-field-error { grid-column: 2; }
+[data-customs-field-shell][data-has-notice] .customs-field-caption { padding-inline-end: 26px; }
+[data-customs-field-shell] > .customs-field-notice { position: absolute; inset-inline-start: calc(var(--customs-label-width) - 24px); top: 4px; }
+.customs-import-editor [data-customs-grid="fields"] > [data-customs-field-shell],
+.customs-import-editor [data-customs-grid="compact"] > [data-customs-field-shell] { flex: 1 1 280px; }
+.customs-import-editor [data-customs-grid="fields"] > [data-customs-field-shell]:has(button[role="combobox"]),
+.customs-import-editor [data-customs-grid="compact"] > [data-customs-field-shell]:has(button[role="combobox"]) { flex-basis: 250px; }
+@media (max-width: 640px) {
+  .customs-import-editor [data-customs-grid="fields"] > [data-customs-field-shell],
+  .customs-import-editor [data-customs-grid="compact"] > [data-customs-field-shell] { flex-basis: 100%; }
+}
+
+
+/* A DUCR can be 35 characters; keep it readable across the paired grid. */
+.customs-field-wide { grid-column: 1 / -1; }
+.customs-field-wide [data-customs-field] { max-width: 400px; }
+
+.customs-import-editor [data-customs-party] { container: customs-party / inline-size; }
+.customs-import-editor [data-customs-party] [data-customs-grid="explicit"] { grid-template-columns: minmax(0, 1fr); }
+.customs-import-editor [data-customs-party] [data-customs-grid="explicit"] > :not([data-customs-field-shell]) { grid-column: 1 / -1; }
+.customs-party-row { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 8px 16px; }
+.customs-party-address { display: grid; min-width: 0; grid-template-columns: min(44%, 112px) minmax(0, 1fr); align-items: start; gap: 10px; }
+.customs-party-address > div:first-child { flex-direction: column; align-items: flex-end; text-align: end; }
+@container customs-party (min-width: 520px) {
+  .customs-import-editor [data-customs-party] [data-customs-grid="explicit"],
+  .customs-party-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

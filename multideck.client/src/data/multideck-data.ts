@@ -186,7 +186,7 @@ export const galleryComponents = [
     name: "Auto-populated Field",
     category: "Forms",
     description: "An editable field state for values copied or derived from linked records, with quiet provenance and a reversible manual override.",
-    details: "All editable autofill controls share a left-to-right letter stagger, including inputs, comboboxes, codes, contacts and multiline notes. The real value updates immediately while the visual reveal plays without overlapping text. Long values have a bounded duration, and reduced motion shows the value immediately. Accent tint and stroke distinguish derived values without taking space from the text. Screen readers can read the source description; editing a value removes its derived state. Keep inherited, locked fields separate.",
+    details: "All editable autofill controls share a soft directional reveal with a small upward settle, including inputs, comboboxes, codes, contacts and multiline notes. A native text mirror preserves spacing, truncation and line breaks. The actual value updates immediately. New selections replace an in-flight reveal; editing, leaving the tab or enabling reduced motion ends it cleanly. Unchanged values and saved records stay quiet. The reveal takes 640ms regardless of text length, and reduced motion shows the value immediately. Accent tint and stroke distinguish derived values without taking space from the text. Screen readers can read the source description; editing a value removes its derived state. Keep inherited, locked fields separate.",
     foundOn: [
       { label: "Customs declaration", route: "/customs/standalone/import/new" },
       { label: "Booking details", route: "/bookings/je0991133" },
@@ -194,8 +194,8 @@ export const galleryComponents = [
       { label: "New booking", route: "/bookings/new" },
       { label: "Components", route: "/components?component=auto-populated-field" },
     ],
-    componentCode: `export {\n  AutoPopulatedInput,\n  AutoPopulatedTextarea,\n  matchesAutoPopulation,\n} from "@/components/multideck/auto-populated-field"`,
-    usageCode: `<AutoPopulatedInput\n  value={address}\n  onChange={(event) => setAddress(event.target.value)}\n  autoPopulated={address === customer.address}\n  autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."\n/>`,
+    componentCode: `export {\n  AutoPopulatedInput,\n  AutoPopulatedTextarea,\n  useAutoPopulationMorph,\n  matchesAutoPopulation,\n} from "@/components/multideck/auto-populated-field"`,
+    usageCode: `// Start at null; increment the event when selecting a linked record.\n<AutoPopulatedInput\n  value={address}\n  autoPopulationEvent={customerSelectionEvent}\n  onChange={(event) => setAddress(event.target.value)}\n  autoPopulated={address === customer.address}\n  autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."\n/>`,
   },
   {
     id: "tag-entry-field",
@@ -285,7 +285,7 @@ export const galleryComponents = [
     name: "Quote Detail Controls",
     category: "Forms",
     description: "Compact freight-aware form controls for organisation recommendations, linked locations, derived values, Incoterms, units, recurrence and cargo characteristics. Cargo flags can inherit from individual goods lines without changing manual shipment handling.",
-    details: "Use these controls in quote and booking detail workflows where expected input length should shape the field. Organisation comboboxes keep current, recent and related records above a hairline and retain the full directory below it. Location fields ask for country and port/location, then derive an editable UN/LOCODE from the official directory. Derived values use the shared auto-populated state until the operator overrides them.",
+    details: "Use these controls in quote and booking detail workflows with labels aligned to the left of their controls. Labels wrap without truncation, values keep the remaining width, and validation stays below its control. Expected input length shapes the overall field width. Organisation comboboxes keep current, recent and related records above a hairline and retain the full directory below it. Location fields ask for country and port/location, then derive an editable UN/LOCODE from the official directory. Derived values use the shared auto-populated state until the operator overrides them.",
     foundOn: [
       { label: "Booking details", route: "/bookings/je0991133" },
       { label: "Quote details", route: "/quotes/jq20013" },
