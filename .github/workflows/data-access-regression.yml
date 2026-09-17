@@ -1,0 +1,32 @@
+name: Data access regression
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  data-access:
+    name: Data access regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install PostgreSQL for real row-level security tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql postgresql-client libpq-dev
+      - name: Verify shared access and permission boundaries
+        run: |
+          export PG_TEST_BIN="$(pg_config --bindir)"
+          # These fixtures otherwise skip when PostgreSQL is unavailable.
+          # CI must fail instead of reporting a skipped security check as green.
+          "$PG_TEST_BIN/initdb" --version
+          "$PG_TEST_BIN/pg_ctl" --version
+          "$PG_TEST_BIN/psql" --version
+          node supabase/tests/run-data-access-regression.mjs

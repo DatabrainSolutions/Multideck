@@ -1,0 +1,207 @@
+{
+  "scope": "Synthetic provider protocol probes; not a Dexter browser journey. All five reservations settled in development only.",
+  "async_and_steering": {
+    "events": [
+      {
+        "type": "response.created",
+        "id": "resp_0360f5ed88afa952016aa1cf84577087d2846764bf9f8a00c5"
+      },
+      {
+        "type": "steering_status",
+        "status": "submitted",
+        "id": null
+      },
+      {
+        "type": "steering_status",
+        "status": "queued",
+        "id": null
+      },
+      {
+        "type": "async_started",
+        "call_id": "call_4lzpkujT4M1DD4GzSlgTADjQ"
+      },
+      {
+        "type": "response.incomplete",
+        "id": "resp_0360f5ed88afa952016aa1cf84577087d2846764bf9f8a00c5"
+      },
+      {
+        "type": "steering_status",
+        "status": "incorporated",
+        "id": null
+      },
+      {
+        "type": "response.created",
+        "id": "resp_0360f5ed88afa952016aa1cf87626887d296c51d98802f54b9"
+      },
+      {
+        "type": "response.completed",
+        "id": "resp_0360f5ed88afa952016aa1cf87626887d296c51d98802f54b9"
+      },
+      {
+        "type": "response.created",
+        "id": "resp_0360f5ed88afa952016aa1cf8a4f8487d2920d7918a43bb419"
+      },
+      {
+        "type": "response.completed",
+        "id": "resp_0360f5ed88afa952016aa1cf8a4f8487d2920d7918a43bb419"
+      },
+      {
+        "type": "final",
+        "output": [
+          {
+            "id": "msg_0360f5ed88afa952016aa1cf8bc22087d2910f0aa90f047a20",
+            "type": "message",
+            "status": "completed",
+            "content": [
+              {
+                "type": "output_text",
+                "annotations": [],
+                "logprobs": [],
+                "text": "- **Exact name:** Synthetic QA record\n- **Recorded status:** verified\n- **Requested status word:** violet"
+              }
+            ],
+            "phase": "final_answer",
+            "role": "assistant"
+          }
+        ]
+      }
+    ],
+    "settlements": [
+      {
+        "id": "2672ff89-9c8c-410a-ac65-8334cc871aa4",
+        "responseId": "resp_0360f5ed88afa952016aa1cf84577087d2846764bf9f8a00c5",
+        "usage": {
+          "input_tokens": 90,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 15,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 105
+        },
+        "failure": null
+      },
+      {
+        "id": "735104c2-5049-4878-ba87-7e5e95e3bb9d",
+        "responseId": "resp_0360f5ed88afa952016aa1cf87626887d296c51d98802f54b9",
+        "usage": {
+          "input_tokens": 147,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 94,
+          "output_tokens_details": {
+            "reasoning_tokens": 50
+          },
+          "total_tokens": 241
+        },
+        "failure": null
+      },
+      {
+        "id": "cfd9f89c-6383-44cc-9b14-2d64286f9872",
+        "responseId": "resp_0360f5ed88afa952016aa1cf8a4f8487d2920d7918a43bb419",
+        "usage": {
+          "input_tokens": 245,
+          "input_tokens_details": {
+            "cache_write_tokens": 0,
+            "cached_tokens": 0
+          },
+          "output_tokens": 27,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 272
+        },
+        "failure": null
+      }
+    ],
+    "unusedReservations": []
+  },
+  "reasoning_cache": {
+    "events": [
+      {
+        "type": "first",
+        "output": [
+          {
+            "id": "msg_023c6583c35f99f2016aa1cfeb14bc87d283ce7c5b541d6d37",
+            "type": "message",
+            "status": "completed",
+            "content": [
+              {
+                "type": "output_text",
+                "annotations": [],
+                "logprobs": [],
+                "text": "4"
+              }
+            ],
+            "phase": "final_answer",
+            "role": "assistant"
+          }
+        ]
+      },
+      {
+        "type": "second",
+        "output": [
+          {
+            "id": "msg_023c6583c35f99f2016aa1cfec5c6c87d2bc14e1ab1d9f439a",
+            "type": "message",
+            "status": "completed",
+            "content": [
+              {
+                "type": "output_text",
+                "annotations": [],
+                "logprobs": [],
+                "text": "6"
+              }
+            ],
+            "phase": "final_answer",
+            "role": "assistant"
+          }
+        ],
+        "requestEffort": "low",
+        "updatedEffort": "medium"
+      }
+    ],
+    "settlements": [
+      {
+        "id": "05cb3d88-0520-4cd0-aeed-fb7b83c501e6",
+        "responseId": "resp_023c6583c35f99f2016aa1cfe9df1887d288a3aa2e004c19cc",
+        "usage": {
+          "input_tokens": 4043,
+          "input_tokens_details": {
+            "cache_write_tokens": 4040,
+            "cached_tokens": 0
+          },
+          "output_tokens": 5,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 4048
+        },
+        "failure": null
+      },
+      {
+        "id": "c86568ec-5e2e-481f-b17a-2da6dd582af4",
+        "responseId": "resp_023c6583c35f99f2016aa1cfeb4ad087d2ba8f5769236f9e67",
+        "usage": {
+          "input_tokens": 4060,
+          "input_tokens_details": {
+            "cache_write_tokens": 17,
+            "cached_tokens": 4040
+          },
+          "output_tokens": 5,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 4065
+        },
+        "failure": null
+      }
+    ],
+    "unusedReservations": []
+  }
+}

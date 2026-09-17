@@ -285,11 +285,7 @@ Deno.test("delivery reports require exact machine-readable evidence for one mess
     "Content-Type: message/delivery-status",
     "Action: relayed",
     "Status: 2.1.5",
-  ].join("\r\n"), "<send-4@example.com>"), {
-    eventType: "delivered",
-    originalMessageId: "<send-4@example.com>",
-    statusCode: "2.1.5",
-  })
+  ].join("\r\n"), "<send-4@example.com>"), null)
 })
 
 Deno.test("a message with no attachments stays a single text/plain part", () => {

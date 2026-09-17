@@ -1,3 +1,4 @@
+import { SidebarTaskAgents } from "@/components/multideck/task-agent-components"
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
@@ -1108,11 +1109,13 @@ export function AppSidebar({
   const canReadDocuments = hasPermission(currentUser, "Documents.Read")
   const canReadPhoneCalls = hasPermission(currentUser, "CRM.PhoneCalls.Read")
   const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
+  const canManageSignatures = hasPermission(currentUser, "Email.Signatures.Manage")
   const canOpenAdmin = isTenantAdministrator(currentUser)
 
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
-      return sidebarAreas.filter((area) => area.id !== "administration" || canOpenAdmin).map((area) => {
+      return sidebarAreas.filter((area) => area.id !== "administration" || canOpenAdmin || canManageSignatures).map((area) => {
+        if (area.id === "administration" && !canOpenAdmin) return { ...area, destinations: area.destinations.filter(destination => destination.id === "admin-email-signatures") }
         if (area.id === "documents-service") {
           return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
         }
@@ -1127,7 +1130,7 @@ export function AppSidebar({
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, canManageSignatures])
   const favouriteCandidates = useMemo(() => sidebarFavouriteCandidates(availableAreas), [availableAreas])
   const { scope: favouritesScope, save: saveFavourites } = useSidebarLayoutScope(favouritesScopeId)
   const favouriteIds = useMemo(
@@ -2170,8 +2173,9 @@ export function AppSidebar({
         />
       </div>
 
-      <div className="relative z-10 mt-[var(--md-page-stack-gap)]">
-        {supportTicketFeatureEnabled ? <><Separator className="mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
+      <div className="relative z-10 mt-[var(--md-page-stack-gap)] shrink-0">
+        <SidebarTaskAgents collapsed={collapsed} onNavigate={(path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')); onRequestClose?.() }} />
+        {supportTicketFeatureEnabled ? <><Separator className="sidebar-support-divider mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
         <button
           type="button"
           aria-label={collapsed ? t("Submit a ticket") : undefined}

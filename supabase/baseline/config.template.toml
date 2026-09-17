@@ -1,0 +1,17 @@
+# Safe defaults for a clean Main template. Cloud replaces the invalid hostname
+# with the exact approved tenant hostname during tenant provisioning.
+project_id = "multideck-main-template"
+
+[auth]
+site_url = "https://main-template.invalid"
+additional_redirect_urls = []
+enable_signup = false
+enable_anonymous_sign_ins = false
+enable_manual_linking = true
+minimum_password_length = 10
+
+[auth.email]
+enable_signup = false
+
+[auth.sms]
+enable_signup = false

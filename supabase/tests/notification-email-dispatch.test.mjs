@@ -6,7 +6,7 @@ import ts from "../../multideck.client/node_modules/typescript/lib/typescript.js
 
 const source = readFileSync(new URL("../functions/send-notification-email/index.ts", import.meta.url), "utf8").replace(/^import .*\n/gm, "")
 const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
-function harness({ metadata = { event_type: "product_updates" }, preferenceError = false, user = false, receiptError = false } = {}) {
+function harness({ metadata = { event_type: "product_updates" }, preferenceError = false, preference = true, user = false, receiptError = false } = {}) {
   let handler, rendered, sends = []
   const notification = { CommNotif_ID: "notification-1", CommNotif_UserID: "recipient", CommNotif_Title: "Record changed", CommNotif_Body: "A real record changed.", CommNotif_MetadataJSON: metadata, CommNotif_TargetTable: null, CommNotif_TargetID: null }
   const client = {
@@ -17,7 +17,7 @@ function harness({ metadata = { event_type: "product_updates" }, preferenceError
       const result = () => table === "Comm_Notifications"
         ? update ? { data: null, error: receiptError ? Error("db down") : null } : { data: notification, error: null }
         : table === "cmp_Users" ? { data: { User_ID: "recipient", User_Email: "operator@example.invalid", Company_ID: "company" }, error: null }
-        : { data: { CommNotifPref_IsEnabled: true }, error: preferenceError ? Error("db down") : null }
+        : { data: preference === null ? null : { CommNotifPref_IsEnabled: preference }, error: preferenceError ? Error("db down") : null }
       const query = {
         select() { return query }, eq() {
           if (update && !receiptError) notification.CommNotif_MetadataJSON = update.CommNotif_MetadataJSON
@@ -66,4 +66,16 @@ test("an unrecorded provider acceptance is returned as a retryable failure", asy
   const h = harness({ receiptError: true })
   assert.equal((await h.dispatch()).status, 500)
   assert.equal(h.sends.length, 1)
+})
+
+test("watch and document notification emails require explicit opt-in", async () => {
+  for (const eventType of ["dexter_watch", "document_parse"]) {
+    for (const preference of [null, false, true]) {
+      const h = harness({ metadata: { event_type: eventType }, preference })
+      const response = await h.dispatch()
+      assert.equal(response.status, 200)
+      assert.equal(h.sends.length, preference === true ? 1 : 0, `${eventType}: ${preference}`)
+      if (preference !== true) assert.equal((await response.json()).skipped, "preference_disabled")
+    }
+  }
 })

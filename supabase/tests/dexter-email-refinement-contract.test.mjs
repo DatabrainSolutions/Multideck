@@ -63,7 +63,7 @@ test("the mounted composer morphs its edit icon and exposes focused selection ac
   assert.match(composer, /replacementTransition/);
   assert.match(
     composer,
-    /filter: \["blur\(7px\)", "blur\(3px\)", "blur\(0px\)"\]/,
+    /filter: \["blur\(2px\)", "blur\(1px\)", "blur\(0px\)"\]/,
   );
   assert.match(
     composer,

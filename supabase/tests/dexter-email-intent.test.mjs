@@ -6,7 +6,7 @@ import * as policy from '../functions/agent-dexter/email-approval.mjs'
 
 const read = file => readFileSync(new URL(`../functions/agent-dexter/${file}`, import.meta.url), 'utf8')
 const edge = read('index.ts')
-const helpers = stripTypeScriptTypes(edge.slice(edge.indexOf('function isExplicitEmailWritingRequest('), edge.indexOf('function explicitEmailSubject(')), { mode: 'transform' })
+const helpers = stripTypeScriptTypes(edge.slice(edge.indexOf('function isExplicitEmailWritingRequest('), edge.indexOf('function explicitEmailSubject(')), { mode: 'strip' })
 const { writing, action } = new Function('emailInstructionText', 'emailSendRequested', `${helpers}; return {writing:isExplicitEmailWritingRequest,action:requestedEmailAction}`)(policy.emailInstructionText,policy.emailSendRequested)
 const securitySource = stripTypeScriptTypes(read('security.ts')).replace('"./email-approval.mjs"', JSON.stringify(new URL('../functions/agent-dexter/email-approval.mjs', import.meta.url).href))
 const security = await import(`data:text/javascript;base64,${Buffer.from(securitySource).toString('base64')}`)
@@ -51,7 +51,7 @@ test('affirmative sends retain mandatory final approval and do not borrow negate
   assert.equal(writing('Read the milestone and reply only with its status', false), false)
 })
 
-const guardSource = stripTypeScriptTypes(edge.slice(edge.indexOf('async function securePreparedEmailAction('), edge.indexOf('async function loadOperatorEmailStyle(')), { mode: 'transform' })
+const guardSource = stripTypeScriptTypes(edge.slice(edge.indexOf('async function securePreparedEmailAction('), edge.indexOf('async function loadOperatorEmailStyle(')), { mode: 'strip' })
 function guardHarness() {
   const calls = []
   const guard = new Function('deps', `const {operatorAuthorisesAction,isExplicitEmailWritingRequest,requestedEmailAction,prepareServerAction,executePreparedActionById,requiresExplicitActionApproval}=deps;
@@ -93,13 +93,13 @@ test('shared preparation guard rejects model-proposed email actions outside curr
   for (const mode of ['approve','full']) {
     const {guard,calls}=guardHarness()
     const result=await guard(input('Draft an email to test@example.com',mode,'create_draft'))
-    assert.equal(result.completed,mode==='full')
-    assert.deepEqual(calls,mode==='full'?['prepare','execute']:['prepare'])
+    assert.equal(result.completed,false)
+    assert.deepEqual(calls,['prepare'])
   }
 })
 
 test('unrequested model draft does not record a writing-profile event before the security guard', async () => {
-  const source=stripTypeScriptTypes(edge.slice(edge.indexOf('async function prepareEmailDraft('),edge.indexOf('function rememberCurrentRecords(')),{mode:'transform'})
+  const source=stripTypeScriptTypes(edge.slice(edge.indexOf('async function prepareEmailDraft('),edge.indexOf('function rememberCurrentRecords(')),{mode:'strip'})
   const prepare=new Function('isExplicitEmailWritingRequest','requestedEmailAction',`
     const cleanString=(v,n)=>typeof v==='string'?v.trim().slice(0,n):'',isUuid=()=>false;
     ${source};return prepareEmailDraft;`)(writing,action)
@@ -108,4 +108,40 @@ test('unrequested model draft does not record a writing-profile event before the
   const result=await prepare(client,{mode:'new',bodyText:'Saved evidence'},readonly,new Set(),'send')
   assert.match(result.error,/not requested/)
   assert.deepEqual(calls,[])
+})
+
+test('review-and-send selects Send while a separate prohibition still vetoes sending', () => {
+  assert.equal(action('Compose an email for me to review and send.'), 'send')
+  assert.equal(action('Compose an email for me to review and send. Do not save a provider draft first.'), 'send')
+  assert.equal(action('Draft an email for me to review and send. Do not send it yet.'), 'create_draft')
+  assert.equal(action('Explain the phrase "review and send".'), 'create_draft')
+})
+
+test('self-recipient intent recognises connected sending mailboxes but not quoted or negative content', () => {
+  for (const prompt of ['Write an email to myself', 'Compose an email to my own connected sending mailbox', 'Draft an email to my default outbound mailbox'])
+    assert.equal(policy.emailSelfRecipientRequested(prompt), true)
+  for (const prompt of ['Explain "send an email to myself"', 'Do not send an email to me', 'Compose a message to Alex'])
+    assert.equal(policy.emailSelfRecipientRequested(prompt), false)
+})
+
+
+test('navigation questions cannot create an unrelated email composer from retained context', () => {
+  for (const prompt of [
+    'Where do I edit a company address, move a deal to another stage, and connect an email mailbox in Multideck? Give the page links and exact controls. Do not make any changes.',
+    'How do I send an email in Multideck?',
+    'Where can I edit email settings?',
+  ]) for (const selected of [false,true]) {
+    assert.equal(writing(prompt,selected),false,prompt)
+    assert.equal(policy.emailSendRequested(prompt),false,prompt)
+    assert.deepEqual(security.allowedActionsForPrompt(prompt,codes,'approve'),[],prompt)
+  }
+  assert.equal(writing('Where do I edit an address? Also draft an email to test@example.com.',false),true)
+  assert.equal(writing('Where is the inbox and draft an email to test@example.com',false),true)
+})
+
+
+test('preserving a contact email during a record move does not request an email draft', () => {
+ const prompt='Move Maya Collins from Demo Organisation 050 to Demo Organisation 051. Preserve her email, role and other contact details. Prepare the change for approval.'
+ for (const selected of [false,true]) assert.equal(writing(prompt,selected),false)
+ assert.equal(writing(prompt+' Also draft an email to test@example.com.',false),true)
 })

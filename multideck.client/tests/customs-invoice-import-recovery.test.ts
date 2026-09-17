@@ -129,3 +129,11 @@ test("ignores corrupt and empty recovery records", () => {
   saveCustomsInvoiceImportRecovery("declaration-2", { ...recovery(), extractionId: "", lines: [] })
   assert.equal(hasCustomsInvoiceImportRecovery("declaration-2"), false)
 })
+
+test("recovery preserves header-only intent when the draft is saved under a new ID", () => {
+  saveCustomsInvoiceImportRecovery("new-draft", { ...recovery(), importTarget: "header" })
+  moveCustomsInvoiceImportRecovery("new-draft", "saved-draft")
+  assert.equal(readCustomsInvoiceImportRecovery("saved-draft")?.importTarget, "header")
+  saveCustomsInvoiceImportRecovery("legacy-draft", recovery())
+  assert.equal(readCustomsInvoiceImportRecovery("legacy-draft")?.importTarget, "items")
+})

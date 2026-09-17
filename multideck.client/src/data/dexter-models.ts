@@ -45,7 +45,7 @@ export const dexterModels: DexterModel[] = [
   {
     id: "worker",
     name: "Worker",
-    description: "Runs long jobs in the background and reports back",
+    description: "Thorough reasoning for complex requests",
     tag: "Deep",
     provider: "openai",
     strength: 9,

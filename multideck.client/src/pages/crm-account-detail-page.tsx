@@ -1,3 +1,5 @@
+import { ContactEmailAction } from "@/components/multideck/contact-email-action"
+import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { ArrowLeft, ArrowRight, Check, Clock, Health, Mail, MessageSquareText, Phone, Plus, RefreshCw, Trash2, WhatsappBrand, X, type LucideIcon } from "@/components/icons/hugeicons"
@@ -9,7 +11,6 @@ import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { ProgressRing } from "@/components/multideck/dashboard-radials"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import { InlineField, InlineFieldGroup, InlineSelectField, InlineToggleChip } from "@/components/multideck/inline-field"
-import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
 import { PhoneCallLinkedRecordSection } from "@/components/multideck/phone-call-components"
 import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
@@ -29,14 +30,6 @@ import { CustomerLiveGrantWorkspace } from "@/pages/customer-live-grants-page"
 
 type CustomField = { id: string; label: string; value: string }
 type AccountDraft = UpdateAccountInput & { customFields: CustomField[] }
-type CommunicationPreferenceKey = "whatsapp" | "sms" | "phone" | "email"
-const communicationChannels: Array<{ key: CommunicationPreferenceKey; label: string; icon: LucideIcon }> = [
-  { key: "whatsapp", label: "WhatsApp", icon: WhatsappBrand },
-  { key: "sms", label: "SMS", icon: MessageSquareText },
-  { key: "phone", label: "Phone", icon: Phone },
-  { key: "email", label: "Mail", icon: Mail },
-]
-
 /** Activities and emails are the same thing to an operator: what happened, and when. */
 type Moment = {
   id: string
@@ -62,8 +55,7 @@ function sameIds(left: string[] | null, right: string[]) {
  *
  * Within that frame each fact is drawn as the shape it actually is. Scores carry
  * their arc and remain calculated, not manually editable. Profile fields align in
- * a stable grid, while communication preferences and consent live together because
- * they answer the same operator question: how may we contact this account? The
+ * a stable grid. Communication preferences and consent belong to each contact. The
  * activity log and mailbox remain one stream because nobody wants two histories of
  * the same relationship.
  *
@@ -77,12 +69,9 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [addContactOpen, setAddContactOpen] = useState(false)
-  const [consentOpen, setConsentOpen] = useState(false)
   const [reference, setReference] = useState<CustomerReference | null>(null)
   const [companyTypesSaving, setCompanyTypesSaving] = useState(false)
   const [companyTypeIdsDraft, setCompanyTypeIdsDraft] = useState<string[] | null>(null)
-  const [preferredPreferenceDraft, setPreferredPreferenceDraft] = useState<CommunicationPreferenceKey | null>(null)
-  const [preferredPreferenceSaving, setPreferredPreferenceSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<AccountDetailTab>("overview")
   const accountRef = useRef<ApiCustomerDetail | null>(null)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
@@ -128,9 +117,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
     }
   }, [accountId, reloadToken, t])
 
-  useEffect(() => {
-    setPreferredPreferenceDraft(null)
-  }, [account?.metadata.preferredCommunicationPreference])
+
 
   useEffect(() => {
     if (!account) return
@@ -305,40 +292,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   const currentCompanyTypes = reference ? reference.organisationTypes.filter((type) => currentTypeIds.includes(type.id)) : currentAccount.types.map((name) => ({ id: name, name }))
   const address = currentAccount.address
   const engagement = currentAccount.engagement
-  const savedChannelPreferences = objectRecord(currentAccount.metadata.communicationChannels)
-  const savedPreferredChannel = preferredCommunicationKey(engagement?.preferredChannel) ?? preferredCommunicationKey(currentAccount.metadata.preferredCommunicationPreference)
-  const channelPreferences = Object.fromEntries(communicationChannels.map(({ key }) => [key,
-    key === "whatsapp" ? engagement?.allowWhatsApp === true : savedChannelPreferences[key] === true || (savedChannelPreferences[key] === undefined && savedPreferredChannel === key),
-  ]))
-  const preferredCommunication = preferredPreferenceDraft ?? savedPreferredChannel
   const enter = (index: number) => (shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.04) })
-
-  async function selectPreferredCommunication(next: CommunicationPreferenceKey) {
-    if (next === preferredCommunication || preferredPreferenceSaving) return
-    setPreferredPreferenceDraft(next)
-    setPreferredPreferenceSaving(true)
-    try {
-      await patch({
-        metadata: {
-          ...currentAccount.metadata,
-          preferredCommunicationPreference: next,
-          communicationChannels: { ...channelPreferences, [next]: true },
-        },
-        engagement: {
-          ...defaultEngagement,
-          ...engagement,
-          preferredChannel: next,
-          ...(next === "whatsapp" ? { allowWhatsApp: true } : {}),
-        },
-      })
-    } catch (cause) {
-      setPreferredPreferenceDraft(null)
-      toast.error(cause instanceof Error ? cause.message : t("That preference could not be saved."))
-    } finally {
-      setPreferredPreferenceDraft(null)
-      setPreferredPreferenceSaving(false)
-    }
-  }
 
   async function flushCompanyTypes() {
     if (companyTypesSaveTimerRef.current) {
@@ -461,12 +415,10 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
                   {address?.mainEmail ? (
-                    <Button asChild variant="outline" className="h-9 rounded-[var(--md-radius-lg)] text-[12.5px]">
-                      <a href={`mailto:${address.mainEmail}`}>
+                      <ContactEmailAction email={address.mainEmail} name={currentAccount.name} className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[12.5px] shadow-[var(--md-shadow-line)]">
                         <Mail className="size-3.5" strokeWidth={1.5} />
                         {t("Email")}
-                      </a>
-                    </Button>
+                      </ContactEmailAction>
                   ) : null}
                   {address?.mainPhone ? (
                     <Button asChild variant="outline" className="h-9 rounded-[var(--md-radius-lg)] text-[12.5px]">
@@ -610,46 +562,6 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
 
               <div className="grid items-stretch gap-[var(--md-page-stack-gap)] lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
                 <div className="grid min-w-0 content-start gap-[var(--md-page-stack-gap)]">
-                <Zone title={t("Communication preferences")}>
-                    <div className="overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]" role="radiogroup" aria-label={t("Preferred communication channel")}>
-                      <div className="grid grid-cols-[minmax(0,1fr)_52px_42px] items-center gap-2 px-3 pb-1.5 pt-2.5 text-[10.5px] text-[var(--md-subtle)]">
-                        <span>{t("Channel")}</span>
-                        <span className="text-center">{t("Preferred")}</span>
-                        <span className="text-center">{t("Allowed")}</span>
-                      </div>
-                      {communicationChannels.map((channel) => (
-                        <PreferenceToggleRow
-                          key={channel.key}
-                          label={channel.label}
-                          icon={channel.icon}
-                          checked={channelPreferences[channel.key] === true}
-                          preferred={preferredCommunication === channel.key}
-                          preferenceDisabled={preferredPreferenceSaving}
-                          onPrefer={() => selectPreferredCommunication(channel.key)}
-                          onSave={async (allowed) => {
-                            await patch({
-                              metadata: {
-                                ...currentAccount.metadata,
-                                communicationChannels: { ...channelPreferences, [channel.key]: allowed },
-                                ...(!allowed && preferredCommunication === channel.key ? { preferredCommunicationPreference: null } : {}),
-                              },
-                              engagement: {
-                                ...defaultEngagement,
-                                ...engagement,
-                                ...(channel.key === "whatsapp" ? { allowWhatsApp: allowed } : {}),
-                                ...(!allowed && preferredCommunication === channel.key ? { preferredChannel: null } : {}),
-                              },
-                            })
-                            setPreferredPreferenceDraft(null)
-                          }}
-                        />
-                      ))}
-                    </div>
-                  <div className="mt-3 grid min-h-11 grid-cols-[minmax(0,1fr)_42px] items-center gap-2 border-t border-[var(--md-line)] px-3 pt-3">
-                    <span className="text-[13px] font-medium text-[var(--md-ink)]">{t("Marketing consent")}</span>
-                    <Switch checked={currentAccount.marketingOptIn} onCheckedChange={() => setConsentOpen(true)} aria-label={t("Change marketing consent")} className="justify-self-center" />
-                  </div>
-                </Zone>
               <Panel
                 title={t("Contacts")}
                 meta={String(currentAccount.contacts.length)}
@@ -663,7 +575,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 {currentAccount.contacts.length ? (
                   <div className="grid gap-2 px-4 pb-4 sm:px-5 sm:pb-5">
                     {currentAccount.contacts.map((contact, index) => (
-                      <motion.button key={contact.id} type="button" initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={enter(index)} onClick={() => navigate(`/crm/contacts/${contact.id}`)} className={cn("group flex min-h-11 w-fit max-w-full min-w-0 items-center gap-2 rounded-full bg-[var(--md-surface-soft)] py-1.5 ps-1.5 pe-3 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background-color,scale] duration-150 ease-out hover:bg-[var(--md-surface-tint)] active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:scale-100", index % 2 === 1 && "ms-5 max-w-[calc(100%-1.25rem)]")}>
+                      <div key={contact.id} className="min-w-0 border-b border-[var(--md-line)] pb-3 last:border-0 last:pb-0"><motion.button type="button" initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={enter(index)} onClick={() => navigate(`/crm/contacts/${contact.id}`)} className={cn("group flex min-h-11 w-fit max-w-full min-w-0 items-center gap-2 rounded-full bg-[var(--md-surface-soft)] py-1.5 ps-1.5 pe-3 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background-color,scale] duration-150 ease-out hover:bg-[var(--md-surface-tint)] active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:scale-100", false)}>
                         <CustomerAvatar initials={contact.initials} tone="blue" size="sm" className="rounded-full" />
                         <span className="min-w-0">
                           <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>
@@ -675,6 +587,11 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                         </span>
                         <ArrowRight className="size-4 shrink-0 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transform-none" strokeWidth={1.5} />
                       </motion.button>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 ps-2">
+                        {contact.email ? <ContactEmailAction email={contact.email} name={contact.name} className="max-w-full text-[12px]" /> : null}
+                        <ContactPreferencesPopover contactId={contact.id} name={contact.name} onSaved={next => setAccount(current => current ? { ...current, contacts: current.contacts.map(item => item.id === next.id ? next : item) } : current)} />
+                      </div>
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -755,18 +672,6 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
         </div>
       </div>
 
-      <MarketingConsentDialog
-        open={consentOpen}
-        onOpenChange={setConsentOpen}
-        current={currentAccount.marketingOptIn}
-        source={currentAccount.marketingConsentSource}
-        updatedAt={currentAccount.marketingConsentUpdatedAt}
-        onSave={async (marketingOptIn, marketingConsentReason) => {
-          await patch({ marketingOptIn, marketingConsentReason })
-          toast.success(t(marketingOptIn ? "Marketing consent recorded" : "Marketing opt-out recorded"))
-        }}
-      />
-
       <ContactCreateDialog
         accounts={[currentAccount]}
         fixedAccountId={currentAccount.id}
@@ -815,54 +720,6 @@ function ScoreCell({ label, score, tone, explanation }: { label: string; score: 
           <span className="mt-1 block text-[18px] font-medium leading-6 tabular-nums text-[var(--md-ink)]">{score == null ? "–" : `${Math.round(score)}%`}</span>
         </span>
       </ScoreExplanationPopover>
-    </div>
-  )
-}
-
-function StateCircle({ checked, label, onClick, disabled = false, role = "radio" }: { checked: boolean; label: string; onClick: () => void; disabled?: boolean; role?: "radio" | "checkbox" }) {
-  const shouldReduceMotion = useReducedMotion()
-  const transition = shouldReduceMotion ? { duration: 0 } : { type: "spring" as const, duration: 0.3, bounce: 0 }
-
-  return (
-    <button type="button" role={role} aria-checked={checked} aria-label={label} disabled={disabled} onClick={onClick} className="relative grid size-[18px] shrink-0 place-items-center justify-self-center rounded-full bg-[var(--md-field-bg)] shadow-[inset_0_0_0_1px_var(--md-line)] outline-none transition-transform duration-150 before:absolute before:-inset-3 active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] disabled:cursor-wait disabled:opacity-60 motion-reduce:transform-none">
-      <motion.span aria-hidden="true" initial={false} animate={checked ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 0.25, filter: "blur(4px)" }} transition={transition} className="absolute inset-0 rounded-full bg-[color-mix(in_srgb,var(--md-comparison-positive)_72%,black)]" />
-      <motion.span aria-hidden="true" initial={false} animate={checked ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 0.25, filter: "blur(4px)" }} transition={transition} className="relative z-10 text-white">
-        <Check className="size-3" strokeWidth={2.4} />
-      </motion.span>
-    </button>
-  )
-}
-
-function PreferenceToggleRow({ label, checked, onSave, preferred, onPrefer, preferenceDisabled = false, icon: Icon }: { label: string; checked: boolean; onSave: (next: boolean) => Promise<void> | void; preferred?: boolean; onPrefer?: () => void; preferenceDisabled?: boolean; icon?: LucideIcon }) {
-  const { t } = useLanguage()
-  const [shown, setShown] = useState(checked)
-  const [saving, setSaving] = useState(false)
-  const hasPreference = preferred !== undefined && onPrefer !== undefined
-
-  useEffect(() => setShown(checked), [checked])
-
-  async function toggle(next: boolean) {
-    if (saving) return
-    setShown(next)
-    setSaving(true)
-    try {
-      await onSave(next)
-    } catch (cause) {
-      setShown(checked)
-      toast.error(cause instanceof Error ? cause.message : t("That preference could not be saved."))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className={cn("grid min-h-11 items-center gap-2 border-t border-[var(--md-line)] px-3 py-2.5 first:border-t-0", hasPreference ? "grid-cols-[minmax(0,1fr)_52px_42px]" : "grid-cols-[minmax(0,1fr)_32px]")}>
-      <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium leading-5 text-[var(--md-ink)]">
-        {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
-        <span>{t(label)}</span>
-      </span>
-      {hasPreference ? <StateCircle checked={Boolean(preferred)} disabled={saving || preferenceDisabled} label={`${t("Set as preferred")}: ${t(label)}`} onClick={onPrefer} /> : null}
-      <Switch checked={shown} disabled={saving || preferenceDisabled} onCheckedChange={(next) => void toggle(next)} aria-label={t(label)} className="justify-self-center" />
     </div>
   )
 }
@@ -1040,76 +897,7 @@ function AddCustomField({ onAdd }: { onAdd: (label: string, value: string) => Pr
   )
 }
 
-function MarketingConsentDialog({ open, onOpenChange, current, source, updatedAt, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; current: boolean; source: string | null; updatedAt: string | null; onSave: (optIn: boolean, reason: string) => Promise<void> }) {
-  const { t } = useLanguage()
-  const [optIn, setOptIn] = useState(current)
-  const [reason, setReason] = useState("")
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (open) {
-      setOptIn(current)
-      setReason("")
-    }
-  }, [open, current])
-
-  const changed = optIn !== current
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
-        <DialogHeader className="text-start">
-          <DialogTitle>{t("Marketing consent")}</DialogTitle>
-          <DialogDescription>{t("This change is recorded against your name and the time you made it.")}</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4">
-          <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
-            <MarketingOptInControl checked={optIn} source={source} updatedAt={updatedAt} onCheckedChange={setOptIn} />
-          </div>
-          <label className="grid gap-1.5 text-[13px] font-medium text-[var(--md-ink)]">
-            {t("What is this based on?")}
-            <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("Signed agreement, call on 3 June, web form…")} className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-base shadow-[var(--md-shadow-line)] sm:text-[14px]" />
-            {changed && !reason.trim() ? <span className="text-[11.5px] font-normal text-[var(--md-text)]">{t("Needed before a consent change can be saved.")}</span> : null}
-          </label>
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="button"
-            disabled={saving || !changed || !reason.trim()}
-            className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:transform-none"
-            onClick={async () => {
-              setSaving(true)
-              try {
-                await onSave(optIn, reason.trim())
-                onOpenChange(false)
-              } catch (error) {
-                toast.error(error instanceof Error ? error.message : t("The consent change could not be saved."))
-              } finally {
-                setSaving(false)
-              }
-            }}
-          >
-            {t(optIn ? "Record opt-in" : "Record opt-out")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-const emptyAddress = {
-  line1: null,
-  line2: null,
-  townCity: null,
-  countyState: null,
-  postZipCode: null,
-  countryCode: null,
-  mainEmail: null,
-  mainPhone: null,
-}
+const emptyAddress = { line1: null, line2: null, townCity: null, countyState: null, postZipCode: null, countryCode: null, mainEmail: null, mainPhone: null }
 const defaultEngagement = {
   preferredChannel: null,
   allowThankYouMessages: true,
@@ -1143,10 +931,8 @@ function toDraft(account: ApiCustomerDetail, reference: CustomerReference | null
     summary: account.summary,
     strategic: account.strategic,
     trainingAllowed: account.trainingAllowed,
-    marketingOptIn: account.marketingOptIn,
     // Blank unless a consent change is being made, which is the only time the
     // endpoint requires one.
-    marketingConsentReason: "",
     metadata,
     address: account.address ? { ...emptyAddress, ...account.address } : { ...emptyAddress },
     engagement: account.engagement ?? { ...defaultEngagement },
@@ -1203,13 +989,6 @@ function shipmentPresentation(status: string | null, openExceptionCount: number,
   return { tone: "neutral" as const, label: statusLabel }
 }
 
-function objectRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
-function preferredCommunicationKey(value: unknown): CommunicationPreferenceKey | null {
-  return value === "whatsapp" || value === "sms" || value === "phone" || value === "email" ? value : null
-}
 
 function formatDate(value: string, locale: string) {
   return new Intl.DateTimeFormat(locale, {

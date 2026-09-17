@@ -9,6 +9,8 @@ const britishToAmerican: Record<string, string> = {
   Licence: "License",
   signalling: "signaling",
   favourite: "favorite",
+  personalise: "personalize",
+  personalisation: "personalization",
   organised: "organized",
   organisation: "organization",
   Organisation: "Organization",

@@ -67,6 +67,7 @@ export type ICustomsCommodityCertificate = {
 }
 
 export type ICustomsCommodityDetail = {
+  quotas?: import("../../../supabase/functions/_shared/customs-commodity-quotas.mts").CommodityQuota[]
   code: string
   description: string
   declarable: boolean
@@ -136,6 +137,65 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getICustomsDeclarationState(declarationId: string) {
   return request<ICustomsWorkspaceState>(`/declarations/${encodeURIComponent(declarationId)}`)
+}
+
+export type CustomsCalculationAudit = {
+  id: string; created_at: string; actor_auth_id: string; kind: "calculation" | "override"; parent_id: string | null
+  draft_snapshot: unknown
+  evidence: {
+    result?: import("../../../supabase/functions/_shared/customs-duty-calculation.mts").CalculationResult
+    input?: import("../../../supabase/functions/_shared/customs-duty-calculation.mts").CalculationInput
+    /** Separate from invoice FX: the original publication used for EUR tariff amounts. */
+    tariffExchangeReference?: {
+      source: string
+      retrievedAt: string
+      contentSha256: string
+      publicationJson: string
+      selectedRate: import("../../../supabase/functions/_shared/customs-tariff-exchange-rate.mts").TariffExchangeRate
+    } | null
+    itemId?: string; reason?: string; replacement?: { duty: string; vat: string }; original?: { duty: string; vat: string }
+  }
+}
+export type CustomsCalculationHistory = { history: CustomsCalculationAudit[]; nextCursor: string | null; latestCalculation: CustomsCalculationAudit | null; latestItemOverride: CustomsCalculationAudit | null }
+export type CustomsAssessmentHistory = { history: {
+  id: string; source_id: string; calculation_id: string; created_at: string; adapter_version: string
+  evidence: { calculationState: string; notices: (ReturnType<typeof import("../../../supabase/functions/_shared/customs-provider-assessment.mts").compareFinalProviderAssessment> & { notificationId: string | null })[] }
+}[]; nextCursor: string | null }
+export function getCustomsAssessmentHistory(declarationId: string, before?: string) {
+  const params = new URLSearchParams()
+  if (before) params.set("before", before)
+  return request<CustomsAssessmentHistory>(`/declarations/${encodeURIComponent(declarationId)}/assessment-comparisons?${params}`)
+}
+export function recordCustomsAssessmentComparison(declarationId: string, sourceId: string) {
+  return request<{ id: string }>(`/declarations/${encodeURIComponent(declarationId)}/assessment-comparisons`, { method: "POST", body: JSON.stringify({ sourceId }) })
+}
+export type CustomsProviderEvidenceHistory = {
+  history: (ReturnType<typeof import("../../../supabase/functions/_shared/customs-provider-tax-evidence.mts").extractProviderTaxEvidence> & {
+    id: string; submissionId: string; recordedAt: string; sourceUpdatedAt: string | null; captureKind: "observed" | "existing-snapshot"
+    calculationLink?: import("../../../supabase/functions/_shared/customs-submission-calculation-link.mts").SubmissionCalculationLink | null
+  })[]
+  nextCursor: string | null
+}
+export function getCustomsProviderEvidence(declarationId: string, before?: string) {
+  const params = new URLSearchParams()
+  if (before) params.set("before", before)
+  return request<CustomsProviderEvidenceHistory>(`/declarations/${encodeURIComponent(declarationId)}/calculations/provider-evidence?${params}`)
+}
+export function getCustomsCalculationHistory(declarationId: string, options: { before?: string; itemId?: string } = {}) {
+  const params = new URLSearchParams()
+  if (options.before) params.set("before", options.before)
+  if (options.itemId) params.set("itemId", options.itemId)
+  return request<CustomsCalculationHistory>(`/declarations/${encodeURIComponent(declarationId)}/calculations?${params}`)
+}
+export function calculateCustomsDeclaration(declarationId: string) {
+  return request<{ id: string; result: import("../../../supabase/functions/_shared/customs-duty-calculation.mts").CalculationResult }>(`/declarations/${encodeURIComponent(declarationId)}/calculations`, { method: "POST" })
+}
+export type CustomsCalculationPreview = { result: import("../../../supabase/functions/_shared/customs-duty-calculation.mts").CalculationResult | null; issues: string[] }
+export function previewCustomsDeclaration(declarationId: string, draft: unknown, signal?: AbortSignal) {
+  return request<CustomsCalculationPreview>(`/declarations/${encodeURIComponent(declarationId)}/calculations/preview`, { method: "POST", body: JSON.stringify({ draft }), signal })
+}
+export function overrideCustomsCalculation(declarationId: string, payload: { calculationId: string; itemId: string; duty: string; vat: string; reason: string }) {
+  return request<{ id: string }>(`/declarations/${encodeURIComponent(declarationId)}/calculations/override`, { method: "POST", body: JSON.stringify(payload) })
 }
 
 export function validateICustomsDeclaration(declarationId: string) {

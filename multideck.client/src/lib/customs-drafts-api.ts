@@ -1,7 +1,22 @@
+import { resolveCustomsInvoiceDeclaration } from "../../../supabase/functions/_shared/customs-invoices.mts"
+import { restoreCustomsInvoiceHeaders } from "@/lib/customs-invoices"
 import { createExportDeclarationItem, createStandaloneDeclarationDraft, type DeclarationDirection, type ExportDeclarationItem, type StandaloneExportDraft } from "@/lib/customs-declaration"
 import { invalidateRegisterPages, readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"
 import type { UserProfilePhoto } from "@/lib/profile-photo"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
+import { getApiCurrentUser } from "@/lib/api"
+import { getCustomsReferencePreferences } from "@/lib/customs-reference-preferences"
+
+export async function loadTenantDeclarantDefault() {
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in again to load your company’s declarant details.")
+  const profile = await getApiCurrentUser(session.access_token)
+  if (!profile.company || profile.actorType === "customer") return null
+  // Missing rollout/configuration must not invent an EORI or prevent saving a draft.
+  const preferences = await getCustomsReferencePreferences().catch(() => null)
+  const settings = preferences?.settings
+  return { name: profile.company.name, eori: settings?.officeEoris[settings.defaultOfficeId] || settings?.eori || "" }
+}
 
 type SavedItemRow = {
   CUSTI_ItemNumber: number
@@ -222,7 +237,7 @@ export async function loadStandaloneDeclarationDraft(
   const client = requireSupabase()
   const declarationQuery = client
     .from("Customs_Declarations")
-    .select("CUST_id, CUST_LocalReferenceNumber, CUST_iCustomsExternalID, CUST_GenericPayloadJSON")
+    .select("CUST_id, CUST_LocalReferenceNumber, CUST_iCustomsExternalID, CUST_GenericPayloadJSON, CUST_SourceSnapshot")
     .eq("CUST_id", declarationId)
     .eq("CUST_Direction", direction)
     .eq("CUST_DeclarationKind", `cds_${direction}`)
@@ -254,13 +269,21 @@ export async function loadStandaloneDeclarationDraft(
     } as ExportDeclarationItem
   })
 
-  return {
+  return restoreCustomsInvoiceHeaders({
     ...createStandaloneDeclarationDraft(direction),
     ...saved,
+    invoiceHeaders: saved.invoiceHeaders as StandaloneExportDraft["invoiceHeaders"],
+    // Older import drafts stored the DE 4/1 location in the transport field.
+    tradeTermsLocation: typeof saved.tradeTermsLocation === "string"
+      ? saved.tradeTermsLocation
+      : direction === "import" && typeof saved.goodsLocationIdentifier === "string"
+        ? saved.goodsLocationIdentifier
+        : "",
+    sourceBookingReference: scope === "job-related" ? String(record(declaration.CUST_SourceSnapshot).bookingReference ?? "") : "",
     multideckReference: declaration.CUST_LocalReferenceNumber ?? declaration.CUST_id,
     iCustomsCorrelationId: declaration.CUST_iCustomsExternalID,
     items: items.length ? items : [createExportDeclarationItem()],
-  } as StandaloneExportDraft
+  } as StandaloneExportDraft)
 }
 
 export async function reopenRejectedCustomsDeclaration(declarationId: string) {
@@ -280,7 +303,7 @@ export async function saveStandaloneDeclarationDraft(
   const { data, error } = await client
     .rpc(draft.direction === "import" ? "save_customs_import_draft" : "save_customs_export_draft", {
       p_declaration_id: declarationId ?? null,
-      p_draft: draft,
+      p_draft: resolveCustomsInvoiceDeclaration(draft),
     })
     .single()
 
@@ -302,7 +325,7 @@ export async function saveJobRelatedDeclarationDraft(
   const client = requireSupabase()
   const { data, error } = await client.rpc("save_job_customs_draft", {
     p_declaration_id: declarationId,
-    p_draft: draft,
+    p_draft: resolveCustomsInvoiceDeclaration(draft),
   }).single()
   if (error) throw error
   const saved = data as SaveDraftResultRow

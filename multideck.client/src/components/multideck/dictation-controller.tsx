@@ -18,6 +18,7 @@ import {
 import { useShortcutAction, useShortcutBinding } from "@/lib/keyboard-shortcuts"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { transcribeRecording, TranscriptionError } from "@/lib/transcription-api"
+import { dictationCommandEvent, type DictationCommand, type InlineDictationRequest } from "@/lib/dictation-command"
 
 type DictationPhase = "idle" | DictationStatusPhase
 type DictationTarget = HTMLInputElement | HTMLTextAreaElement | HTMLElement
@@ -31,6 +32,8 @@ type RecordingSession = {
   stopMeter: () => void
   maximumTimer: number
   failed: boolean
+  cancelled: boolean
+  inlineRequest: InlineDictationRequest | null
 }
 
 const dictatableInputTypes = new Set(["text", "search", "email", "url", "tel"])
@@ -256,6 +259,7 @@ export function DictationController() {
   const [phase, setPhase] = useState<DictationPhase>("idle")
   const [level, setLevel] = useState(0)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [inlineMode, setInlineMode] = useState(false)
   const phaseRef = useRef<DictationPhase>(phase)
   const activeTargetRef = useRef<DictationTarget | null>(null)
   const sessionRef = useRef<RecordingSession | null>(null)
@@ -265,8 +269,14 @@ export function DictationController() {
   const holdBindingRef = useRef<ShortcutBinding | null>(null)
   const shortcutRef = useRef(shortcut)
   const microphoneRef = useRef(readPreferredMicrophone())
+  const inlineRequestRef = useRef<InlineDictationRequest | null>(null)
   phaseRef.current = phase
   shortcutRef.current = shortcut
+
+  useEffect(() => {
+    if (phase === "idle" && holdActiveRef.current && !sessionRef.current) return
+    inlineRequestRef.current?.onState({ phase, level, message: statusMessage })
+  }, [phase, level, statusMessage])
 
   const changePhase = useCallback((next: DictationPhase) => {
     phaseRef.current = next
@@ -299,6 +309,8 @@ export function DictationController() {
   }), [])
 
   const finishRecording = useCallback(async (session: RecordingSession) => {
+    holdActiveRef.current = false
+    holdBindingRef.current = null
     session.stream.getTracks().forEach((track) => track.stop())
     session.stopMeter()
     window.clearTimeout(session.maximumTimer)
@@ -306,6 +318,11 @@ export function DictationController() {
     const recording = new Blob(session.chunks, { type: session.recorder.mimeType || session.chunks[0]?.type || "audio/webm" })
     sessionRef.current = null
     setLevel(0)
+
+    if (session.cancelled || !session.target.isConnected) {
+      changePhase("idle")
+      return
+    }
 
     if (durationMs < 250) {
       changePhase("idle")
@@ -322,13 +339,25 @@ export function DictationController() {
 
     try {
       const audio = await transcriptionWav(recording)
+      if (session.inlineRequest && session.inlineRequest !== inlineRequestRef.current) {
+        changePhase("idle")
+        return
+      }
       const transcript = await transcribeRecording(audio, durationMs)
+      if (session.inlineRequest && session.inlineRequest !== inlineRequestRef.current) {
+        changePhase("idle")
+        return
+      }
       if (!insertTranscript(session.target, transcript)) {
         showError("Field closed before dictation finished")
         return
       }
       showComplete()
     } catch (error) {
+      if (session.inlineRequest && session.inlineRequest !== inlineRequestRef.current) {
+        changePhase("idle")
+        return
+      }
       const allowanceReached = error instanceof TranscriptionError && error.code === "transcription_allowance_reached"
       showError(transcriptionFailureLabel(error), allowanceReached ? "allowance" : "error")
     }
@@ -345,16 +374,24 @@ export function DictationController() {
   const startRecording = useCallback(async (target: DictationTarget | null, attempt: number) => {
     if (phaseRef.current !== "idle") return
     if (!target || !target.isConnected) {
+      holdActiveRef.current = false
+      if (inlineRequestRef.current) {
+        showError("Field closed before dictation finished")
+        return
+      }
       toast.info(t("Select a text field before starting dictation."))
       return
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      holdActiveRef.current = false
       showError("Dictation is not supported in this browser")
       return
     }
 
+    let acquiredStream: MediaStream | null = null
     try {
       const stream = await microphoneStream(microphoneRef.current)
+      acquiredStream = stream
       // Microphone permission can settle after the operator has released and
       // begun another hold. Only the newest press may claim the returned stream.
       if (!holdActiveRef.current || attempt !== holdAttemptRef.current || phaseRef.current !== "idle") {
@@ -372,6 +409,8 @@ export function DictationController() {
         stopMeter: startAudioMeter(stream, setLevel),
         maximumTimer: 0,
         failed: false,
+        cancelled: false,
+        inlineRequest: inlineRequestRef.current,
       }
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) session.chunks.push(event.data)
@@ -384,9 +423,16 @@ export function DictationController() {
       session.maximumTimer = window.setTimeout(() => stopRecording(), maximumRecordingMs)
       sessionRef.current = session
       activeTargetRef.current = target
-      changePhase("transcribing")
       recorder.start(250)
+      changePhase("transcribing")
     } catch (error) {
+      acquiredStream?.getTracks().forEach(track => track.stop())
+      const session = sessionRef.current
+      if (session?.stream === acquiredStream) {
+        window.clearTimeout(session.maximumTimer)
+        session.stopMeter()
+        sessionRef.current = null
+      }
       if (attempt !== holdAttemptRef.current) return
       holdActiveRef.current = false
       holdBindingRef.current = null
@@ -396,6 +442,7 @@ export function DictationController() {
   }, [changePhase, finishRecording, showError, stopRecording, t])
 
   const beginHeldDictation = useCallback(() => {
+    if (holdActiveRef.current || phaseRef.current === "transcribing") return
     if (phaseRef.current === "polishing") {
       toast.info(t("Finishing your dictation…"))
       return
@@ -407,11 +454,56 @@ export function DictationController() {
       changePhase("idle")
     }
     const attempt = holdAttemptRef.current + 1
+    inlineRequestRef.current = null
+    setInlineMode(false)
     holdAttemptRef.current = attempt
     holdActiveRef.current = true
     holdBindingRef.current = shortcutRef.current
     void startRecording(activeTargetRef.current, attempt)
   }, [changePhase, startRecording, t])
+
+  useEffect(() => {
+    const command = (event: Event) => {
+      const detail = (event as CustomEvent<DictationCommand>).detail
+      if (detail.action === "start") {
+        if (holdActiveRef.current || phaseRef.current === "polishing" || phaseRef.current === "transcribing") {
+          detail.request.onState({ phase: "error", level: 0, message: t("Dictation is already in progress.") })
+          return
+        }
+        if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current)
+        completionTimerRef.current = null
+        inlineRequestRef.current = detail.request
+        setInlineMode(true)
+        setStatusMessage(null)
+        changePhase("idle")
+        holdActiveRef.current = true
+        holdBindingRef.current = null
+        const attempt = ++holdAttemptRef.current
+        detail.request.onState({ phase: "requesting", level: 0, message: null })
+        void startRecording(dictationTargetFrom(detail.request.target), attempt)
+        return
+      }
+      if (inlineRequestRef.current?.target !== detail.target) return
+      holdActiveRef.current = false
+      holdBindingRef.current = null
+      if (detail.action === "stop") {
+        stopRecording()
+        return
+      }
+      // Cancelling never sends a partial recording to the provider.
+      holdAttemptRef.current += 1
+      inlineRequestRef.current = null
+      const session = sessionRef.current
+      if (session) {
+        session.cancelled = true
+        stopRecording()
+      } else if (phaseRef.current !== "polishing") {
+        changePhase("idle")
+      }
+    }
+    window.addEventListener(dictationCommandEvent, command)
+    return () => window.removeEventListener(dictationCommandEvent, command)
+  }, [changePhase, startRecording, stopRecording, t])
 
   useShortcutAction("dictation.toggle", ({ event }) => {
     if (!(event instanceof KeyboardEvent)) {
@@ -429,6 +521,7 @@ export function DictationController() {
       if (phaseRef.current === "transcribing") stopRecording()
     }
     const cancelHold = () => {
+      if (inlineRequestRef.current) return
       holdActiveRef.current = false
       holdBindingRef.current = null
       if (phaseRef.current === "transcribing") stopRecording()
@@ -479,7 +572,7 @@ export function DictationController() {
   }, [])
 
   if (typeof document === "undefined") return null
-  const visiblePhase = phase === "idle" ? null : phase
+  const visiblePhase = phase === "idle" || inlineMode ? null : phase
 
   return createPortal(
     <div className="md-dictation-status-dock" aria-hidden={visiblePhase ? undefined : "true"}>

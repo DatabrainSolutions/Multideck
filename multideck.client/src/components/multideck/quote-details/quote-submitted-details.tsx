@@ -75,7 +75,7 @@ export function QuoteSubmittedDetails({
   const fields = (items: Fields) => (
     <dl className="grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
       {items.map(([label, value]) => (
-        <div key={label} className="min-w-0 space-y-1">
+        <div key={label} className="md-horizontal-field min-w-0">
           <dt className="text-[12px] text-[var(--md-text)]">{t(label)}</dt>
           <dd
             className="m-0 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-[var(--md-ink)] [overflow-wrap:anywhere]"
@@ -179,8 +179,7 @@ export function QuoteSubmittedDetails({
       ) : overview ? (
         <>
           {section("At a glance", [
-            ["Customer", quote.customerName],
-            ["Bill to / payer", quote.payer?.name],
+            ["Customer / Billing", quote.customerName],
             ["Mode", quote.mode],
             ["Direction", quote.direction],
             ["Shipment type", quote.shipmentType],
@@ -242,7 +241,7 @@ export function QuoteSubmittedDetails({
             </section>
           ) : null}
           {party(
-            "Customer",
+            "Customer / Billing",
             {
               name: quote.customerName,
               code: facts.clientCode,
@@ -255,7 +254,17 @@ export function QuoteSubmittedDetails({
               ["Customer PO", facts.customerPO],
             ],
           )}
-          {party("Bill to / payer", quote.payer)}
+          {facts.leadSourceParty === "agent" ? party(
+            "Overseas agent · RFQ source",
+            {
+              name: facts.agentName,
+              code: facts.agentCode,
+              address: facts.agentAddress,
+              contact: facts.agentContact,
+              email: facts.agentEmail,
+            },
+            [["Reference", facts.agentReference]],
+          ) : null}
           {party("Shipper", { ...record(quote.shipper), code: facts.shipperCode, email: facts.shipperEmail }, [
             ["Collection address", quote.collectionAddress],
             ["Collection required", facts.collectionRequired],
@@ -274,17 +283,6 @@ export function QuoteSubmittedDetails({
               ["Delivery required", facts.deliveryRequired],
               ["Reference", facts.consigneeReference],
             ],
-          )}
-          {party(
-            "Overseas agent",
-            {
-              name: facts.agentName,
-              code: facts.agentCode,
-              address: facts.agentAddress,
-              contact: facts.agentContact,
-              email: facts.agentEmail,
-            },
-            [["Reference", facts.agentReference]],
           )}
           {section("Shipment goods", [
             ["Goods value", amount(facts.goodsValue, facts.goodsValueCurrency)],

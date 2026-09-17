@@ -7,6 +7,7 @@ import {
   financePurchaseAnnotationFormat,
   MAX_COMMERCIAL_INVOICE_BYTES,
   MISTRAL_OCR_MODEL,
+  invoiceOcrDocument,
   normalizeCommercialInvoiceAnnotation,
   normalizeFinancePurchaseAnnotation,
   normalizeInvoiceEvidencePages,
@@ -112,7 +113,7 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
       CUSTIE_UpdatedAt: new Date().toISOString(),
     })
 
-    let payloads = await timings.measure("mistral", () => extractWithMistralOcr(admin, actor, apiKey, stored!, prepared.pageCount, input.documentType))
+    let payloads = await timings.measure("mistral", () => extractWithMistralOcr(admin, actor, apiKey, prepared.pdfBytes, prepared.pageCount, input.documentType))
     let coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
     if (!coverage.passed && prepared.conversion.strategy === "office_pdf" && prepared.conversion.sheets.length) {
       await cleanupPreparedObject(admin, stored)
@@ -128,7 +129,7 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
         CUSTIE_PreviewExpiresAt: stored.previewExpiresAt,
         CUSTIE_UpdatedAt: new Date().toISOString(),
       })
-      payloads = await timings.measure("mistral_fallback", () => extractWithMistralOcr(admin, actor, apiKey, stored!, prepared.pageCount, input.documentType))
+      payloads = await timings.measure("mistral_fallback", () => extractWithMistralOcr(admin, actor, apiKey, prepared.pdfBytes, prepared.pageCount, input.documentType))
       coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
     }
     if (!coverage.passed) {
@@ -470,23 +471,22 @@ async function extractWithMistralOcr(
   admin: SupabaseClient,
   actor: Actor,
   apiKey: string,
-  stored: PreparedObject,
+  pdfBytes: Uint8Array,
   pageCount: number,
   documentType: DocumentType,
 ) {
-  const { data, error } = await admin.storage.from(documentBucket).createSignedUrl(stored.objectPath, signedUrlLifetimeSeconds)
-  if (error || !data?.signedUrl) throw new HttpError(503, "The prepared invoice could not be opened securely. Try again.")
+  const document = invoiceOcrDocument(pdfBytes)
   const ranges = pageRanges(pageCount)
   const payloads: Record<string, unknown>[] = []
   const gateway = { admin, companyId: actor.companyId, userId: actor.userId }
-  for (const range of ranges) payloads.push(await requestMistralChunk(gateway, apiKey, data.signedUrl, documentType, range, ranges.length > 1))
+  for (const range of ranges) payloads.push(await requestMistralChunk(gateway, apiKey, document, documentType, range, ranges.length > 1))
   return payloads
 }
 
 async function requestMistralChunk(
   gateway: ModelGatewayContext,
   apiKey: string,
-  signedUrl: string,
+  document: ReturnType<typeof invoiceOcrDocument>,
   documentType: DocumentType,
   range: PageRange,
   includeRange: boolean,
@@ -495,17 +495,17 @@ async function requestMistralChunk(
   const financePurchase = documentType === "finance_purchase"
   const requestBody = {
       model: MISTRAL_OCR_MODEL,
-      document: { type: "document_url", document_url: signedUrl },
+      document,
       ...(includeRange ? { pages: `${range.start}-${range.end}` } : {}),
       include_blocks: true,
       include_image_base64: false,
       image_limit: 0,
       document_annotation_format: purchaseOrder ? purchaseOrderAnnotationFormat : financePurchase ? financePurchaseAnnotationFormat : commercialInvoiceAnnotationFormat,
       document_annotation_prompt: [
-        purchaseOrder ? "Extract the purchase order header and only item rows explicitly present in the document." : financePurchase ? "Extract the supplier invoice or supplier credit note header, totals and only charge rows explicitly present in the document." : "Extract only commercial invoice item rows explicitly present in the document.",
-        purchaseOrder ? "Do not invent purchase order numbers, suppliers, dates, references, quantities, prices, tax rates or terms." : financePurchase ? "Do not invent the supplier, document type, document number, dates, currency, tax, totals or line values." : "Do not invent commodity codes, origin, weights, quantities, prices or package details.",
+        purchaseOrder ? "Extract the purchase order header and only item rows explicitly present in the document." : financePurchase ? "Extract the supplier invoice or supplier credit note header, totals and only charge rows explicitly present in the document." : "Extract the commercial invoice header and only item rows explicitly present in the document.",
+        purchaseOrder ? "Do not invent purchase order numbers, suppliers, dates, references, quantities, prices, tax rates or terms." : financePurchase ? "Do not invent the supplier, document type, document number, dates, currency, tax, totals or line values." : "Do not invent commodity codes, origin, weights, quantities, prices, dates, invoice totals, Incoterms, transaction nature or package details. Return null for header fields not explicitly stated; do not infer invoice totals from item sums. Never extract the ordinary customs exchange rate: it comes from HMRC. Extract a letter_of_credit_exchange_rate only when the invoice explicitly labels it as a letter of credit rate; keep it distinct from any other exchange rate.",
         "Use a one-based page number and preserve the source item description.",
-        purchaseOrder || financePurchase ? "Return dates as YYYY-MM-DD and three-letter ISO currency only when explicitly stated." : "Return three-letter ISO currency and two-letter ISO origin only when explicitly stated.",
+        purchaseOrder || financePurchase ? "Return dates as YYYY-MM-DD and three-letter ISO currency only when explicitly stated." : "Return invoice dates as YYYY-MM-DD, three-letter ISO currency and two-letter ISO origin only when explicitly stated. Do not confuse header gross/net weight or package totals with individual item values.",
         purchaseOrder ? "Keep header fields separate from item rows and exclude summary or subtotal rows." : financePurchase ? "Classify only explicit credit notes as credit_note; use invoice for supplier invoices. Keep summary, subtotal, freight and tax totals out of item rows unless they are explicit charge lines." : "Keep item quantity separate from package count; return package count only when explicitly stated.",
         "Ignore logos, product photography, signatures, stamps and other decorative images.",
         purchaseOrder ? "Do not return totals, tax, freight or discounts as item rows." : financePurchase ? "Return positive magnitudes for invoices and credit notes; the document_type carries the accounting sign." : "Do not return totals, tax, freight, discounts, addresses or payment terms as item rows.",
@@ -581,6 +581,7 @@ function mergeProviderPayloads(payloads: Record<string, unknown>[], pageCount: n
   return {
     extraction: {
       invoiceNumber: chunks.map((chunk) => chunk.invoiceNumber).find(Boolean) || "",
+      invoiceHeader: Object.fromEntries(Object.keys(chunks[0]?.invoiceHeader ?? {}).map(field => [field, chunks.map(chunk => chunk.invoiceHeader[field as keyof typeof chunk.invoiceHeader]).find(Boolean) || ""])),
       lines: deduplicateLines(chunks.flatMap((chunk) => chunk.lines)).map((line, index) => ({ ...line, id: `ocr-line-${index + 1}` })),
     }, evidencePages, providerModel, pagesProcessed,
   }

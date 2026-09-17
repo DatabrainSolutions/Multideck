@@ -15,6 +15,7 @@ export type AuthUserSummary = {
   roles: { id: string; name: string }[]
   permissions: string[]
   landingPath: string
+  onboardingRequired?: boolean
 }
 
 function readMetadataString(user: User, keys: string[]) {
@@ -57,6 +58,9 @@ export function summarizeAuthUser(user: User, profile?: ApiTeamUser | null): Aut
     roles: profile?.roles ?? [],
     permissions: profile?.permissions ?? [],
     landingPath: profile?.landingPath ?? "/",
+    onboardingRequired: profile?.actorType !== "customer"
+      && user.app_metadata?.multideck_onboarding?.version === 1
+      && !user.app_metadata?.multideck_onboarding?.completedAt,
   }
 }
 

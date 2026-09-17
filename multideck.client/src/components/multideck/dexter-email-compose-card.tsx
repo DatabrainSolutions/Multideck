@@ -1,4 +1,6 @@
+import { EmailSignatureControl } from "./email-signature-control"
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   AiBeautify,
   AiEditing,
@@ -15,6 +17,8 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill";
 import { MailProviderMark } from "@/components/multideck/mailbox-provider-switch";
+import { MailRecipientField, type MailRecipientSearch } from "@/components/multideck/mail-recipient-field";
+import { searchMeetingPeople } from "@/lib/calendar-api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -29,6 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useLanguage } from "@/i18n/language-provider";
 import {
   duplicateSentDexterEmailDraft,
+  prepareDexterProviderDraftSend,
   refineDexterEmailDraft,
   refreshDexterPreparedEmailAction,
   recordDexterEmailDraftDelivery,
@@ -36,6 +41,7 @@ import {
   updateDexterEmailDraft,
   type DexterEmailDraft,
   type DexterEmailDraftAddress,
+  type DexterPendingAction,
 } from "@/lib/dexter-api";
 import {
   buildReplyRequest,
@@ -193,13 +199,13 @@ function DexterRefineSubmit({
           initial={
             shouldReduceMotion
               ? { opacity: 0 }
-              : { opacity: 0, scale: 0.25, filter: "blur(4px)" }
+              : { opacity: 0, scale: 0.98, filter: "blur(2px)" }
           }
           animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
           exit={
             shouldReduceMotion
               ? { opacity: 0 }
-              : { opacity: 0, scale: 0.25, filter: "blur(4px)" }
+              : { opacity: 0, scale: 0.98, filter: "blur(2px)" }
           }
           transition={{
             type: "spring",
@@ -230,36 +236,49 @@ export function DexterEmailComposeCard({
   messageId,
   draft,
   preview = false,
+  standalone = false,
   preparedActionId,
   preparedActionPending = false,
   preparedActionError,
   onPreparedActionDecision,
   onDraftChange,
+  recipientSearch = searchMeetingPeople,
 }: {
   messageId: string;
   draft: DexterEmailDraft;
   preview?: boolean;
+  /** Direct operator composition; delivery still uses the authorised Inbox API. */
+  standalone?: boolean;
   preparedActionId?: string | null;
   preparedActionPending?: boolean;
   preparedActionError?: string | null;
-  onPreparedActionDecision?: () => void;
+  onPreparedActionDecision?: (action?: DexterPendingAction) => void;
   onDraftChange?: (draft: DexterEmailDraft) => void;
+  recipientSearch?: MailRecipientSearch;
 }) {
   const { direction, t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [mailboxesLoading, setMailboxesLoading] = useState(!preview);
   const [mailboxId, setMailboxId] = useState(draft.mailboxId ?? "");
-  const [toText, setToText] = useState(addressText(draft.to));
-  const [ccText, setCcText] = useState(addressText(draft.cc));
-  const [bccText, setBccText] = useState(addressText(draft.bcc));
+  const [toAddresses, setToAddresses] = useState<MailAddress[]>(draft.to);
+  const [ccAddresses, setCcAddresses] = useState<MailAddress[]>(draft.cc);
+  const [bccAddresses, setBccAddresses] = useState<MailAddress[]>(draft.bcc);
+  const [toInput, setToInput] = useState(standalone ? draft.localRecipientInputs?.to ?? "" : "");
+  const [ccInput, setCcInput] = useState(standalone ? draft.localRecipientInputs?.cc ?? "" : "");
+  const [bccInput, setBccInput] = useState(standalone ? draft.localRecipientInputs?.bcc ?? "" : "");
+  const toText = [addressText(toAddresses), toInput].filter(Boolean).join(", ");
+  const ccText = [addressText(ccAddresses), ccInput].filter(Boolean).join(", ");
+  const bccText = [addressText(bccAddresses), bccInput].filter(Boolean).join(", ");
   const [subject, setSubject] = useState(draft.subject);
   const [bodyText, setBodyText] = useState(draft.bodyText);
   const [trackOpens, setTrackOpens] = useState(draft.trackOpens);
+  const [signature, setSignature] = useState(draft.signature);
   const [showCc, setShowCc] = useState(draft.cc.length > 0);
   const [showBcc, setShowBcc] = useState(draft.bcc.length > 0);
-  const [status, setStatus] = useState<DraftStatus>(draft.delivery.status);
+  const [status, setStatus] = useState<DraftStatus>(standalone && draft.delivery.status === "sending" ? "queued" : draft.delivery.status);
   const [activeMessageId, setActiveMessageId] = useState(messageId);
+  const isPreparingMessage = !standalone && !preview && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(activeMessageId);
   const [activeDraftId, setActiveDraftId] = useState(draft.id);
   const [isEditingCopy, setIsEditingCopy] = useState(false);
   const [isCreatingCopy, setIsCreatingCopy] = useState(false);
@@ -283,11 +302,12 @@ export function DexterEmailComposeCard({
     "to" | "cc" | "bcc" | "body" | "mailbox" | null
   >(null);
   const requestedAction =
-    draft.requestedAction === "create_draft" ? "create_draft" : "send";
-  const providerActionUnavailable = !preview && !preparedActionId &&
+    draft.delivery.status === "draft_created" ? "send" : draft.requestedAction === "create_draft" ? "create_draft" : "send";
+  const providerActionUnavailable = !standalone && !preview && !isPreparingMessage && !preparedActionId &&
     status !== "sent" && status !== "draft_created";
-  const idempotencyKey = useRef(createIdempotencyKey());
+  const idempotencyKey = useRef(standalone ? draft.sendIdempotencyKey ?? draft.id : createIdempotencyKey());
   const saveTimer = useRef<number | null>(null);
+  const pendingAutosave = useRef<{ messageId: string; draft: DexterEmailDraft } | null>(null);
   const hydratedDraftId = useRef(draft.id);
   const copyRequest = useRef<Promise<{
     messageId: string;
@@ -296,6 +316,19 @@ export function DexterEmailComposeCard({
   const refinementRequestId = useRef(0);
   const refinementInputRef = useRef<HTMLInputElement | null>(null);
   const bodyEditorRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!isEditingCopy && activeMessageId !== messageId) {
+      setActiveMessageId(messageId);
+      setSaveState("idle");
+    }
+  }, [messageId, activeMessageId, isEditingCopy]);
+
+  // Delivery acknowledgement updates the existing editor, not its identity.
+  // Keep typed fields and focus intact when a provider action changes status.
+  useEffect(() => {
+    if (!isEditingCopy && !standalone) setStatus(draft.delivery.status);
+  }, [draft.delivery.status, isEditingCopy]);
 
   useEffect(() => {
     if (preparedActionError) setError(preparedActionError);
@@ -335,13 +368,21 @@ export function DexterEmailComposeCard({
     draft.delivery.status === "sent" && activeMessageId === messageId;
   const isProviderDraftSource =
     draft.delivery.status === "draft_created" && activeMessageId === messageId;
+  const providerDraftNeedsRecipient = isProviderDraftSource &&
+    ![...draft.to, ...draft.cc, ...draft.bcc].some((recipient) => isLikelyEmailAddress(recipient.address));
+  const savedDraftHref = isProviderDraftSource && selectedMailbox && draft.delivery.threadId
+    ? `/inbox?${new URLSearchParams({ provider: selectedMailbox.provider, mailbox: selectedMailbox.id, thread: draft.delivery.threadId })}`
+    : null;
   const locked =
+    (standalone && status === "sent") ||
+    isPreparingMessage ||
     status === "sending" ||
     status === "creating_draft" ||
     status === "draft_created";
 
   function beginEditableCopy() {
     if (
+      standalone ||
       preview ||
       draft.delivery.status !== "sent" ||
       activeMessageId !== messageId
@@ -459,14 +500,16 @@ export function DexterEmailComposeCard({
   function currentDraft(nextStatus: DraftStatus = status): DexterEmailDraft {
     return {
       ...draft,
+      ...(standalone ? { sendIdempotencyKey: idempotencyKey.current, localRecipientInputs: { to: toInput, cc: ccInput, bcc: bccInput } } : {}),
       requestedAction,
       id: activeDraftId,
       mailboxId: mailboxId || null,
-      to: parseAddresses(toText).addresses.map(draftAddress),
-      cc: parseAddresses(ccText).addresses.map(draftAddress),
-      bcc: parseAddresses(bccText).addresses.map(draftAddress),
+      to: (standalone ? toAddresses : parseAddresses(toText).addresses).map(draftAddress),
+      cc: (standalone ? ccAddresses : parseAddresses(ccText).addresses).map(draftAddress),
+      bcc: (standalone ? bccAddresses : parseAddresses(bccText).addresses).map(draftAddress),
       subject,
       bodyText,
+      signature,
       trackOpens,
       delivery: isEditingCopy
         ? { status: nextStatus }
@@ -560,7 +603,7 @@ export function DexterEmailComposeCard({
 
     try {
       const refinedDraft = await refineDexterEmailDraft({
-        messageId: target.messageId,
+        messageId: standalone ? null : target.messageId,
         instruction: cleanInstruction,
         draft: requestDraft,
         selection: selection
@@ -608,7 +651,7 @@ export function DexterEmailComposeCard({
       setSaveState("saving");
 
       try {
-        const savedDraft = await updateDexterEmailDraft(
+        const savedDraft = standalone ? refinedDraft : await updateDexterEmailDraft(
           target.messageId,
           refinedDraft,
         );
@@ -643,11 +686,18 @@ export function DexterEmailComposeCard({
   }
 
   useEffect(() => {
+    if (standalone && !preview) {
+      onDraftChange?.(currentDraft());
+      setSaveState("saved");
+      return;
+    }
     if (
       preview ||
+      isPreparingMessage ||
       hydratedDraftId.current !== draft.id ||
       isCreatingCopy ||
       copyFailed ||
+      [toText, ccText, bccText].some(value => parseAddresses(value).invalid) ||
       status === "sent" ||
       status === "sending" ||
       status === "creating_draft" ||
@@ -655,9 +705,12 @@ export function DexterEmailComposeCard({
     )
       return;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    const pending = { messageId: activeMessageId, draft: currentDraft() };
+    pendingAutosave.current = pending;
+    setSaveState("saving");
     saveTimer.current = window.setTimeout(() => {
-      setSaveState("saving");
-      void updateDexterEmailDraft(activeMessageId, currentDraft())
+      pendingAutosave.current = null;
+      void updateDexterEmailDraft(pending.messageId, pending.draft)
         .then((savedDraft) => {
           setSaveState("saved");
           if (activeMessageId === messageId) onDraftChange?.(savedDraft);
@@ -670,13 +723,16 @@ export function DexterEmailComposeCard({
     };
     // Each editable field deliberately participates in the autosave boundary.
   }, [
+    standalone,
     bccText,
     activeDraftId,
     activeMessageId,
     bodyText,
+    signature,
     ccText,
     copyFailed,
     isCreatingCopy,
+    isPreparingMessage,
     mailboxId,
     preview,
     status,
@@ -684,6 +740,15 @@ export function DexterEmailComposeCard({
     toText,
     trackOpens,
   ]);
+
+  useEffect(() => () => {
+    // Navigation must flush the latest edit instead of cancelling the debounce.
+    const pending = pendingAutosave.current;
+    pendingAutosave.current = null;
+    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    if (pending) void updateDexterEmailDraft(pending.messageId, pending.draft)
+      .catch(() => toast.error("Your last draft edit could not be saved. Reopen the conversation to check it."));
+  }, []);
 
   useEffect(() => {
     const sendRequestId = draft.delivery.sendRequestId;
@@ -694,6 +759,7 @@ export function DexterEmailComposeCard({
         draft.delivery.status !== "sending")
     )
       return;
+    if (standalone) return;
     void recordDexterEmailDraftDelivery(messageId, sendRequestId)
       .then((delivery) => {
         const next = { ...currentDraft(delivery.status), delivery };
@@ -704,6 +770,20 @@ export function DexterEmailComposeCard({
   }, [draft.delivery.sendRequestId, draft.delivery.status, messageId, preview]);
 
   async function handleEmailAction() {
+    if (preview || preparedActionPending || saveState === "saving") return;
+    if (isProviderDraftSource && onPreparedActionDecision) {
+      setError(null);
+      setSaveState("saving");
+      try {
+        const action = await prepareDexterProviderDraftSend(activeMessageId);
+        setSaveState("saved");
+        onPreparedActionDecision(action);
+      } catch (sendError) {
+        setSaveState("failed");
+        setError(sendError instanceof Error ? sendError.message : t("Dexter could not prepare this saved draft for sending. Your draft is still in Inbox."));
+      }
+      return;
+    }
     if (
       preview ||
       isSentSource ||
@@ -789,6 +869,7 @@ export function DexterEmailComposeCard({
             )
           : [],
       attachments: [],
+      signature,
       trackOpens,
     };
     const request = {
@@ -848,6 +929,13 @@ export function DexterEmailComposeCard({
             ? "failed"
             : "queued";
       setStatus(providerStatus);
+      if (standalone) {
+        if (providerStatus === "failed") idempotencyKey.current = createIdempotencyKey();
+        const next = { ...currentDraft(providerStatus), delivery: { status: providerStatus, sendRequestId: receipt.id } };
+        onDraftChange?.(next);
+        if (providerStatus === "failed") setError(t("The provider rejected this email. Your draft is still here."));
+        return;
+      }
       try {
         const delivery = await recordDexterEmailDraftDelivery(
           activeMessageId,
@@ -874,7 +962,7 @@ export function DexterEmailComposeCard({
         );
       }
     } catch (sendError) {
-      setStatus("failed");
+      setStatus(standalone && sendError instanceof InboxApiError && sendError.code === "offline" ? "queued" : "failed");
       if (
         !(sendError instanceof InboxApiError) ||
         sendError.code !== "offline"
@@ -889,8 +977,12 @@ export function DexterEmailComposeCard({
     }
   }
 
-  const statusText = statusCopy(status, error, t);
-  const visibleStatusText = isCreatingCopy
+  const statusText = providerDraftNeedsRecipient && !error
+    ? t("Draft saved without recipients. Add recipients and send it from your email provider.")
+    : statusCopy(status, error, t);
+  const visibleStatusText = isPreparingMessage
+    ? t("Preparing draft…")
+    : isCreatingCopy
     ? t("Creating editable copy…")
     : isRefining
       ? t("Refining draft…")
@@ -904,7 +996,7 @@ export function DexterEmailComposeCard({
               ? saveState === "saving"
                 ? t("Saving…")
                 : saveState === "saved"
-                  ? t("Saved")
+                  ? t(standalone ? "Draft kept in this tab" : "Saved")
                   : saveState === "failed"
                     ? t("Draft could not be saved")
                     : statusText
@@ -919,7 +1011,7 @@ export function DexterEmailComposeCard({
     status === "sent"
       ? "Sent"
       : status === "draft_created"
-        ? "Draft created"
+        ? "Send email"
         : status === "queued"
           ? "Check status"
           : status === "sending"
@@ -937,12 +1029,12 @@ export function DexterEmailComposeCard({
 
   return (
     <section
-      aria-label={t("Editable email draft")}
+      aria-label={t(isProviderDraftSource ? "Saved email draft" : "Editable email draft")}
       onPointerDownCapture={() => {
         if (draft.delivery.status === "sent" && activeMessageId === messageId)
           void beginEditableCopy();
       }}
-      className="mt-4 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]"
+      className={cn("overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]", standalone ? "mt-0" : "mt-4")}
     >
       <header className="flex items-center justify-between gap-3 px-5 pb-2 pt-4 sm:px-6 sm:pt-5">
         <div className="min-w-0 flex-1">
@@ -952,7 +1044,7 @@ export function DexterEmailComposeCard({
             transition={
               shouldReduceMotion
                 ? { duration: 0 }
-                : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }
+                : { duration: 0.25, ease: [0.22, 1, 0.36, 1] }
             }
             className={cn(
               "h-10 max-w-full overflow-hidden rounded-full",
@@ -968,7 +1060,7 @@ export function DexterEmailComposeCard({
                   initial={
                     shouldReduceMotion
                       ? { opacity: 0 }
-                      : { opacity: 0, filter: "blur(4px)" }
+                      : { opacity: 0, filter: "blur(2px)" }
                   }
                   animate={{ opacity: 1, filter: "blur(0px)" }}
                   exit={
@@ -976,7 +1068,7 @@ export function DexterEmailComposeCard({
                       ? { opacity: 0 }
                       : { opacity: 0, filter: "blur(3px)" }
                   }
-                  transition={{ duration: shouldReduceMotion ? 0 : 0.14 }}
+                  transition={{ duration: shouldReduceMotion ? 0 : 0.15 }}
                   onSubmit={(event) => {
                     event.preventDefault();
                     submitRefinement();
@@ -989,6 +1081,7 @@ export function DexterEmailComposeCard({
                   />
                   <input
                     ref={refinementInputRef}
+                        data-email-refinement
                     value={refinementInstruction}
                     onChange={(event) =>
                       setRefinementInstruction(event.target.value.slice(0, 800))
@@ -1054,7 +1147,7 @@ export function DexterEmailComposeCard({
                       ? { opacity: 0 }
                       : { opacity: 0, scale: 0.8 }
                   }
-                  transition={{ duration: shouldReduceMotion ? 0 : 0.14 }}
+                  transition={{ duration: shouldReduceMotion ? 0 : 0.15 }}
                 >
                   <AiEditing
                     className="size-3.5"
@@ -1066,13 +1159,15 @@ export function DexterEmailComposeCard({
             </AnimatePresence>
           </motion.div>
         </div>
+        {savedDraftHref ? <a href={savedDraftHref} className="shrink-0 text-[12px] text-[var(--md-text)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]">{t("View in Inbox")}</a> : null}
         <Button
           type="button"
           disabled={
             preview ||
             isSentSource ||
-            isProviderDraftSource ||
-            locked ||
+            providerDraftNeedsRecipient ||
+            (isProviderDraftSource ? !onPreparedActionDecision : locked) ||
+            saveState === "saving" ||
             isCreatingCopy ||
             copyFailed ||
             preparedActionPending ||
@@ -1085,7 +1180,7 @@ export function DexterEmailComposeCard({
               : status === "sent"
                 ? "Sent"
                 : status === "draft_created"
-                  ? "Draft created"
+                  ? "Send email"
                   : requestedAction === "create_draft"
                     ? "Create draft"
                     : "Send email",
@@ -1096,7 +1191,7 @@ export function DexterEmailComposeCard({
               : status === "sent"
                 ? "Sent"
                 : status === "draft_created"
-                  ? "Draft created"
+                  ? "Send email"
                   : requestedAction === "create_draft"
                     ? "Create draft"
                     : "Send email",
@@ -1111,14 +1206,14 @@ export function DexterEmailComposeCard({
           </span>
           <span className="md-dexter-pill__contrast" aria-hidden="true" />
           <AnimatePresence initial={false} mode="popLayout">
-            {status === "sent" || status === "draft_created" ? (
+            {status === "sent" ? (
               <motion.span
                 key="sent"
                 className="relative z-10 inline-flex items-center gap-1.5"
                 initial={
                   shouldReduceMotion
                     ? { opacity: 0 }
-                    : { opacity: 0, scale: 0.25, filter: "blur(4px)" }
+                    : { opacity: 0, scale: 0.98, filter: "blur(2px)" }
                 }
                 animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
                 transition={{ type: "spring", duration: 0.3, bounce: 0 }}
@@ -1246,126 +1341,43 @@ export function DexterEmailComposeCard({
           </Select>
         </div>
 
-        <div className="flex min-h-12 items-center gap-3 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] transition-colors focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] motion-reduce:transition-none">
-          <label
-            htmlFor={`${activeDraftId}-to`}
-            className="w-14 shrink-0 text-[13px] font-medium text-[var(--md-subtle)]"
-          >
-            {t("To")}
-          </label>
-          <Input
-            id={`${activeDraftId}-to`}
-            type="text"
-            inputMode="email"
-            autoComplete="email"
-            dir="ltr"
-            data-i18n-skip
-            value={toText}
-            disabled={locked}
-            style={{
-              background: "transparent",
-              borderColor: "transparent",
-              boxShadow: "none",
-            }}
-            aria-invalid={invalidField === "to"}
-            aria-describedby={
-              invalidField === "to" ? `${activeDraftId}-status` : undefined
-            }
-            placeholder="name@example.com"
-            onChange={(event) => setToText(event.target.value)}
-            className="h-10 min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-          />
-          <div className="flex shrink-0 items-center gap-1">
-            {!showCc ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={locked}
-                className="h-8 rounded-full px-2 text-[12px] text-[var(--md-subtle)]"
-                onClick={() => setShowCc(true)}
-              >
-                {t("Cc")}
-              </Button>
-            ) : null}
-            {!showBcc ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={locked}
-                className="h-8 rounded-full px-2 text-[12px] text-[var(--md-subtle)]"
-                onClick={() => setShowBcc(true)}
-              >
-                {t("Bcc")}
-              </Button>
-            ) : null}
-          </div>
-        </div>
+        <MailRecipientField
+          inputId={`${activeDraftId}-to`}
+          label={t("To")}
+          addresses={toAddresses}
+          onChange={setToAddresses}
+          onInputChange={setToInput}
+          search={recipientSearch}
+          disabled={locked}
+          invalid={invalidField === "to"}
+          describedBy={invalidField === "to" ? `${activeDraftId}-status` : undefined}
+          className="min-h-12 gap-x-3 gap-y-0 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] px-0 focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] max-sm:flex-wrap max-sm:[&>[data-mail-recipient-content]]:basis-full max-sm:[&>[data-mail-recipient-content]]:order-1"
+          labelClassName="w-14 text-[13px]"
+          trailing={<>
+            {!showCc ? <Button type="button" variant="ghost" size="sm" disabled={locked}
+              className="h-8 rounded-full px-2 text-[12px] text-[var(--md-subtle)]" onClick={() => setShowCc(true)}>{t("Cc")}</Button> : null}
+            {!showBcc ? <Button type="button" variant="ghost" size="sm" disabled={locked}
+              className="h-8 rounded-full px-2 text-[12px] text-[var(--md-subtle)]" onClick={() => setShowBcc(true)}>{t("Bcc")}</Button> : null}
+          </>}
+        />
 
-        {showCc ? (
-          <div className="flex min-h-12 items-center gap-3 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] transition-colors focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] motion-reduce:transition-none">
-            <label
-              htmlFor={`${activeDraftId}-cc`}
-              className="w-14 shrink-0 text-[13px] font-medium text-[var(--md-subtle)]"
-            >
-              {t("Cc")}
-            </label>
-            <Input
-              id={`${activeDraftId}-cc`}
-              type="text"
-              inputMode="email"
-              dir="ltr"
-              data-i18n-skip
-              value={ccText}
-              disabled={locked}
-              style={{
-                background: "transparent",
-                borderColor: "transparent",
-                boxShadow: "none",
-              }}
-              aria-invalid={invalidField === "cc"}
-              aria-describedby={
-                invalidField === "cc" ? `${activeDraftId}-status` : undefined
-              }
-              placeholder="name@example.com"
-              onChange={(event) => setCcText(event.target.value)}
-              className="h-10 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-            />
-          </div>
-        ) : null}
+        {showCc ? <MailRecipientField
+          inputId={`${activeDraftId}-cc`} label={t("Cc")}
+          addresses={ccAddresses} onChange={setCcAddresses} onInputChange={setCcInput}
+          search={recipientSearch} disabled={locked} invalid={invalidField === "cc"}
+          describedBy={invalidField === "cc" ? `${activeDraftId}-status` : undefined}
+          className="min-h-12 gap-x-3 gap-y-0 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] px-0 focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] max-sm:flex-wrap max-sm:[&>[data-mail-recipient-content]]:basis-full max-sm:[&>[data-mail-recipient-content]]:order-1"
+          labelClassName="w-14 text-[13px]"
+        /> : null}
 
-        {showBcc ? (
-          <div className="flex min-h-12 items-center gap-3 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] transition-colors focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] motion-reduce:transition-none">
-            <label
-              htmlFor={`${activeDraftId}-bcc`}
-              className="w-14 shrink-0 text-[13px] font-medium text-[var(--md-subtle)]"
-            >
-              {t("Bcc")}
-            </label>
-            <Input
-              id={`${activeDraftId}-bcc`}
-              type="text"
-              inputMode="email"
-              dir="ltr"
-              data-i18n-skip
-              value={bccText}
-              disabled={locked}
-              style={{
-                background: "transparent",
-                borderColor: "transparent",
-                boxShadow: "none",
-              }}
-              aria-invalid={invalidField === "bcc"}
-              aria-describedby={
-                invalidField === "bcc" ? `${activeDraftId}-status` : undefined
-              }
-              placeholder="name@example.com"
-              onChange={(event) => setBccText(event.target.value)}
-              className="h-10 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-            />
-          </div>
-        ) : null}
+        {showBcc ? <MailRecipientField
+          inputId={`${activeDraftId}-bcc`} label={t("Bcc")}
+          addresses={bccAddresses} onChange={setBccAddresses} onInputChange={setBccInput}
+          search={recipientSearch} disabled={locked} invalid={invalidField === "bcc"}
+          describedBy={invalidField === "bcc" ? `${activeDraftId}-status` : undefined}
+          className="min-h-12 gap-x-3 gap-y-0 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] px-0 focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] max-sm:flex-wrap max-sm:[&>[data-mail-recipient-content]]:basis-full max-sm:[&>[data-mail-recipient-content]]:order-1"
+          labelClassName="w-14 text-[13px]"
+        /> : null}
 
         <div className="flex min-h-12 items-center gap-3 border-b border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] transition-colors focus-within:border-[color-mix(in_srgb,var(--md-accent)_34%,transparent)] motion-reduce:transition-none">
           <label
@@ -1413,7 +1425,7 @@ export function DexterEmailComposeCard({
                 initial={
                   shouldReduceMotion
                     ? { opacity: 0 }
-                    : { opacity: 0, y: 4, scale: 0.97, filter: "blur(4px)" }
+                    : { opacity: 0, y: 4, scale: 0.97, filter: "blur(2px)" }
                 }
                 animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
                 exit={
@@ -1437,7 +1449,7 @@ export function DexterEmailComposeCard({
                       initial={
                         shouldReduceMotion
                           ? { opacity: 0 }
-                          : { opacity: 0, filter: "blur(4px)" }
+                          : { opacity: 0, filter: "blur(2px)" }
                       }
                       animate={{ opacity: 1, filter: "blur(0px)" }}
                       exit={
@@ -1445,7 +1457,7 @@ export function DexterEmailComposeCard({
                           ? { opacity: 0 }
                           : { opacity: 0, filter: "blur(3px)" }
                       }
-                      transition={{ duration: shouldReduceMotion ? 0 : 0.14 }}
+                      transition={{ duration: shouldReduceMotion ? 0 : 0.15 }}
                       onSubmit={(event) => {
                         event.preventDefault();
                         submitRefinement();
@@ -1458,6 +1470,7 @@ export function DexterEmailComposeCard({
                       />
                       <input
                         ref={refinementInputRef}
+                        data-email-refinement
                         value={refinementInstruction}
                         onChange={(event) =>
                           setRefinementInstruction(
@@ -1520,7 +1533,7 @@ export function DexterEmailComposeCard({
                           ? { opacity: 0 }
                           : { opacity: 0, filter: "blur(3px)" }
                       }
-                      transition={{ duration: shouldReduceMotion ? 0 : 0.14 }}
+                      transition={{ duration: shouldReduceMotion ? 0 : 0.15 }}
                     >
                       <button
                         type="button"
@@ -1608,14 +1621,14 @@ export function DexterEmailComposeCard({
                   height: replacementTransition.height,
                 }}
                 className="pointer-events-none absolute inset-x-0 z-10 rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-surface)_94%,transparent)]"
-                initial={{ opacity: 0.96, filter: "blur(7px)" }}
+                initial={{ opacity: 0.96, filter: "blur(2px)" }}
                 animate={{
                   opacity: [0.96, 0.78, 0],
-                  filter: ["blur(7px)", "blur(3px)", "blur(0px)"],
+                  filter: ["blur(2px)", "blur(1px)", "blur(0px)"],
                 }}
                 exit={{ opacity: 0 }}
                 transition={{
-                  duration: 0.34,
+                  duration: 0.25,
                   times: [0, 0.42, 1],
                   ease: [0.22, 1, 0.36, 1],
                 }}
@@ -1653,6 +1666,7 @@ export function DexterEmailComposeCard({
             onScroll={updateBodySelection}
             className="min-h-[220px] resize-y rounded-[var(--md-radius-sm)] border-0 bg-transparent p-0 text-[16px] leading-[1.65] shadow-none outline-none transition-colors focus-visible:bg-[color-mix(in_srgb,var(--md-accent)_5%,transparent)] focus-visible:outline-none focus-visible:ring-0 sm:text-[14px] motion-reduce:transition-none"
           />
+          <EmailSignatureControl mailboxId={mailboxId || null} value={signature} onChange={setSignature} disabled={locked} />
         </div>
       </div>
 
@@ -1702,16 +1716,16 @@ export function DexterEmailComposeCard({
               initial={
                 shouldReduceMotion
                   ? { opacity: 0 }
-                  : { opacity: 0, y: 2, filter: "blur(4px)" }
+                  : { opacity: 0, y: 4, filter: "blur(2px)" }
               }
               animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
               exit={
                 shouldReduceMotion
                   ? { opacity: 0 }
-                  : { opacity: 0, y: -2, filter: "blur(3px)" }
+                  : { opacity: 0, y: -4, filter: "blur(3px)" }
               }
               transition={{
-                duration: shouldReduceMotion ? 0.08 : 0.18,
+                duration: shouldReduceMotion ? 0 : 0.15,
                 ease: "easeOut",
               }}
             >

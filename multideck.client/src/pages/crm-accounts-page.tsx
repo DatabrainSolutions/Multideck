@@ -173,7 +173,6 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
 
   const needsAttention = summary.needsAttention
   const contactTotal = summary.contacts
-  const marketingOptIns = summary.marketingOptedIn
   const unassignedAccounts = summary.unassigned
   const healthyAccounts = summary.healthy
   const accountFiltersActive = Boolean(query || relationshipFilter || ownerFilter || accountScope !== "All" || countActiveFilterConditions(advancedFilter))
@@ -295,7 +294,6 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
       { id: "owner", label: "Owner", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.ownerName, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (account) => account.ownerName || t("Unassigned") },
       { id: "last-contact", label: "Last contact", width: 130, minWidth: 110, resizable: true, sortValue: (account) => account.lastContactAt ? new Date(account.lastContactAt).getTime() : null, cellClassName: "text-[13px] tabular-nums text-[var(--md-text)]", cell: (account) => relativeDate(account.lastContactAt, t) },
       { id: "contacts", label: "Contacts", width: 100, minWidth: 88, sortValue: (account) => account.contactCount, cellClassName: "text-[13px] tabular-nums text-[var(--md-ink)]", cell: (account) => account.contactCount },
-      { id: "marketing", label: "Marketing", kind: "status", width: 120, minWidth: 110, sortValue: (account) => account.marketingOptIn ? 1 : 0, cell: (account) => <StatusPill tone={account.marketingOptIn ? "green" : "red"}>{t(account.marketingOptIn ? "Opted in" : "Opted out")}</StatusPill> },
       openColumn,
     ]
   }, [accountingSyncAccess, customerAccounts, financialAccess, language, singular, t])
@@ -381,7 +379,6 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
     [t(`Total ${title.toLowerCase()}`), summary.accounts, t(`all ${singular} records`)],
     [t("Contacts"), contactTotal, t("recorded contacts")],
     [t("Needs attention"), needsAttention, t("need attention now")],
-    [t("Marketing opted in"), marketingOptIns, t("with marketing consent")],
     [t("Unassigned"), unassignedAccounts, t("without an assigned owner")],
     [t(`Healthy ${title.toLowerCase()}`), healthyAccounts, t("health score 70 or above")],
   ]
@@ -396,7 +393,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         </div>
       </header>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+      <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${customerAccounts ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}>
         {summaryCards.map(([label, value, detail]) => (
           <Surface key={String(label)} padding="none" className="h-[44px] min-w-0 rounded-[var(--md-radius-lg)] px-3 py-1.5">
             <div className="flex h-full min-w-0 items-center gap-2.5">

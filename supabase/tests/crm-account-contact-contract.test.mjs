@@ -57,14 +57,14 @@ test("account and contact details expose real empty states and permission-scoped
   assert.match(customers, /editVersion: profile\?\.CRMContact_EditVersion \?\? 1/)
 })
 
-test("account summary matches the six-tile leads summary pattern", () => {
+test("account summary keeps company metrics separate from personal consent", () => {
   const sharedSummaryClass = /grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6/
   const sharedTileClass = /h-\[44px\] min-w-0 rounded-\[var\(--md-radius-lg\)\] px-3 py-1\.5/
   assert.match(crmPage, sharedSummaryClass)
-  assert.match(accountsPage, sharedSummaryClass)
+  assert.match(accountsPage, /customerAccounts \? "xl:grid-cols-6" : "xl:grid-cols-5"/)
   assert.match(crmPage, sharedTileClass)
   assert.match(accountsPage, sharedTileClass)
-  for (const label of ["Contacts", "Needs attention", "Marketing opted in", "Unassigned"]) {
+  for (const label of ["Contacts", "Needs attention", "Unassigned"]) {
     assert.match(accountsPage, new RegExp(`t\\(\\"${label}\\"\\)`))
   }
   assert.match(accountsPage, /t\("Total companies"\)/)
@@ -170,7 +170,8 @@ test("account editing uses existing CRM reference data and preserves the current
   assert.doesNotMatch(accountDetail, /<aside[\s\S]*Company details/)
   assert.match(accountDetail, /<AccountDetailTabs account=\{currentAccount\}/)
   assert.match(accountDetail, /<AccountOperationsPanel[\s\S]*?account=\{currentAccount\}/)
-  assert.match(accountDetail, /MarketingOptInControl/)
+  assert.doesNotMatch(accountDetail, /MarketingOptInControl|<Zone title=\{t\("Communication preferences"\)/)
+  assert.match(accountDetail, /ContactPreferencesPopover/)
   assert.match(accountDetail, /<AddCustomField onAdd=\{\(label, value\) => patch\(\{ customFields:/)
   assert.match(customers, /CRM_AccountProfiles/)
   assert.match(customers, /CRM_CustomerEngagementPreferences/)

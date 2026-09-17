@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2";
+import { requireProductAccess } from "../_shared/cloud-product-access.ts";
 import {
   adminClient,
   authenticate,
@@ -498,6 +499,15 @@ async function processDelivery(
     if (error) throw error;
   }
 
+  // Document notifications can carry the MRN without a lifecycle transition.
+  // Fill missing references without allowing a late event to replace an existing one.
+  if (!submissionValues && parsed.mrn && !submission.ICUSS_MRN) {
+    const { error } = await admin.from("ICUS_Submissions")
+      .update({ ICUSS_MRN: parsed.mrn, ICUSS_UpdatedAt: now })
+      .eq("ICUSS_id", submission.ICUSS_id);
+    if (error) throw error;
+  }
+
   const providerEnvironment = connection.ICUSC_Environment === "production" ? "production" : "sandbox";
   const document = await storeDocument(admin, parsed, declaration as Json, providerEnvironment, now);
   const declarationValues: Json = { CUST_UpdatedAt: now };
@@ -506,10 +516,10 @@ async function processDelivery(
       ? parsed.providerStatus
       : incomingLifecycle;
     declarationValues.CUST_iCustomsStatusSnapshot = parsed.providerStatus;
-    if (parsed.mrn) {
-      declarationValues.CUST_CustomsReferenceNumber = parsed.mrn;
-      declarationValues.CUST_MasterReferenceNumber = parsed.mrn;
-    }
+  }
+  if (parsed.mrn && (submissionValues || !declaration.CUST_MasterReferenceNumber)) {
+    declarationValues.CUST_CustomsReferenceNumber = parsed.mrn;
+    declarationValues.CUST_MasterReferenceNumber = parsed.mrn;
   }
   if (document) {
     declarationValues.CUST_DeclarationDocumentID = document.CUSTD_ID;
@@ -599,6 +609,7 @@ async function recoverCapturedDelivery(request: Request, deliveryId: string) {
 
   let recoveryAdmin: SupabaseClient | null = null;
   try {
+    await requireProductAccess("icustoms");
     const admin = adminClient();
     recoveryAdmin = admin;
     const { user } = await authenticate(request, admin);
@@ -704,6 +715,13 @@ Deno.serve(async (request) => {
   const supplied = routeSecret(request);
   if (!expected || !supplied || !constantTimeEqual(supplied, expected)) {
     return response({ error: "Not found" }, 404);
+  }
+
+  try {
+    await requireProductAccess("icustoms");
+  } catch (error) {
+    return response({ error: error instanceof HttpError ? error.message : "Product permissions are unavailable." },
+      error instanceof HttpError ? error.status : 503);
   }
 
   // iCustoms verifies a newly entered callback URL with a safe GET before it

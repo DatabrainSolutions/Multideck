@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { todoText } from "./todo-text.ts"
 
 export type TodoPriority = "low" | "medium" | "high" | "urgent"
 export type TodoStatus = "open" | "completed"
@@ -88,7 +89,9 @@ function normaliseTask(value: unknown): TodoTask {
   }
   const row = value as Record<string, unknown>
   const id = cleanString(row.id, 80)
-  const title = cleanString(row.title, 240)
+  const dexterSource = row.source === "dexter_context" || row.source === "dexter_action"
+  const readable = dexterSource ? todoText(cleanString(row.title)) : null
+  const title = readable?.title ?? cleanString(row.title, 240)
   const scheduledDate = cleanString(row.scheduledDate, 10)
   if (!id || !title || !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) {
     throw new TodoApiError("Multideck returned an incomplete task.")
@@ -101,7 +104,7 @@ function normaliseTask(value: unknown): TodoTask {
     priority: isPriority(row.priority) ? row.priority : null,
     status: row.status === "completed" ? "completed" : "open",
     completedAt: cleanString(row.completedAt, 80) || null,
-    links: normaliseLinks(row.links),
+    links: [...normaliseLinks(row.links), ...(readable?.links ?? []).filter((link) => !normaliseLinks(row.links).some((existing) => existing.url === link.url))].slice(0, 12),
     tags: normaliseTags(row.tags),
     source,
     sourceDexterMessageId: cleanString(row.sourceDexterMessageId, 80) || null,
@@ -118,7 +121,7 @@ function apiError(error: { message?: string } | null, fallback: string) {
 }
 
 function client() {
-  if (!supabase) throw new TodoApiError("The To Do list is not connected to this workspace.")
+  if (!supabase) throw new TodoApiError("The Tasks is not connected to this workspace.")
   return supabase
 }
 
@@ -126,16 +129,18 @@ export async function listTodoTasks(scheduledDate: string, signal?: AbortSignal)
   let request = client().rpc("multideck_todo_list", { p_scheduled_date: scheduledDate })
   if (signal) request = request.abortSignal(signal)
   const { data, error } = await request
-  if (error) throw apiError(error, "Your To Do list could not be loaded.")
+  if (error) throw apiError(error, "Your Tasks could not be loaded.")
   return (Array.isArray(data) ? data : []).map(normaliseTask)
 }
 
 export async function createTodoTask(input: CreateTodoTaskInput) {
+  const readable = input.source === "dexter_context" ? todoText(input.title) : null
+  const links = [...(input.links ?? []), ...(readable?.links ?? []).filter((link) => !input.links?.some((existing) => existing.url === link.url))].slice(0, 12)
   const { data, error } = await client().rpc("multideck_todo_create", {
-    p_title: input.title,
+    p_title: readable?.title ?? input.title,
     p_scheduled_date: input.scheduledDate,
     p_priority: input.priority ?? null,
-    p_links: input.links ?? [],
+    p_links: links,
     p_tags: input.tags ?? [],
     p_source_code: input.source ?? "manual",
     p_source_message_id: input.sourceDexterMessageId ?? null,

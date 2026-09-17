@@ -759,3 +759,104 @@
 
 
 }
+
+/* Freight forms align labels beside controls; feedback follows its control. */
+:is(.md-compact-field, .md-horizontal-field) {
+  display: grid;
+  grid-template-columns: var(--md-field-label-width, 104px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
+}
+:is(.md-compact-field, .md-horizontal-field) > :first-child {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  margin-block: 0;
+  text-align: end;
+  justify-content: flex-end;
+}
+:is(.md-compact-field, .md-horizontal-field) > :not(:first-child) {
+  grid-column: 2;
+  min-width: 0;
+}
+.md-compact-field > span { display: block; }
+.md-compact-field-label label { overflow-wrap: anywhere; }
+.md-cargowise-field > label { text-align: end; }
+.md-cargowise-field > div > :is(input, span) { min-inline-size: calc(5ch + 1rem); }
+:is(.md-compact-field, .md-horizontal-field) input { min-inline-size: calc(5ch + 1rem); }
+:is(.md-compact-field, .md-horizontal-field) button[role="combobox"] { min-inline-size: calc(5ch + 2.375rem); }
+/* Booking lookups nest a combobox with its duplicate label hidden. */
+.md-compact-field .md-compact-field,
+.md-compact-field[class*="\:sr-only"] { display: block; }
+.md-horizontal-field > span:first-child { flex-wrap: wrap; gap: 4px; }
+@media (max-width: 640px) {
+  :is(.md-compact-field, .md-horizontal-field) { column-gap: 8px; }
+  :is(.md-compact-field, .md-horizontal-field) :is(input, button[role="combobox"]) { min-height: 44px; }
+}
+
+/* Keep related party fields together with consistent column starts. */
+.md-party-section { container: freight-party / inline-size; --md-field-label-width: 72px; }
+.md-party-section > header { min-height: 40px; }
+.md-party-fields { display: grid; min-width: 0; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px 16px; }
+.md-party-fields > .md-compact-field,
+.md-party-fields > [data-booking-customer-select] > .md-compact-field { grid-column: 1 / -1; }
+.md-party-code > :not(:first-child) { max-width: 12rem; }
+.md-party-reference > :not(:first-child) { max-width: 20rem; }
+@container freight-party (min-width: 520px) {
+  .md-party-fields .md-party-name,
+  .md-party-fields > [data-booking-customer-select] > .md-party-name { grid-column: span 6; }
+  .md-party-fields .md-party-code { grid-column: span 6; }
+  .md-party-fields :is(.md-party-contact, .md-party-email, .md-party-short) { grid-column: span 6; }
+}
+@container booking-details (min-width: 720px) {
+  .md-booking-party-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.md-freight-container-row > .md-compact-field { flex: 1 1 260px; }
+.md-freight-container-row > button { margin-top: 0; }
+.md-freight-container-row > div[aria-hidden],
+.md-freight-container-row > div.hidden { display: none; }
+
+/* Two compact field columns are based on each section's width. */
+.md-booking-job-groups { display: grid; gap: 16px; align-items: start; }
+.md-booking-job-group { container: booking-job-group / inline-size; display: grid; gap: 8px; min-width: 0; }
+.md-booking-job-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px 16px; }
+.md-booking-job-fields > * { min-width: 0; }
+.md-booking-job-fields > .md-field-wide { grid-column: 1 / -1; }
+@container booking-details (min-width: 720px) {
+  .md-booking-job-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .md-booking-job-group:last-child { grid-column: 1 / -1; }
+}
+@container booking-details (min-width: 1400px) {
+  .md-booking-job-groups { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .md-booking-job-group:last-child { grid-column: auto; }
+}
+@container booking-job-group (min-width: 440px) {
+  .md-booking-job-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container booking-job-group (min-width: 960px) {
+  .md-booking-job-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.md-quote-terms-grid, .md-quote-routing-grid, .md-quote-locations-grid { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 8px 16px; align-items: start; }
+.md-quote-terms-grid > .md-compact-field > :not(:first-child),
+.md-quote-routing-grid .md-compact-field > :not(:first-child) { max-width: 340px; }
+@container quote-details (min-width: 600px) {
+  .md-quote-routing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container quote-details (min-width: 720px) {
+  .md-quote-terms-grid, .md-quote-locations-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container quote-details (min-width: 1100px) {
+  .md-quote-routing-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.md-quote-routing-grid > *, .md-quote-routing-grid .md-horizontal-field { width: 100%; max-width: 100%; min-width: 0; }
+.md-location-fields { container: freight-location / inline-size; }
+.md-location-fields-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 16px; }
+.md-location-code input { max-width: 8rem; }
+@container freight-location (min-width: 540px) {
+  .md-location-fields-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+[data-quote-job-grid] { --md-field-label-width: 88px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+[data-quote-job-grid] > div { display: contents; }

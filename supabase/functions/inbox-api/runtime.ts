@@ -1,3 +1,5 @@
+import { resolveSignature } from "./signatures.ts"
+import { editableDraftMetadata } from "./core.ts"
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
 import {
@@ -39,6 +41,7 @@ import {
   safeFileName,
   safeMimeType,
   sanitizeEmailHtml,
+  sanitizeOutboundEmailHtml,
   sha256Hex,
   stripHtml,
   type MailAddress,
@@ -257,7 +260,7 @@ export async function mailboxIds(admin: Db, actor: Actor, capability: Capability
   return new Set(fromAcl)
 }
 
-async function requireMailbox(admin: Db, actor: Actor, id: string, capability: Capability) {
+export async function requireMailbox(admin: Db, actor: Actor, id: string, capability: Capability) {
   const ids = await mailboxIds(admin, actor, capability)
   if (!ids.has(id)) throw new InboxHttpError(404, "This mailbox is unavailable or you do not have access to it.", "mailbox_not_found")
   const mailbox = await result<Row>(admin.from("Comm_Mailboxes").select("*").eq("CommMailbox_ID", id).eq("CommMailbox_IsDeleted", false).maybeSingle())
@@ -521,7 +524,7 @@ export async function aiContextSources(admin: Db, actor: Actor) {
   })
 }
 
-async function credential(admin: Db, connection: Row): Promise<ProviderCredential> {
+export async function credential(admin: Db, connection: Row): Promise<ProviderCredential> {
   if (!connection.CommConn_SecretRef) throw new InboxHttpError(409, "Reconnect this mailbox before continuing.", "reauthorization_required")
   const secret = await result<string>(admin.rpc("comm_get_email_secret", { p_secret_ref: connection.CommConn_SecretRef }), "Secure mailbox credentials are unavailable.")
   let parsed: unknown
@@ -559,6 +562,25 @@ async function credential(admin: Db, connection: Row): Promise<ProviderCredentia
   const updated = await result<boolean>(admin.rpc("comm_update_email_secret", { p_secret_ref: connection.CommConn_SecretRef, p_secret: JSON.stringify(refreshed) }))
   if (!updated) throw new InboxHttpError(409, "Reconnect this mailbox before continuing.", "reauthorization_required")
   return refreshed
+}
+
+async function gmailProviderError(response: Response) {
+  if (response.status !== 403) return providerErrorStatus(response)
+  let reason = ""
+  try {
+    const payload = await response.clone().json()
+    reason = cleanString(payload?.error?.errors?.[0]?.reason, 80)
+  } catch { /* Use the safe generic denial below. */ }
+  const guidance: Record<string, [number, string, string]> = {
+    rateLimitExceeded: [429, "Gmail is rate limiting this account. Try again shortly.", "rate_limited"],
+    userRateLimitExceeded: [429, "Gmail is rate limiting this account. Try again shortly.", "rate_limited"],
+    dailyLimitExceeded: [429, "Gmail's daily sending or API limit has been reached. Try again after the limit resets.", "rate_limited"],
+    domainPolicy: [403, "Your Google Workspace policy blocks Multideck's Gmail access. Ask your Workspace administrator to review it.", "provider_policy_denied"],
+    accessNotConfigured: [503, "The Gmail API is not enabled for this workspace's Google connection. Ask your administrator to enable it.", "provider_not_configured"],
+    insufficientPermissions: [409, "Reconnect Gmail and grant the email permissions requested by Multideck.", "reauthorization_required"],
+  }
+  const detail = guidance[reason] ?? [403, "Gmail denied this request. Ask your administrator to check Gmail API access and account restrictions.", "provider_forbidden"]
+  return new InboxHttpError(detail[0] as number, detail[1] as string, detail[2] as string, 403)
 }
 
 async function providerJson(url: string, token: string, init: RequestInit = {}) {
@@ -606,6 +628,7 @@ async function providerJson(url: string, token: string, init: RequestInit = {}) 
           message: providerMessage || "No provider message",
         })
       }
+      if (new URL(url).hostname === "gmail.googleapis.com") throw await gmailProviderError(response)
       const error = providerErrorStatus(response)
       const providerDiagnostic = [providerCode, providerMessage].filter(Boolean).join(": ")
       if (providerDiagnostic) {
@@ -1925,8 +1948,8 @@ export async function syncMailbox(admin: Db, actor: Actor, mailboxId: string, op
           : 0,
     }
   }
-  const credentials = await credential(admin, connection)
   try {
+    const credentials = await credential(admin, connection)
     try {
       await refreshFolderCatalogue(admin, mailbox, connection, credentials.accessToken)
     } catch (error) {
@@ -1965,15 +1988,18 @@ export async function syncMailbox(admin: Db, actor: Actor, mailboxId: string, op
   } catch (error) {
     const message = error instanceof InboxHttpError ? error.message : "The mail provider could not sync this mailbox."
     const requiresReconnect = error instanceof InboxHttpError && error.code === "reauthorization_required"
-    await result(admin.from("Comm_ProviderConnections").update({
+    const changedConnection = await result<Row[]>(admin.from("Comm_ProviderConnections").update({
       ...(requiresReconnect ? { CommConn_StatusCode: "error" } : {}),
       CommConn_ErrorMessage: message.slice(0, 1000), CommConn_UpdatedAt: new Date().toISOString(),
-    }).eq("CommConn_ID", connection.CommConn_ID)).catch(() => undefined)
+    }).eq("CommConn_ID", connection.CommConn_ID)
+      // A reconnect replaces the secret. An older in-flight sync must never
+      // revoke or overwrite the newly authorised connection.
+      .eq("CommConn_SecretRef", connection.CommConn_SecretRef).select("CommConn_ID")).catch(() => [])
     // A provider timeout or temporary database failure must not strand a real
     // mailbox in a permanent error state. The visible Inbox retry loop can
     // safely continue from the durable cursor; only revoked provider access
     // requires operator action.
-    if (requiresReconnect && mailbox.CommMailbox_IndexStatus !== "ready") {
+    if (requiresReconnect && changedConnection?.length && mailbox.CommMailbox_IndexStatus !== "ready") {
       await result(admin.from("Comm_Mailboxes").update({
         CommMailbox_IndexStatus: "error",
         CommMailbox_UpdatedAt: new Date().toISOString(),
@@ -2623,6 +2649,9 @@ export async function getThread(admin: Db, actor: Actor, threadId: string, url?:
     if (target) inferredReplyTargetByInbound.set(message.CommMessage_ID, target)
   }
   const delivery = (row: Row) => {
+    if (row.CommMessage_IsDraft === true || row.CommMessage_StatusCode === "draft") {
+      return { status: "draft", sentAt: null, deliveredAt: null, openedAt: null, repliedAt: null, failedAt: null, bouncedAt: null, openTrackingEnabled: false, confidence: "none" }
+    }
     const events = deliveryEvents.filter((event) => event.CommDelivery_MessageID === row.CommMessage_ID)
     const eventAt = (type: string) => events.find((event) => event.CommDelivery_EventTypeCode === type)?.CommDelivery_EventAt ?? null
     const tracking = trackingTokens.find((token) => token.CommTrack_MessageID === row.CommMessage_ID)
@@ -2635,8 +2664,9 @@ export async function getThread(admin: Db, actor: Actor, threadId: string, url?:
     const failedAt = eventAt("failed")
     const openedAt = tracking?.CommTrack_FirstOpenedAt ?? eventAt("opened")
     const deliveredAt = row.CommMessage_DeliveredAt ?? eventAt("delivered")
-    const status = bouncedAt ? "bounced" : failedAt || row.CommMessage_StatusCode === "failed" ? "failed" : repliedAt ? "replied" : openedAt ? "opened_estimated" : deliveredAt ? "delivered" : tracking ? "no_open_signal" : "sent"
-    return { status, sentAt: row.CommMessage_SentAt, deliveredAt, openedAt, repliedAt, failedAt, bouncedAt, openTrackingEnabled: Boolean(tracking), confidence: openedAt ? "estimated" : status === "delivered" || status === "replied" || status === "failed" || status === "bounced" ? "confirmed" : "none" }
+    const sentAt = row.CommMessage_SentAt ?? eventAt("sent")
+    const status = bouncedAt ? "bounced" : failedAt || row.CommMessage_StatusCode === "failed" ? "failed" : repliedAt ? "replied" : openedAt ? "opened_estimated" : deliveredAt ? "delivered" : !sentAt && row.CommMessage_StatusCode !== "sent" ? "sending" : tracking ? "no_open_signal" : "sent"
+    return { status, sentAt, deliveredAt, openedAt, repliedAt, failedAt, bouncedAt, openTrackingEnabled: Boolean(tracking), confidence: status === "opened_estimated" ? "estimated" : ["delivered", "replied", "failed", "bounced"].includes(status) ? "confirmed" : "none" }
   }
   return {
     id: threadId, mailboxId: messages.at(-1)?.CommMessage_MailboxID, subject: repairMojibake(messages.at(-1)?.CommMessage_Subject ?? "(No subject)"),
@@ -2651,9 +2681,12 @@ export async function getThread(admin: Db, actor: Actor, threadId: string, url?:
       id: row.CommMessage_ID, threadId, mailboxId: row.CommMessage_MailboxID, direction: row.CommMessage_IsInbound ? "inbound" : "outbound",
       from: addresses(row.CommMessage_ID, "from"), to: addresses(row.CommMessage_ID, "to"), cc: addresses(row.CommMessage_ID, "cc"), bcc: addresses(row.CommMessage_ID, "bcc"),
       subject: repairMojibake(row.CommMessage_Subject ?? "(No subject)"), sentAt: row.CommMessage_SentAt, receivedAt: row.CommMessage_ReceivedAt,
-      bodyText: row.CommMessage_BodyText, sanitizedHtml: row.CommMessage_IsInbound && row.CommMessage_BodyHTML ? sanitizeEmailHtml(row.CommMessage_BodyHTML) : null,
+      // Sender copies include quoted originals in matched inbound replies.
+      // Reading those copies must not manufacture another recipient open.
+      bodyText: row.CommMessage_BodyText, sanitizedHtml: row.CommMessage_BodyHTML ? (row.CommMessage_IsInbound && !row.CommMessage_ReplyToMessageID && !inferredReplyTargetByInbound.has(row.CommMessage_ID) ? sanitizeEmailHtml(row.CommMessage_BodyHTML) : sanitizeOutboundEmailHtml(row.CommMessage_BodyHTML)) : null,
       replyEligible: !row.CommMessage_IsInbound || isRecipientReplyMessage(storedHeaders(row)),
       delivery: row.CommMessage_IsInbound ? undefined : delivery(row),
+      draft: editableDraftMetadata(row, actor.userId, sendIds.has(row.CommMessage_MailboxID)),
       attachments: attachments.filter((item) => item.CommAttachment_MessageID === row.CommMessage_ID).map((item) => ({
         id: item.CommAttachment_ID, fileName: safeFileName(item.CommAttachment_FileName), mimeType: item.CommAttachment_MimeType,
         sizeBytes: item.CommAttachment_FileSizeBytes, isInline: item.CommAttachment_IsInline, contentId: cleanString(item.CommAttachment_ContentID, 240) || null,
@@ -2817,7 +2850,7 @@ export async function saveDraft(admin: Db, actor: Actor, body: Row, draftId?: st
     CommMessage_StatusCode: "draft", CommMessage_SourceTypeCode: "manual", CommMessage_ContentFormatCode: "plain_text", CommMessage_PriorityCode: "normal",
     CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal", CommMessage_Subject: subject,
     CommMessage_BodyPreview: cleanString(body.bodyText, 1000), CommMessage_BodyText: cleanString(body.bodyText, 2_000_000),
-    CommMessage_BodyJSON: JSON.stringify({ mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null, openTrackingEnabled: trackOpens }), CommMessage_HeaderJSON: "{}",
+    CommMessage_BodyJSON: JSON.stringify({ mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null, signature: body.signature ?? null, openTrackingEnabled: trackOpens, draftEdits: { addedTo: body.addedTo ?? [], addedCc: body.addedCc ?? [], addedBcc: body.addedBcc ?? [], removedAddresses: body.removedAddresses ?? [] } }), CommMessage_HeaderJSON: "{}",
     CommMessage_MessageDate: now, CommMessage_HasAttachments: false, CommMessage_IsInbound: false, CommMessage_IsInternal: false,
     CommMessage_IsDraft: true, CommMessage_IsSpam: false, CommMessage_IsBodyRedacted: false, CommMessage_IsTrainingAllowed: false,
     CommMessage_UpdatedAt: now, CommMessage_UpdatedBy: actor.userId, CommMessage_IsDeleted: false,
@@ -2830,7 +2863,7 @@ export async function saveDraft(admin: Db, actor: Actor, body: Row, draftId?: st
   }
   await addRecipients(admin, id, [{ address: mailbox.CommMailbox_Address, displayName: mailbox.CommMailbox_DisplayName }], "from", now)
   await addRecipients(admin, id, resolved.to, "to", now); await addRecipients(admin, id, resolved.cc, "cc", now); await addRecipients(admin, id, resolved.bcc, "bcc", now)
-  return { id, threadId, mailboxId, mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null, subject, bodyText: cleanString(body.bodyText, 2_000_000), trackOpens, updatedAt: now }
+  return { id, threadId, mailboxId, mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null, subject, bodyText: cleanString(body.bodyText, 2_000_000), signature: body.signature, trackOpens, updatedAt: now }
 }
 
 export async function deleteDraft(admin: Db, actor: Actor, draftId: string) {
@@ -2865,6 +2898,7 @@ async function graphAttachFiles(owner: string, token: string, messageId: string,
           name: attachment.fileName,
           contentType: attachment.mimeType,
           contentBytes: base64Encode(attachment.bytes),
+          ...(attachment.isInline && attachment.contentId ? { isInline: true, contentId: attachment.contentId } : {}),
         }),
       })
       if (!response.ok) throw providerErrorStatus(response)
@@ -2897,7 +2931,7 @@ async function graphAttachFiles(owner: string, token: string, messageId: string,
   }
 }
 
-async function providerSend(
+export async function providerSend(
   provider: MailProvider,
   token: string,
   mailbox: Row,
@@ -2908,6 +2942,7 @@ async function providerSend(
   internetMessageId: string,
   trackingEnabled: boolean,
   attachments: OutboundAttachment[] = [],
+  existingProviderDraftId: string | null = null,
 ) {
   const from = { address: mailbox.CommMailbox_Address, displayName: mailbox.CommMailbox_DisplayName }
   if (provider === "gmail") {
@@ -2923,7 +2958,13 @@ async function providerSend(
     }
     const threadId = resolved.command.startsWith("reply") && resolved.source?.CommMessage_ProviderThreadID ? resolved.source.CommMessage_ProviderThreadID : null
     let response: Response
-    if (attachments.length) {
+    if (existingProviderDraftId) {
+      response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts/send", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ id: existingProviderDraftId, message: { raw: buildRfc2822(mime), ...(threadId ? { threadId } : {}) } }),
+      })
+    } else if (attachments.length) {
       // A base64 `raw` field inside JSON outgrows what the metadata endpoint
       // accepts long before the mailbox's own limit, so a message carrying files
       // goes to the upload endpoint as its own RFC 2822 part.
@@ -2939,7 +2980,7 @@ async function providerSend(
       const payload = { raw: buildRfc2822(mime), ...(threadId ? { threadId } : {}) }
       response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) })
     }
-    if (!response.ok) throw providerErrorStatus(response)
+    if (!response.ok) throw await gmailProviderError(response)
     const sent = await response.json()
     return { providerMessageId: sent.id, providerThreadId: sent.threadId, internetMessageId }
   }
@@ -2970,6 +3011,29 @@ async function providerSend(
       internetMessageId,
     }
   }
+  if (existingProviderDraftId) {
+    const draftUrl = `https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(existingProviderDraftId)}`
+    const read = await fetch(`${draftUrl}?$select=id,isDraft,hasAttachments,conversationId`, { headers: graphHeaders })
+    if (!read.ok) throw providerErrorStatus(read)
+    const current = await read.json()
+    if (current.isDraft !== true) throw new InboxHttpError(409, "This provider draft has already been sent or removed. Check Inbox before trying again.", "provider_draft_unavailable")
+    {
+      // Graph hasAttachments excludes inline-only signatures; always inspect them.
+      const check = await fetch(`${draftUrl}/attachments?$select=id,isInline,contentId`, { headers: graphHeaders })
+      if (!check.ok) throw providerErrorStatus(check)
+      const existingAttachments = (await check.json()).value ?? []
+      if (existingAttachments.some((item: Row) => !item.isInline || !/^signature-[0-9a-f-]{36}@multideck$/i.test(item.contentId ?? ""))) throw new InboxHttpError(409, "This provider draft now has attachments. Review and send it in Inbox.", "provider_draft_changed")
+      for (const item of existingAttachments) {
+        const removed = await fetch(`${draftUrl}/attachments/${encodeURIComponent(item.id)}`, { method: "DELETE", headers: graphHeaders })
+        if (!removed.ok) throw providerErrorStatus(removed)
+      }
+    }
+    // Reapply the approved visible content. Never send unseen provider edits.
+    const { internetMessageId: _messageId, ...editableMessage } = message
+    const patch = await fetch(draftUrl, { method: "PATCH", headers: graphHeaders, body: JSON.stringify(editableMessage) })
+    if (!patch.ok) throw providerErrorStatus(patch)
+    return await sendDraft(current)
+  }
   if (resolved.command === "new") {
     // Creating a draft first gives Multideck the immutable provider ID before
     // Exchange moves it to Sent Items. This prevents the provider sync from
@@ -2998,6 +3062,7 @@ async function providerCreateDraft(
   bodyText: string,
   internetMessageId: string,
   attachments: OutboundAttachment[] = [],
+  bodyHtml: string | null = null,
 ) {
   const from = { address: mailbox.CommMailbox_Address, displayName: mailbox.CommMailbox_DisplayName }
   if (provider === "gmail") {
@@ -3005,7 +3070,7 @@ async function providerCreateDraft(
     if (resolved.source) { try { headers = JSON.parse(resolved.source.CommMessage_HeaderJSON ?? "{}") } catch { headers = {} } }
     const sourceInternetMessageId = resolved.source?.CommMessage_InternetMessageID
     const mime = {
-      from, to: resolved.to, cc: resolved.cc, bcc: resolved.bcc, subject, bodyText, bodyHtml: null,
+      from, to: resolved.to, cc: resolved.cc, bcc: resolved.bcc, subject, bodyText, bodyHtml,
       messageId: internetMessageId,
       inReplyTo: sourceInternetMessageId,
       references: appendInternetMessageReference(headers.references ?? headers.References, sourceInternetMessageId),
@@ -3054,7 +3119,7 @@ async function providerCreateDraft(
   const message = {
     subject,
     internetMessageId,
-    body: { contentType: "Text", content: bodyText },
+    body: { contentType: bodyHtml ? "HTML" : "Text", content: bodyHtml ?? bodyText },
     toRecipients: recipients(resolved.to),
     ccRecipients: recipients(resolved.cc),
     bccRecipients: recipients(resolved.bcc),
@@ -3128,7 +3193,11 @@ export async function createProviderDraft(admin: Db, actor: Actor, body: Row, su
   const subject = cleanString(body.subject, 500) || resolved.source?.CommMessage_Subject || "(No subject)"
   const bodyText = cleanString(body.bodyText, 2_000_000)
   if (!bodyText) throw new InboxHttpError(400, "Write a message before creating a draft.", "body_required")
-  const attachments = readOutboundAttachments(body.attachments)
+  const signature = await resolveSignature(admin, actor, mailbox, body.signature)
+  const signedText = bodyText + (signature.text ? `\n\n${signature.text}` : "")
+  const signedHtml = signature.html ? `<div>${escapeTrackedHtml(bodyText)}</div><br>${signature.html}` : null
+  const attachments = [...readOutboundAttachments(body.attachments), ...signature.attachments]
+  if (attachments.reduce((size,file)=>size+file.bytes.length,0)>15*1024*1024) throw new InboxHttpError(400,"Email attachments and signature images must total less than 15 MB.","attachments_too_large")
   const threadId = resolved.source?.CommMessage_ThreadID ?? await newThread(admin, actor, subject, mailbox)
   const messageId = crypto.randomUUID()
   const now = new Date().toISOString()
@@ -3143,7 +3212,8 @@ export async function createProviderDraft(admin: Db, actor: Actor, body: Row, su
     CommMessage_DirectionCode: "outbound",
     CommMessage_StatusCode: "draft",
     CommMessage_SourceTypeCode: "manual",
-    CommMessage_ContentFormatCode: "plain_text",
+    CommMessage_ContentFormatCode: signedHtml ? "html" : "plain_text",
+    CommMessage_BodyHTML: signedHtml,
     CommMessage_PriorityCode: "normal",
     CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal",
     CommMessage_ProviderThreadID: resolved.source?.CommMessage_ProviderThreadID ?? null,
@@ -3153,10 +3223,10 @@ export async function createProviderDraft(admin: Db, actor: Actor, body: Row, su
     CommMessage_Subject: subject,
     CommMessage_BodyPreview: bodyText.slice(0, 1000),
     CommMessage_BodyText: bodyText,
-    CommMessage_BodyJSON: JSON.stringify({ mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null }),
+    CommMessage_BodyJSON: JSON.stringify({ mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null, signature: body.signature ?? null }),
     CommMessage_HeaderJSON: JSON.stringify({ command: resolved.command, providerDraftState: "creating" }),
     CommMessage_MessageDate: now,
-    CommMessage_HasAttachments: attachments.length > 0,
+    CommMessage_HasAttachments: attachments.some(item => !item.isInline),
     CommMessage_IsInbound: false,
     CommMessage_IsInternal: false,
     CommMessage_IsDraft: true,
@@ -3182,9 +3252,10 @@ export async function createProviderDraft(admin: Db, actor: Actor, body: Row, su
       mailbox,
       resolved,
       subject,
-      bodyText,
+      signedText,
       internetMessageId,
       attachments,
+      signedHtml,
     )
     const completed = new Date().toISOString()
     await result(admin.from("Comm_Messages").update({
@@ -3215,6 +3286,15 @@ export async function createProviderDraft(admin: Db, actor: Actor, body: Row, su
 
 function escapeTrackedHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/\r?\n/g, "<br>")
+}
+
+// Append tracking to the final body, including trusted operational templates.
+// A tracking database row alone is not evidence that the image was sent.
+function trackedEmailHtml(bodyText: string, trustedHtml: string | null, trackingUrl: string | null) {
+  if (!trackingUrl) return trustedHtml || null
+  const image = `<img src="${escapeTrackedHtml(trackingUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" referrerpolicy="no-referrer">`
+  const html = trustedHtml || `<div>${escapeTrackedHtml(bodyText)}</div>`
+  return /<\/body\s*>/i.test(html) ? html.replace(/<\/body\s*>/i, `${image}</body>`) : `${html}${image}`
 }
 
 function opaqueTrackingToken() {
@@ -3250,6 +3330,111 @@ async function recordDeliveryEvent(
   }
 }
 
+/** Send one existing provider draft. The saved row is the single-use claim,
+ * shared across every request key, so two prepared approvals cannot send it twice.
+ */
+export async function sendProviderDraft(admin: Db, actor: Actor, body: Row, suppliedKey: string) {
+  await requirePermission(admin, actor, "Email.Send")
+  if (!suppliedKey || suppliedKey.length > 200) throw new InboxHttpError(400, "An Idempotency-Key header is required when sending email.", "idempotency_key_required")
+  const messageId = cleanString(body.draftMessageId, 80)
+  const draft = await result<Row>(admin.from("Comm_Messages").select("*")
+    .eq("CommMessage_ID", messageId).eq("CommMessage_CreatedBy", actor.userId)
+    .eq("CommMessage_IsDeleted", false).maybeSingle())
+  if (!draft) throw new InboxHttpError(404, "This email draft is unavailable.", "draft_not_found")
+  const { mailbox, connection } = await requireMailbox(admin, actor, draft.CommMessage_MailboxID, "send")
+  const receipt = async () => {
+    const send = await result<Row>(admin.from("Comm_SendRequests").select("CommSend_ID,CommSend_StatusCode")
+      .eq("CommSend_MessageID", messageId).eq("CommSend_RequestedBy", actor.userId)
+      .order("CommSend_CreatedAt", { ascending: false }).limit(1).maybeSingle())
+    if (!send) throw new InboxHttpError(409, "This draft is already being processed. Check Inbox before trying again.", "provider_draft_processing")
+    return { id: send.CommSend_ID, messageId, threadId: draft.CommMessage_ThreadID, status: send.CommSend_StatusCode, reused: true }
+  }
+  if (["sending", "sent", "failed"].includes(draft.CommMessage_StatusCode)) return await receipt()
+  let headers: Row = {}
+  try { headers = JSON.parse(draft.CommMessage_HeaderJSON ?? "{}") } catch { /* Invalid provenance fails closed below. */ }
+  const providerDraftId = cleanString(headers.providerDraftId, 1_000)
+  if (draft.CommMessage_IsDraft !== true || draft.CommMessage_StatusCode !== "draft" || !providerDraftId || headers.providerDraftState !== "created") {
+    throw new InboxHttpError(409, "This provider draft is no longer available. Check Inbox.", "provider_draft_unavailable")
+  }
+  if (!mailbox.CommMailbox_OutboundEnabled || !connection.CommConn_OutboundEnabled || connection.CommConn_StatusCode !== "active") {
+    throw new InboxHttpError(409, "Reconnect this mailbox before sending.", "reauthorization_required")
+  }
+  if (draft.CommMessage_HasAttachments) throw new InboxHttpError(409, "Review and send this draft's attachments in Inbox.", "provider_draft_attachments")
+  const recipients = await result<Row[]>(admin.from("Comm_MessageRecipients").select("*").eq("CommRecipient_MessageID", messageId)) ?? []
+  const addresses = (type: string) => normalizeAddresses(recipients.filter(row => row.CommRecipient_RecipientTypeCode === type)
+    .map(row => ({ address: row.CommRecipient_Address, displayName: row.CommRecipient_DisplayNameSnapshot })))
+  const to = addresses("to"), cc = addresses("cc"), bcc = addresses("bcc")
+  const addressKey = (value: unknown) => normalizeAddresses(value).map(item => item.address.toLowerCase()).sort().join("\n")
+  // The approval is for exactly the visible snapshot, never a provider or local edit.
+  if (body.mailboxId !== draft.CommMessage_MailboxID ||
+      (cleanString(body.subject, 500) || "(No subject)") !== draft.CommMessage_Subject ||
+      cleanString(body.bodyText, 50_000) !== draft.CommMessage_BodyText ||
+      addressKey(body.addedTo) !== addressKey(to) || addressKey(body.addedCc) !== addressKey(cc) || addressKey(body.addedBcc) !== addressKey(bcc)) {
+    throw new InboxHttpError(409, "The saved draft has changed. Refresh and review it before sending.", "provider_draft_changed")
+  }
+  const signature = await resolveSignature(admin, actor, mailbox, body.signature)
+  const signedText = draft.CommMessage_BodyText + (signature.text ? `\n\n${signature.text}` : "")
+  const signedHtml = signature.html ? `<div>${escapeTrackedHtml(draft.CommMessage_BodyText)}</div><br>${signature.html}` : null
+  assertRecipients(to, cc, bcc)
+  const creds = await credential(admin, connection)
+  const sendId = crypto.randomUUID(), now = new Date().toISOString()
+  const idempotencyKey = await sha256Hex(`${actor.userId}:send-provider-draft:${suppliedKey}`)
+  const claimed = await result<Row>(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "sending", CommMessage_UpdatedAt: now })
+    .eq("CommMessage_ID", messageId).eq("CommMessage_CreatedBy", actor.userId)
+    .eq("CommMessage_StatusCode", "draft").eq("CommMessage_IsDraft", true).eq("CommMessage_IsDeleted", false)
+    .eq("CommMessage_UpdatedAt", draft.CommMessage_UpdatedAt).select("CommMessage_ID").maybeSingle())
+  if (!claimed) return await receipt()
+  await result(admin.from("Comm_SendRequests").insert({
+    CommSend_ID: sendId, CommSend_MessageID: messageId, CommSend_ThreadID: draft.CommMessage_ThreadID,
+    CommSend_MailboxID: draft.CommMessage_MailboxID, CommSend_ChannelCode: "email", CommSend_StatusCode: "sending",
+    CommSend_SourceTypeCode: "manual", CommSend_PriorityCode: "normal", CommSend_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal",
+    CommSend_RequestedBy: actor.userId, CommSend_ScheduledAt: now, CommSend_AttemptCount: 1, CommSend_MaxAttempts: 1,
+    CommSend_Subject: draft.CommMessage_Subject, CommSend_BodyText: draft.CommMessage_BodyText,
+    CommSend_PayloadJSON: JSON.stringify({ providerDraftMessageId: messageId, openTrackingEnabled: body.trackOpens === true }),
+    CommSend_CorrelationID: idempotencyKey, CommSend_CreatedAt: now, CommSend_UpdatedAt: now,
+  }))
+  try {
+    const trackingToken = body.trackOpens === true ? opaqueTrackingToken() : null
+    const trackingUrl = trackingToken ? `${Deno.env.get("SUPABASE_URL")}/functions/v1/email-track/open?token=${encodeURIComponent(trackingToken)}` : null
+    const bodyHtml = trackedEmailHtml(signedText, signedHtml, trackingUrl)
+    if (trackingToken) await result(admin.from("Comm_MessageTrackingTokens").insert({
+      CommTrack_ID: crypto.randomUUID(), CommTrack_MessageID: messageId, CommTrack_SendID: sendId,
+      CommTrack_RecipientHashSHA256: await sha256Hex([...new Set([...to, ...cc, ...bcc].map(item => item.address.toLowerCase()))].sort().join("\n")),
+      CommTrack_TokenHashSHA256: await sha256Hex(trackingToken), CommTrack_ExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      CommTrack_IsActive: true, CommTrack_CreatedAt: now,
+    }))
+    let source: Row | null = null
+    if (draft.CommMessage_ReplyToMessageID) {
+      source = await result<Row>(admin.from("Comm_Messages").select("*").eq("CommMessage_ID", draft.CommMessage_ReplyToMessageID)
+        .eq("CommMessage_MailboxID", draft.CommMessage_MailboxID).eq("CommMessage_IsDeleted", false).maybeSingle())
+      if (!source) throw new InboxHttpError(409, "The original reply context is no longer available in this mailbox.", "source_not_found")
+    }
+    const sent = await providerSend(publicProvider(connection.CommConn_ProviderTypeCode), creds.accessToken, mailbox,
+      { command: source ? "reply" : "new", source, to, cc, bcc }, draft.CommMessage_Subject, signedText,
+      bodyHtml, draft.CommMessage_InternetMessageID, body.trackOpens === true, signature.attachments, providerDraftId)
+    const completed = new Date().toISOString()
+    await result(admin.from("Comm_Messages").update({
+      CommMessage_StatusCode: "sent", CommMessage_IsDraft: false, CommMessage_ProviderMessageID: sent.providerMessageId,
+      CommMessage_ProviderThreadID: sent.providerThreadId, CommMessage_InternetMessageID: sent.internetMessageId,
+      CommMessage_BodyHTML: bodyHtml, CommMessage_ContentFormatCode: bodyHtml ? "html" : "plain_text",
+      CommMessage_SentAt: completed, CommMessage_UpdatedAt: completed, CommMessage_UpdatedBy: actor.userId,
+    }).eq("CommMessage_ID", messageId))
+    await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "sent", CommSend_UpdatedAt: completed }).eq("CommSend_ID", sendId))
+    await recordDeliveryEvent(admin, messageId, sendId, "sent", sent.providerMessageId, { source: "provider_draft_send", confidence: "confirmed" })
+    return { id: sendId, messageId, threadId: draft.CommMessage_ThreadID, status: "sent", reused: false }
+  } catch (error) {
+    // Unknown network outcomes remain claimed: a retry must never submit again.
+    if (error instanceof InboxHttpError && (!error.providerStatus || (error.providerStatus >= 400 && error.providerStatus < 500 && error.providerStatus !== 408))) {
+      const failed = new Date().toISOString()
+      await result(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "failed", CommMessage_UpdatedAt: failed }).eq("CommMessage_ID", messageId)).catch(() => undefined)
+      await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "failed", CommSend_ErrorMessage: error.message.slice(0, 1000), CommSend_UpdatedAt: failed }).eq("CommSend_ID", sendId)).catch(() => undefined)
+      await result(admin.from("Comm_MessageTrackingTokens").update({ CommTrack_IsActive: false }).eq("CommTrack_MessageID", messageId)).catch(() => undefined)
+      await recordDeliveryEvent(admin, messageId, sendId, "failed", null, { source: "provider_draft_send", confidence: "confirmed" })
+    }
+    throw error
+  }
+}
+
 export async function sendMail(
   admin: Db,
   actor: Actor,
@@ -3273,12 +3458,18 @@ export async function sendMail(
   let subject = cleanString(body.subject, 500) || resolved.source?.CommMessage_Subject || "(No subject)"
   if (resolved.command === "forward" && !/^fwd?:/i.test(subject)) subject = `Fwd: ${subject}`
   if (resolved.command.startsWith("reply") && !/^re:/i.test(subject)) subject = `Re: ${subject}`
-  const attachments = readOutboundAttachments(body.attachments)
+  const signature = await resolveSignature(admin, actor, mailbox, body.signature)
+  const attachments = [...readOutboundAttachments(body.attachments), ...signature.attachments]
+  if (attachments.reduce((size,file)=>size+file.bytes.length,0)>15*1024*1024) throw new InboxHttpError(400,"Email attachments and signature images must total less than 15 MB.","attachments_too_large")
   let bodyText = cleanString(body.bodyText, 2_000_000)
   if (!bodyText) throw new InboxHttpError(400, "Write a message before sending.", "body_required")
+  if (signature.text) bodyText += `\n\n${signature.text}`
   if (resolved.command === "forward" && resolved.source) bodyText += `\n\n---------- Forwarded message ----------\n${resolved.source.CommMessage_BodyText ?? resolved.source.CommMessage_BodyPreview ?? ""}`
   const trackOpens = body.trackOpens === true
   const externalRecipients = [...resolved.to, ...resolved.cc, ...resolved.bcc]
+  // Refresh credentials before claiming a send: a reconnect failure has not
+  // submitted anything and must not strand a message in an uncertain state.
+  const creds = await credential(admin, connection)
   // The browser may echo a thread id for presentation, but authorization and
   // service-role persistence derive it only from the checked source message.
   const threadId = resolved.source?.CommMessage_ThreadID ?? await newThread(admin, actor, subject, mailbox)
@@ -3291,7 +3482,12 @@ export async function sendMail(
     : null
   const trackingUrl = trackingToken ? `${Deno.env.get("SUPABASE_URL")}/functions/v1/email-track/open?token=${encodeURIComponent(trackingToken)}` : null
   const trustedBodyHtml = cleanString(trustedOptions.bodyHtml, 2_000_000)
-  const bodyHtml = trustedBodyHtml || (trackingUrl ? `<div>${escapeTrackedHtml(bodyText)}</div><img src="${trackingUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" referrerpolicy="no-referrer">` : null)
+  const signatureMarkup = signature.html ? `<br>${signature.html}` : ""
+  const authoredHtml = trustedBodyHtml
+    ? (/<\/body>/i.test(trustedBodyHtml) ? trustedBodyHtml.replace(/<\/body>/i, `${signatureMarkup}</body>`) : trustedBodyHtml + signatureMarkup)
+    : signature.html ? `<div>${escapeTrackedHtml(cleanString(body.bodyText, 2_000_000))}</div>${signatureMarkup}` : ""
+  const signedHtml = authoredHtml + (authoredHtml && resolved.command === "forward" && resolved.source ? `<br><div>${escapeTrackedHtml(`---------- Forwarded message ----------\n${resolved.source.CommMessage_BodyText ?? resolved.source.CommMessage_BodyPreview ?? ""}`)}</div>` : "")
+  const bodyHtml = trackedEmailHtml(bodyText, signedHtml, trackingUrl)
   await result(admin.from("Comm_Messages").insert({
     CommMessage_ID: messageId, CommMessage_ThreadID: threadId, CommMessage_ParentMessageID: resolved.command === "forward" ? resolved.source?.CommMessage_ID : null,
     CommMessage_ReplyToMessageID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ID : null, CommMessage_MailboxID: mailboxId,
@@ -3300,7 +3496,7 @@ export async function sendMail(
     CommMessage_ProviderThreadID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ProviderThreadID : null,
     CommMessage_ProviderConversationID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ProviderConversationID : null,
     CommMessage_InternetMessageID: internetMessageId, CommMessage_IdempotencyKey: idempotencyKey, CommMessage_Subject: subject, CommMessage_BodyPreview: bodyText.slice(0, 1000),
-    CommMessage_BodyText: bodyText, CommMessage_BodyHTML: bodyHtml, CommMessage_BodyJSON: "{}", CommMessage_HeaderJSON: JSON.stringify({ command: resolved.command, sourceProviderMessageId: resolved.source?.CommMessage_ProviderMessageID, messageId: internetMessageId, openTrackingEnabled: trackOpens }),
+    CommMessage_BodyText: bodyText, CommMessage_BodyHTML: bodyHtml, CommMessage_BodyJSON: JSON.stringify({ signature: body.signature ?? null }), CommMessage_HeaderJSON: JSON.stringify({ command: resolved.command, sourceProviderMessageId: resolved.source?.CommMessage_ProviderMessageID, messageId: internetMessageId, openTrackingEnabled: trackOpens }),
     CommMessage_MessageDate: now, CommMessage_HasAttachments: attachments.length > 0, CommMessage_IsInbound: false, CommMessage_IsInternal: false,
     CommMessage_IsDraft: false, CommMessage_IsSpam: false, CommMessage_IsBodyRedacted: false, CommMessage_IsTrainingAllowed: false,
     CommMessage_CreatedAt: now, CommMessage_CreatedBy: actor.userId, CommMessage_UpdatedAt: now, CommMessage_UpdatedBy: actor.userId, CommMessage_IsDeleted: false,
@@ -3334,7 +3530,6 @@ export async function sendMail(
       CommTrack_IsActive: true, CommTrack_CreatedAt: now,
     }))
   }
-  const creds = await credential(admin, connection)
   try {
     const sent = await providerSend(
       publicProvider(connection.CommConn_ProviderTypeCode),
@@ -3359,7 +3554,7 @@ export async function sendMail(
     if (body.draftId) await result(admin.from("Comm_Messages").update({ CommMessage_IsDeleted: true, CommMessage_UpdatedAt: completed }).eq("CommMessage_ID", cleanString(body.draftId, 80)).eq("CommMessage_CreatedBy", actor.userId).eq("CommMessage_IsDraft", true))
     return { id: sendId, threadId, messageId, status: "sent", reused: false }
   } catch (error) {
-    if (error instanceof InboxHttpError && [409, 429, 502].includes(error.status)) {
+    if (error instanceof InboxHttpError && (!error.providerStatus || (error.providerStatus >= 400 && error.providerStatus < 500 && error.providerStatus !== 408))) {
       const failed = new Date().toISOString()
       await result(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "failed", CommMessage_UpdatedAt: failed }).eq("CommMessage_ID", messageId)).catch(() => undefined)
       await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "failed", CommSend_ErrorMessage: error.message.slice(0, 1000), CommSend_UpdatedAt: failed }).eq("CommSend_ID", sendId)).catch(() => undefined)

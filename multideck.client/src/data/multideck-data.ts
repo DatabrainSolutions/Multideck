@@ -1,3 +1,10 @@
+import signatureBuilderSource from "@/components/multideck/signature-builder.tsx?raw"
+import signatureGlyphSource from "@/components/multideck/signature-block-glyph.tsx?raw"
+import emailSignatureControlSource from "@/components/multideck/email-signature-control.tsx?raw"
+import contactEmailActionSource from "@/components/multideck/contact-email-action.tsx?raw"
+import contactPreferencesSource from "@/components/multideck/contact-preferences-popover.tsx?raw"
+import taskAgentSource from "@/components/multideck/task-agent-components.tsx?raw"
+import bookingCustomerPanelSource from "@/components/multideck/booking-customer-panel.tsx?raw"
 import toggleGroupSource from "@/components/ui/toggle-group.tsx?raw"
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
 import quoteCargoEditorSource from "@/components/multideck/quote-details/quote-cargo-editor.tsx?raw"
@@ -13,6 +20,7 @@ import dataTableSource from "@/components/multideck/data-table.tsx?raw"
 import tableCsvExportDialogSource from "@/components/multideck/table-csv-export-dialog.tsx?raw"
 import publicBrandIdentitySource from "@/components/multideck/public-brand-identity.tsx?raw"
 import multiSelectMenuSource from "@/components/multideck/multi-select-menu.tsx?raw"
+import mailRecipientFieldSource from "@/components/multideck/mail-recipient-field.tsx?raw"
 import { AiBrain, AiEditing, ArrowUpDown, BadgeCheck, BarChart3, Bell, BrainCircuit, Building2, Boxes, BriefcaseBusiness, CalendarDays, ChartAnalysis, ChartArea, ChartBar, ChartBarStacked, ChartLine, ChartNoAxesCombined, ChartPie, ChartScatter, ClipboardCheck, Clock3, Cloud, Component, FileText, Funnel, Gauge, Globe2, Grid3X3, Image, KeyRound, LayoutDashboard, ListOrdered, Mail, MessageCircle, MoonStar, MousePointerClick, PackageCheck, Palette, Pencil, Phone, ReceiptText, QrCode, Radar, Search, ScanText, Settings2, ShieldCheck, Ship, SlidersHorizontal, Sparkles, Type, TriangleAlert, Truck, Users, Workflow, type LucideIcon } from "@/components/icons/hugeicons"
 export * from "./operational-data"
 
@@ -64,10 +72,52 @@ function visualizationUsageCode(componentName: string, kind: string) {
 
 export const galleryComponents = [
   {
+    id: "signature-builder", name: "Signature Builder", category: "Communication",
+    description: "Arrange email-safe rows and blocks, including shared Company details from Admin, with direct, tactile movement.",
+    details: "Drag a custom block tile into the canvas, or click to add. Blocks lift and tilt with movement, open an insertion gap and settle with a short spring. Keyboard move buttons, undo and reduced motion retain the same editing workflow. Personal fields resolve for the sender; images accept uploads or a configured Admin brand logo, and Trust badges places multiple managed images in one row. Each field has visible removal and undo. Image banner and Disclaimer presets add a wide uploaded image or editable small-print footer using the same portable blocks. Drag column dividers or image corner handles to resize; percentages and dimensions update live, with keyboard adjustment and one undo step per gesture.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: signatureBuilderSource,
+    usageCode: `<SignatureBuilder document={document} onChange={setDocument} values={employee} assets={assetUrls} onUpload={uploadImage} />`,
+  },
+  {
+    id: "signature-block-glyph", name: "Signature Block Glyph", category: "Communication",
+    description: "Custom SVG miniatures for the signature block palette.",
+    details: "Layered paper, contact details, logo and divider miniatures with an active lift state. Each communicates the block's purpose before it is placed.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: signatureGlyphSource,
+    usageCode: `<SignatureBlockGlyph kind="identity" active={dragging} />`,
+  },
+  {
+    id: "email-signature-control", name: "Email Signature Control", category: "Communication",
+    description: "Choose, preview or turn off the signature for one email.",
+    details: "Shared by Inbox, Dexter, contact-card popups and quote emails. Choices are mailbox-authorised and assigned to the current sender. Turning off is always a per-email choice, including for users with a company-managed design. The gallery preview does not access or send email.",
+    foundOn: [{label:"Inbox",route:"/inbox"},{label:"Dexter",route:"/agent-dexter"},{label:"Contacts",route:"/crm/contacts"},{label:"Companies",route:"/crm/accounts"},{label:"Leads",route:"/crm/leads"},{label:"Customers",route:"/customers"},{label:"Bookings",route:"/bookings"},{label:"Quotes",route:"/quotes"}],
+    componentCode: emailSignatureControlSource,
+    usageCode: `<EmailSignatureControl mailboxId={mailboxId} value={signature} onChange={setSignature} disabled={sending} />`,
+  },
+
+  {
+    id: "contact-email-action", name: "Contact Email Action", category: "CRM",
+    description: "Compose an email in a centred popup without leaving the record.",
+    details: "Uses the Dexter email editor with recipient chips, mailbox selection, pencil refinement and explicit sending through Inbox. Dismissal retains a private draft in the current browser tab for up to 24 hours. No email is sent in the gallery preview.",
+    foundOn: [{ label: "Companies", route: "/crm/accounts" }, { label: "Leads", route: "/crm/leads" }, { label: "Contacts", route: "/crm/contacts" }, { label: "Customers", route: "/customers" }, { label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-email-action" }],
+    componentCode: contactEmailActionSource,
+    usageCode: `<ContactEmailAction email={contact.email} name={contact.name} />`,
+  },
+  {
+    id: "contact-preferences-popover", name: "Contact Preferences", category: "CRM",
+    description: "Edit one person's contact details, preferred channel and marketing consent in place.",
+    details: "Loads the authorised contact record on demand. Changes use the existing contact version check, permissions and consent history; marketing changes require a source or reason. Company preferences are never inherited.",
+    foundOn: [{ label: "Companies", route: "/crm/accounts" }, { label: "Leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-preferences-popover" }],
+    componentCode: contactPreferencesSource,
+    usageCode: `<ContactPreferencesPopover contactId={contact.id} name={contact.name} onSaved={refreshContact} />`,
+  },
+
+  {
     id: "conversation-attachments", name: "Conversation Attachments", category: "Controls",
-    description: "Compact image tiles and document previews for ticket messages, with quiet remove controls and a shared image viewer.",
+    description: "Compact image tiles and document previews for ticket messages and Dexter, with quiet remove controls and a shared image viewer.",
     details: "Use the picker and attachment list in a composer or beneath a sent message. Private files use short-lived links. Removal applies to unsent files only, with keyboard and touch access.",
-    foundOn: [{label:"Support conversation",route:"/settings?tab=support"},{label:"Components",route:"/components?component=conversation-attachments"}],
+    foundOn: [{label:"Dexter",route:"/agent-dexter"},{label:"Support conversation",route:"/settings?tab=support"},{label:"Components",route:"/components?component=conversation-attachments"}],
     componentCode: ticketAttachmentsSource,
     usageCode: `<TicketAttachmentPicker onAdd={draft.add} disabled={sending} />
 <TicketAttachmentList items={draft.items} onRemove={draft.remove} disabled={sending} />
@@ -136,14 +186,16 @@ export const galleryComponents = [
     name: "Auto-populated Field",
     category: "Forms",
     description: "An editable field state for values copied or derived from linked records, with quiet provenance and a reversible manual override.",
-    details: "All editable autofill controls share a left-to-right letter stagger, including inputs, comboboxes, codes, contacts and multiline notes. The real value updates immediately while the visual reveal plays without overlapping text. Long values have a bounded duration, and reduced motion shows the value immediately. Accent tint and stroke distinguish derived values without taking space from the text. Screen readers can read the source description; editing a value removes its derived state. Keep inherited, locked fields separate.",
+    details: "All editable autofill controls share a soft directional reveal with a small upward settle, including inputs, comboboxes, codes, contacts and multiline notes. A native text mirror preserves spacing, truncation and line breaks. The actual value updates immediately. New selections replace an in-flight reveal; editing, leaving the tab or enabling reduced motion ends it cleanly. Unchanged values and saved records stay quiet. The reveal takes 640ms regardless of text length, and reduced motion shows the value immediately. Accent tint and stroke distinguish derived values without taking space from the text. Screen readers can read the source description; editing a value removes its derived state. Keep inherited, locked fields separate.",
     foundOn: [
+      { label: "Customs declaration", route: "/customs/standalone/import/new" },
+      { label: "Booking details", route: "/bookings/je0991133" },
       { label: "Quote details", route: "/quotes/jq20015" },
       { label: "New booking", route: "/bookings/new" },
       { label: "Components", route: "/components?component=auto-populated-field" },
     ],
-    componentCode: `export {\n  AutoPopulatedInput,\n  AutoPopulatedTextarea,\n  matchesAutoPopulation,\n} from "@/components/multideck/auto-populated-field"`,
-    usageCode: `<AutoPopulatedInput\n  value={address}\n  onChange={(event) => setAddress(event.target.value)}\n  autoPopulated={address === customer.address}\n  autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."\n/>`,
+    componentCode: `export {\n  AutoPopulatedInput,\n  AutoPopulatedTextarea,\n  useAutoPopulationMorph,\n  matchesAutoPopulation,\n} from "@/components/multideck/auto-populated-field"`,
+    usageCode: `// Start at null; increment the event when selecting a linked record.\n<AutoPopulatedInput\n  value={address}\n  autoPopulationEvent={customerSelectionEvent}\n  onChange={(event) => setAddress(event.target.value)}\n  autoPopulated={address === customer.address}\n  autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."\n/>`,
   },
   {
     id: "tag-entry-field",
@@ -153,6 +205,7 @@ export const galleryComponents = [
     details: "Use for short controlled lists such as transcription vocabulary. Enter, comma and multi-value paste all add terms; duplicates are ignored, limits are announced, and each tag remains keyboard-removable. New tags pop into place with transform-only motion and reduced-motion support.",
     foundOn: [
       { label: "Dexter voice settings", route: "/settings?tab=dexter#voice" },
+      { label: "Account setup", route: "/onboarding?preview=1&step=dictation" },
       { label: "Components", route: "/components?component=tag-entry-field" },
     ],
     componentCode: `export { TagEntryField, normalizeTagTerms } from "@/components/multideck/tag-entry-field"`,
@@ -232,13 +285,15 @@ export const galleryComponents = [
     name: "Quote Detail Controls",
     category: "Forms",
     description: "Compact freight-aware form controls for organisation recommendations, linked locations, derived values, Incoterms, units, recurrence and cargo characteristics. Cargo flags can inherit from individual goods lines without changing manual shipment handling.",
-    details: "Use these controls in quote and booking detail workflows where expected input length should shape the field. Organisation comboboxes keep current, recent and related records above a hairline and retain the full directory below it. Location fields ask for country and port/location, then derive an editable UN/LOCODE from the official directory. Derived values use the shared auto-populated state until the operator overrides them.",
+    details: "Use these controls in quote and booking detail workflows with labels aligned to the left of their controls. Labels wrap without truncation, values keep the remaining width, and validation stays below its control. Expected input length shapes the overall field width. Organisation comboboxes keep current, recent and related records above a hairline and retain the full directory below it. Location fields ask for country and port/location, then derive an editable UN/LOCODE from the official directory. Derived values use the shared auto-populated state until the operator overrides them.",
     foundOn: [
+      { label: "Booking details", route: "/bookings/je0991133" },
       { label: "Quote details", route: "/quotes/jq20013" },
+      { label: "Customs import terms", route: "/customs/standalone/import/new" },
       { label: "Components", route: "/components?component=quote-detail-controls" },
     ],
-    componentCode: `export {\n  CompactCombobox,\n  LocationFields,\n  AutoFilledField,\n  IncotermField,\n  AmountCurrencyField,\n  NumberUnitField,\n  RecurrenceBuilder,\n  CargoCharacteristicsField,\n} from "@/components/multideck/quote-details/quote-detail-fields"`,
-    usageCode: `<CompactCombobox\n  label="Shipper"\n  value={shipperName}\n  recommendedOptions={recentAndRelatedShippers}\n  options={allOrganisations}\n  recommendedLabel="Current, recent & related"\n  allLabel="All organisations"\n  onValueChange={setShipperName}\n/>\n\n<LocationFields label="Origin" value={origin} options={unlocodeDirectory} countries={countries} onChange={setOrigin} />\n<AutoFilledField label="UN/LOCODE" value={origin.unlocode} onChange={setUnlocode} autoPopulated={origin.unlocode === resolvedUnlocode} valueDirection="ltr" />\n<IncotermField value={incoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />\n<AmountCurrencyField label="Goods value" value={goodsValue} currencies={currencies} onChange={setGoodsValue} />`,
+    componentCode: `export {\n  CargoWiseField,\n  CargoWiseGroup,\n  CompactFieldShell,\n  CompactSectionShell,\n  CompactCombobox,\n  LocationFields,\n  AutoFilledField,\n  IncotermField,\n  AmountCurrencyField,\n  NumberUnitField,\n  RecurrenceBuilder,\n  CargoCharacteristicsField,\n} from "@/components/multideck/quote-details/quote-detail-fields"`,
+    usageCode: `<CargoWiseGroup title="Routing" compact>\n  <CargoWiseField label="Origin" value="GBFXT" compact />\n  <CargoWiseField label="Destination" value="NLRTM" compact />\n</CargoWiseGroup>\n\n<CompactCombobox\n  label="Shipper"\n  value={shipperName}\n  recommendedOptions={recentAndRelatedShippers}\n  options={allOrganisations}\n  recommendedLabel="Current, recent & related"\n  allLabel="All organisations"\n  onValueChange={setShipperName}\n/>\n\n<LocationFields label="Origin" value={origin} options={unlocodeDirectory} countries={countries} onChange={setOrigin} />\n<AutoFilledField label="UN/LOCODE" value={origin.unlocode} onChange={setUnlocode} autoPopulated={origin.unlocode === resolvedUnlocode} valueDirection="ltr" />\n<IncotermField value={incoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />\n<AmountCurrencyField label="Goods value" value={goodsValue} currencies={currencies} onChange={setGoodsValue} />`,
   },
   {
     id: "quote-cargo-editor",
@@ -255,10 +310,10 @@ export const galleryComponents = [
     name: "Cargo Handling Editor",
     category: "Forms",
     description: "Per-line handling selections with explicit outstanding details.",
-    details: "Hazardous and temperature requirements use dialogs. Oversized uses cargo measurements; fragile and food-grade use the goods description. TBC permits Quote issue, not Booking operational readiness or completion. New lines start without selections.",
+    details: "Booking handling selections open supported fields and render compact expandable Goods evidence rows. Hazardous and temperature requirements have dedicated details; oversized uses cargo measurements, and fragile and food-grade use the goods description. Source evidence remains distinct from handling requirements. TBC must be resolved before Booking readiness or completion.",
     foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=cargo-handling-editor" }],
     componentCode: cargoHandlingEditorSource,
-    usageCode: `<CargoHandlingEditor value={line.handlingDetailsJson} line={line} editable={!submitted} onChange={handlingDetailsJson => updateLine({ handlingDetailsJson })} />`,
+    usageCode: `<CargoHandlingEditor booking value={line.handlingDetailsJson} line={line} editable={!saving} onChange={handlingDetailsJson => updateLine({ handlingDetailsJson })} onLineChange={(field, value) => updateLine({ [field]: value })} />`,
   },
   {
     id: "cargo-allocation-editor",
@@ -271,11 +326,21 @@ export const galleryComponents = [
     usageCode: `<CargoAllocationEditor\n  cargo={workspace.cargo}\n  equipment={workspace.containers}\n  routes={workspace.routes}\n  allocations={workspace.cargoAllocationState?.allocations}\n  legacyLinks={workspace.cargoAllocationState?.legacyUnquantifiedLinks}\n  editable={canEdit && !saving}\n  validationAttempt={validationAttempt}\n  onChange={updateDraftAllocations}\n/>`,
   },
   {
+    id: "booking-customer-panel",
+    name: "Booking Customer Panel",
+    category: "Data display",
+    description: "Linked customer and saved preferences, with compact contact pills that replace the company identity with contact details and icon actions in the same panel.",
+    details: "Loads the exact customer through the authenticated CRM loader. Customer changes clear previous details. Contact drill-in preserves account context and returns focus to its pill. Supports unassigned, loading, denied and missing-information states; profile links open separately and email/phone actions remain user-operated.",
+    foundOn: [{ label: "Booking Overview", route: "/bookings/je0991133" }, { label: "Components", route: "/components?component=booking-customer-panel" }],
+    componentCode: bookingCustomerPanelSource,
+    usageCode: `<BookingCustomerPanel customerId={workspace.booking.customerId} contactId={customerParty?.contactId} onAssignCustomer={openCustomerSelector} />`,
+  },
+  {
     id: "booking-dangerous-goods",
     name: "Booking Dangerous Goods",
     category: "Forms",
     description: "Record supplied dangerous-goods evidence for one saved cargo line, with explicit unknown flags and retained source history.",
-    details: "Use inside Booking cargo details. Legacy and voided evidence is read-only. This is not a classification or transport approval. Keep the parent draft clean before direct saving and replace it only with the complete returned workspace. Marine pollutant entry is maritime-relevant; existing supplied values remain visible after mode changes.",
+    details: "Compose with CargoHandlingEditor through renderHandling to show source-evidence entry within Hazardous and saved records in expandable Goods evidence rows. Empty evidence has no standalone section. Legacy and voided evidence is read-only. This is not a classification or transport approval. Keep the parent draft clean before direct saving and replace it only with the complete returned workspace. Marine pollutant entry is maritime-relevant; existing supplied values remain visible after mode changes.",
     foundOn: [{ label: "Booking details", route: "/bookings/je0991134" }, { label: "Components", route: "/components?component=booking-dangerous-goods" }],
     componentCode: bookingDangerousGoodsSource,
     usageCode: `<BookingDangerousGoodsEditor\n  bookingId={workspace.booking.jobId}\n  bookingReference={workspace.booking.bookingReference}\n  bookingUpdatedAt={workspace.booking.updatedAt}\n  cargo={selectedCargo}\n  maritime={hasSeaLeg}\n  events={workspace.events}\n  editable={canEdit && !saving}\n  disabledReason={dirty ? "Save or discard Booking changes first." : undefined}\n  onSaved={replaceCleanWorkspace}\n/>`,
@@ -338,9 +403,25 @@ export const galleryComponents = [
     category: "Feedback",
     description: "The single compact semantic pill treatment for workflow statuses and descriptive attributes across Multideck.",
     details: "Every status and attribute pill uses the established filled operator-table palette and footprint, whether it appears in a table, list, header, inspector, or history view. Optional icons may reinforce meaning, but the component never adds a competing dot or outlined treatment.",
-    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Tasks", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn(filledPillClass, toneClass[tone], className)}\n    >\n      {indicator !== false ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
+  },
+  {
+    id: "task-agent-stack",
+    name: "Task agents", category: "AI", description: "Working agents and new results in three quiet rows, or compact outlined name-and-icon pills on smaller screens. Status colours and a route to all delegated tasks remain available.",
+    details: "Use above the support action in the app sidebar. Centre each row vertically, give task subtitles the available line width and align a small coloured status dot with the subtitle. At viewport heights up to 900px or widths up to 1440px, use two compact, transparent pills per row with only the icon and name; thin outlines convey status. The full task remains available on hover and in the conversation. Names and icons belong to saved assignments. Results remain visible until read. Reduced motion removes movement; status remains available in the hover text and accessible name.",
+    foundOn: [{label:"App sidebar",route:"/"},{label:"Tasks",route:"/to-do?view=dexter"},{label:"Agent conversation",route:"/agent-dexter"}],
+    componentCode: taskAgentSource,
+    usageCode: `<TaskAgentStack agents={agents} onOpen={agent => navigate(taskAgentUrl(agent))} onViewAll={() => navigate('/to-do?view=dexter')} />`,
+  },
+  {
+    id: "task-agent-controls",
+    name: "Task agent controls", category: "AI", description: "Clear progress with stop, retry and one-off scheduling controls.",
+    details: "Use beside a delegated task or in its saved conversation. A failed update keeps the task and entered time available. The gallery uses a local preview callback; product callers use the owner-authorised task service.",
+    foundOn: [{label:"Tasks",route:"/to-do?view=dexter"},{label:"Agent conversation",route:"/agent-dexter"}],
+    componentCode: taskAgentSource,
+    usageCode: `<TaskAgentControls agent={agent} />`,
   },
   {
     id: "todo-completion-control",
@@ -348,7 +429,7 @@ export const galleryComponents = [
     category: "Controls",
     description: "A personal-task checkbox with a tactile circle pop and a trimmed SVG tick.",
     details: "Use for completing or reopening To Do tasks. The footprint stays stable through optimistic saves, the tick draws only after direct input, and reduced-motion users receive the final state immediately.",
-    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-completion-control" }],
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-completion-control" }],
     componentCode: `export function TodoCompletionControl({ checked, busy, label, onChange }) {\n  const reduce = useReducedMotion()\n  return (\n    <button aria-label={label} aria-pressed={checked} aria-busy={busy || undefined} onClick={() => onChange(!checked)}>\n      <motion.svg viewBox="0 0 24 24" animate={reduce ? undefined : { scale: checked ? [1, 0.88, 1.08, 1] : 1 }}>\n        <motion.circle cx="12" cy="12" r="9.25" animate={{ fill: checked ? "var(--md-accent)" : "transparent" }} />\n        <motion.path d="M7.8 12.2 10.6 15l5.8-6.2" animate={{ pathLength: checked ? 1 : 0, opacity: checked ? 1 : 0 }} />\n      </motion.svg>\n    </button>\n  )\n}`,
     usageCode: `<TodoCompletionControl\n  checked={task.status === "completed"}\n  busy={saving}\n  label={task.status === "completed" ? "Reopen task" : "Mark task complete"}\n  onChange={(checked) => updateTask({ status: checked ? "completed" : "open" })}\n/>`,
   },
@@ -358,7 +439,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "The table-pill priority language for Low, Medium, High, and Urgent personal tasks.",
     details: "Use only when an operator assigns a priority. Colour and a directional icon work together, so the priority remains understandable without relying on colour alone.",
-    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-pill" }],
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-pill" }],
     componentCode: `export function TodoPriorityPill({ priority }) {\n  const { label, tone, Icon } = priorityPresentation[priority]\n  return <StatusPill kind="status" tone={tone} indicator={<Icon aria-hidden="true" />}>{label}</StatusPill>\n}`,
     usageCode: `{task.priority ? <TodoPriorityPill priority={task.priority} /> : null}`,
   },
@@ -370,7 +451,7 @@ export const galleryComponents = [
     details: "Use inside the Dexter Add to To Do action. The arrow yields to a compact progress ring during the real save, then the tick draws after confirmation. Only progress rotation is linear, and reduced motion switches states instantly.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=todo-action-state-icon" }],
     componentCode: `export function TodoActionStateIcon({ state }) {\n  return (\n    <motion.svg viewBox="0 0 24 24">\n      <motion.g animate={{ opacity: state === "idle" ? 1 : 0 }}><path d="M5 12h13M13 7l5 5-5 5" /></motion.g>\n      <motion.circle animate={{ opacity: state === "loading" ? 1 : 0 }} />\n      <motion.path d="M6.8 12.2 10.4 15.7 17.5 8.3" animate={{ pathLength: state === "success" ? 1 : 0 }} />\n    </motion.svg>\n  )\n}`,
-    usageCode: `<button disabled={state !== "idle"}>\n  <span>Add to To Do list</span>\n  <TodoActionStateIcon state={state} />\n</button>`,
+    usageCode: `<button disabled={state !== "idle"}>\n  <span>Add to Tasks</span>\n  <TodoActionStateIcon state={state} />\n</button>`,
   },
   {
     id: "todo-priority-picker",
@@ -378,7 +459,7 @@ export const galleryComponents = [
     category: "Controls",
     description: "An icon-led priority selector for assigning task urgency without making every task feel urgent.",
     details: "Use for task creation and editing. Each priority has a distinct icon and semantic colour; the menu keeps the standard Multideck surface and short entrance motion, with an explicit No priority state.",
-    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-picker" }],
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-picker" }],
     componentCode: `export function TodoPriorityPicker({ value, onValueChange, ariaLabel }) {\n  return (\n    <Select value={value || "none"} onValueChange={(next) => onValueChange(next === "none" ? "" : next)}>\n      <SelectTrigger aria-label={ariaLabel}><SelectValue /></SelectTrigger>\n      <SelectContent>{priorityOptions.map((option) => <SelectItem value={option.value}><PriorityOption {...option} /></SelectItem>)}</SelectContent>\n    </Select>\n  )\n}`,
     usageCode: `<TodoPriorityPicker value={priority} ariaLabel="Priority" onValueChange={setPriority} />`,
   },
@@ -406,6 +487,7 @@ export const galleryComponents = [
       { label: "Keyboard shortcuts", route: "/settings?tab=shortcuts" },
       { label: "Overview", route: "/" },
       { label: "Components", route: "/components?component=shortcut-keys" },
+      { label: "Account setup", route: "/onboarding" },
     ],
     componentCode: `export function ShortcutKeys({ binding, className, keyClassName, emptyLabel = "Not set" }) {\n  const platform = usePlatformShortcutLabels()\n  const steps = useMemo(() => bindingTokens(binding, platform), [binding, platform])\n\n  if (steps.length === 0) return <span className={className}>{emptyLabel}</span>\n\n  return (\n    <span className={cn("inline-flex flex-wrap items-center gap-1.5", className)}>\n      {steps.map((tokens, stepIndex) => (\n        <span key={stepIndex} className="inline-flex items-center gap-1.5">\n          {stepIndex > 0 ? <span className="text-[11px] text-[var(--md-subtle)]">then</span> : null}\n          <KbdGroup dir="ltr" data-i18n-skip>\n            {tokens.map((token, tokenIndex) => (\n              <span key={\`\${token}-\${tokenIndex}\`} className="inline-flex items-center gap-1">\n                {tokenIndex > 0 ? <span aria-hidden="true">+</span> : null}\n                <Kbd className={keyClassName}>{token}</Kbd>\n              </span>\n            ))}\n          </KbdGroup>\n        </span>\n      ))}\n    </span>\n  )\n}`,
     usageCode: `// From a saved binding\n<ShortcutKeys binding={useShortcutBinding("search.focus")} />\n\n// Or straight from a shortcut id\n<ShortcutHint shortcutId="dexter.summon" />\n\n// Inside a field, so the hint follows whatever the operator rebound it to\n<span className="pointer-events-none absolute inset-y-0 end-2 my-auto flex h-fit items-center">\n  <ShortcutKeys binding={searchShortcut} keyClassName="bg-[var(--md-surface-tint)]" emptyLabel="" />\n</span>`,
@@ -432,6 +514,7 @@ export const galleryComponents = [
     foundOn: [
       { label: "Workspace text fields", route: "/" },
       { label: "Dexter voice settings", route: "/settings?tab=dexter#voice" },
+      { label: "Account setup", route: "/onboarding?preview=1&step=dictation" },
       { label: "Components", route: "/components?component=dictation-status-pill" },
     ],
     componentCode: `export function DictationStatusPill({ phase, level = 0.45, message }) {\n  const shouldReduceMotion = useReducedMotion()\n  const { t } = useLanguage()\n  const urgent = phase === "allowance" || phase === "error"\n  const label = phase === "allowance" ? message || t("Transcription usage limit reached") : phase === "error" ? message || t("Transcription failed") : phase === "transcribing" ? t("Transcribing") : phase === "polishing" ? t("Polishing") : t("Complete")\n\n  return (\n    <motion.div layout="size" data-state={phase} role={urgent ? "alert" : "status"} aria-live={urgent ? "assertive" : "polite"}>\n      <AnimatePresence initial={false} mode="popLayout">\n        <motion.span key={phase}>{label}</motion.span>\n      </AnimatePresence>\n      <span aria-hidden>\n        {shapeIds.map((shapeId, index) => (\n          <motion.span key={shapeId} animate={shapeTarget(index, phase, level, shouldReduceMotion)} />\n        ))}\n      </span>\n    </motion.div>\n  )\n}`,
@@ -613,10 +696,13 @@ export const galleryComponents = [
     name: "Dexter Email Composer",
     category: "Agent Dexter",
     description: "An editable Gmail or Outlook email prepared inside a Dexter conversation, with in-place refinement and an explicit provider-backed Create draft or Send email action.",
-    details: "Use only for structured email actions returned by Dexter's prepare_email_draft tool. Operators can refine the whole email from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Provider draft creation and sending reuse Inbox permissions and idempotency, preserve the editable copy after failures, and show completion only after Gmail or Outlook confirms the action.",
+    details: "Use for structured Dexter email actions or direct operator composition via ContactEmailAction. Operators can refine the whole email from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Provider draft creation and sending reuse Inbox permissions and idempotency, preserve the editable copy after failures, and show completion only after Gmail or Outlook confirms the action.",
     foundOn: [
       { label: "Agent Dexter", route: "/agent-dexter" },
       { label: "Components", route: "/components?component=dexter-email-compose-card" },
+      { label: "Companies", route: "/crm/accounts" },
+      { label: "Leads", route: "/crm/leads" },
+      { label: "Contacts", route: "/crm/contacts" },
     ],
     componentCode: `export function DexterEmailComposeCard({ messageId, draft, onDraftChange }) {
   const [status, setStatus] = useState(draft.delivery.status)
@@ -682,6 +768,7 @@ export const galleryComponents = [
       { label: "CRM deals", route: "/crm/deals" },
       { label: "Inbox", route: "/inbox" },
       { label: "Components", route: "/components?component=dexter-action-pill" },
+      { label: "Account setup", route: "/onboarding" },
     ],
     componentCode: `export function DexterActionPill({ label = "Ask Dexter", icon: Icon = AiBrain, iconOnly = false, onClick }) {\n  return (\n    <Button\n      type="button"\n      variant="ghost"\n      aria-label={label}\n      data-icon-only={iconOnly || undefined}\n      className="md-dexter-pill relative h-10 min-w-[132px] overflow-hidden rounded-[var(--md-radius-lg)] px-3.5 text-[13px] font-medium text-white"\n      onClick={onClick}\n    >\n      <span className="md-dexter-pill__shader" aria-hidden>\n        <SpectralBloomShader />\n      </span>\n      <span className="md-dexter-pill__contrast" aria-hidden />\n      <Icon className="relative z-10 size-3.5" strokeWidth={1.25} />\n      {iconOnly ? null : <SlotLabel label={label} />}\n    </Button>\n  )\n}`,
     usageCode: `const [dexterOpen, setDexterOpen] = useState(false)\n\n<div className="flex flex-wrap items-center gap-2">\n  <SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n  <DexterActionPill onClick={() => setDexterOpen(true)} />\n  <PageSettingsMenu\n    viewOptions={customerViewOptions}\n    value={viewMode}\n    onViewChange={setViewMode}\n    actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n  />\n</div>\n\n<DexterActionPill\n  icon={ArrowUp}\n  iconOnly\n  label="Send prompt"\n  onClick={sendPrompt}\n/>\n\n<DexterCompanionSidebar open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Customers" />`,
@@ -1064,7 +1151,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Operations",
     description: "A full-page PDF reader that places white document sheets directly over the blurred application, with multipage scrolling, owned zoom controls, and an explicit download lifecycle.",
     details: "Use for private generated documents that operators need to inspect without losing their place. The first sheet fits completely inside the viewport, a restrained glass rail keeps zoom and download actions available, and Download moves through Downloading and Done while focus, Escape and reduced-motion behaviour remain intact.",
-    foundOn: [{ label: "Support conversation", route: "/settings?tab=support" }, { label: "Standalone export", route: "/customs/standalone/export" }, { label: "Standalone import", route: "/customs/standalone/import" }, { label: "Components", route: "/components?component=pdf-document-viewer-dialog" }],
+    foundOn: [{ label: "Dexter email attachments", route: "/agent-dexter" }, { label: "Support conversation", route: "/settings?tab=support" }, { label: "Standalone export", route: "/customs/standalone/export" }, { label: "Standalone import", route: "/customs/standalone/import" }, { label: "Components", route: "/components?component=pdf-document-viewer-dialog" }],
     componentCode: `export function PdfDocumentViewerDialog({ open, onOpenChange, blob, title, fileName, onDownload }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1637,6 +1724,28 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
 />`,
   },
   {
+    id: "mail-recipient-field",
+    name: "Mail Recipient Field",
+    category: "Operations",
+    description: "Compact outlined recipient pills shared by Inbox and Dexter, with optional @ people search.",
+    details: "Use for To, Cc or Bcc rows. Enter, Tab, comma, paste or blur commits an address; invalid fragments remain editable. Backspace or the remove control removes a pill. Dexter uses the existing tenant-scoped people lookup, with keyboard suggestions and a direct-email fallback if lookup fails. Inbox's server-resolved reply recipients remain locked. Pass onInputChange when the parent must validate uncommitted text before saving or sending.",
+    foundOn: [
+      { label: "Inbox", route: "/inbox" },
+      { label: "Agent Dexter", route: "/agent-dexter" },
+      { label: "Components", route: "/components?component=mail-recipient-field" },
+    ],
+    componentCode: mailRecipientFieldSource,
+    usageCode: `<MailRecipientField
+  inputId="email-to"
+  label="To"
+  addresses={recipients}
+  onChange={setRecipients}
+  onInputChange={setUncommittedRecipient}
+  search={searchMeetingPeople}
+  disabled={sending}
+/>`,
+  },
+  {
     id: "toggle-group",
     name: "Toggle Group",
     category: "Navigation",
@@ -1692,7 +1801,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "The canonical Multideck table with persisted layout, right-click row selection, field-aware CSV export, and a responsive Controls panel with full-width search and touch-friendly actions.",
     details: "Opt in to register-wide export with exportConfig.register and an explicit authorised, fully paginated loader. The icon beside column settings opens the shared Table Export dialog. Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Use pagination with onLimitChange for server-paged registers, or clientPagination only when rows contains the complete local dataset. Sorting runs before local slicing; selecting all applies to the visible page. Do not enable local paging for server pages, cursor-based lists or line editors. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
-    foundOn: [{ label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Quotes", route: "/quotes" }, { label: "Quote carrier options", route: "/quotes/jq20013" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact card detail", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4" }, { label: "Bookings", route: "/bookings" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Rates & contracts", route: "/rates" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Quotes", route: "/quotes" }, { label: "Quote carrier options", route: "/quotes/jq20013" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact card detail", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4" }, { label: "Bookings", route: "/bookings" }, { label: "Import terms", route: "/customs/standalone/import/new" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Rates & contracts", route: "/rates" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: dataTableSource,
     usageCode: "// Server register: use the same limit and offset in the data request.\nconst [offset, setOffset] = useState(0)\nconst [limit, setLimit] = useState(30)\n<DataTable columns={columns} rows={result.rows} getRowKey={(row) => row.id}\n  pagination={{ offset, limit, total: result.total, loading, error: Boolean(error), onOffsetChange: setOffset, onLimitChange: setLimit }} />\n\n// Complete in-memory dataset: the table sorts, then slices the rows.\n<DataTable clientPagination columns={columns} rows={records} getRowKey={(row) => row.id} />",
   },
@@ -1808,7 +1917,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Finance Document Line Editor",
     category: "Operations",
     description: "A freight invoice and credit-note charge grid with exact job allocation, accounting-item mapping, controlled tax, automatic totals and fast row commands.",
-    details: "Use inside manual sales and purchase document workflows. The operator-facing fields stay focused on charge code, description, quantity, rate, tax and line amount; provider item, nominal-account and tax-template mappings are applied at posting. Job documents can link each row to the exact costing charge so actuals reclassify that line's WIP or accrual without moving gross profit.",
+    details: "Use inside manual sales and purchase document workflows. The operator-facing fields stay focused on charge code, description, quantity, rate, tax and line amount; provider item, nominal-account and tax-template mappings are applied at posting. Use the document appearance for the flatter invoice canvas and hide quantity when a sales charge is always recorded as one line. Job documents can link each row to the exact costing charge so actuals reclassify that line's WIP or accrual without moving gross profit.",
     foundOn: [{ label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Components", route: "/components?component=finance-document-line-editor" }],
     componentCode: `export function FinanceDocumentLineEditor({ lines, onLinesChange, taxOptions, sourceKind, currencyCode, credit, disabled, onClear, onImport, onExport, onPrint }) {
   const [selectedLineId, setSelectedLineId] = useState(lines[0]?.id ?? "")
@@ -1836,6 +1945,8 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   taxOptions={approvedTaxTreatments}
   sourceKind={draft.sourceKind}
   currencyCode={draft.currencyCode}
+  appearance="document"
+  showQuantity={false}
   credit={draft.type === "credit_note" || draft.type === "debit_note"}
   onImport={importExcelLines}
   onExport={exportExcelLines}
@@ -1910,7 +2021,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Tabs",
     category: "Navigation",
     description: "A reusable horizontal tab rail for switching sections inside one record or workflow.",
-    details: "Use when the user should stay in context while moving between record sections. Booking Details uses the shared keyboard-accessible Tabs primitive for Control, Parties, Route & schedule, and Cargo & equipment.",
+    details: "Use when the user should stay in context while moving between record sections. Quotes and bookings use the shared keyboard-accessible tab rail for their main workspace sections. Booking Details is one continuous form, with job data, parties, routing, cargo and terms.",
     foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Account detail", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Booking detail", route: "/bookings/je0991133" }, { label: "Warehouse", route: "/warehouse" }, { label: "Finance administration", route: "/admin/finance" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function TabsRail({ tabs, activeTab, onChange }) {\n  return (\n    <div className="flex gap-6 overflow-x-auto border-b border-[rgba(11,20,19,0.08)]">\n      {tabs.map((tab) => (\n        <button key={tab.label} onClick={() => onChange(tab.label)}>\n          {tab.label}\n          {tab.value ? <span>{tab.value}</span> : null}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<TabsRail\n  tabs={tabs}\n  activeTab={activeTab}\n  onChange={setActiveTab}\n/>`,
@@ -2150,10 +2261,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Customs Readiness Review",
     category: "Operations",
     description: "A progress-led readiness review that shows exactly what blocks a declaration and opens the relevant correction inline.",
-    details: "Use before a Customs handoff or submission. Keep each issue actionable, save through the owning workflow, then recalculate readiness from the server.",
+    details: "Use before a Customs handoff or submission. Keep each issue actionable, save through the owning workflow, then recalculate readiness from the server. Booking uses compactHeader to show the heading and percentage once.",
     foundOn: [{ label: "Finance administration", route: "/finance/administration" }, { label: "Booking Customs review", route: "/bookings" }, { label: "Customs declaration Review", route: "/customs/standalone" }, { label: "Components", route: "/components?component=customs-readiness-review" }],
     componentCode: `export function CustomsReadinessReview({ percent, completeChecks, totalChecks, issues, renderFix }) {\n  return (\n    <Surface>\n      <h2>{percent}% complete</h2>\n      <p>{completeChecks}/{totalChecks} readiness checks passed</p>\n      {issues.map((issue) => (\n        <div key={issue.key}>\n          <span>{issue.label}</span>\n          <button>Fix</button>\n          {renderFix(issue)}\n        </div>\n      ))}\n    </Surface>\n  )\n}`,
-    usageCode: `<CustomsReadinessReview\n  percent={readiness.percent}\n  completeChecks={readiness.completeChecks}\n  totalChecks={readiness.totalChecks}\n  issues={readiness.missing}\n  renderFix={(issue, close) => <InlineCorrection issue={issue} onSaved={close} />}\n/>`,
+    usageCode: `<CustomsReadinessReview\n  compactHeader\n  percent={readiness.percent}\n  completeChecks={readiness.completeChecks}\n  totalChecks={readiness.totalChecks}\n  issues={readiness.missing}\n  renderFix={(issue, close) => <InlineCorrection issue={issue} onSaved={close} />}\n/>`,
   },
   {
     id: "booking-ask-panel",
@@ -2182,6 +2293,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
       { label: "CRM contacts", route: "/crm/contacts" },
       { label: "CRM deals", route: "/crm/deals" },
       { label: "Components", route: "/components?component=dexter-mention-input" },
+      { label: "Account setup", route: "/onboarding" },
     ],
     componentCode: `export function DexterMentionInput({ value, items, selectedMentions, onChange, onMentionsChange, onSend }) {\n  return (\n    <div className="relative">\n      <AnimatePresence initial={false}>\n        {mentionQuery !== null ? (\n          <motion.div role="listbox" className="md-dexter-mention-menu">\n            {results.map((item) => (\n              <button key={item.id} role="option" onMouseDown={(event) => event.preventDefault()} onClick={() => selectMention(item)}>\n                <item.icon />\n                <span>{item.title}</span>\n                <span>{item.type}</span>\n              </button>\n            ))}\n          </motion.div>\n        ) : null}\n      </AnimatePresence>\n      <div\n        contentEditable\n        role="combobox"\n        aria-autocomplete="list"\n        aria-expanded={mentionQuery !== null}\n        data-placeholder="Ask anything, @ a record, or / for a command"\n        className="md-dexter-mention-editor"\n        onInput={handleInput}\n        onKeyDown={handleKeyDown}\n      />\n    </div>\n  )\n}`,
     usageCode: `<DexterMentionInput\n  value={prompt}\n  items={mentionItems}\n  selectedMentions={mentions}\n  placeholder="Ask anything, @ a record, or / for a command"\n  minHeight={76}\n  maxHeight={232}\n  canSend={Boolean(prompt.trim())}\n  onChange={setPrompt}\n  onMentionsChange={setMentions}\n  onSend={sendPrompt}\n/>`,
@@ -2204,11 +2316,11 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "dexter-prompt-composer",
     name: "Dexter Prompt Composer",
     category: "Agent Dexter",
-    description: "The central command box for Agent Dexter: @ mentions, attached context, slash commands, model and role choices, live context usage, plus explicit approval or full-access control.",
-    details: "Use on the Agent Dexter landing and conversation footer. The + button opens the computer file chooser, @ references workspace or email context, and / switches between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
+    description: "The central command box for Agent Dexter: voice input, @ mentions, attached context, slash commands, model and role choices, and live context usage.",
+    details: "Use on Home, the Agent Dexter landing and the conversation footer. The microphone uses the existing Gemini transcription service and saved microphone preference. Recording preserves the composer size, shape and shader: the microphone becomes Stop in place, with a compact live waveform flowing right to left along the controls row. Stopping inserts the transcript without sending the prompt. Draft text and attachments are retained. Escape cancels a recording. For an active steerable run, canUpdateRequest changes Send to Update request; updatePending prevents duplicates and updateStatus announces progress without clearing unsent text. The + button uploads files, @ references records, and / switches between Chat and Watch.",
+    foundOn: [{ label: "Home", route: "/" }, { label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
     componentCode: `export function DexterPromptComposer({ value, selectedSpecialistId, selectedModelId, accessMode, contextUsedTokens, contextMaxTokens, attachments, onChange, onOpenAttachments, onSelectSpecialist, onSelectModel, onAccessModeChange, onSend }) {\n  return (\n    <div className="md-composer md-composer-bloom relative overflow-hidden rounded-[26px]">\n      <span aria-hidden className="md-composer-bloom__shader">\n        <SpectralBloomShader shape="composer" />\n      </span>\n      <span aria-hidden className="md-composer-bloom__contrast" />\n      <div className="relative z-[2] flex h-[44px] items-center px-3">\n        <DexterRoleMenu selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />\n      </div>\n      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)]">\n        {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n        <textarea\n          value={value}\n          rows={1}\n          onChange={(event) => onChange(event.target.value)}\n          onKeyDown={(event) => {\n            if (event.key === "Enter" && !event.shiftKey) {\n              event.preventDefault()\n              if (value.trim()) onSend()\n            }\n          }}\n        />\n        <button onClick={onOpenAttachments}>Attach</button>\n        <DexterModelMenu selectedId={selectedModelId} onSelect={onSelectModel} />\n        <Context\n          usedTokens={contextUsedTokens}\n          maxTokens={contextMaxTokens}\n          label={t("Conversation context")}\n          description={t("How much of this chat Dexter can keep in mind.")}\n        >\n          <ContextTrigger />\n          <ContextContent><ContextContentHeader /></ContextContent>\n        </Context>\n        <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />\n        <DexterActionPill icon={ArrowUp} iconOnly disabled={!value.trim()} onClick={onSend} />\n      </div>\n    </div>\n  )\n}`,
-    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => computerFileInputRef.current?.click()}\n  attachmentActionLabel="Upload files"\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  onSend={startConversation}\n/>`,
+    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => computerFileInputRef.current?.click()}\n  attachmentActionLabel="Upload files"\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  isSending={isSending}\n  canUpdateRequest={Boolean(activeRunId)}\n  updatePending={isCorrectionPending}\n  updateStatus={correctionStatus}\n  onSend={activeRunId ? updateRequest : startConversation}\n/>`,
   },
   {
     id: "watch-mode-aurora",
@@ -2238,10 +2350,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Live Reasoning",
     category: "Agent Dexter",
     description: "A compact disclosure for Dexter's in-progress reasoning summary, with the text continuing to stream when the operator opens it.",
-    details: "Use while Dexter is producing a reply. Keep the same disclosure mounted as the answer begins, then transition it in place to the completed reasoning summary so the conversation does not jump or flicker.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-live-reasoning" }],
+    details: "Use while Dexter is producing a reply. The operator can open and close the live summary without it reopening itself. Keep the same disclosure mounted: when the first answer text arrives, collapse an expanded trail before releasing the answer, and relabel the trigger Reasoning summary. A controlled Reasoning owns its own open/close lifecycle.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Account setup", route: "/onboarding?preview=1&step=dexter" }, { label: "Components", route: "/components?component=dexter-live-reasoning" }],
     componentCode: `<Reasoning defaultOpen={false} isStreaming>\n  <ReasoningTrigger getThinkingMessage={() => <span>Reasoning</span>} />\n  <ReasoningContent>{streamedReasoning}</ReasoningContent>\n</Reasoning>`,
-    usageCode: `<Reasoning defaultOpen={false} isStreaming={isResponding} className="mb-0 max-w-[680px] py-1">\n  <ReasoningTrigger getThinkingMessage={() => <span>{t("Reasoning")}</span>} />\n  <ReasoningContent>{reasoningContent}</ReasoningContent>\n</Reasoning>`,
+    usageCode: `<Reasoning open={reasoningOpen} onOpenChange={setReasoningOpen} isStreaming={isThinking} className="mb-0 max-w-[680px] py-1">\n  <ReasoningTrigger getThinkingMessage={() => <span>{t(isThinking ? "Reasoning" : "Reasoning summary")}</span>} />\n  <ReasoningContent>{reasoningContent}</ReasoningContent>\n</Reasoning>`,
   },
   {
     id: "dexter-reasoning-summary",
@@ -2249,16 +2361,26 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Agent Dexter",
     description: "The completed state of Dexter's persistent reasoning disclosure, letting the operator revisit the supported summary attached to an answer.",
     details: "Keep the same disclosure used during streaming and change its label in place after completion. Render only provider-supported summary content, keep it closed by default, and do not add a card background.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-reasoning-summary" }],
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Account setup", route: "/onboarding?preview=1&step=dexter" }, { label: "Components", route: "/components?component=dexter-reasoning-summary" }],
     componentCode: `<Reasoning defaultOpen={false} isStreaming={false}>\n  <ReasoningTrigger getThinkingMessage={() => <span>Reasoning summary</span>} />\n  <ReasoningContent>{reasoningSummary}</ReasoningContent>\n</Reasoning>`,
-    usageCode: `<DexterReasoningDisclosure\n  content={message.reasoningSummary ?? ""}\n  isStreaming={message.id === streamingMessageId}\n/>`,
+    usageCode: `<Reasoning open={summaryOpen} onOpenChange={setSummaryOpen} isStreaming={false}>\n  <ReasoningTrigger getThinkingMessage={() => <span>Reasoning summary</span>} />\n  <ReasoningContent>{message.reasoningSummary ?? ""}</ReasoningContent>\n</Reasoning>`,
+  },
+  {
+    id: "dexter-record-table",
+    name: "Dexter Record Table",
+    category: "Agent Dexter",
+    description: "A native Multideck table for verified records returned by Dexter, with sorting and links to the real records.",
+    details: "Use for leads, deals, companies, jobs and quotes. Values come from authorised query results. Choose fields relevant to the question. Keep explicitly requested empty fields visible, omit wholly empty optional columns, and show the saved snapshot count. Date-time fields include the time and zone. Accompany the table with a short explanation instead of repeating its rows as prose. In a live Dexter answer, finish the text first, then reveal the visible table from heavy blur to clear over one second; saved conversations and reduced motion do not replay that entrance. Preserve the operator's conversation scroll position when a table arrives, and offer Jump to latest message instead of automatically scrolling through its rows.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-record-table" }],
+    componentCode: `<DexterRecordTable table={recordTable} />`,
+    usageCode: `{message.recordTables?.map(table => <DexterRecordTable key={table.id} table={table} />)}`,
   },
   {
     id: "dexter-action-approval",
     name: "Dexter Action Approval",
     category: "Agent Dexter",
     description: "The explicit review checkpoint for a workspace change, with animated field-level before and after comparisons plus clear Approve and Deny actions.",
-    details: "Use only for a prepared allowlisted write. Show changed values as red previous and green proposed panels, identify additions and removals, keep the proposal visible while either decision is processing, and retain it with an inline error when the server cannot confirm the result.",
+    details: "Use only for a prepared allowlisted write. Identify the record with its authorised source link, show deadlines with an explicit time zone, and keep each action independently reviewable. Completed and denied actions retain their final state. Show changed values as red previous and green proposed panels, identify additions and removals, keep the proposal visible while either decision is processing, and retain it with an inline error when the server cannot confirm the result.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-action-approval" }],
     componentCode: `<DexterActionApproval\n  action={pendingAction}\n  pendingDecision={pendingDecision}\n  error={decisionError}\n  onDecision={handleActionDecision}\n/>`,
     usageCode: `{message.pendingAction ? (\n  <DexterActionApproval\n    action={message.pendingAction}\n    pendingDecision={pendingActionDecision}\n    error={actionDecisionError}\n    onDecision={(decision) => handleActionDecision(message.pendingAction, decision)}\n  />\n) : null}`,
@@ -2579,7 +2701,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Phone Call Suggested Actions",
     category: "CRM",
     description: "Editable, reviewable actions inferred from a call before any task or CRM record changes.",
-    details: "Use for specific next steps such as adding a revised quote request to the To Do list or linking a call to a reviewed lead candidate. The operator can edit, approve, or dismiss each suggestion; arbitrary lead IDs are never accepted and generation is never treated as approval.",
+    details: "Use for specific next steps such as adding a revised quote request to the Tasks or linking a call to a reviewed lead candidate. The operator can edit, approve, or dismiss each suggestion; arbitrary lead IDs are never accepted and generation is never treated as approval.",
     foundOn: [{ label: "Phone call detail", route: "/crm/phone-calls/preview" }, { label: "Components", route: "/components?component=phone-call-suggested-actions" }],
     componentCode: `export function PhoneCallSuggestedActions({ actions, leadCandidates, onReview }) {
   const safeLeads = leadCandidates.filter((candidate) => candidate.recordType === "lead")
@@ -3601,7 +3723,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Controls",
     description: "One calm row for when a meeting happens: branded date popover, typed or picked start and finish times, quick duration chips and the timezone.",
     details: "Use wherever an operator sets a meeting or appointment window. Enable showLabels for the composer's responsive Date, Starts and Finishes fields. Times are stored as ISO instants; the timezone only changes how they read. Start and finish accept typed values such as 9, 930, 9:30 or 2pm, and the finish list shows the resulting length.",
-    foundOn: [{ label: "Calendar · New meeting", route: "/calendar" }, { label: "Calendar · Reschedule from details", route: "/calendar" }, { label: "CRM leads · Schedule meeting", route: "/crm/leads" }, { label: "Settings · Availability (time fields)", route: "/settings?tab=availability" }, { label: "Components", route: "/components?component=meeting-time-picker" }],
+    foundOn: [{ label: "Calendar · New meeting", route: "/calendar" }, { label: "Calendar · Reschedule from details", route: "/calendar" }, { label: "CRM leads · Schedule meeting", route: "/crm/leads" }, { label: "Settings · Availability (time fields)", route: "/settings?tab=availability" }, { label: "Account setup", route: "/onboarding" }, { label: "Components", route: "/components?component=meeting-time-picker" }],
     componentCode: `export function MeetingTimePicker({ startAt, endAt, timeZone, onChange, onTimeZoneChange }) {
   const start = zonedParts(startAt, timeZone)
   const end = zonedParts(endAt, timeZone)
@@ -3720,7 +3842,7 @@ export function MeetingAttendeeList({ participants }) {
     category: "Controls",
     description: "The week as seven quiet rows: a switch per day, then start and finish in the same on-brand time fields as the meeting composer.",
     details: "Use wherever an operator sets recurring hours: personal Availability settings and a booking link's override. Days that are off read Unavailable rather than showing disabled inputs, and once Monday differs from the other weekdays a Use Mon–Fri shortcut copies it across. One range per day.",
-    foundOn: [{ label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Booking links · Edit link", route: "/calendar/booking-links" }, { label: "Components", route: "/components?component=working-hours-editor" }],
+    foundOn: [{ label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Booking links · Edit link", route: "/calendar/booking-links" }, { label: "Account setup", route: "/onboarding" }, { label: "Components", route: "/components?component=working-hours-editor" }],
     componentCode: `export function WorkingHoursEditor({ value, onChange, disabled }) {
   return weekdayKeys.map((day) => {
     const range = value[day]?.[0] ?? null

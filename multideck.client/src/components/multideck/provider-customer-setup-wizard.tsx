@@ -26,6 +26,8 @@ type ProviderCustomerSetupWizardProps = {
   currencyOptions: string[]
   onClose: () => void
   onReady: (mapping: FinanceDraftOptions["partyMappings"][number]) => void
+  recoveryMessage?: string | null
+  onChangeBillingParty?: () => void
 }
 
 function Label({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
@@ -58,7 +60,7 @@ function customerCreationError(cause: unknown, isErpNext: boolean, fallback: str
   return message || fallback
 }
 
-export function ProviderCustomerSetupWizard({ open, connection, organisation, currencyOptions, onClose, onReady }: ProviderCustomerSetupWizardProps) {
+export function ProviderCustomerSetupWizard({ open, connection, organisation, currencyOptions, onClose, onReady, recoveryMessage, onChangeBillingParty }: ProviderCustomerSetupWizardProps) {
   const { t } = useLanguage()
   const [context, setContext] = useState<ProviderCustomerContext | null>(null)
   const [loading, setLoading] = useState(false)
@@ -157,8 +159,8 @@ export function ProviderCustomerSetupWizard({ open, connection, organisation, cu
     <Dialog open={open} onOpenChange={(next) => { if (!next && !submitting) onClose() }}>
       <DialogContent className="max-h-[94vh] overflow-y-auto sm:max-w-[760px]">
         <DialogHeader>
-          <DialogTitle>{t(`Set up customer in ${context?.provider.name ?? (connection?.ACCIC_ProviderCode === "sage_50" ? "Sage 50 Desktop" : "ERPNext")}`)}</DialogTitle>
-          <DialogDescription>{t("Review the Multideck customer, choose the accounting-specific defaults, then create or link one exact accounts system record.")}</DialogDescription>
+          <DialogTitle>{t(recoveryMessage ? "Fix accounts system mirror" : `Set up customer in ${context?.provider.name ?? (connection?.ACCIC_ProviderCode === "sage_50" ? "Sage 50 Desktop" : "ERPNext")}`)}</DialogTitle>
+          <DialogDescription>{t(recoveryMessage ? "Match the Multideck billing party to the correct Accounts System AR account, or create it when it does not yet exist." : "Review the Multideck customer, choose the accounting-specific defaults, then create or link one exact accounts system record.")}</DialogDescription>
         </DialogHeader>
 
         {loading ? <div className="grid min-h-72 place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div> : error && !context ? <div role="alert" className="my-5 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red),transparent_90%)] p-4 text-[13px] leading-5 text-[var(--md-red)]">{t(error)}</div> : context ? (
@@ -169,15 +171,25 @@ export function ProviderCustomerSetupWizard({ open, connection, organisation, cu
 
             {stage === "match" && context.erpNext ? (
               <div className="space-y-4">
-                <AddressSummary context={context} />
-                <div className="space-y-2">
-                  <Label htmlFor="provider-existing-customer">{t("Existing ERPNext customer")}</Label>
-                  <Select value={existingCustomerId} onValueChange={setExistingCustomerId}><SelectTrigger id="provider-existing-customer"><SelectValue placeholder={t("Choose an existing customer")} /></SelectTrigger><SelectContent>{context.erpNext.customers.map((customer) => <SelectItem key={customer.name} value={customer.name}>{customer.customer_name || customer.name}{customer.name !== customer.customer_name ? ` · ${customer.name}` : ""}</SelectItem>)}</SelectContent></Select>
-                  <p className="text-[12px] leading-5 text-[var(--md-subtle)]">{t("Link only when this is the same legal customer. Otherwise create a new ERPNext customer.")}</p>
+                {recoveryMessage ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red),transparent_92%)] p-3 text-[12px] leading-5 text-[var(--md-red)]">{recoveryMessage}</div> : null}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <section aria-labelledby="multideck-bill-to-heading" className="space-y-2">
+                    <h3 id="multideck-bill-to-heading" className="text-[12px] font-medium text-[var(--md-ink)]">{t("Multideck · Bill to")}</h3>
+                    <AddressSummary context={context} />
+                    {onChangeBillingParty ? <Button type="button" variant="outline" className="w-full" onClick={onChangeBillingParty}>{t("Change billing party")}</Button> : null}
+                  </section>
+                  <section aria-labelledby="accounts-system-ar-heading" className="space-y-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
+                    <h3 id="accounts-system-ar-heading" className="text-[12px] font-medium text-[var(--md-ink)]">{t("Accounts System · AR account")}</h3>
+                    <div className="space-y-2">
+                      <Label htmlFor="provider-existing-customer">{t("Customer account")}</Label>
+                      <Select value={existingCustomerId} onValueChange={setExistingCustomerId}><SelectTrigger id="provider-existing-customer"><SelectValue placeholder={t("Choose an AR account")} /></SelectTrigger><SelectContent>{context.erpNext.customers.map((customer) => <SelectItem key={customer.name} value={customer.name}>{customer.customer_name || customer.name}{customer.name !== customer.customer_name ? ` · ${customer.name}` : ""}</SelectItem>)}</SelectContent></Select>
+                    </div>
+                    <p className="text-[12px] leading-5 text-[var(--md-subtle)]">{t("Link only when both sides represent the same customer account.")}</p>
+                    {selectedExisting ? <Button type="button" className="w-full" onClick={() => void linkExisting()} disabled={submitting}><Link2 className="size-4" />{t("Link AR account")}</Button> : null}
+                    <div className="flex items-center gap-3"><span className="h-px flex-1 bg-[var(--md-line)]" /><span className="text-[11px] uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("or")}</span><span className="h-px flex-1 bg-[var(--md-line)]" /></div>
+                    <Button type="button" variant="outline" className="w-full" onClick={() => setStage("details")}><Building2 className="size-4" />{t("Create new account")}</Button>
+                  </section>
                 </div>
-                {selectedExisting ? <div className="flex items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 py-3 text-[12px]"><div><p className="font-medium text-[var(--md-ink)]">{selectedExisting.customer_name || selectedExisting.name}</p><p className="mt-0.5 text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{selectedExisting.name}</p></div><Button type="button" variant="outline" onClick={() => void linkExisting()} disabled={submitting}><Link2 className="size-4" />{t("Link customer")}</Button></div> : null}
-                <div className="flex items-center gap-3"><span className="h-px flex-1 bg-[var(--md-line)]" /><span className="text-[11px] uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("or")}</span><span className="h-px flex-1 bg-[var(--md-line)]" /></div>
-                <Button type="button" className="w-full" onClick={() => setStage("details")}><Building2 className="size-4" />{t("Create new ERPNext customer")}</Button>
               </div>
             ) : null}
 
