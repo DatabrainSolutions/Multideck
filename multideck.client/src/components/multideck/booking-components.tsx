@@ -55,6 +55,7 @@ import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger, PopoverClose } from "@/components/ui/popover"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Progress } from "@/components/ui/progress"
@@ -103,6 +104,7 @@ import { getQuoteSources, type QuoteOrganisationOption, type QuoteWorkflowSource
 import { loadUnlocodeDirectory, unlocodeKind, type UnlocodeDirectoryRecord } from "@/lib/unlocode-directory"
 import {
   applyBookingQuoteSync,
+  changeProvisionalBooking,
   getBookingCustomsReadiness,
   getBookingQuoteSyncReview,
   getBookingWorkflow,
@@ -4681,6 +4683,15 @@ export function BookingDetailWorkspace({
   const pendingNavigationRef = useRef<(() => void) | null>(null)
   const [pendingNavigation, setPendingNavigation] = useState(false)
   const [pendingLifecycle, setPendingLifecycle] = useState<BookingLifecycle | null>(null)
+  const [provisionalAction, setProvisionalAction] = useState<"cancel" | "reopen" | null>(null)
+  const [provisionalReason, setProvisionalReason] = useState("")
+  const [provisionalDecision, setProvisionalDecision] = useState<"keep" | "discard" | "">("")
+  const [provisionalError, setProvisionalError] = useState<string | null>(null)
+  const [provisionalBusy, setProvisionalBusy] = useState(false)
+  const [provisionalSaved, setProvisionalSaved] = useState(false)
+  const provisionalRequestRef = useRef(false)
+  const provisionalTriggerRef = useRef<HTMLButtonElement>(null)
+  const provisionalDismissRef = useRef<HTMLButtonElement>(null)
   const [latestSavedReview, setLatestSavedReview] = useState<BookingWorkflowWorkspace | null>(null)
   const [loadingLatest, setLoadingLatest] = useState(false)
   const latestDraftRef = useRef({ draftBooking, draftWorkspace, record })
@@ -4688,7 +4699,8 @@ export function BookingDetailWorkspace({
   const detailsDirty = Boolean(record && ((draftBooking && JSON.stringify(draftBooking) !== JSON.stringify(record.booking)) || (draftWorkspace && JSON.stringify(draftWorkspace) !== JSON.stringify(record.workspace))))
   const navigationDirtyRef = useRef(detailsDirty || savingDetails)
   navigationDirtyRef.current = detailsDirty || savingDetails
-  const canEditBooking = hasPermission(currentUser, "Bookings.Write")
+  const canEditBooking = hasPermission(currentUser, "Bookings.Write") && !record?.workspace?.provisionalCancellation?.cancelled && !provisionalBusy && !provisionalSaved
+  navigationDirtyRef.current = detailsDirty || savingDetails || provisionalBusy || provisionalSaved
   const draftFingerprint = JSON.stringify([draftBooking, draftWorkspace])
 
   useEffect(() => {
@@ -4698,12 +4710,12 @@ export function BookingDetailWorkspace({
   }, [loadState, record, detailsDirty, draftFingerprint, savingDetails, applyingQuoteSync, canEditBooking, pendingNavigation])
 
   useEffect(() => {
-    if (detailsDirty || savingDetails || !pendingNavigationRef.current) return
+    if (detailsDirty || savingDetails || provisionalBusy || provisionalSaved || !pendingNavigationRef.current) return
     const proceed = pendingNavigationRef.current
     pendingNavigationRef.current = null
     setPendingNavigation(false)
     proceed()
-  }, [detailsDirty, savingDetails])
+  }, [detailsDirty, savingDetails, provisionalBusy, provisionalSaved])
 
   useEffect(() => {
     function beforeNavigate(event: Event) {
@@ -5197,6 +5209,9 @@ export function BookingDetailWorkspace({
   }
 
   async function applySavedWorkspace(workspace: BookingWorkflowWorkspace) {
+    if (loadedRecord.workspace?.provisionalCancellation?.supported && !workspace.provisionalCancellation) {
+      workspace = await getBookingWorkflow(workspace.booking.bookingReference)
+    }
     const nextRecord = bookingWorkspaceRecord(workspace)
     setRecord(nextRecord)
     setDraftBooking(current => rebaseBookingDraft(nextRecord.booking, loadedRecord.booking, current ?? loadedRecord.booking))
@@ -5429,9 +5444,71 @@ export function BookingDetailWorkspace({
     }
   }
 
+  async function submitProvisionalAction() {
+    const workspace = loadedRecord.workspace
+    if (!workspace?.provisionalCancellation?.supported || !provisionalAction || provisionalRequestRef.current || detailsDirty || savingDetails || applyingQuoteSync || !hasPermission(currentUser, "Bookings.Write")) return
+    provisionalRequestRef.current = true
+    setProvisionalBusy(true)
+    setProvisionalError(null)
+    let saved = provisionalSaved
+    try {
+      if (!saved) {
+        await changeProvisionalBooking(workspace.booking.jobId, provisionalAction, provisionalReason, workspace.booking.updatedAt, provisionalDecision || undefined)
+        saved = true
+        setProvisionalSaved(true)
+      }
+      const fresh = await getBookingWorkflow(workspace.booking.bookingReference)
+      // Ordinary edits are disabled during this explicit operation; do not
+      // rebase an old lifecycle back onto the freshly saved server record.
+      const next = bookingWorkspaceRecord(fresh)
+      setRecord(next)
+      setDraftBooking(next.booking)
+      setDraftWorkspace(fresh)
+      setProvisionalAction(null)
+      setProvisionalSaved(false)
+      setSaveError(null)
+      toast.success(t(provisionalAction === "cancel" ? "Provisional booking cancelled" : "Booking reopened as Provisional"))
+    } catch (reason) {
+      setProvisionalError(saved ? t("The status change was saved, but the screen could not refresh. Retry refresh; the action will not be repeated.") : reason instanceof Error ? reason.message : t("The status change could not be confirmed. Reload before retrying if the connection was interrupted."))
+    } finally {
+      provisionalRequestRef.current = false
+      setProvisionalBusy(false)
+    }
+  }
+
   return (
     <main className="min-h-full bg-[var(--md-analytics-bg)] px-4 py-4 text-[var(--md-ink)] sm:px-5">
       <div className="grid w-full gap-2">
+        <Dialog open={Boolean(provisionalAction)} onOpenChange={open => { if (!open && !provisionalBusy && !provisionalSaved) setProvisionalAction(null) }}>
+          <DialogContent className="max-h-[85vh] overflow-y-auto overscroll-contain sm:max-w-lg" showCloseButton={!provisionalBusy && !provisionalSaved}
+            onOpenAutoFocus={event => { event.preventDefault(); provisionalDismissRef.current?.focus() }}
+            onCloseAutoFocus={event => { event.preventDefault(); provisionalTriggerRef.current?.focus() }}>
+            <DialogHeader>
+              <DialogTitle>{t(provisionalAction === "cancel" ? "Cancel provisional booking?" : "Reopen as Provisional?")}</DialogTitle>
+              <DialogDescription>{t(provisionalAction === "cancel" ? "The Booking and reference stay in the system for audit and remain excluded from financial figures." : "The same Booking returns to Provisional. Review prices and dates before progressing. Discarded charges will not return.")}</DialogDescription>
+            </DialogHeader>
+            <form className="space-y-4" onSubmit={event => { event.preventDefault(); void submitProvisionalAction() }}>
+              <div className="space-y-2">
+                <label htmlFor="provisional-reason" className="text-[13px] font-medium">{t("Reason (required)")}</label>
+                <Textarea id="provisional-reason" required maxLength={2000} value={provisionalReason} disabled={provisionalBusy || provisionalSaved} onChange={event => setProvisionalReason(event.target.value)} />
+              </div>
+              {provisionalAction === "cancel" && (loadedRecord.workspace?.provisionalCancellation?.planningChargeCount ?? 0) > 0 ? (
+                <fieldset className="space-y-2" disabled={provisionalBusy || provisionalSaved}>
+                  <legend className="mb-2 text-[13px] font-medium">{t("Planning charges (required)")}</legend>
+                  <label className="flex items-start gap-2 text-[13px]"><input type="radio" name="provisional-charges" value="keep" required checked={provisionalDecision === "keep"} onChange={() => setProvisionalDecision("keep")} className="mt-1 accent-[var(--md-accent)]" /><span>{t("Keep charges as inactive planning information")}</span></label>
+                  <label className="flex items-start gap-2 text-[13px]"><input type="radio" name="provisional-charges" value="discard" required checked={provisionalDecision === "discard"} onChange={() => setProvisionalDecision("discard")} className="mt-1 accent-[var(--md-accent)]" /><span>{t("Discard working charges; retain their audit history")}</span></label>
+                </fieldset>
+              ) : null}
+              {provisionalError ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{provisionalError}</p> : null}
+              <DialogFooter>
+                <Button ref={provisionalDismissRef} type="button" variant="ghost" disabled={provisionalBusy || provisionalSaved} onClick={() => setProvisionalAction(null)}>{t("Go back")}</Button>
+                <Button type="submit" disabled={provisionalBusy || detailsDirty || savingDetails}>
+                  {t(provisionalBusy ? "Saving…" : provisionalSaved ? "Retry refresh" : provisionalAction === "cancel" ? "Confirm cancellation" : "Reopen as Provisional")}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
         <Dialog open={Boolean(pendingLifecycle)} onOpenChange={open => { if (!open) setPendingLifecycle(null) }}><DialogContent><DialogHeader><DialogTitle>{t("Change booking status?")}</DialogTitle><DialogDescription>{t("Change this booking to")} {pendingLifecycle ? t(bookingLifecycleLabel(pendingLifecycle)) : ""}. {t("Required operational checks still apply. Financial records remain unavailable while provisional.")}</DialogDescription></DialogHeader><DialogFooter><Button variant="ghost" onClick={() => setPendingLifecycle(null)}>{t("Cancel")}</Button><Button disabled={savingDetails || detailsDirty || !canEditBooking} onClick={() => { const status = pendingLifecycle; setPendingLifecycle(null); if (status) setDraftWorkspace(current => current ? { ...current, booking: { ...current.booking, status } } : current) }}>{t("Confirm status change")}</Button></DialogFooter></DialogContent></Dialog>
         <Dialog open={pendingNavigation && Boolean(saveError)} onOpenChange={open => { if (!open) { pendingNavigationRef.current = null; setPendingNavigation(false) } }}><DialogContent><DialogHeader><DialogTitle>{t("Booking changes are not saved")}</DialogTitle><DialogDescription>{saveError}</DialogDescription></DialogHeader><DialogFooter><Button variant="ghost" onClick={() => { pendingNavigationRef.current = null; setPendingNavigation(false) }}>{t("Keep editing")}</Button><Button variant="outline" onClick={discardDetails}>{t("Discard and leave")}</Button><Button onClick={() => void saveDetails()}>{t("Retry save")}</Button></DialogFooter></DialogContent></Dialog>
         <Dialog open={Boolean(latestSavedReview)} onOpenChange={open => { if (!open) setLatestSavedReview(null) }}><DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{t("Review saved updates")}</DialogTitle><DialogDescription>{t("Your edits are retained. Continuing keeps your changes and incorporates other saved updates. Any conflicting values below will use your edit.")}</DialogDescription></DialogHeader>
@@ -5452,7 +5529,7 @@ export function BookingDetailWorkspace({
             setCustomsView("review")
             setActiveTab("Customs")
           }}
-          canChangeLifecycle={hasPermission(currentUser, "Bookings.Write")}
+          canChangeLifecycle={canEditBooking}
           onLifecycleChange={setPendingLifecycle}
           onSaveDetails={() => { failedSaveFingerprintRef.current = null; void saveDetails() }}
           onSendToCustoms={() => void sendToCustoms()}
@@ -5460,6 +5537,17 @@ export function BookingDetailWorkspace({
           record={{ ...visibleRecord, workspace: draftWorkspace ?? visibleRecord.workspace }}
           sendingToCustoms={sendingToCustoms}
         />
+        {loadedRecord.workspace?.provisionalCancellation?.supported && (bookingLifecycle(loadedRecord.workspace.booking.status) === "draft" || loadedRecord.workspace.provisionalCancellation.cancelled) ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-3 py-2 text-[13px] shadow-[var(--md-shadow-line)]">
+            <span>{t(loadedRecord.workspace.provisionalCancellation.cancelled ? "Cancelled — retained for audit, excluded from financial figures." : loadedRecord.workspace.provisionalCancellation.reviewPricesAndDates ? "Reopened — review prices and dates before moving to In progress." : "Provisional — excluded from financial figures.")}</span>
+            {loadedRecord.workspace.provisionalCancellation.requiresFinanceReview ? <span className="text-[var(--md-amber)]">{t("Existing financial records require Finance review before cancellation or reopening.")}</span> : (
+              <Button ref={provisionalTriggerRef} variant="outline" size="sm" disabled={!hasPermission(currentUser, "Bookings.Write") || detailsDirty || savingDetails || applyingQuoteSync || provisionalBusy || (loadedRecord.workspace.provisionalCancellation.cancelled && !loadedRecord.workspace.provisionalCancellation.canReopen)}
+                onClick={() => { setProvisionalAction(loadedRecord.workspace!.provisionalCancellation!.cancelled ? "reopen" : "cancel"); setProvisionalReason(""); setProvisionalDecision(""); setProvisionalSaved(false); setProvisionalError(null) }}>
+                {t(loadedRecord.workspace.provisionalCancellation.cancelled ? "Reopen as Provisional" : "Cancel provisional booking")}
+              </Button>
+            )}
+          </div>
+        ) : null}
         {saveError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-status-red-bg)] px-3 py-2 text-[12px] text-[var(--md-status-red-ink)]">
           <span>{saveError}</span><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => changeActiveTab("Details")}>{t("Review details")}</Button><Button variant="ghost" size="sm" disabled={loadingLatest || savingDetails} onClick={() => void reviewLatestSaved()}>{t(loadingLatest ? "Loading…" : "Review saved updates")}</Button></div>
         </div> : null}

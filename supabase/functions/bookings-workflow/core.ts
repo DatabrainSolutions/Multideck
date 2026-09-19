@@ -1,4 +1,4 @@
-export type BookingWorkflowAction = "open" | "open-road" | "workspace" | "save" | "save-milestone" | "save-dangerous-goods" | "save-security-evidence" | "customs-readiness" | "send-to-customs" | "quote-sync-review" | "apply-quote-sync"
+export type BookingWorkflowAction = "open" | "open-road" | "workspace" | "save" | "provisional-action" | "save-milestone" | "save-dangerous-goods" | "save-security-evidence" | "customs-readiness" | "send-to-customs" | "quote-sync-review" | "apply-quote-sync"
 
 export class BookingWorkflowError extends Error {
   constructor(public readonly status: number, public readonly clientMessage: string, public readonly auditMessage = clientMessage) {
@@ -7,8 +7,22 @@ export class BookingWorkflowError extends Error {
 }
 
 export function parseAction(value: unknown): BookingWorkflowAction {
+  if (value === "provisional-action") return value
   if (value === "open" || value === "open-road" || value === "workspace" || value === "save" || value === "save-milestone" || value === "save-dangerous-goods" || value === "save-security-evidence" || value === "customs-readiness" || value === "send-to-customs" || value === "quote-sync-review" || value === "apply-quote-sync") return value
   throw new BookingWorkflowError(400, "Choose a supported booking action.")
+}
+
+export function parseProvisionalAction(body: Record<string, unknown>) {
+  if (body.operation !== "cancel" && body.operation !== "reopen") throw new BookingWorkflowError(400, "Choose cancellation or reopening.")
+  const reason = typeof body.reason === "string" ? body.reason.trim() : ""
+  if (!reason || reason.length > 2000) throw new BookingWorkflowError(400, "Enter a reason of up to 2,000 characters.")
+  if (typeof body.expectedUpdatedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(body.expectedUpdatedAt) || !Number.isFinite(Date.parse(body.expectedUpdatedAt))) {
+    throw new BookingWorkflowError(409, "Reload the Booking before continuing.")
+  }
+  if (body.chargeDecision !== undefined && body.chargeDecision !== "keep" && body.chargeDecision !== "discard") throw new BookingWorkflowError(400, "Choose Keep or Discard.")
+  if (body.operation === "reopen" && body.chargeDecision !== undefined) throw new BookingWorkflowError(400, "Reopening cannot change the charge decision.")
+  return { requested_job_id: parseUuid(body.jobId, "Booking"), requested_action: body.operation,
+    requested_reason: reason, expected_updated_at: body.expectedUpdatedAt, charge_decision: body.chargeDecision ?? null }
 }
 
 export function parseUuid(value: unknown, label: string) {

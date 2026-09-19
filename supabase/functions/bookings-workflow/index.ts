@@ -1,5 +1,5 @@
 import { authenticateRequest, corsHeaders, jsonResponse } from "../_shared/document-functions.ts"
-import { BookingWorkflowError, parseAction, parseOpeningDirection, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
+import { BookingWorkflowError, parseAction, parseProvisionalAction, parseOpeningDirection, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
 
 const documentBucket = "multideck-documents"
 const maximumBookingDocumentBytes = 20 * 1024 * 1024
@@ -105,6 +105,15 @@ async function canonicalBookingReference(
   return String(alias?.canonicalReference || requestedReference)
 }
 
+async function withProvisionalState(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], userId: string, workspace: any) {
+  if (!workspace?.booking?.jobId) return workspace
+  const { data, error } = await admin.rpc("booking_provisional_state", { caller_auth_user_id: userId, requested_job_id: workspace.booking.jobId })
+  // Older backends do not advertise a capability they cannot honour.
+  if (error?.code === "PGRST202") return workspace
+  if (error) throw error
+  return { ...workspace, provisionalCancellation: data }
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return jsonResponse(request, { error: "Method not allowed" }, 405)
@@ -116,6 +125,13 @@ Deno.serve(async (request) => {
     const { admin, userId } = await authenticateRequest(request)
     const body = await request.json() as Record<string, unknown>
     const action = parseAction(body.action)
+
+    if (action === "provisional-action") {
+      const parameters = parseProvisionalAction(body)
+      const { data, error } = await admin.rpc("booking_provisional_action", { ...parameters, caller_auth_user_id: userId })
+      if (error || !data) throw error ?? new Error("Provisional action returned no result")
+      return jsonResponse(request, data)
+    }
 
     if (action === "open" || action === "open-road") {
       const { data, error } = await admin.rpc(action === "open-road" ? "booking_workflow_open_road" : "booking_workflow_open", {
@@ -134,7 +150,7 @@ Deno.serve(async (request) => {
         requested_reference: await canonicalBookingReference(admin, userId, requestedReference),
       })
       if (error || !data) throw error ?? new Error("Booking workspace returned no result")
-      return jsonResponse(request, data)
+      return jsonResponse(request, await withProvisionalState(admin, userId, data))
     }
     if (action === "customs-readiness") {
       const { data, error } = await admin.rpc("booking_workflow_customs_readiness", {
@@ -221,7 +237,7 @@ Deno.serve(async (request) => {
       payload: parsePayload(body.booking),
     })
     if (error || !data) throw error ?? new Error("Booking save returned no result")
-    return jsonResponse(request, data)
+    return jsonResponse(request, await withProvisionalState(admin, userId, data))
   } catch (error) {
     const safe = toClientError(error)
     console.error("Booking workflow failed", { status: safe.status, reason: safe.auditMessage })

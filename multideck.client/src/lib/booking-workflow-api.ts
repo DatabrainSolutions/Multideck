@@ -295,6 +295,15 @@ export type BookingWorkflowEvent = {
 }
 
 export type BookingWorkflowWorkspace = {
+  provisionalCancellation?: {
+    supported: boolean
+    cancelled: boolean
+    canReopen: boolean
+    planningChargeCount: number
+    chargeDecision: "keep" | "discard" | null
+    reviewPricesAndDates: boolean
+    requiresFinanceReview: boolean
+  }
   lifecycleSupported?: boolean
   dangerousGoodsSupported?: boolean
   securityEvidenceSupported?: boolean
@@ -463,6 +472,10 @@ export function getBookingWorkflow(reference: string) {
 
 export function saveBookingWorkflow(jobId: string, booking: Record<string, unknown>) {
   return invoke<BookingWorkflowWorkspace>({ action: "save", jobId, booking }, "The booking could not be saved.")
+}
+
+export function changeProvisionalBooking(jobId: string, operation: "cancel" | "reopen", reason: string, expectedUpdatedAt: string, chargeDecision?: "keep" | "discard") {
+  return invoke<{ jobId: string; status: "draft" | "cancelled" }>({ action: "provisional-action", jobId, operation, reason, expectedUpdatedAt, chargeDecision }, "The Booking status could not be changed.")
 }
 
 export function saveBookingMilestone(jobId: string, milestone: BookingMilestoneSave) {
