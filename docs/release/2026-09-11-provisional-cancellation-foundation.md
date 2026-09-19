@@ -1,5 +1,7 @@
 # Provisional cancellation — local rules foundation
 
+Current migration filename after the 19 September dev reconciliation: `20260919080625_provisional_cancellation_audit.sql`. The original 11 September filename below is historical only; the migration has never been applied to the shared database. See `2026-09-19-dev-cancel-reopen-reconciliation.md` for the merge and test results.
+
 First segment only: pure backend decision policy and six passing isolated unit tests. No migration, persistence adapter, financial reporting change, UI integration, deployment or shared database write is included. These are not database integration tests.
 
 Agreed rules: retain the Booking and its reference; cancellation remains distinct from completion; explicitly keep or discard planning charges; retain discarded evidence; reopen the same record to Provisional; flag prices/dates for review without rewriting them. Actual financial records require Finance review, not silent removal.

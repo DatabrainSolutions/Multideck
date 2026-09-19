@@ -64,6 +64,8 @@ begin
  perform public.booking_workflow_save(actor,job,'{"status":"open"}');
  perform public.booking_workflow_save(actor,job,'{"status":"open"}');
  if (select count(*) from public."Job_Costing_Lines" where "Job_ID"=job)<>1 then raise exception 'Keep did not release once';end if;
+ if not exists(select 1 from public."Job_Costing_Lines" where "Job_ID"=job and "JobCostingLine_DomainCode"='freight' and "JobCostingLine_Description"='Original rate' and "JobCostingLine_CostAmountCurrency"=45 and "JobCostingLine_RevenueAmountCurrency"=60) then
+  raise exception 'Kept charges lost the colleague freight classification or original amounts';end if;
  select "Job_UpdatedAt" into stamp from public."Job_Header" where "Job_ID"=job;
  begin perform public.booking_provisional_action(actor,job,'cancel','Discard finance',stamp,'discard');raise exception 'Financial records discarded';exception when sqlstate '22023' then null;end;
  if not exists(select 1 from public."Job_Costing_Lines" where "Job_ID"=job) then raise exception 'Financial evidence removed';end if;

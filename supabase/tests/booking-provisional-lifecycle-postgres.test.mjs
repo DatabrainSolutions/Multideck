@@ -8,9 +8,11 @@ const bin=process.env.PG_TEST_BIN||'/opt/homebrew/opt/postgresql@17/bin'
 const available=spawnSync(join(bin,'initdb'),['--version']).status===0
 const migration=readFileSync(new URL('../migrations/20260910151110_booking_provisional_lifecycle.sql',import.meta.url),'utf8')
 const financeMigration=readFileSync(new URL('../migrations/20260910151116_provisional_no_financial_records.sql',import.meta.url),'utf8')
-const cancellationMigration=readFileSync(new URL('../migrations/20260911145259_provisional_cancellation_audit.sql',import.meta.url),'utf8')
+const cancellationMigrationName='20260919080625_provisional_cancellation_audit.sql'
+const cancellationMigration=readFileSync(new URL(`../migrations/${cancellationMigrationName}`,import.meta.url),'utf8')
 const cancellationChecks=readFileSync(new URL('./provisional-cancellation-checks.sql',import.meta.url),'utf8')
 const chargeDomainMigration=readFileSync(new URL('../migrations/20260915174500_booking_quote_charge_domain.sql',import.meta.url),'utf8')
+assert.ok(cancellationMigrationName > '20260915174500_booking_quote_charge_domain.sql', 'Cancellation protection must run after the freight-domain function replacement')
 const baseline=readFileSync(new URL('../baseline/public-schema.sql',import.meta.url),'utf8')
 const tableStart=baseline.indexOf('CREATE TABLE IF NOT EXISTS "public"."Job_Costing_Lines" (')
 const costingTable=baseline.slice(tableStart,baseline.indexOf('\n);',tableStart)+3)

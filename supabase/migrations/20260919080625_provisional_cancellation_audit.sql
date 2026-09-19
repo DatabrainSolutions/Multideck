@@ -1,3 +1,5 @@
+-- Unapplied local feature, sequenced after the 15 September freight-domain fix.
+-- Preserve that function body and add only the discarded-charge safeguard.
 begin;
 set local lock_timeout = '5s';
 
