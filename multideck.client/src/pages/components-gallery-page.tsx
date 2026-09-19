@@ -1,3 +1,12 @@
+import { SignatureBuilder } from "@/components/multideck/signature-builder"
+import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck/dexter-voice-controls"
+import { SignatureBlockGlyph } from "@/components/multideck/signature-block-glyph"
+import { EmailSignatureControl } from "@/components/multideck/email-signature-control"
+import { newSignatureDocument, renderSignature, signatureKinds, type SignatureBlockKind, type SignatureSelection } from "@/lib/email-signatures"
+import { ContactEmailAction } from "@/components/multideck/contact-email-action"
+import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
+import { TaskAgentStack, TaskAgentControls } from "@/components/multideck/task-agent-components"
+import type { TaskAgent } from "@/lib/task-agents"
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
 import dexterRecordTableSource from "@/components/multideck/dexter-record-table.tsx?raw"
 import dexterComponentsSource from "@/components/multideck/agent-dexter-components.tsx?raw"
@@ -99,6 +108,7 @@ import {
   AmountCurrencyField,
   CargoCharacteristicsField,
   CompactCombobox,
+  CompactFieldShell,
   CompactFieldRow,
   CompactSectionShell,
   CargoWiseGroup,
@@ -289,7 +299,7 @@ import { SuggestedUpdateReview } from "@/components/multideck/suggested-update-r
 import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
-import { InlineField, InlineFieldCard, InlineSelectField } from "@/components/multideck/inline-field"
+import { InlineField, InlineFieldCard, InlineFieldGroup, InlineSelectField } from "@/components/multideck/inline-field"
 import { SideDrawer } from "@/components/multideck/side-drawer"
 import { WizardDialog } from "@/components/multideck/wizard-dialog"
 import { ScreenshotCaptureEditor, SupportTicketAttachmentPreview } from "@/components/multideck/support-ticket-dialog"
@@ -339,7 +349,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["signature-builder", "signature-block-glyph", "email-signature-control", "contact-email-action", "contact-preferences-popover", "public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -349,7 +359,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["task-agent-stack", "task-agent-controls", "dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Home",
@@ -388,6 +398,21 @@ const previewHomeSuggestions: HomePromptSuggestion[] = [
   { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
   { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
 ]
+
+function DexterVoiceControlsPreview() {
+  const [muted, setMuted] = useState(false)
+  const [ended, setEnded] = useState(false)
+  const [limitReached, setLimitReached] = useState(false)
+  return <div className="w-full max-w-[520px]">
+    <Button variant="ghost" className="mb-4" onClick={()=>setLimitReached(value=>!value)}>{limitReached ? "Reset voice preview" : "Preview daily limit"}</Button>
+    <DexterVoiceLimitNotice visible={limitReached} />
+    <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3">
+    {limitReached ? <textarea aria-label="Continue typing" placeholder="Carry on typing…" className="min-h-16 w-full resize-none rounded-lg bg-transparent p-2 text-[13px] text-[var(--md-ink)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]" /> :
+    <DexterVoicePanel autoFocus={false} voice={{phase:ended ? "ended" : "listening", muted, working:false,
+      active:!ended, error:null, endReason:null, end:()=>setEnded(true), dismiss:()=>setEnded(false), toggleMute:()=>setMuted(value=>!value)}} />}
+    </div>
+  </div>
+}
 
 function createGalleryTicketScreenshot() {
   const canvas = document.createElement("canvas")
@@ -1967,12 +1992,16 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
   const [previewCalendarLayers, setPreviewCalendarLayers] = useState(["Operational dates", "Personal events"])
-  const previewAutoPopulationSource = "1 Harbour Exchange Square, London, E14 9GE, GB"
-  const previewAutoPopulationCodeSource = "GBLON"
-  const previewAutoPopulationNotesSource = "Collect from the loading bay.\nCall the office on arrival."
-  const [previewAutoPopulationValue, setPreviewAutoPopulationValue] = useState("")
-  const [previewAutoPopulationCode, setPreviewAutoPopulationCode] = useState("")
-  const [previewAutoPopulationNotes, setPreviewAutoPopulationNotes] = useState("")
+  const previewAutoPopulationSources = [
+    { name: "Harbour Trading", address: "1 Harbour Exchange Square, London, E14 9GE, GB", code: "GBLON", contact: "Alex Morgan", email: "alex@example.com", notes: "Collect from the loading bay.\nCall the office on arrival." },
+    { name: "Northern Freight", address: "Unit 24, Riverside Distribution Centre, Trafford Park, Manchester, M17 1AA, GB", code: "GB", contact: "Sam Taylor", email: "operations@example.com", notes: "Use the east entrance for collection. Keep all pallets upright and report to the transport office before unloading.\nReference: NF-2048." },
+  ]
+  const [previewAutoPopulation, setPreviewAutoPopulation] = useState({ name: "", address: "", code: "", contact: "", email: "", notes: "", event: null as number | null })
+  const previewAutoPopulationSource = previewAutoPopulationSources.find((source) => source.name === previewAutoPopulation.name)
+  function fillPreviewFromCustomer(name: string) {
+    const source = previewAutoPopulationSources.find((item) => item.name === name)
+    if (source) setPreviewAutoPopulation((current) => ({ ...source, event: (current.event ?? 0) + 1 }))
+  }
   const [previewDictionaryTerms, setPreviewDictionaryTerms] = useState(["Multideck", "Jenkar", "UN/LOCODE", "Incoterms"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
@@ -2026,7 +2055,7 @@ function ComponentPreview({ id }: { id: string }) {
     <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-[var(--md-gap-xl)]">
       {id === "conversation-attachments" ? <TicketAttachmentsPreview /> : null}
       {id === "inline-fields" ? (
-        <div className="w-full max-w-[620px]">
+        <div className="grid w-full max-w-[620px] gap-4">
           <InlineFieldCard title="Account facts" meta="Select a value to edit it">
             <InlineField label="Account name" value={previewInlineCompany} required onSave={setPreviewInlineCompany} />
             <InlineSelectField
@@ -2040,42 +2069,59 @@ function ComponentPreview({ id }: { id: string }) {
               onSave={setPreviewInlineType}
             />
           </InlineFieldCard>
+          <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+            <h3 className="mb-3 text-[13px] font-medium text-[var(--md-ink)]">Compact side labels</h3>
+            <InlineFieldGroup compact>
+              <InlineField label="Company" value={previewInlineCompany} required onSave={setPreviewInlineCompany} />
+              <InlineSelectField label="Relationship" width="medium" value={previewInlineType} options={[{ value: "Customer", label: "Customer" }, { value: "Prospect", label: "Prospect" }, { value: "Partner", label: "Partner" }]} onSave={setPreviewInlineType} />
+              <InlineField label="Tier" width="short" value="B" readOnly />
+            </InlineFieldGroup>
+          </section>
         </div>
       ) : null}
 
       {id === "auto-populated-field" ? (
-        <div className="grid w-full max-w-[520px] gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
-          <label htmlFor="gallery-auto-populated-address" className="text-[12px] font-medium text-[var(--md-ink)]">Customer address</label>
-          <AutoPopulatedInput
-            id="gallery-auto-populated-address"
-            value={previewAutoPopulationValue}
-            onChange={(event) => setPreviewAutoPopulationValue(event.target.value)}
-            autoPopulated={matchesAutoPopulation(previewAutoPopulationValue, previewAutoPopulationSource)}
-            autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."
-          />
-          <label htmlFor="gallery-auto-populated-code" className="text-[12px] font-medium text-[var(--md-ink)]">UN/LOCODE</label>
-          <AutoPopulatedInput
-            id="gallery-auto-populated-code"
-            value={previewAutoPopulationCode}
-            onChange={(event) => setPreviewAutoPopulationCode(event.target.value)}
-            autoPopulated={matchesAutoPopulation(previewAutoPopulationCode, previewAutoPopulationCodeSource)}
-            autoPopulationDescription="Filled from the selected location. Edit this field to override it."
-          />
-          <label htmlFor="gallery-auto-populated-notes" className="text-[12px] font-medium text-[var(--md-ink)]">Collection notes</label>
-          <AutoPopulatedTextarea
-            id="gallery-auto-populated-notes"
-            value={previewAutoPopulationNotes}
-            onChange={(event) => setPreviewAutoPopulationNotes(event.target.value)}
-            autoPopulated={matchesAutoPopulation(previewAutoPopulationNotes, previewAutoPopulationNotesSource)}
-            autoPopulationDescription="Filled from the collection address. Edit this field to override it."
-          />
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] leading-4 text-[var(--md-subtle)]">Fill the fields to preview the letter stagger. Edit any value to override it.</p>
-            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]" onClick={() => {
-              setPreviewAutoPopulationValue(previewAutoPopulationSource)
-              setPreviewAutoPopulationCode(previewAutoPopulationCodeSource)
-              setPreviewAutoPopulationNotes(previewAutoPopulationNotesSource)
-            }}>Fill from linked records</Button>
+        <div className="grid w-full max-w-[600px] gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+          <CompactCombobox label="Customer" value={previewAutoPopulation.name} width="full" allowCustom={false} placeholder="Select a customer"
+            options={previewAutoPopulationSources.map((source) => ({ value: source.name, label: source.name }))}
+            onValueChange={fillPreviewFromCustomer} />
+          <CompactFieldShell label="Address" htmlFor="gallery-auto-populated-address" width="full">
+            <AutoPopulatedInput id="gallery-auto-populated-address" value={previewAutoPopulation.address}
+              onChange={(event) => setPreviewAutoPopulation((current) => ({ ...current, address: event.target.value }))}
+              autoPopulated={matchesAutoPopulation(previewAutoPopulation.address, previewAutoPopulationSource?.address)} autoPopulationEvent={previewAutoPopulation.event}
+              autoPopulationDescription="Filled from the selected customer. Edit this field to override it." />
+          </CompactFieldShell>
+          <CompactFieldShell label="Location code" htmlFor="gallery-auto-populated-code" width="full">
+            <div className="w-[calc(5ch+1.375rem)]">
+              <AutoPopulatedInput id="gallery-auto-populated-code" value={previewAutoPopulation.code}
+                onChange={(event) => setPreviewAutoPopulation((current) => ({ ...current, code: event.target.value }))}
+                autoPopulated={matchesAutoPopulation(previewAutoPopulation.code, previewAutoPopulationSource?.code)} autoPopulationEvent={previewAutoPopulation.event}
+                autoPopulationDescription="Filled from the selected location. Edit this field to override it." />
+            </div>
+          </CompactFieldShell>
+          <CompactCombobox label="Contact" value={previewAutoPopulation.contact} width="full"
+            options={previewAutoPopulationSources.map((source) => ({ value: source.contact, label: source.contact }))}
+            onValueChange={(contact) => setPreviewAutoPopulation((current) => ({ ...current, contact }))}
+            onOptionSelect={(option) => {
+              const source = previewAutoPopulationSources.find((item) => item.contact === option.value)
+              if (source) setPreviewAutoPopulation((current) => ({ ...current, email: source.email, event: (current.event ?? 0) + 1 }))
+            }}
+            autoPopulated={matchesAutoPopulation(previewAutoPopulation.contact, previewAutoPopulationSource?.contact)} autoPopulationEvent={previewAutoPopulation.event} />
+          <CompactFieldShell label="Email" htmlFor="gallery-auto-populated-email" width="full">
+            <AutoPopulatedInput id="gallery-auto-populated-email" type="email" value={previewAutoPopulation.email}
+              onChange={(event) => setPreviewAutoPopulation((current) => ({ ...current, email: event.target.value }))}
+              autoPopulated={matchesAutoPopulation(previewAutoPopulation.email, previewAutoPopulationSources.find((source) => source.contact === previewAutoPopulation.contact)?.email)} autoPopulationEvent={previewAutoPopulation.event} />
+          </CompactFieldShell>
+          <CompactFieldShell label="Collection notes" htmlFor="gallery-auto-populated-notes" width="full">
+            <AutoPopulatedTextarea id="gallery-auto-populated-notes" value={previewAutoPopulation.notes}
+              onChange={(event) => setPreviewAutoPopulation((current) => ({ ...current, notes: event.target.value }))}
+              autoPopulated={matchesAutoPopulation(previewAutoPopulation.notes, previewAutoPopulationSource?.notes)} autoPopulationEvent={previewAutoPopulation.event}
+              autoPopulationDescription="Filled from the collection address. Edit this field to override it." />
+          </CompactFieldShell>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="max-w-[36ch] text-[11px] leading-4 text-[var(--md-subtle)]">Choose either customer to fill the fields. Switch again during the reveal or edit a value to override it.</p>
+            <Button type="button" variant="ghost" size="sm" className="h-7 rounded-[var(--md-radius-md)] px-2 text-[11px]"
+              onClick={() => fillPreviewFromCustomer(previewAutoPopulation.name === previewAutoPopulationSources[0].name ? previewAutoPopulationSources[1].name : previewAutoPopulationSources[0].name)}>Switch customer</Button>
           </div>
         </div>
       ) : null}
@@ -2331,6 +2377,14 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="flex w-full max-w-[520px] items-center justify-center rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]"><TodoPriorityPicker value="high" ariaLabel="Priority" onValueChange={() => undefined} /></div>
       ) : null}
 
+      {id === "task-agent-controls" ? <div className="w-full max-w-[480px] p-4"><TaskAgentControls agent={{id:'preview-controls',task_id:'preview-task',conversation_id:'preview-conversation',title:'Prepare Tuesday’s brief',name:'Harper',icon:1,status:'scheduled',summary:'Scheduled for Tuesday',instruction:'Prepare Tuesday’s brief',time_zone:'Europe/London',due_at:'2026-09-15T08:00:00Z',outcome:null,message_id:null,result_revision:0,viewed_revision:0,version:1,updated_at:'2026-09-10T09:00:00Z',taskStatus:'open',scheduledDate:'2026-09-15'}} onControl={async agent=>agent}/></div> : null}
+
+      {id === "task-agent-stack" ? <div className="w-[260px] p-3"><TaskAgentStack agents={[
+        {id:'preview-1',task_id:'task-1',conversation_id:'conversation-1',title:'Prepare Tuesday’s meeting brief',name:'Harper',icon:1,status:'working',summary:'Checking the latest context',result_revision:0,viewed_revision:0,updated_at:'2026-09-10T09:00:00Z'},
+        {id:'preview-2',task_id:'task-2',conversation_id:'conversation-2',title:'Reply to Sam about the quote',name:'Xylo',icon:4,status:'ready',summary:'Your draft is ready',result_revision:1,viewed_revision:0,updated_at:'2026-09-10T08:00:00Z'},
+        {id:'preview-3',task_id:'task-3',conversation_id:'conversation-3',title:'Find the invoice for the shipment',name:'Ternus',icon:5,status:'needs_input',summary:'Choose between two matching invoices',result_revision:1,viewed_revision:0,updated_at:'2026-09-10T07:00:00Z'},
+      ] as TaskAgent[]} onOpen={()=>undefined} onViewAll={()=>undefined}/></div> : null}
+
       {id === "todo-action-state-icon" ? (
         <div className="flex w-full max-w-[520px] items-center justify-center gap-8 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
           {(["idle","loading","success"] as const).map((state) => <div key={state} className="grid justify-items-center gap-2"><TodoActionStateIcon state={state} /><span className="text-[11px] capitalize text-[var(--md-text)]">{state}</span></div>)}
@@ -2449,6 +2503,10 @@ function ComponentPreview({ id }: { id: string }) {
           </div>
           <p className="max-w-[520px] text-center text-[11.5px] leading-5 text-[var(--md-subtle)]">{t("The bottom-centred pill is the only visible dictation feedback. Its width and indicator morph continuously between speaking, polishing, completion, allowance and failure states.")}</p>
         </div>
+      ) : null}
+
+      {id === "dexter-voice-controls" ? (
+        <DexterVoiceControlsPreview />
       ) : null}
 
       {id === "dexter-summon-prompt" ? (
@@ -3729,6 +3787,12 @@ function ComponentPreview({ id }: { id: string }) {
           />
         </div>
       ) : null}
+
+      {id === "signature-builder" ? <SignatureBuilderGallery /> : null}
+      {id === "signature-block-glyph" ? <div className="flex flex-wrap gap-5 p-8">{Object.keys(signatureKinds).map(kind=><div key={kind} className="text-center text-[11px]"><SignatureBlockGlyph kind={kind as SignatureBlockKind}/><p>{signatureKinds[kind as SignatureBlockKind]}</p></div>)}</div> : null}
+      {id === "email-signature-control" ? <SignatureControlGallery /> : null}
+      {id === "contact-email-action" ? <div className="w-full max-w-md p-6"><p className="text-[14px] font-medium">Alex Morgan</p><p className="mb-3 text-[12px] text-[var(--md-subtle)]">Operations manager</p><ContactEmailAction email="alex@example.test" name="Alex Morgan" preview /></div> : null}
+      {id === "contact-preferences-popover" ? <ContactPreferencesPopover contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /> : null}
 
       {id === "dexter-email-compose-card" ? (
         <div className="w-full max-w-[720px]">
@@ -5020,4 +5084,16 @@ export function ComponentsGalleryPage() {
       {activeSection === "Components" ? <RightRail selected={selected} /> : null}
     </div>
   )
+}
+
+const signatureGalleryValues={name:"Alex Morgan",jobTitle:"Operations manager",email:"alex@example.test",phone:"+44 20 7946 0123",mobile:"",company:"Example Logistics",website:"https://example.test",address:"London",companyDetails:"Example Logistics\nhttps://example.test\n+44 20 7946 0123\nLondon"}
+function SignatureBuilderGallery(){
+ const [document,setDocument]=useState(()=>newSignatureDocument('side'))
+ const [assets,setAssets]=useState<Record<string,string>>({})
+ return <div className="w-full p-3"><SignatureBuilder document={document} onChange={setDocument} values={signatureGalleryValues} assets={assets} onUpload={async file=>{const id=crypto.randomUUID();const url=URL.createObjectURL(file);setAssets(a=>({...a,[id]:url}));return {id,url}}}/></div>
+}
+function SignatureControlGallery(){
+ const [choice]=useState(()=>({id:'gallery-signature',name:'Operations',revision:1,fingerprint:'preview',personal:false,...renderSignature(newSignatureDocument('stacked'),signatureGalleryValues)}))
+ const [value,setValue]=useState<SignatureSelection>({enabled:true,templateId:choice.id,revision:1,fingerprint:'preview'})
+ return <div className="w-full max-w-xl p-6"><p className="mb-5 text-[13px]">Thanks for the update. We will confirm collection shortly.</p><EmailSignatureControl mailboxId="gallery" value={value} onChange={setValue} previewChoice={choice}/></div>
 }

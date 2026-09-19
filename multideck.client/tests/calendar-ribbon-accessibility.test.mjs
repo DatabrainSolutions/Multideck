@@ -26,15 +26,20 @@ function contrast(a, b) {
   return (values[0] + 0.05) / (values[1] + 0.05)
 }
 
-test("operational ribbons remain native, labelled record links without clipped text", () => {
+test("operational ribbons remain native, labelled record links with a compact week variant", () => {
   assert.match(ribbon, /<a\s+href=\{ribbon.route\}/)
   for (const modifier of ["metaKey", "ctrlKey", "shiftKey", "altKey"]) assert.ok(ribbon.includes(`event.${modifier}`))
   assert.match(ribbon, /event.button !== 0/)
   assert.match(ribbon, /\{ribbon.title\}/)
-  assert.match(ribbon, /min-h-8/)
+  assert.match(ribbon, /title=\{ribbon.title\}/)
+  assert.match(ribbon, /compact \? "h-8 truncate whitespace-nowrap" : "min-h-8 py-1\.5 whitespace-normal \[overflow-wrap:anywhere\]"/)
   assert.match(ribbon, /text-\[12px\]/)
-  assert.match(ribbon, /whitespace-normal \[overflow-wrap:anywhere\]/)
-  assert.doesNotMatch(ribbon, /truncate|outline-none|active:scale|<button/)
+  assert.doesNotMatch(ribbon, /outline-none|active:scale|<button/)
+})
+
+test("the week dates band uses compact, top-packed ribbons", () => {
+  assert.match(source, /min-h-10 content-start gap-1/)
+  assert.match(source, /<CalendarDayRibbon key=\{ribbon.id\} ribbon=\{ribbon\} navigate=\{navigate\} compact \/>/)
 })
 
 test("all ribbon text pairs pass AA in light and dark themes", () => {

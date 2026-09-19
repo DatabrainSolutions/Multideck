@@ -1,3 +1,4 @@
+import { normalizeCustomsInvoiceHeader, type CustomsInvoiceHeader } from "../../../supabase/functions/_shared/customs-invoices.mts"
 import { workspaceStorageKey } from "./workspace-environment.ts"
 import type { ExtractedInvoiceLine, InvoiceLineSelection } from "@/lib/customs-invoice-import"
 import type { EvidencePage } from "@/lib/customs-invoice-evidence"
@@ -14,6 +15,8 @@ export type CustomsInvoiceImportRecovery = {
   extractionId: string
   invoiceName: string
   extractedInvoiceNumber: string
+  importTarget?: "header" | "items"
+  invoiceHeader?: CustomsInvoiceHeader
   lines: ExtractedInvoiceLine[]
   selections: Record<string, InvoiceLineSelection>
   descriptionOverrides: Record<string, string>
@@ -47,6 +50,8 @@ export function readCustomsInvoiceImportRecovery(declarationKey: string): Custom
       version: recoveryVersion,
       extractionId,
       invoiceName: typeof parsed.invoiceName === "string" ? parsed.invoiceName : "",
+      invoiceHeader: normalizeCustomsInvoiceHeader(parsed.invoiceHeader),
+      importTarget: parsed.importTarget === "header" ? "header" : "items",
       extractedInvoiceNumber: typeof parsed.extractedInvoiceNumber === "string" ? parsed.extractedInvoiceNumber : "",
       lines,
       selections: record(parsed.selections) as Record<string, InvoiceLineSelection>,

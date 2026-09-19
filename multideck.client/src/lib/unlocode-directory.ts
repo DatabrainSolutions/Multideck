@@ -54,3 +54,21 @@ export function unlocodeKind(functions: string) {
   if (functions[5] === "6") return "inland-terminal" as const
   return "city" as const
 }
+
+/** Resolve exact, unique directory matches only; ambiguous names require operator selection. */
+export function resolveInvoiceAgreedPlace(value: string, records: readonly UnlocodeDirectoryRecord[]): string | null {
+  const normalise = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase().replace(/\s+/g, " ")
+  const query = normalise(value)
+  if (!query) return null
+  const compact = query.replace(/\s/g, "")
+  const codes = new Set<string>()
+  for (const [country, location, name, plainName] of records) {
+    const code = country + location
+    if (code === compact) return code
+    if ([name, plainName].some(place => {
+      const normal = normalise(place)
+      return query === normal || query === `${normal}, ${country}` || query === `${normal} ${country}` || query === `${country} ${normal}`
+    })) codes.add(code)
+  }
+  return codes.size === 1 ? [...codes][0] : null
+}

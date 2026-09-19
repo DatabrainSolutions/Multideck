@@ -1,4 +1,11 @@
+import { customsToday, verifyCustomsInvoiceHmrcRates } from "../_shared/customs-hmrc-exchange-rates.mts";
+import { calculationHistory, calculateSavedDeclaration, previewDeclarationCalculation, overrideCalculation, prepareSubmissionCalculationLink } from "../_shared/customs-calculation-service.ts";
+import { resolveCustomsInvoiceDeclaration } from "../_shared/customs-invoices.mts";
+import { providerEvidenceHistory } from "../_shared/customs-provider-evidence-history.ts";
+import { recordAssessmentComparison, assessmentComparisonHistory } from "../_shared/customs-assessment-service.ts";
 import type { SupabaseClient, User } from "npm:@supabase/supabase-js@2.108.2";
+import { requireProductAccess } from "../_shared/cloud-product-access.ts";
+import { requiredImportReferences } from "../_shared/customs-ducr.mts";
 import {
   adminClient,
   authenticate,
@@ -550,6 +557,8 @@ async function providerDraft(
   const direction = declaration.CUST_Direction === "import"
     ? "import"
     : "export";
+  const rateIssues = await verifyCustomsInvoiceHmrcRates(draft);
+  if (rateIssues.length) throw new CustomsSubmissionGateError(rateIssues);
   const xml = buildICustomsDeclarationXml(draft, direction);
   const latest = await latestSubmission(admin, declarationId);
   // A submitted provider record is immutable. After an HMRC rejection the
@@ -680,6 +689,8 @@ async function startProviderDraft(
   // draft is created. Send the persisted declaration rather than the former
   // minimal shell so the first provider mirror uses the same reviewed data as
   // later draft updates and HMRC submission.
+  const rateIssues = await verifyCustomsInvoiceHmrcRates(draft);
+  if (rateIssues.length) throw new CustomsSubmissionGateError(rateIssues);
   const xml = buildICustomsDeclarationXml(draft, direction);
   const submission = await createSubmission(
     admin,
@@ -941,6 +952,8 @@ async function submitDeclaration(
     ) as ExportDeclarationInput,
     direction,
   );
+  if (direction === "import") submissionIssues.push(...requiredImportReferences(providerRecord(declaration.CUST_GenericPayloadJSON)));
+  submissionIssues.push(...await verifyCustomsInvoiceHmrcRates(providerRecord(declaration.CUST_GenericPayloadJSON), customsToday()));
   if (submissionIssues.length) {
     throw new CustomsSubmissionGateError(submissionIssues);
   }
@@ -959,9 +972,14 @@ async function submitDeclaration(
   if (acceptedItemRowsError) {
     throw new HttpError(500, acceptedItemRowsError.message);
   }
+  const capturedAt = new Date().toISOString();
+  const calculationLink = direction === "import" ? await prepareSubmissionCalculationLink(
+    admin, declarationId, declaration.CUST_GenericPayloadJSON, capturedAt,
+  ) : undefined;
   const declarationSnapshot = {
     schemaVersion: 1,
-    capturedAt: new Date().toISOString(),
+    capturedAt,
+    ...(calculationLink ? { calculationLink } : {}),
     declaration: {
       id: declaration.CUST_id,
       direction: declaration.CUST_Direction,
@@ -1258,6 +1276,7 @@ Deno.serve(async (request) => {
     const admin = adminClient();
     const { user, token } = await authenticate(request, admin);
     const actor = await currentInternalUser(admin, user) as Actor;
+    await requireProductAccess("icustoms");
     const parts = routeParts(request, "icustoms-api");
     const method = request.method.toUpperCase();
 
@@ -1278,6 +1297,35 @@ Deno.serve(async (request) => {
       throw new HttpError(404, "Customs service route not found.");
     }
     const declarationId = parts[1];
+    if (parts[2] === "assessment-comparisons" && parts.length === 3 && ["GET", "POST"].includes(method)) {
+      const declaration = await declarationForUser(admin, user, declarationId, false, method === "POST");
+      if (declaration.CUST_Direction !== "import") throw new HttpError(422, "Assessment comparisons apply to import declarations.");
+      if (method === "GET") return json(request, await assessmentComparisonHistory(admin, declarationId, new URL(request.url).searchParams.get("before") ?? undefined));
+      return json(request, await recordAssessmentComparison(admin, user.id, declarationId, (await body<Json>(request)).sourceId));
+    }
+    if (parts[2] === "calculations" && ["GET", "POST"].includes(method)) {
+      const declaration = await declarationForUser(admin, user, declarationId, method === "POST");
+      if (declaration.CUST_Direction !== "import") throw new HttpError(422, "Duty estimates apply to import declarations.");
+      if (method === "GET" && parts.length === 4 && parts[3] === "provider-evidence") {
+        return json(request, await providerEvidenceHistory(admin, declarationId, new URL(request.url).searchParams.get("before") ?? undefined));
+      }
+      if (method === "GET" && parts.length === 3) {
+        const params = new URL(request.url).searchParams;
+        return json(request, await calculationHistory(admin, declarationId, { before: params.get("before") ?? undefined, itemId: params.get("itemId") ?? undefined }));
+      }
+      const draft = providerRecord(declaration.CUST_GenericPayloadJSON);
+      if (method === "POST" && parts[3] === "preview" && parts.length === 4) {
+        if (declaration.CUST_JobID) throw new HttpError(422, "Live estimates apply to standalone import declarations.");
+        const payload = await body<Json>(request);
+        const candidate = providerRecord(payload.draft);
+        if (candidate.direction !== "import") throw new HttpError(422, "Duty estimates apply to import declarations.");
+        if (JSON.stringify(candidate).length > 2_000_000) throw new HttpError(413, "The calculation preview is too large.");
+        return json(request, await previewDeclarationCalculation(resolveCustomsInvoiceDeclaration(candidate)));
+      }
+      if (method === "POST" && parts.length === 3) return json(request, await calculateSavedDeclaration(admin, user.id, declarationId, draft));
+      if (method === "POST" && parts[3] === "override" && parts.length === 4) return json(request, await overrideCalculation(admin, user.id, declarationId, draft, await body<Json>(request)));
+      throw new HttpError(404, "Calculation route not found.");
+    }
     if (method === "GET" && parts.length === 2) {
       const declaration = await declarationForUser(admin, user, declarationId);
       return json(request, {
@@ -1304,6 +1352,8 @@ Deno.serve(async (request) => {
         ) as ExportDeclarationInput,
         direction,
       );
+      if (direction === "import") issues.push(...requiredImportReferences(providerRecord(declaration.CUST_GenericPayloadJSON)));
+      issues.push(...await verifyCustomsInvoiceHmrcRates(providerRecord(declaration.CUST_GenericPayloadJSON)));
       return json(request, { ready: issues.length === 0, issues });
     }
     if (method === "POST" && parts[2] === "provider-draft") {

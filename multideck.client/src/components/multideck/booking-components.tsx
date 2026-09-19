@@ -2879,6 +2879,9 @@ function BookingRecordDetails({
   }
   function onOrganisationSelect(role: BookingOrganisationRole, organisation: QuoteOrganisationOption) {
     markAutoPopulation(role)
+    if (role === "customer" && !workspace.parties.some((party) => party.role.toLowerCase() === "payer")) {
+      markAutoPopulation("payer")
+    }
     applyOrganisation(role, organisation)
   }
   function onPartyChange(role: string, field: keyof BookingWorkflowParty, value: string) {
@@ -2972,7 +2975,7 @@ function BookingRecordDetails({
     const address = organisation?.addresses.find((item) => item.id === party?.addressId) ?? organisation?.addresses[0]
     const contact = organisation?.contacts.find((item) => item.id === party?.contactId) ?? organisation?.contacts[0]
     const linkedValues: Partial<Record<keyof BookingWorkflowParty, string>> = {
-      identifierValue: organisation?.code, address: address?.address,
+      name: organisation?.name, identifierValue: organisation?.code, address: address?.address,
       contactName: contact?.name, email: contact?.email ?? contact?.emails[0],
     }
     return {
@@ -3120,10 +3123,10 @@ function BookingRecordDetails({
       </Dialog>
       <div data-booking-detail-section="control" className="grid gap-2">
       <BookingCargoWiseGroup title="Job data">
-        <div className="grid gap-3 xl:grid-cols-3">
-          <div className="grid content-start gap-1.5">
+        <div className="md-booking-job-groups">
+          <div className="md-booking-job-group">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Booking control")}</h4>
-            <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <div className="md-booking-job-fields">
               <BookingCargoWiseField label="Booking ref" value={record.booking.id} />
               <BookingCargoWiseField label="Job ref" value={record.booking.jobRef} {...editField("jobRef")} />
               <BookingCargoWiseField label="Tracking status" value={record.booking.status} options={["On track", "Delayed", "Exception"]} {...editField("status")} />
@@ -3134,9 +3137,9 @@ function BookingRecordDetails({
               <BookingCargoWiseField label="Last updated" value={updatedAt} />
             </div>
           </div>
-          <div className="grid content-start gap-1.5">
+          <div className="md-booking-job-group">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Ownership")}</h4>
-            <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <div className="md-booking-job-fields">
               <BookingCargoWiseField label="Owner" value={ownerName} options={ownerOptions} searchable placeholder="Search team members" allowCustom={false} {...editDetail("ownerName")} />
               <BookingCargoWiseField label={calculatedDirection ? "Direction (auto)" : "Direction"} value={calculatedDirection ?? record.booking.direction} options={bookingDirectionOptions} placeholder="Choose direction" allowCustom={false} editable={editable && !calculatedDirection} onChange={(nextDirection) => {
                 onBookingChange("direction", nextDirection)
@@ -3144,16 +3147,16 @@ function BookingRecordDetails({
               }} />
               <BookingCargoWiseField label="Favourite" value={record.booking.isFavourite ? "Yes" : "No"} options={["Yes", "No"]} editable={editable} onChange={(value) => onDetailChange("isFavourite", value === "Yes")} />
               <BookingCargoWiseField label="Current location" value={record.booking.currentLocation} {...editField("currentLocation")} />
-              <BookingCargoWiseField label="Source ID" value={record.booking.sourceId} span />
+              <BookingCargoWiseField label="Source ID" value={record.booking.sourceId} wrapValue span className="md-field-wide" />
             </div>
           </div>
-          <div className="grid content-start gap-1.5">
+          <div className="md-booking-job-group">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("References")}</h4>
-            <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <div className="md-booking-job-fields">
               <BookingCargoWiseField label="Customer ref" value={detailValue("customerReference", record.booking.customerRef)} {...editDetail("customerReference")} />
               <BookingCargoWiseField label="Quote ref" value={quoteReference} />
               <BookingCargoWiseField label="Customer PO" value={detailValue("customerPO", value(facts, "customerPO"))} {...editDetail("customerPO")} />
-              <BookingCargoWiseField label="Supplier ref" value={detailValue("supplierReference", record.booking.supplierRef)} {...editDetail("supplierReference")} />
+              <BookingCargoWiseField className="md-field-wide" label="Supplier ref" value={detailValue("supplierReference", record.booking.supplierRef)} {...editDetail("supplierReference")} />
               <BookingCargoWiseField label="Invoice" value={detailValue("invoiceReference", record.booking.invoice)} {...editDetail("invoiceReference")} />
               <BookingCargoWiseField label="Documents" value={t(bookingRecordAvailability(workspace.documents).label)} />
               <BookingCargoWiseField label="Workflow" value={detailValue("workflowStatus", record.booking.status)} {...editDetail("workflowStatus")} />
@@ -3165,82 +3168,84 @@ function BookingRecordDetails({
 
       </div>
 
-      <div data-booking-detail-section="parties" className="grid items-stretch gap-2 xl:grid-cols-2 2xl:grid-cols-4">
-        <BookingCargoWiseGroup title="Customer" className="[--md-field-label-width:64px]">
-          <div data-booking-customer-select className="contents"><BookingCargoWiseField label="Name" value={partyValue(customerParty, "name", record.booking.customer || value(quote, "customerName"))} options={organisationOptions("customer")} searchable placeholder="Search customers" span {...editParty("customer", "name")} onOptionSelect={(option) => {
+      <div data-booking-detail-section="parties" className="md-booking-party-groups grid items-stretch gap-2">
+        <BookingCargoWiseGroup title="Customer" className="md-party-section" contentClassName="md-party-fields">
+          <div data-booking-customer-select className="contents"><BookingCargoWiseField className="md-party-name" label="Name" value={partyValue(customerParty, "name", record.booking.customer || value(quote, "customerName"))} options={organisationOptions("customer")} searchable placeholder="Search customers" {...editParty("customer", "name")} onOptionSelect={(option) => {
             const organisation = organisations.find((item) => item.id === option.id)
             if (organisation) onOrganisationSelect("customer", organisation)
           }} /></div>
-          <BookingCargoWiseField label="Code / ref" value={partyValue(customerParty, "identifierValue", value(facts, "clientCode", customer.customerCode ?? "") || record.booking.customerRef)} span {...editParty("customer", "identifierValue")} />
-          <BookingCargoWiseField label="Address" value={partyValue(customerParty, "address", value(facts, "customerAddress", value(quote, "customerAddress")) || unavailable)} span {...editParty("customer", "address")} />
-          <BookingCargoWiseField label="Contact" value={partyValue(customerParty, "contactName", value(facts, "customerContact", value(quote, "contactName")) || unavailable)} options={partyContactOptions(customerOrganisation)} searchable placeholder="Search contacts" span {...editParty("customer", "contactName")} onOptionSelect={(option) => {
+          <BookingCargoWiseField className="md-party-code" label="Code / ref" value={partyValue(customerParty, "identifierValue", value(facts, "clientCode", customer.customerCode ?? "") || record.booking.customerRef)} {...editParty("customer", "identifierValue")} />
+          <BookingCargoWiseField label="Address" value={partyValue(customerParty, "address", value(facts, "customerAddress", value(quote, "customerAddress")) || unavailable)} {...editParty("customer", "address")} />
+          <BookingCargoWiseField className="md-party-contact" label="Contact" value={partyValue(customerParty, "contactName", value(facts, "customerContact", value(quote, "contactName")) || unavailable)} options={partyContactOptions(customerOrganisation)} searchable placeholder="Search contacts" {...editParty("customer", "contactName")} onOptionSelect={(option) => {
             const contact = customerOrganisation?.contacts.find((item) => item.id === option.id)
             if (!contact) return
             onPartyChange("customer", "contactId", contact.id)
             onPartyChange("customer", "email", contact.email ?? contact.emails[0] ?? "")
           }} />
-          <BookingCargoWiseField label="Email" value={partyValue(customerParty, "email", value(facts, "customerEmail", value(quote, "contactEmail")) || unavailable)} span {...editParty("customer", "email")} />
+          <BookingCargoWiseField className="md-party-email" label="Email" value={partyValue(customerParty, "email", value(facts, "customerEmail", value(quote, "contactEmail")) || unavailable)} {...editParty("customer", "email")} />
         </BookingCargoWiseGroup>
         <BookingCargoWiseGroup
           title="Bill to / payer"
-          className="[--md-field-label-width:64px]"
+          className="md-party-section" contentClassName="md-party-fields"
           action={(
             <Button type="button" variant="ghost" size="sm" disabled={!editable || !customerOrganisation} onClick={() => customerOrganisation && onOrganisationSelect("payer", customerOrganisation)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]">
               <Copy className="size-3" aria-hidden="true" />{t("Use customer")}
             </Button>
           )}
         >
-          <BookingCargoWiseField label="Name" value={partyValue(payer, "name", value(quotePayer, "name", record.booking.customer))} options={organisationOptions("payer")} searchable placeholder="Search payer accounts" span {...editParty("payer", "name")} onOptionSelect={(option) => {
+          <BookingCargoWiseField className="md-party-name" label="Name" value={partyValue(payer, "name", value(quotePayer, "name", record.booking.customer))} options={organisationOptions("payer")} searchable placeholder="Search payer accounts" {...editParty("payer", "name")} onOptionSelect={(option) => {
             const organisation = organisations.find((item) => item.id === option.id)
             if (organisation) onOrganisationSelect("payer", organisation)
           }} />
-          <BookingCargoWiseField label="Code" value={partyValue(payer, "identifierValue", value(quotePayer, "code", value(facts, "payerCode", partyValue(customerParty, "identifierValue", value(facts, "clientCode", customer.customerCode ?? "")))))} span {...editParty("payer", "identifierValue")} />
-          <BookingCargoWiseField label="Address" value={partyValue(payer, "address", value(quotePayer, "address", value(facts, "customerAddress")) || unavailable)} span {...editParty("payer", "address")} />
-          <BookingCargoWiseField label="Contact" value={partyValue(payer, "contactName", value(quotePayer, "contact", value(quote, "contactName")) || unavailable)} options={partyContactOptions(payerOrganisation)} searchable placeholder="Search billing contacts" span {...editParty("payer", "contactName")} onOptionSelect={(option) => {
+          <BookingCargoWiseField className="md-party-code" label="Code" value={partyValue(payer, "identifierValue", value(quotePayer, "code", value(facts, "payerCode", partyValue(customerParty, "identifierValue", value(facts, "clientCode", customer.customerCode ?? "")))))} {...editParty("payer", "identifierValue")} />
+          <BookingCargoWiseField label="Address" value={partyValue(payer, "address", value(quotePayer, "address", value(facts, "customerAddress")) || unavailable)} {...editParty("payer", "address")} />
+          <BookingCargoWiseField className="md-party-contact" label="Contact" value={partyValue(payer, "contactName", value(quotePayer, "contact", value(quote, "contactName")) || unavailable)} options={partyContactOptions(payerOrganisation)} searchable placeholder="Search billing contacts" {...editParty("payer", "contactName")} onOptionSelect={(option) => {
             const contact = payerOrganisation?.contacts.find((item) => item.id === option.id)
             if (!contact) return
             onPartyChange("payer", "contactId", contact.id)
             onPartyChange("payer", "email", contact.email ?? contact.emails[0] ?? "")
           }} />
-          <BookingCargoWiseField label="Email" value={partyValue(payer, "email", value(quotePayer, "email", value(facts, "payerEmail", value(quote, "contactEmail"))) || unavailable)} span {...editParty("payer", "email")} />
+          <BookingCargoWiseField className="md-party-email" label="Email" value={partyValue(payer, "email", value(quotePayer, "email", value(facts, "payerEmail", value(quote, "contactEmail"))) || unavailable)} {...editParty("payer", "email")} />
         </BookingCargoWiseGroup>
-        <BookingCargoWiseGroup title="Shipper" className="[--md-field-label-width:64px]" action={<Button type="button" variant="ghost" size="sm" disabled={!editable || !customerOrganisation} onClick={() => customerOrganisation && onOrganisationSelect("shipper", customerOrganisation)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]"><Copy className="size-3" aria-hidden="true" />{t("Use customer")}</Button>}>
-          <BookingCargoWiseField label="Code" value={partyValue(shipper, "identifierValue", value(facts, "shipperCode"))} span {...editParty("shipper", "identifierValue")} />
-          <BookingCargoWiseField label="Name" value={partyValue(shipper, "name", value(quote, "shipperName") || unavailable)} options={organisationOptions("shipper")} searchable placeholder="Search shippers" span {...editParty("shipper", "name")} onOptionSelect={(option) => {
+        <BookingCargoWiseGroup title="Shipper" className="md-party-section" contentClassName="md-party-fields" action={<Button type="button" variant="ghost" size="sm" disabled={!editable || !customerOrganisation} onClick={() => customerOrganisation && onOrganisationSelect("shipper", customerOrganisation)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]"><Copy className="size-3" aria-hidden="true" />{t("Use customer")}</Button>}>
+          <BookingCargoWiseField className="md-party-name" label="Name" value={partyValue(shipper, "name", value(quote, "shipperName") || unavailable)} options={organisationOptions("shipper")} searchable placeholder="Search shippers" {...editParty("shipper", "name")} onOptionSelect={(option) => {
             const organisation = organisations.find((item) => item.id === option.id)
             if (organisation) onOrganisationSelect("shipper", organisation)
           }} />
-              <BookingCargoWiseField label="Reference" value={detailValue("shipperReference", value(facts, "shipperReference"))} span {...editDetail("shipperReference")} />
-          <BookingCargoWiseField label="Collection" value={record.booking.origin} options={locationFieldOptions} searchable placeholder="Search places or UN/LOCODEs" span {...editField("origin")} onChange={(nextValue) => { onBookingChange("origin", nextValue); onRouteChange(0, "originUnlocode", "") }} onOptionSelect={(option) => {
+          <BookingCargoWiseField className="md-party-code" label="Code" value={partyValue(shipper, "identifierValue", value(facts, "shipperCode"))} {...editParty("shipper", "identifierValue")} />
+          <BookingCargoWiseField className="md-party-short" label="Reference" value={detailValue("shipperReference", value(facts, "shipperReference"))} {...editDetail("shipperReference")} />
+          <BookingCargoWiseField className="md-party-short" label="Collection" value={record.booking.origin} options={locationFieldOptions} searchable placeholder="Search places or UN/LOCODEs" {...editField("origin")} onChange={(nextValue) => { onBookingChange("origin", nextValue); onRouteChange(0, "originUnlocode", "") }} onOptionSelect={(option) => {
             const location = locationOptions.find((item) => item.id === option.id)
             if (location) onLocationSelect("origin", location)
           }} />
-          <BookingCargoWiseField label="Address" value={partyValue(shipper, "address", value(quote, "shipperAddress") || unavailable)} span {...editParty("shipper", "address")} />
-          <BookingCargoWiseField label="Contact" value={partyValue(shipper, "contactName", value(facts, "shipperContact") || unavailable)} options={partyContactOptions(shipperOrganisation)} searchable placeholder="Search contacts" span {...editParty("shipper", "contactName")} onOptionSelect={(option) => {
+          <BookingCargoWiseField label="Address" value={partyValue(shipper, "address", value(quote, "shipperAddress") || unavailable)} {...editParty("shipper", "address")} />
+          <BookingCargoWiseField className="md-party-contact" label="Contact" value={partyValue(shipper, "contactName", value(facts, "shipperContact") || unavailable)} options={partyContactOptions(shipperOrganisation)} searchable placeholder="Search contacts" {...editParty("shipper", "contactName")} onOptionSelect={(option) => {
             const contact = shipperOrganisation?.contacts.find((item) => item.id === option.id)
             if (!contact) return
             onPartyChange("shipper", "contactId", contact.id)
             onPartyChange("shipper", "email", contact.email ?? contact.emails[0] ?? "")
           }} />
+          <BookingCargoWiseField className="md-party-email" label="Email" value={partyValue(shipper, "email", value(facts, "shipperEmail"))} {...editParty("shipper", "email")} />
         </BookingCargoWiseGroup>
-        <BookingCargoWiseGroup title="Consignee" className="[--md-field-label-width:64px]" action={<Button type="button" variant="ghost" size="sm" disabled={!editable || !customerOrganisation} onClick={() => customerOrganisation && onOrganisationSelect("consignee", customerOrganisation)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]"><Copy className="size-3" aria-hidden="true" />{t("Use customer")}</Button>}>
-          <BookingCargoWiseField label="Code" value={partyValue(consignee, "identifierValue", value(facts, "consigneeCode"))} span {...editParty("consignee", "identifierValue")} />
-          <BookingCargoWiseField label="Name" value={partyValue(consignee, "name", value(quote, "consigneeName") || unavailable)} options={organisationOptions("consignee")} searchable placeholder="Search consignees" span {...editParty("consignee", "name")} onOptionSelect={(option) => {
+        <BookingCargoWiseGroup title="Consignee" className="md-party-section" contentClassName="md-party-fields" action={<Button type="button" variant="ghost" size="sm" disabled={!editable || !customerOrganisation} onClick={() => customerOrganisation && onOrganisationSelect("consignee", customerOrganisation)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]"><Copy className="size-3" aria-hidden="true" />{t("Use customer")}</Button>}>
+          <BookingCargoWiseField className="md-party-name" label="Name" value={partyValue(consignee, "name", value(quote, "consigneeName") || unavailable)} options={organisationOptions("consignee")} searchable placeholder="Search consignees" {...editParty("consignee", "name")} onOptionSelect={(option) => {
             const organisation = organisations.find((item) => item.id === option.id)
             if (organisation) onOrganisationSelect("consignee", organisation)
           }} />
-              <BookingCargoWiseField label="Reference" value={detailValue("consigneeReference", value(facts, "consigneeReference"))} span {...editDetail("consigneeReference")} />
-          <BookingCargoWiseField label="Delivery" value={record.booking.destination} options={locationFieldOptions} searchable placeholder="Search places or UN/LOCODEs" span {...editField("destination")} onChange={(nextValue) => { onBookingChange("destination", nextValue); onRouteChange(Math.max(workspace.routes.length - 1, 0), "destinationUnlocode", "") }} onOptionSelect={(option) => {
+          <BookingCargoWiseField className="md-party-code" label="Code" value={partyValue(consignee, "identifierValue", value(facts, "consigneeCode"))} {...editParty("consignee", "identifierValue")} />
+          <BookingCargoWiseField className="md-party-short" label="Reference" value={detailValue("consigneeReference", value(facts, "consigneeReference"))} {...editDetail("consigneeReference")} />
+          <BookingCargoWiseField className="md-party-short" label="Delivery" value={record.booking.destination} options={locationFieldOptions} searchable placeholder="Search places or UN/LOCODEs" {...editField("destination")} onChange={(nextValue) => { onBookingChange("destination", nextValue); onRouteChange(Math.max(workspace.routes.length - 1, 0), "destinationUnlocode", "") }} onOptionSelect={(option) => {
             const location = locationOptions.find((item) => item.id === option.id)
             if (location) onLocationSelect("destination", location)
           }} />
-          <BookingCargoWiseField label="Address" value={partyValue(consignee, "address", value(quote, "consigneeAddress") || unavailable)} span {...editParty("consignee", "address")} />
-          <BookingCargoWiseField label="Contact" value={partyValue(consignee, "contactName", value(facts, "consigneeContact") || unavailable)} options={partyContactOptions(consigneeOrganisation)} searchable placeholder="Search contacts" span {...editParty("consignee", "contactName")} onOptionSelect={(option) => {
+          <BookingCargoWiseField label="Address" value={partyValue(consignee, "address", value(quote, "consigneeAddress") || unavailable)} {...editParty("consignee", "address")} />
+          <BookingCargoWiseField className="md-party-contact" label="Contact" value={partyValue(consignee, "contactName", value(facts, "consigneeContact") || unavailable)} options={partyContactOptions(consigneeOrganisation)} searchable placeholder="Search contacts" {...editParty("consignee", "contactName")} onOptionSelect={(option) => {
             const contact = consigneeOrganisation?.contacts.find((item) => item.id === option.id)
             if (!contact) return
             onPartyChange("consignee", "contactId", contact.id)
             onPartyChange("consignee", "email", contact.email ?? contact.emails[0] ?? "")
           }} />
+          <BookingCargoWiseField className="md-party-email" label="Email" value={partyValue(consignee, "email", value(facts, "consigneeEmail"))} {...editParty("consignee", "email")} />
         </BookingCargoWiseGroup>
       </div>
 

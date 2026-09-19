@@ -1,15 +1,20 @@
+import { ContactEmailAction } from "@/components/multideck/contact-email-action"
+import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { motion, useReducedMotion } from "motion/react"
 import { ArrowLeft, ArrowRight, Check, Clock, Health, Mail, MessageSquareText, Phone, Plus, RefreshCw, Trash2, WhatsappBrand, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
+import { MeetingDetailsPopover, type MeetingDetailsAnchor } from "@/components/multideck/meeting-details-popover"
+import { MeetingProviderMark, meetingProviderLabels } from "@/components/multideck/meeting-provider-mark"
+import { getCalendarWorkspace, type CalendarEvent } from "@/lib/calendar-api"
+import { CALENDAR_CHANGED_EVENT } from "@/components/multideck/meeting-dialog"
+import "./crm-account-detail-page.css"
 import { AccountDetailTabs, AccountOperationsPanel, type AccountDetailTab } from "@/components/multideck/account-operations-workspace"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { ProgressRing } from "@/components/multideck/dashboard-radials"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import { InlineField, InlineFieldGroup, InlineSelectField, InlineToggleChip } from "@/components/multideck/inline-field"
-import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
 import { PhoneCallLinkedRecordSection } from "@/components/multideck/phone-call-components"
 import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
@@ -21,22 +26,14 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { useLanguage } from "@/i18n/language-provider"
-import { mdMotion, staggerRamp } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import { CustomerApiError, getCustomer, getCustomerReference, updateAccount, updateAccountCompanyTypes, type AccountScoreExplanation, type ApiCustomerDetail, type CustomerReference, type UpdateAccountInput } from "@/lib/customer-api"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { CustomerLiveGrantWorkspace } from "@/pages/customer-live-grants-page"
+import { companyProfile, updateCompanyProfile, updateQuoteDefaults, updateCompanyCustomFields, type CompanyProfileKey } from "@/lib/company-profile"
 
 type CustomField = { id: string; label: string; value: string }
 type AccountDraft = UpdateAccountInput & { customFields: CustomField[] }
-type CommunicationPreferenceKey = "whatsapp" | "sms" | "phone" | "email"
-const communicationChannels: Array<{ key: CommunicationPreferenceKey; label: string; icon: LucideIcon }> = [
-  { key: "whatsapp", label: "WhatsApp", icon: WhatsappBrand },
-  { key: "sms", label: "SMS", icon: MessageSquareText },
-  { key: "phone", label: "Phone", icon: Phone },
-  { key: "email", label: "Mail", icon: Mail },
-]
-
 /** Activities and emails are the same thing to an operator: what happened, and when. */
 type Moment = {
   id: string
@@ -62,8 +59,7 @@ function sameIds(left: string[] | null, right: string[]) {
  *
  * Within that frame each fact is drawn as the shape it actually is. Scores carry
  * their arc and remain calculated, not manually editable. Profile fields align in
- * a stable grid, while communication preferences and consent live together because
- * they answer the same operator question: how may we contact this account? The
+ * a stable grid. Communication preferences and consent belong to each contact. The
  * activity log and mailbox remain one stream because nobody wants two histories of
  * the same relationship.
  *
@@ -71,18 +67,14 @@ function sameIds(left: string[] | null, right: string[]) {
  */
 export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { accountId: string; navigate: (path: string) => void; currentUser: AuthUserSummary | null }) {
   const { language, t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
   const [account, setAccount] = useState<ApiCustomerDetail | null>(null)
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [addContactOpen, setAddContactOpen] = useState(false)
-  const [consentOpen, setConsentOpen] = useState(false)
   const [reference, setReference] = useState<CustomerReference | null>(null)
   const [companyTypesSaving, setCompanyTypesSaving] = useState(false)
   const [companyTypeIdsDraft, setCompanyTypeIdsDraft] = useState<string[] | null>(null)
-  const [preferredPreferenceDraft, setPreferredPreferenceDraft] = useState<CommunicationPreferenceKey | null>(null)
-  const [preferredPreferenceSaving, setPreferredPreferenceSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<AccountDetailTab>("overview")
   const accountRef = useRef<ApiCustomerDetail | null>(null)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
@@ -128,9 +120,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
     }
   }, [accountId, reloadToken, t])
 
-  useEffect(() => {
-    setPreferredPreferenceDraft(null)
-  }, [account?.metadata.preferredCommunicationPreference])
+
 
   useEffect(() => {
     if (!account) return
@@ -152,15 +142,14 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
    * its own value back and shows the reason next to itself.
    */
   const patch = useCallback(
-    (change: Partial<AccountDraft>) => {
+    (change: Partial<AccountDraft> | ((current: AccountDraft) => Partial<AccountDraft>)) => {
       const save = saveQueueRef.current.then(async () => {
         const current = accountRef.current
         if (!current) return
-        const next = { ...toDraft(current, reference), ...change }
-        const metadata = {
-          ...next.metadata,
-          customFields: Object.fromEntries(next.customFields.filter((field) => field.label.trim()).map((field) => [field.label.trim(), field.value.trim()])),
-        }
+        const currentDraft = toDraft(current, reference)
+        const changed = typeof change === "function" ? change(currentDraft) : change
+        const next = { ...currentDraft, ...changed }
+        const metadata = changed.customFields ? updateCompanyCustomFields(next.metadata, changed.customFields) : next.metadata
         try {
           const updated = await updateAccount(accountId, { ...next, metadata }, current.editVersion)
           accountRef.current = updated
@@ -263,7 +252,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   }, [account])
 
   const backButton = (
-    <Button type="button" variant="ghost" className="-ms-2 mb-4 h-8 rounded-[var(--md-radius-md)] px-2 text-[12px] font-medium text-[var(--md-text)] hover:bg-[var(--md-surface-tint)]" onClick={() => navigate("/crm/accounts")}>
+    <Button type="button" variant="ghost" className="-ms-2 mb-1 h-8 rounded-[var(--md-radius-md)] px-2 text-[12px] font-medium text-[var(--md-text)] hover:bg-[var(--md-surface-tint)]" onClick={() => navigate("/crm/accounts")}>
       <ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.3} aria-hidden="true" />
       {t("Back to companies")}
     </Button>
@@ -304,41 +293,13 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   const currentTypeIds = companyTypeIdsDraft ?? storedCompanyTypeIds
   const currentCompanyTypes = reference ? reference.organisationTypes.filter((type) => currentTypeIds.includes(type.id)) : currentAccount.types.map((name) => ({ id: name, name }))
   const address = currentAccount.address
-  const engagement = currentAccount.engagement
-  const savedChannelPreferences = objectRecord(currentAccount.metadata.communicationChannels)
-  const savedPreferredChannel = preferredCommunicationKey(engagement?.preferredChannel) ?? preferredCommunicationKey(currentAccount.metadata.preferredCommunicationPreference)
-  const channelPreferences = Object.fromEntries(communicationChannels.map(({ key }) => [key,
-    key === "whatsapp" ? engagement?.allowWhatsApp === true : savedChannelPreferences[key] === true || (savedChannelPreferences[key] === undefined && savedPreferredChannel === key),
-  ]))
-  const preferredCommunication = preferredPreferenceDraft ?? savedPreferredChannel
-  const enter = (index: number) => (shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.04) })
-
-  async function selectPreferredCommunication(next: CommunicationPreferenceKey) {
-    if (next === preferredCommunication || preferredPreferenceSaving) return
-    setPreferredPreferenceDraft(next)
-    setPreferredPreferenceSaving(true)
-    try {
-      await patch({
-        metadata: {
-          ...currentAccount.metadata,
-          preferredCommunicationPreference: next,
-          communicationChannels: { ...channelPreferences, [next]: true },
-        },
-        engagement: {
-          ...defaultEngagement,
-          ...engagement,
-          preferredChannel: next,
-          ...(next === "whatsapp" ? { allowWhatsApp: true } : {}),
-        },
-      })
-    } catch (cause) {
-      setPreferredPreferenceDraft(null)
-      toast.error(cause instanceof Error ? cause.message : t("That preference could not be saved."))
-    } finally {
-      setPreferredPreferenceDraft(null)
-      setPreferredPreferenceSaving(false)
-    }
-  }
+  const businessProfile = companyProfile(currentAccount.metadata)
+  const saveBusinessProfile = (key: CompanyProfileKey, value: string) => patch(current => ({ metadata: updateCompanyProfile(current.metadata, key, value) }))
+  const saveAddressField = (key: keyof AccountDraft["address"], value: string) => patch(current => {
+    if (key === "countryCode" && value && !/^[a-z]{2}$/i.test(value)) throw new Error("Use a two-letter country code, for example GB.")
+    if (key === "mainEmail" && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw new Error("Enter a valid company email address.")
+    return { address: { ...current.address, [key]: (key === "countryCode" ? value.toUpperCase() : value) || null } }
+  })
 
   async function flushCompanyTypes() {
     if (companyTypesSaveTimerRef.current) {
@@ -388,21 +349,22 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   }
 
   return (
-    <div className="md-page">
-      <div className="grid items-start gap-[var(--md-page-stack-gap)]">
-        <div className="grid min-w-0 content-start gap-[var(--md-page-stack-gap)]">
-          <Surface padding="none" className="min-w-0 overflow-hidden rounded-[var(--md-radius-xl)]">
+    <div className="md-page company-record">
+      <div className="grid items-start gap-[var(--md-page-stack-gap-compact)]">
+        <div className="grid min-w-0 content-start gap-[var(--md-page-stack-gap-compact)]">
+          <Surface padding="none" className="min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] shadow-[var(--md-shadow-line)]">
             <header className="px-4 py-3 shadow-[var(--md-stroke-bottom)] sm:px-5">
               {backButton}
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 items-start gap-3.5">
-                  <CustomerAvatar initials={currentAccount.initials} tone="teal" size="lg" className="size-12 rounded-full text-[16px]" />
+                  <CustomerAvatar initials={currentAccount.initials} tone="teal" size="lg" className="size-10 rounded-full text-[14px]" />
                   <div className="min-w-0">
                     {/* The name is the page title and is edited in place like
                         everything else. It carries the heading's own metrics so
                         nothing shifts. */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <HeadingField value={currentAccount.name} onSave={(name) => patch({ name })} />
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5" aria-label={t("Company types")} aria-busy={companyTypesSaving}>
+                    <div className="flex flex-wrap items-center gap-1.5" aria-label={t("Company types")} aria-busy={companyTypesSaving}>
                       {currentCompanyTypes.map((type) => {
                         const canRemove = Boolean(reference && type.id)
                         return (
@@ -452,6 +414,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                         </DropdownMenu>
                       ) : null}
                     </div>
+                    </div>
                     {[currentAccount.vertical || currentAccount.industry, currentAccount.location].filter(Boolean).length ? (
                       <p className="mt-1.5 text-[12px] leading-4 text-[var(--md-text)]" dir="auto" data-i18n-skip>
                         {[currentAccount.vertical || currentAccount.industry, currentAccount.location].filter(Boolean).join(" · ")}
@@ -461,15 +424,13 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
                   {address?.mainEmail ? (
-                    <Button asChild variant="outline" className="h-9 rounded-[var(--md-radius-lg)] text-[12.5px]">
-                      <a href={`mailto:${address.mainEmail}`}>
+                      <ContactEmailAction email={address.mainEmail} name={currentAccount.name} className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12.5px] shadow-[var(--md-shadow-line)]">
                         <Mail className="size-3.5" strokeWidth={1.5} />
                         {t("Email")}
-                      </a>
-                    </Button>
+                      </ContactEmailAction>
                   ) : null}
                   {address?.mainPhone ? (
-                    <Button asChild variant="outline" className="h-9 rounded-[var(--md-radius-lg)] text-[12.5px]">
+                    <Button asChild variant="outline" className="h-8 rounded-[var(--md-radius-md)] text-[12.5px]">
                       <a href={`tel:${address.mainPhone}`}>
                         <Phone className="size-3.5" strokeWidth={1.5} />
                         {t("Call")}
@@ -480,27 +441,58 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
               </div>
             </header>
 
-            {/* The figures live in the strip rather than a hero band. Health and
-                churn are calculated signals: operators can read them here but
-                cannot silently override the underlying percentage. */}
-            <div className="grid grid-cols-2 bg-[var(--md-surface-soft)] shadow-[var(--md-stroke-bottom)] lg:grid-cols-4">
-              <ScoreCell label={t("Health")} score={currentAccount.healthScore} tone="health" explanation={currentAccount.scoreExplanations?.health ?? null} />
-              <ScoreCell label={t("Churn risk")} score={currentAccount.churnRiskScore} tone="risk" explanation={currentAccount.scoreExplanations?.churnRisk ?? null} />
-              <StatCell label={t("Contacts")} value={String(currentAccount.contacts.length)} />
-              <StatCell label={t("Active shipments")} value={String(currentAccount.activeShipments.length)} note={openExceptions ? `${openExceptions} ${t(openExceptions === 1 ? "open exception" : "open exceptions")}` : undefined} noteTone="amber" />
-            </div>
           </Surface>
 
           <AccountDetailTabs account={currentAccount} activeTab={activeTab} onChange={setActiveTab} />
 
-          {activeTab === "overview" ? (
-            <>
-              <Zone title={t("Profile")}>
-                <InlineFieldGroup stacked directEdit>
-                  <div className="grid gap-x-3 gap-y-3 sm:grid-cols-2 2xl:grid-cols-3">
-                    <InlineField label="Summary" kind="textarea" align="start" colSpan="full" value={currentAccount.summary ?? ""} placeholder="What this account buys, and what matters to them" onSave={(summary) => patch({ summary: summary || null })} />
+          <div hidden={activeTab !== "notes"}>
+            <LifecycleNotes subjectType="company" subjectId={currentAccount.id} title="Company notes" />
+          </div>
+
+          {/* Keep editable fields mounted: tab changes must not discard drafts or save feedback. */}
+          <div hidden={activeTab !== "details"}>
+            <div className="grid gap-[var(--md-page-stack-gap-compact)]">
+              <Zone title={t("Company information")}>
+                <InlineFieldGroup compact>
+                  <div className="grid items-start gap-x-6 gap-y-1 lg:grid-cols-2 xl:grid-cols-3">
+                    <InlineField label="Company name" value={currentAccount.name} required onSave={name => patch({ name })} />
+                    <InlineField label="Registered name" value={businessProfile.registeredName ?? ""} placeholder="If different from company name" onSave={value => saveBusinessProfile("registeredName", value)} />
+                    <InlineField label="Company code" width="medium" value={currentAccount.accountCode ?? ""} readOnly align="start" />
+                    <InlineField label="Registration no." width="medium" value={businessProfile.registrationNumber ?? ""} onSave={value => saveBusinessProfile("registrationNumber", value)} />
+                    <InlineField label="Website" kind="url" value={businessProfile.website ?? ""} placeholder="https://example.com" onSave={value => saveBusinessProfile("website", value)} />
+                    <InlineField label="LinkedIn" kind="url" value={businessProfile.linkedInUrl ?? ""} placeholder="Company page URL" onSave={value => saveBusinessProfile("linkedInUrl", value)} />
+                    <InlineField label="Employees" kind="number" width="short" value={businessProfile.employeeCount ?? ""} onSave={value => saveBusinessProfile("employeeCount", value)} />
+                    <InlineField label="Source" width="medium" value={businessProfile.source ?? ""} placeholder="Referral, event, website…" onSave={value => saveBusinessProfile("source", value)} />
+                    <InlineField label="Account owner" value={currentAccount.ownerName ?? ""} readOnly align="start" />
+                  </div>
+                </InlineFieldGroup>
+              </Zone>
+
+              <Zone title={t("Main contact & address")}>
+                <InlineFieldGroup compact>
+                  <div className="grid items-start gap-x-6 gap-y-1 lg:grid-cols-2 xl:grid-cols-3">
+                    <InlineField label="Company email" kind="email" value={address?.mainEmail ?? ""} onSave={value => saveAddressField("mainEmail", value)} />
+                    <InlineField label="Phone" kind="tel" width="medium" value={address?.mainPhone ?? ""} onSave={value => saveAddressField("mainPhone", value)} />
+                    <InlineField label="Country" width="short" value={address?.countryCode ?? ""} placeholder="GB" onSave={value => saveAddressField("countryCode", value)} />
+                    <InlineField label="Street address" value={address?.line1 ?? ""} onSave={value => saveAddressField("line1", value)} />
+                    <InlineField label="Address line 2" value={address?.line2 ?? ""} onSave={value => saveAddressField("line2", value)} />
+                    <InlineField label="Town or city" value={address?.townCity ?? ""} onSave={value => saveAddressField("townCity", value)} />
+                    <InlineField label="County / state" value={address?.countyState ?? ""} onSave={value => saveAddressField("countyState", value)} />
+                    <InlineField label="Postcode" width="short" value={address?.postZipCode ?? ""} onSave={value => saveAddressField("postZipCode", value)} />
+                  </div>
+                </InlineFieldGroup>
+              </Zone>
+
+              <Zone title={t("Relationship & service")} action={<div className="flex flex-wrap items-center gap-2"><InlineToggleChip label="Strategic account" checked={currentAccount.strategic} onSave={(strategic) => patch({ strategic })} /><AddCustomField onAdd={(label, value) => patch(current => {
+                if (current.customFields.some(field => field.label.toLowerCase() === label.toLowerCase())) throw new Error("A field with this name already exists. Choose another name.")
+                return { customFields: [...current.customFields, { id: label, label, value }] }
+              })} /></div>}>
+                <InlineFieldGroup compact>
+                  <div className="grid items-start gap-x-6 gap-y-1 lg:grid-cols-2 xl:grid-cols-3">
+                    <div className="min-w-0 lg:col-span-2"><InlineField label="Summary" kind="textarea" align="start" value={currentAccount.summary ?? ""} placeholder="What this account buys, and what matters to them" onSave={(summary) => patch({ summary: summary || null })} /></div>
                     <InlineSelectField
                       label="Relationship"
+                      width="medium"
                       value={currentAccount.relationshipStatus}
                       options={(reference?.relationshipStatuses ?? []).map((status) => ({
                         value: status.code,
@@ -508,32 +500,32 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                       }))}
                       onSave={(relationshipStatus) => patch({ relationshipStatus })}
                     />
-                    <InlineField label="Tier" value={currentAccount.tier ?? ""} onSave={(tier) => patch({ tier: tier || null })} />
+                    <InlineField label="Tier" width="short" value={currentAccount.tier ?? ""} onSave={(tier) => patch({ tier: tier || null })} />
                     <InlineField label="Segment" value={currentAccount.segment ?? ""} onSave={(segment) => patch({ segment: segment || null })} />
-                    <InlineField label="Vertical" value={currentAccount.vertical ?? ""} onSave={(vertical) => patch({ vertical: vertical || null })} />
-                    <InlineField label="Primary mode" value={currentAccount.primaryMode ?? ""} onSave={(primaryMode) => patch({ primaryMode: primaryMode || null })} />
+                    <InlineField label="Industry" value={currentAccount.vertical ?? ""} onSave={(vertical) => patch({ vertical: vertical || null })} />
+                    <InlineField label="Primary mode" width="short" value={currentAccount.primaryMode ?? ""} onSave={(primaryMode) => patch({ primaryMode: primaryMode || null })} />
                     <InlineField label="Trade lane" value={currentAccount.primaryTradeLane ?? ""} onSave={(primaryTradeLane) => patch({ primaryTradeLane: primaryTradeLane || null })} />
-                    <InlineField label="Growth state" value={currentAccount.growthState ?? ""} onSave={(growthState) => patch({ growthState: growthState || null })} />
+                    <InlineField label="Growth state" width="medium" value={currentAccount.growthState ?? ""} onSave={(growthState) => patch({ growthState: growthState || null })} />
                     {customFields.map((field) => (
                       <div key={field.id} className="group/custom-field relative min-w-0">
                         <InlineField
                           label={field.label}
                           value={field.value}
                           onSave={(value) =>
-                            patch({
-                              customFields: customFields.map((item) => (item.id === field.id ? { ...item, value } : item)),
-                            })
+                            patch(current => ({
+                              customFields: current.customFields.map((item) => (item.id === field.id ? { ...item, value } : item)),
+                            }))
                           }
                         />
                         <button
                           type="button"
                           aria-label={`${t("Remove field")}: ${field.label}`}
-                          className="absolute end-0 top-0 grid size-6 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 outline-none transition-[color,opacity] duration-150 hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-red)] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] group-hover/custom-field:opacity-100"
+                          className="absolute -end-3 top-2 grid size-6 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 outline-none transition-[color,opacity] duration-150 hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-red)] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] group-hover/custom-field:opacity-100"
                           onClick={async () => {
                             try {
-                              await patch({
-                                customFields: customFields.filter((item) => item.id !== field.id),
-                              })
+                              await patch(current => ({
+                                customFields: current.customFields.filter((item) => item.id !== field.id),
+                              }))
                             } catch (cause) {
                               toast.error(cause instanceof Error ? cause.message : t("That field could not be removed."))
                             }
@@ -545,27 +537,21 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                     ))}
                   </div>
                 </InlineFieldGroup>
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <AddCustomField onAdd={(label, value) => patch({ customFields: [...customFields, { id: label, label, value }] })} />
-                  <div className="ms-auto">
-                    <InlineToggleChip label="Strategic account" checked={currentAccount.strategic} onSave={(strategic) => patch({ strategic })} />
-                  </div>
-                </div>
               </Zone>
 
               <Zone title={t("Quote defaults")}>
                 <p className="mb-3 max-w-3xl text-[12px] leading-5 text-[var(--md-text)]">
-                  {t("These terms, notes and the default response deadline are copied into quotes and managed on this company record. A follow-up delay overrides the company policy for this customer only.")}
+                  {t("Applied to new quotes. Existing quotes are unchanged. Leave the follow-up delay blank to use company policy.")}
                 </p>
-                <InlineFieldGroup stacked directEdit>
-                  <div className="grid gap-x-3 gap-y-3 lg:grid-cols-2">
+                <InlineFieldGroup compact>
+                  <div className="grid items-start gap-x-6 gap-y-1 lg:grid-cols-2 [--md-inline-label-width:128px]">
                     <InlineField
                       label="Terms and conditions"
                       kind="textarea"
                       align="start"
                       value={quoteTerms.terms}
                       placeholder="Agreed trading terms for this customer"
-                      onSave={(terms) => patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, terms } } })}
+                      onSave={(terms) => patch(current => ({ metadata: updateQuoteDefaults(current.metadata, { terms }) }))}
                     />
                     <InlineField
                       label="Subject to rate / space"
@@ -573,7 +559,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                       align="start"
                       value={quoteTerms.subjectTo}
                       placeholder="Default rate, space and equipment caveats"
-                      onSave={(subjectTo) => patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, subjectTo } } })}
+                      onSave={(subjectTo) => patch(current => ({ metadata: updateQuoteDefaults(current.metadata, { subjectTo }) }))}
                     />
                     <InlineField
                       label="Customer quote notes"
@@ -581,18 +567,21 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                       align="start"
                       value={quoteTerms.notes}
                       placeholder="Instructions or notes to carry into each new quote"
-                      onSave={(notes) => patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, notes } } })}
+                      onSave={(notes) => patch(current => ({ metadata: updateQuoteDefaults(current.metadata, { notes }) }))}
                     />
+                    <div className="grid min-w-0 gap-y-1">
                     <InlineField
                       label="Default response deadline"
+                      width="medium"
                       kind="date"
                       align="start"
                       value={quoteTerms.deadline}
                       placeholder="Select date"
-                      onSave={(deadline) => patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, deadline } } })}
+                      onSave={(deadline) => patch(current => ({ metadata: updateQuoteDefaults(current.metadata, { deadline }) }))}
                     />
                     <InlineField
                       label="Quote follow-up delay"
+                      width="medium"
                       kind="number"
                       align="start"
                       value={quoteTerms.followUpDays === null ? "" : String(quoteTerms.followUpDays)}
@@ -601,95 +590,49 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                       onSave={(followUpDays) => {
                         const parsed = followUpDays ? Number(followUpDays) : null
                         if (parsed !== null && (!Number.isInteger(parsed) || parsed < 1 || parsed > 30)) throw new Error("Use a whole number between 1 and 30 days.")
-                        return patch({ metadata: { ...currentAccount.metadata, quoteTerms: { ...quoteTerms, followUpDays: parsed } } })
+                        return patch(current => ({ metadata: updateQuoteDefaults(current.metadata, { followUpDays: parsed }) }))
                       }}
                     />
+                    </div>
                   </div>
                 </InlineFieldGroup>
               </Zone>
 
-              <div className="grid items-stretch gap-[var(--md-page-stack-gap)] lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-                <div className="grid min-w-0 content-start gap-[var(--md-page-stack-gap)]">
-                <Zone title={t("Communication preferences")}>
-                    <div className="overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]" role="radiogroup" aria-label={t("Preferred communication channel")}>
-                      <div className="grid grid-cols-[minmax(0,1fr)_52px_42px] items-center gap-2 px-3 pb-1.5 pt-2.5 text-[10.5px] text-[var(--md-subtle)]">
-                        <span>{t("Channel")}</span>
-                        <span className="text-center">{t("Preferred")}</span>
-                        <span className="text-center">{t("Allowed")}</span>
-                      </div>
-                      {communicationChannels.map((channel) => (
-                        <PreferenceToggleRow
-                          key={channel.key}
-                          label={channel.label}
-                          icon={channel.icon}
-                          checked={channelPreferences[channel.key] === true}
-                          preferred={preferredCommunication === channel.key}
-                          preferenceDisabled={preferredPreferenceSaving}
-                          onPrefer={() => selectPreferredCommunication(channel.key)}
-                          onSave={async (allowed) => {
-                            await patch({
-                              metadata: {
-                                ...currentAccount.metadata,
-                                communicationChannels: { ...channelPreferences, [channel.key]: allowed },
-                                ...(!allowed && preferredCommunication === channel.key ? { preferredCommunicationPreference: null } : {}),
-                              },
-                              engagement: {
-                                ...defaultEngagement,
-                                ...engagement,
-                                ...(channel.key === "whatsapp" ? { allowWhatsApp: allowed } : {}),
-                                ...(!allowed && preferredCommunication === channel.key ? { preferredChannel: null } : {}),
-                              },
-                            })
-                            setPreferredPreferenceDraft(null)
-                          }}
-                        />
-                      ))}
-                    </div>
-                  <div className="mt-3 grid min-h-11 grid-cols-[minmax(0,1fr)_42px] items-center gap-2 border-t border-[var(--md-line)] px-3 pt-3">
-                    <span className="text-[13px] font-medium text-[var(--md-ink)]">{t("Marketing consent")}</span>
-                    <Switch checked={currentAccount.marketingOptIn} onCheckedChange={() => setConsentOpen(true)} aria-label={t("Change marketing consent")} className="justify-self-center" />
-                  </div>
-                </Zone>
-              <Panel
-                title={t("Contacts")}
-                meta={String(currentAccount.contacts.length)}
-                action={
-                  <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2 text-[12px] active:scale-[0.96] motion-reduce:transform-none" onClick={() => setAddContactOpen(true)}>
-                    <Plus className="size-3.5" strokeWidth={1.5} />
-                    {t("Add contact")}
-                  </Button>
-                }
-              >
-                {currentAccount.contacts.length ? (
-                  <div className="grid gap-2 px-4 pb-4 sm:px-5 sm:pb-5">
-                    {currentAccount.contacts.map((contact, index) => (
-                      <motion.button key={contact.id} type="button" initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={enter(index)} onClick={() => navigate(`/crm/contacts/${contact.id}`)} className={cn("group flex min-h-11 w-fit max-w-full min-w-0 items-center gap-2 rounded-full bg-[var(--md-surface-soft)] py-1.5 ps-1.5 pe-3 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background-color,scale] duration-150 ease-out hover:bg-[var(--md-surface-tint)] active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:scale-100", index % 2 === 1 && "ms-5 max-w-[calc(100%-1.25rem)]")}>
-                        <CustomerAvatar initials={contact.initials} tone="blue" size="sm" className="rounded-full" />
-                        <span className="min-w-0">
-                          <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>
-                            {contact.name}
-                          </span>
-                          <span className="mt-0.5 block truncate text-[11.5px] text-[var(--md-text)]" dir="auto">
-                            {contact.jobTitle || contact.role || contact.email || t("No details recorded yet")}
-                          </span>
-                        </span>
-                        <ArrowRight className="size-4 shrink-0 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transform-none" strokeWidth={1.5} />
-                      </motion.button>
-                    ))}
-                  </div>
-                ) : (
-                  <Empty text={t("Add the people you deal with at this account.")} />
-                )}
-              </Panel>
-                </div>
-                <div className="relative min-h-[400px] min-w-0 lg:min-h-0">
-                  <LifecycleNotes subjectType="company" subjectId={currentAccount.id} title="Company notes" compact className="absolute inset-0" />
-                </div>
-              </div>
 
-              <PhoneCallLinkedRecordSection recordType="company" recordId={currentAccount.id} navigate={navigate} />
+              {reference ? <OrganisationFoundationPanel
+                account={currentAccount}
+                reference={reference}
+                onChange={(updated) => { accountRef.current = updated; setAccount(updated) }}
+              /> : null}
+            </div>
+          </div>
 
-              <Panel title={t("Active shipments")} meta={String(currentAccount.activeShipments.length)}>
+          <div hidden={activeTab !== "overview"}>
+            <div className="grid gap-[var(--md-page-stack-gap-compact)]">
+              <Zone title={t("At a glance")} action={<Button variant="ghost" className="h-7 px-2 text-[12px]" onClick={() => setActiveTab("details")}>{t("Edit details")}<ArrowRight className="size-3.5" /></Button>}>
+                <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
+                  <div className="min-w-0">
+                    {currentAccount.summary ? <p className="max-w-[75ch] whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-[var(--md-text)]" data-i18n-skip>{currentAccount.summary}</p> : <p className="text-[13px] text-[var(--md-subtle)]">{t("Add a summary in Details to give your team context.")}</p>}
+                    <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+                      {[
+                        { label: "Relationship", value: reference?.relationshipStatuses.find(status => status.code === currentAccount.relationshipStatus)?.name || humanize(currentAccount.relationshipStatus) },
+                        { label: "Owner", value: currentAccount.ownerName || t("Unassigned") },
+                        { label: "Trade lane", value: currentAccount.primaryTradeLane },
+                        { label: "Primary mode", value: humanize(currentAccount.primaryMode) },
+                        { label: "Tier", value: currentAccount.tier },
+                        ...(currentAccount.strategic ? [{ label: "Priority", value: t("Strategic account") }] : []),
+                      ].filter(fact => fact.value).map(fact => <div key={fact.label} className="flex max-w-full flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[12px] leading-5"><dt className="text-[var(--md-subtle)]">{t(fact.label)}</dt><dd className="break-words font-medium text-[var(--md-ink)]" data-i18n-skip>{fact.value}</dd></div>)}
+                    </dl>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <ScoreCell label={t("Health")} score={currentAccount.healthScore} tone="health" explanation={currentAccount.scoreExplanations?.health ?? null} />
+                    <ScoreCell label={t("Churn risk")} score={currentAccount.churnRiskScore} tone="risk" explanation={currentAccount.scoreExplanations?.churnRisk ?? null} />
+                  </div>
+                </div>
+              </Zone>
+              <div className="grid items-start gap-[var(--md-page-stack-gap-compact)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                <div className="grid min-w-0 content-start gap-[var(--md-page-stack-gap-compact)]">
+              <Panel title={t("Active shipments")} meta={String(currentAccount.activeShipments.length)} action={openExceptions ? <StatusPill tone="amber">{openExceptions} {t(openExceptions === 1 ? "open exception" : "open exceptions")}</StatusPill> : undefined}>
                 {currentAccount.activeShipments.length ? (
                   currentAccount.activeShipments.map((shipment) => {
                     const presentation = shipmentPresentation(shipment.status, shipment.openExceptionCount, t)
@@ -713,6 +656,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 )}
               </Panel>
 
+
               {/* One history. Calls, notes and emails interleaved in the order they
                 happened, because that is the order they happened in. */}
               <Panel title={t("History")} meta={moments.length ? t("Newest first") : undefined}>
@@ -728,15 +672,52 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 {!currentAccount.recentEmails.available ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("Conversations are missing from this history – you need email access to include them.")}</p> : currentAccount.recentEmails.items.length === 0 && moments.length ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("No recent emails are linked to this account or its contacts.")}</p> : null}
               </Panel>
 
-            </>
-          ) : activeTab === "live" ? (
+                </div>
+                <div className="grid min-w-0 content-start gap-[var(--md-page-stack-gap-compact)]">
+                  <CompanyMeetings key={currentAccount.id} accountId={currentAccount.crmAccountId ?? null} navigate={navigate} />
+              <Panel
+                title={t("Contacts")}
+                meta={String(currentAccount.contacts.length)}
+                action={
+                  <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2 text-[12px] active:scale-[0.96] motion-reduce:transform-none" onClick={() => setAddContactOpen(true)}>
+                    <Plus className="size-3.5" strokeWidth={1.5} />
+                    {t("Add contact")}
+                  </Button>
+                }
+              >
+                {currentAccount.contacts.length ? (
+                  <div className="grid gap-2 px-4 pb-3">
+                    {currentAccount.contacts.map((contact) => (
+                      <div key={contact.id} className="min-w-0 border-b border-[var(--md-line)] pb-3 last:border-0 last:pb-0"><button type="button" onClick={() => navigate(`/crm/contacts/${contact.id}`)} className={cn("group flex min-h-11 w-full min-w-0 items-center gap-2.5 rounded-[var(--md-radius-md)] py-1 text-start outline-none transition-[background-color,scale] duration-150 ease-out hover:bg-[var(--md-surface-tint)] active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:scale-100", false)}>
+                        <CustomerAvatar initials={contact.initials} tone="blue" size="sm" className="rounded-full" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>
+                            {contact.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11.5px] text-[var(--md-text)]" dir="auto">
+                            {contact.jobTitle || contact.role || contact.email || t("No details recorded yet")}
+                          </span>
+                        </span>
+                        <ArrowRight className="size-4 shrink-0 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transform-none" strokeWidth={1.5} />
+                      </button>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 ps-2">
+                        {contact.email ? <ContactEmailAction email={contact.email} name={contact.name} className="max-w-full text-[12px]" /> : null}
+                        <ContactPreferencesPopover contactId={contact.id} name={contact.name} onSaved={next => setAccount(current => current ? { ...current, contacts: current.contacts.map(item => item.id === next.id ? next : item) } : current)} />
+                      </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty text={t("Add the people you deal with at this account.")} />
+                )}
+              </Panel>
+                </div>
+              </div>
+              <PhoneCallLinkedRecordSection recordType="company" recordId={currentAccount.id} navigate={navigate} />
+            </div>
+          </div>
+          {activeTab === "overview" || activeTab === "notes" || activeTab === "details" ? null : activeTab === "live" ? (
             <CustomerLiveGrantWorkspace key={`live-${currentAccount.id}`} customerId={currentAccount.id} />
-          ) : activeTab === "setup" ? (
-            reference ? <OrganisationFoundationPanel
-              account={currentAccount}
-              reference={reference}
-              onChange={(updated) => { accountRef.current = updated; setAccount(updated) }}
-            /> : null
           ) : (
             <AccountOperationsPanel
               account={currentAccount}
@@ -755,18 +736,6 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
         </div>
       </div>
 
-      <MarketingConsentDialog
-        open={consentOpen}
-        onOpenChange={setConsentOpen}
-        current={currentAccount.marketingOptIn}
-        source={currentAccount.marketingConsentSource}
-        updatedAt={currentAccount.marketingConsentUpdatedAt}
-        onSave={async (marketingOptIn, marketingConsentReason) => {
-          await patch({ marketingOptIn, marketingConsentReason })
-          toast.success(t(marketingOptIn ? "Marketing consent recorded" : "Marketing opt-out recorded"))
-        }}
-      />
-
       <ContactCreateDialog
         accounts={[currentAccount]}
         fixedAccountId={currentAccount.id}
@@ -781,15 +750,72 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   )
 }
 
-/** A figure in the strip under the header. */
-function StatCell({ label, value, note, noteTone }: { label: string; value: string; note?: string; noteTone?: "amber" }) {
-  return (
-    <div className="min-w-0 border-[var(--md-line)] px-4 py-3 sm:px-5 lg:border-e lg:last:border-e-0">
-      <p className="text-[11px] leading-3 text-[var(--md-subtle)]">{label}</p>
-      <p className="mt-1 text-[18px] font-medium leading-6 tabular-nums text-[var(--md-ink)]">{value}</p>
-      {note ? <p className={cn("mt-0.5 truncate text-[11px]", noteTone === "amber" ? "text-[var(--md-amber)]" : "text-[var(--md-text)]")}>{note}</p> : null}
-    </div>
-  )
+/** A company-scoped view of meetings the signed-in operator can already see. */
+function CompanyMeetings({ accountId, navigate }: { accountId: string | null; navigate: (path: string) => void }) {
+  const { language, t } = useLanguage()
+  const [meetings, setMeetings] = useState<CalendarEvent[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [selection, setSelection] = useState<MeetingDetailsAnchor | null>(null)
+  const [reload, setReload] = useState(0)
+  const [now, setNow] = useState(Date.now)
+  const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
+  const refresh = useCallback(() => setReload(value => value + 1), [])
+  useEffect(() => {
+    const controller = new AbortController()
+    const start = Date.now()
+    setError(null)
+    void getCalendarWorkspace(new Date(start).toISOString(), new Date(start + 365 * 86_400_000).toISOString(), controller.signal, { requireDatabase: true })
+      .then(workspace => {
+        if (controller.signal.aborted) return
+        setMeetings(workspace.meetings.filter(event => event.linkedRecord?.type === "account" && event.linkedRecord.id === accountId && !event.private))
+        setTimeZone(workspace.timeZone)
+        setNow(Date.now())
+      })
+      .catch(() => { if (!controller.signal.aborted) setError("Meetings could not be loaded. Try again.") })
+    return () => controller.abort()
+  }, [accountId, reload])
+  useEffect(() => {
+    const returned = () => { if (!document.hidden) refresh() }
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    window.addEventListener(CALENDAR_CHANGED_EVENT, refresh)
+    document.addEventListener("visibilitychange", returned)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener(CALENDAR_CHANGED_EVENT, refresh)
+      document.removeEventListener("visibilitychange", returned)
+    }
+  }, [refresh])
+  const upcoming = (meetings ?? []).filter(event => !["cancelled", "completed"].includes(event.status) && event.rsvpResponse !== "declined" && Date.parse(event.endAt) > now)
+    .sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
+  const dateFormat = new Intl.DateTimeFormat(language, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone })
+  return <>
+    <Panel title={t("Upcoming meetings")} meta={t("Next 12 months")}>
+      <div className="min-h-[156px]">
+        {error ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-[12px] text-[var(--md-text)]"><span>{t(error)}</span><Button variant="outline" size="sm" onClick={refresh}>{t("Try again")}</Button></div> : null}
+        {meetings === null && !error ? <DotGridLoaderPanel label={t("Loading meetings…")} /> : upcoming.length ? <div className="max-h-[420px] overflow-y-auto md-scrollbar">
+          {upcoming.map(event => {
+            const provider = event.provider === "calendar" ? "multideck" : event.provider
+            const providerLabel = event.provider === "calendar" ? event.calendarSource === "microsoft" ? "Microsoft Calendar" : "Google Calendar" : meetingProviderLabels[provider]
+            return <button key={event.id} type="button" onClick={click => setSelection({ event, anchor: click.currentTarget })} className="flex min-h-14 w-full min-w-0 items-center gap-2.5 border-t border-[var(--md-line)] px-4 py-2.5 text-start transition-colors duration-150 hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent)] motion-reduce:transition-none">
+              <MeetingProviderMark provider={provider} calendarSource={event.calendarSource} className="size-5" />
+              <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium leading-5 text-[var(--md-ink)]" data-i18n-skip>{event.title}</span><span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] leading-4 text-[var(--md-subtle)]"><time dateTime={event.startAt} title={timeZone}>{dateFormat.format(new Date(event.startAt))}</time><span aria-hidden="true">·</span><span>{providerLabel}</span>{event.status === "provisioning" || event.status === "sync_pending" ? <span>{t("Updating…")}</span> : null}</span></span>
+              <ArrowRight aria-hidden="true" className="size-3.5 shrink-0 text-[var(--md-subtle)]" />
+            </button>
+          })}
+        </div> : meetings !== null && !error ? <div className="grid min-h-[156px] place-content-center justify-items-center px-4 py-3 text-center">
+          <svg viewBox="0 0 150 110" width="90" height="66" aria-hidden="true" focusable="false">
+            <rect x="28" y="24" width="84" height="66" rx="12" fill="var(--md-surface)" stroke="var(--md-line)" strokeWidth="1.5" />
+            <path d="M28 44h84M48 17v15M92 17v15" fill="none" stroke="var(--md-subtle)" strokeWidth="1.5" strokeLinecap="round" />
+            <g fill="var(--md-line)"><circle cx="48" cy="59" r="2" /><circle cx="68" cy="59" r="2" /><circle cx="88" cy="59" r="2" /><circle cx="48" cy="75" r="2" /><circle cx="68" cy="75" r="2" /></g>
+            <g className="company-meetings-orbit"><circle cx="112" cy="75" r="19" fill="var(--md-surface)" stroke="var(--md-line)" /><circle cx="112" cy="75" r="17" fill="var(--md-accent-a08)" /><path d="M112 64v11l7 4" fill="none" stroke="var(--md-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></g>
+          </svg>
+          <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t("No upcoming meetings")}</p>
+          <p className="mt-1 max-w-sm text-[12px] leading-5 text-[var(--md-subtle)]">{t("Meetings linked to this company will appear here.")}</p>
+        </div> : null}
+      </div>
+    </Panel>
+    <MeetingDetailsPopover selection={selection} onClose={() => setSelection(null)} onChanged={refresh} navigate={navigate} />
+  </>
 }
 
 /**
@@ -804,65 +830,17 @@ function ScoreCell({ label, score, tone, explanation }: { label: string; score: 
   const colour = score == null ? "var(--md-subtle)" : tone === "health" ? (score >= 70 ? "var(--md-green)" : score >= 40 ? "var(--md-amber)" : "var(--md-red)") : score >= 60 ? "var(--md-red)" : score >= 30 ? "var(--md-amber)" : "var(--md-green)"
 
   return (
-    <div className="min-w-0 border-[var(--md-line)] p-1.5 sm:px-2.5 lg:border-e">
-      <ScoreExplanationPopover kind={tone === "health" ? "health" : "churnRisk"} score={score} explanation={explanation} className="px-2.5 py-1.5">
-        <ProgressRing ratio={(score ?? 0) / 100} size={34} thickness={3.5} color={colour} trackOpacity={0.16} />
+    <div className="min-w-0">
+      <ScoreExplanationPopover kind={tone === "health" ? "health" : "churnRisk"} score={score} explanation={explanation} className="gap-2 rounded-[var(--md-radius-md)] px-2 py-1.5">
+        <ProgressRing ratio={(score ?? 0) / 100} size={26} thickness={3} color={colour} trackOpacity={0.16} />
         <span className="min-w-0">
           <span className="flex items-center gap-1 text-[11px] leading-3 text-[var(--md-subtle)]">
             {tone === "health" ? <Health className="size-3" strokeWidth={1.4} aria-hidden="true" /> : null}
             {label}
           </span>
-          <span className="mt-1 block text-[18px] font-medium leading-6 tabular-nums text-[var(--md-ink)]">{score == null ? "–" : `${Math.round(score)}%`}</span>
+          <span className="mt-0.5 block text-[14px] font-medium leading-5 tabular-nums text-[var(--md-ink)]">{score == null ? "–" : `${Math.round(score)}%`}</span>
         </span>
       </ScoreExplanationPopover>
-    </div>
-  )
-}
-
-function StateCircle({ checked, label, onClick, disabled = false, role = "radio" }: { checked: boolean; label: string; onClick: () => void; disabled?: boolean; role?: "radio" | "checkbox" }) {
-  const shouldReduceMotion = useReducedMotion()
-  const transition = shouldReduceMotion ? { duration: 0 } : { type: "spring" as const, duration: 0.3, bounce: 0 }
-
-  return (
-    <button type="button" role={role} aria-checked={checked} aria-label={label} disabled={disabled} onClick={onClick} className="relative grid size-[18px] shrink-0 place-items-center justify-self-center rounded-full bg-[var(--md-field-bg)] shadow-[inset_0_0_0_1px_var(--md-line)] outline-none transition-transform duration-150 before:absolute before:-inset-3 active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] disabled:cursor-wait disabled:opacity-60 motion-reduce:transform-none">
-      <motion.span aria-hidden="true" initial={false} animate={checked ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 0.25, filter: "blur(4px)" }} transition={transition} className="absolute inset-0 rounded-full bg-[color-mix(in_srgb,var(--md-comparison-positive)_72%,black)]" />
-      <motion.span aria-hidden="true" initial={false} animate={checked ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 0.25, filter: "blur(4px)" }} transition={transition} className="relative z-10 text-white">
-        <Check className="size-3" strokeWidth={2.4} />
-      </motion.span>
-    </button>
-  )
-}
-
-function PreferenceToggleRow({ label, checked, onSave, preferred, onPrefer, preferenceDisabled = false, icon: Icon }: { label: string; checked: boolean; onSave: (next: boolean) => Promise<void> | void; preferred?: boolean; onPrefer?: () => void; preferenceDisabled?: boolean; icon?: LucideIcon }) {
-  const { t } = useLanguage()
-  const [shown, setShown] = useState(checked)
-  const [saving, setSaving] = useState(false)
-  const hasPreference = preferred !== undefined && onPrefer !== undefined
-
-  useEffect(() => setShown(checked), [checked])
-
-  async function toggle(next: boolean) {
-    if (saving) return
-    setShown(next)
-    setSaving(true)
-    try {
-      await onSave(next)
-    } catch (cause) {
-      setShown(checked)
-      toast.error(cause instanceof Error ? cause.message : t("That preference could not be saved."))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className={cn("grid min-h-11 items-center gap-2 border-t border-[var(--md-line)] px-3 py-2.5 first:border-t-0", hasPreference ? "grid-cols-[minmax(0,1fr)_52px_42px]" : "grid-cols-[minmax(0,1fr)_32px]")}>
-      <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium leading-5 text-[var(--md-ink)]">
-        {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
-        <span>{t(label)}</span>
-      </span>
-      {hasPreference ? <StateCircle checked={Boolean(preferred)} disabled={saving || preferenceDisabled} label={`${t("Set as preferred")}: ${t(label)}`} onClick={onPrefer} /> : null}
-      <Switch checked={shown} disabled={saving || preferenceDisabled} onCheckedChange={(next) => void toggle(next)} aria-label={t(label)} className="justify-self-center" />
     </div>
   )
 }
@@ -870,8 +848,8 @@ function PreferenceToggleRow({ label, checked, onSave, preferred, onPrefer, pref
 /** A compact, independent section on the page background. */
 function Zone({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-4 py-4 shadow-[var(--md-shadow-soft)] sm:px-5 sm:py-5">
-      <div className="mb-4 flex items-center justify-between gap-3">
+    <section className="min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-4 py-3 shadow-[var(--md-shadow-line)]">
+      <div className="mb-3 flex min-h-7 flex-wrap items-center justify-between gap-3">
         <h2 className="text-[13px] font-medium leading-4 text-[var(--md-ink)]">{title}</h2>
         {action}
       </div>
@@ -890,13 +868,13 @@ function MomentRow({ moment, last, onOpen }: { moment: Moment; last: boolean; on
       <span className="relative z-10 grid size-6 shrink-0 place-items-center rounded-full bg-[var(--md-surface)] shadow-[0_0_0_1px_var(--md-line)]">{moment.email ? <Mail className={inbound ? "size-3 text-[var(--md-accent)]" : "size-3 text-[var(--md-subtle)]"} strokeWidth={1.6} /> : <span className="size-1.5 rounded-full bg-[var(--md-accent)]" />}</span>
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-3">
-          <span className="min-w-0 truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto">
+          <span className="min-w-0 truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto" title={moment.subject}>
             {moment.subject}
           </span>
           <span className="shrink-0 text-[11px] tabular-nums text-[var(--md-subtle)]">{relativeDate(moment.at, language, t)}</span>
         </span>
         {moment.detail ? (
-          <span className="mt-0.5 block truncate text-[11.5px] leading-4 text-[var(--md-text)]" dir="auto">
+          <span className="mt-0.5 block whitespace-pre-wrap break-words text-[12px] leading-relaxed text-[var(--md-text)]" dir="auto">
             {moment.detail}
           </span>
         ) : null}
@@ -979,7 +957,7 @@ function HeadingField({ value, onSave }: { value: string; onSave: (next: string)
 
   return (
     <button type="button" onClick={() => setEditing(true)} dir="auto" className={`${headingClass} -mx-2 rounded-[var(--md-radius-md)] px-2 py-0.5 text-start outline-none transition-colors duration-150 hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] ${saving ? "opacity-60" : ""}`}>
-      <h1 className="truncate">{value}</h1>
+      <h1 className="truncate" title={value}>{value}</h1>
     </button>
   )
 }
@@ -1040,76 +1018,7 @@ function AddCustomField({ onAdd }: { onAdd: (label: string, value: string) => Pr
   )
 }
 
-function MarketingConsentDialog({ open, onOpenChange, current, source, updatedAt, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; current: boolean; source: string | null; updatedAt: string | null; onSave: (optIn: boolean, reason: string) => Promise<void> }) {
-  const { t } = useLanguage()
-  const [optIn, setOptIn] = useState(current)
-  const [reason, setReason] = useState("")
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (open) {
-      setOptIn(current)
-      setReason("")
-    }
-  }, [open, current])
-
-  const changed = optIn !== current
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
-        <DialogHeader className="text-start">
-          <DialogTitle>{t("Marketing consent")}</DialogTitle>
-          <DialogDescription>{t("This change is recorded against your name and the time you made it.")}</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4">
-          <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
-            <MarketingOptInControl checked={optIn} source={source} updatedAt={updatedAt} onCheckedChange={setOptIn} />
-          </div>
-          <label className="grid gap-1.5 text-[13px] font-medium text-[var(--md-ink)]">
-            {t("What is this based on?")}
-            <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("Signed agreement, call on 3 June, web form…")} className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-base shadow-[var(--md-shadow-line)] sm:text-[14px]" />
-            {changed && !reason.trim() ? <span className="text-[11.5px] font-normal text-[var(--md-text)]">{t("Needed before a consent change can be saved.")}</span> : null}
-          </label>
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="button"
-            disabled={saving || !changed || !reason.trim()}
-            className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:transform-none"
-            onClick={async () => {
-              setSaving(true)
-              try {
-                await onSave(optIn, reason.trim())
-                onOpenChange(false)
-              } catch (error) {
-                toast.error(error instanceof Error ? error.message : t("The consent change could not be saved."))
-              } finally {
-                setSaving(false)
-              }
-            }}
-          >
-            {t(optIn ? "Record opt-in" : "Record opt-out")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-const emptyAddress = {
-  line1: null,
-  line2: null,
-  townCity: null,
-  countyState: null,
-  postZipCode: null,
-  countryCode: null,
-  mainEmail: null,
-  mainPhone: null,
-}
+const emptyAddress = { line1: null, line2: null, townCity: null, countyState: null, postZipCode: null, countryCode: null, mainEmail: null, mainPhone: null }
 const defaultEngagement = {
   preferredChannel: null,
   allowThankYouMessages: true,
@@ -1143,10 +1052,8 @@ function toDraft(account: ApiCustomerDetail, reference: CustomerReference | null
     summary: account.summary,
     strategic: account.strategic,
     trainingAllowed: account.trainingAllowed,
-    marketingOptIn: account.marketingOptIn,
     // Blank unless a consent change is being made, which is the only time the
     // endpoint requires one.
-    marketingConsentReason: "",
     metadata,
     address: account.address ? { ...emptyAddress, ...account.address } : { ...emptyAddress },
     engagement: account.engagement ?? { ...defaultEngagement },
@@ -1160,8 +1067,8 @@ function toDraft(account: ApiCustomerDetail, reference: CustomerReference | null
 
 function Panel({ title, meta, action, children }: { title: string; meta?: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
-      <div className="flex min-h-[48px] items-center justify-between gap-3 px-4 py-2.5 sm:px-5">
+    <section className="min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+      <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2">
         <h2 className="text-[13px] font-medium text-[var(--md-ink)]">{title}</h2>
         {meta || action ? (
           <div className="flex shrink-0 items-center gap-2">
@@ -1203,13 +1110,6 @@ function shipmentPresentation(status: string | null, openExceptionCount: number,
   return { tone: "neutral" as const, label: statusLabel }
 }
 
-function objectRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
-function preferredCommunicationKey(value: unknown): CommunicationPreferenceKey | null {
-  return value === "whatsapp" || value === "sms" || value === "phone" || value === "email" ? value : null
-}
 
 function formatDate(value: string, locale: string) {
   return new Intl.DateTimeFormat(locale, {

@@ -67,7 +67,7 @@ const staticLeafLabels: Record<string, string> = {
   "/finance/reports": "Financial reports",
   "/finance/management/accruals-wip": "Accruals & WIP",
   "/playground/navigation": "Navigation lab",
-  "/to-do": "To Do list",
+  "/to-do": "Tasks",
   "/quotes": "Quotes",
   "/reports": "Reports",
   "/reports/scheduled": "Scheduled reports",
@@ -147,11 +147,23 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     ]
   }
 
-  if (route === "/calendar/booking-links") {
+  if (route === "/calendar/booking-links" || route === "/calendar/meetings") {
     return [
       { label: "Home", route: "/" },
-      { label: "Calendar", route: "/calendar" },
-      { label: "Booking links" },
+      { label: "Sales & CRM", route: "/crm" },
+      { label: "Marketing" },
+      { label: "Meetings" },
+    ]
+  }
+
+  if (route === "/crm/contact-cards" || route.startsWith("/crm/contact-cards/")) {
+    const cardId = route.split("/")[3]
+    return [
+      { label: "Home", route: "/" },
+      { label: "Sales & CRM", route: "/crm" },
+      { label: "Marketing" },
+      { label: "Digital business cards", ...(cardId ? { route: "/crm/contact-cards" } : {}) },
+      ...(cardId ? [recordBreadcrumb(leafLabel, cardId, "Business card")] : []),
     ]
   }
 

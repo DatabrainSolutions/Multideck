@@ -1,3 +1,4 @@
+import { EmailSignatureControl } from "./email-signature-control"
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import {
   AiEditing,
@@ -470,7 +471,7 @@ export function MailComposer({
       onKeyDown={(event) => {
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
           event.preventDefault()
-          if (canSend && !busy && !readOnly) onSend()
+          if (canSend && !busy && !readOnly && attaching === 0) onSend()
           return
         }
         if (event.key === "Escape") {
@@ -654,8 +655,9 @@ export function MailComposer({
             event.preventDefault()
             void attachFiles(files)
           }}
-          className="h-full min-h-[120px] w-full resize-none bg-transparent text-[16px] leading-[1.6] text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)] disabled:opacity-55 sm:text-[13.5px]"
+          className="min-h-[160px] w-full resize-y bg-transparent text-[16px] leading-[1.6] text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)] disabled:opacity-55 sm:text-[13.5px]"
         />
+        <EmailSignatureControl mailboxId={mailbox?.id ?? null} value={state.signature} onChange={signature => update({ signature })} disabled={readOnly || busy} />
       </div>
 
       {state.attachments.length > 0 || attaching > 0 ? (
@@ -694,7 +696,7 @@ export function MailComposer({
       <footer className="flex shrink-0 items-center gap-1.5 border-t border-[var(--md-line)] px-3 py-2.5">
         <Button
           type="button"
-          disabled={!canSend || busy || readOnly}
+          disabled={!canSend || busy || readOnly || attaching > 0}
           title={`${t("Send")} · ⌘↵`}
           className="h-10 min-w-[90px] gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] disabled:opacity-50 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
           onClick={onSend}

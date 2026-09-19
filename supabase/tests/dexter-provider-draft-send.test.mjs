@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 
 const runtime = readFileSync(new URL('../functions/inbox-api/runtime.ts', import.meta.url), 'utf8')
+const trackingHelpers = stripTypeScriptTypes(runtime.slice(runtime.indexOf('function escapeTrackedHtml'), runtime.indexOf('async function recordDeliveryEvent')))
 const sendCode = stripTypeScriptTypes(runtime.slice(runtime.indexOf('export async function sendProviderDraft('), runtime.indexOf('export async function sendMail('))).replace(/^export /, '')
 const providerCode = stripTypeScriptTypes(runtime.slice(runtime.indexOf('async function providerSend('), runtime.indexOf('async function providerCreateDraft(')))
 const prepareCode = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/provider-draft-send.ts', import.meta.url), 'utf8').replace(/^import .*\n/gm, '')).replace('export async function', 'async function')
@@ -41,18 +42,49 @@ const saved = { CommMessage_ID: 'message', CommMessage_CreatedBy: 'operator', Co
 const body = { draftMessageId: 'message', mailboxId: 'mailbox', subject: 'QA draft', bodyText: 'Reviewed wording', addedTo: [{ address: 'self@example.test' }], addedCc: [], addedBcc: [] }
 function sendHarness(options = {}) {
   const admin = database({ Comm_Messages: [saved], Comm_MessageRecipients: [{ CommRecipient_MessageID: 'message', CommRecipient_RecipientTypeCode: 'to', CommRecipient_Address: 'self@example.test' }] })
-  let sends = 0
+  let sends = 0, sentHtml = null
   const dependencies = { InboxHttpError, cleanString, normalizeAddresses,
+    resolveSignature: async () => ({ text: '', html: null, attachments: [] }),
     requirePermission: async () => { if (options.deny) throw new InboxHttpError(403, 'Denied', 'forbidden') },
     result: async query => { const { data, error } = await query; if (error) throw error; return data },
     requireMailbox: async () => ({ mailbox: { CommMailbox_OutboundEnabled: true }, connection: { CommConn_OutboundEnabled: true, CommConn_StatusCode: 'active', CommConn_ProviderTypeCode: 'outlook' } }),
     assertRecipients: to => { if (!to.length) throw new Error('No recipients') }, credential: async () => ({ accessToken: 'test-token' }),
-    sha256Hex: async value => value, publicProvider: value => value, recordDeliveryEvent: async () => {},
-    providerSend: async (...args) => { sends++; if (options.failure) throw options.failure; assert.equal(args.at(-1), 'provider-draft'); return { providerMessageId: 'provider-draft', providerThreadId: 'provider-thread', internetMessageId: '<message@test.invalid>' } },
+    Deno: { env: { get: () => 'https://qa.example.test' } },
+    sha256Hex: async value => Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))).toString('hex'), publicProvider: value => value, recordDeliveryEvent: async () => {},
+    providerSend: async (...args) => { sends++; sentHtml = args[6]; if (options.failure) throw options.failure; assert.equal(args.at(-1), 'provider-draft'); return { providerMessageId: 'provider-draft', providerThreadId: 'provider-thread', internetMessageId: '<message@test.invalid>' } },
   }
-  const run = new Function(...Object.keys(dependencies), `${sendCode};return sendProviderDraft`)(...Object.values(dependencies))
-  return { admin, run: (request = body, user = actor, key = 'click') => run(admin, user, request, key), sends: () => sends }
+  const run = new Function(...Object.keys(dependencies), `${trackingHelpers};${sendCode};return sendProviderDraft`)(...Object.values(dependencies))
+  return { admin, run: (request = body, user = actor, key = 'click') => run(admin, user, request, key), sends: () => sends, sentHtml: () => sentHtml }
 }
+
+test('native draft tracking choice reaches the sent HTML and binds exactly one hashed token', async () => {
+  for (const trackOpens of [false, true]) {
+    const h = sendHarness()
+    await h.run({ ...body, trackOpens })
+    const tokens = h.admin.rows.Comm_MessageTrackingTokens ?? []
+    assert.equal(tokens.length, trackOpens ? 1 : 0)
+    assert.equal(h.admin.rows.Comm_Messages[0].CommMessage_BodyHTML, h.sentHtml())
+    if (trackOpens) {
+      const token = new URL(h.sentHtml().match(/src="([^"]+)"/)[1]).searchParams.get('token')
+      assert.equal(tokens[0].CommTrack_TokenHashSHA256, Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))).toString('hex'))
+      assert.equal(tokens[0].CommTrack_MessageID, 'message')
+      assert.equal(tokens[0].CommTrack_IsActive, true)
+      await h.run({ ...body, trackOpens }, actor, 'retry')
+      assert.equal(h.sends(), 1)
+      assert.equal(h.admin.rows.Comm_MessageTrackingTokens.length, 1)
+    } else assert.equal(h.sentHtml(), null)
+  }
+})
+
+test('ambiguous server failures retain tracking and the send claim; definite rejection deactivates it', async () => {
+  for (const status of [400, 408, 500, 503]) {
+    const h = sendHarness({ failure: new InboxHttpError(502, 'Provider error', 'provider_error', status) })
+    await assert.rejects(h.run({ ...body, trackOpens: true }), /Provider error/)
+    assert.equal(h.admin.rows.Comm_MessageTrackingTokens[0].CommTrack_IsActive, status !== 400)
+    assert.equal((await h.run()).status, status === 400 ? 'failed' : 'sending')
+    assert.equal(h.sends(), 1)
+  }
+})
 
 test('saved provider draft is sent once across concurrent clicks and different keys', async () => {
   const h = sendHarness()
@@ -98,6 +130,7 @@ test('a definite provider rejection preserves the message and reports failed', a
 function nativeProvider(fetch) {
   const dependencies = { fetch, cleanString, InboxHttpError, buildRfc2822: value => JSON.stringify(value), appendInternetMessageReference: () => '',
     providerErrorStatus: response => new InboxHttpError(502, 'Provider rejected', 'provider_rejected', response.status),
+    gmailProviderError: async response => new InboxHttpError(502, 'Provider rejected', 'provider_rejected', response.status),
   }
   const fn = new Function(...Object.keys(dependencies), `${providerCode};return providerSend`)(...Object.values(dependencies))
   return provider => fn(provider, 'test-token', { CommMailbox_Address: 'self@example.test' }, { command: 'new', source: null, to: body.addedTo, cc: [], bcc: [] }, body.subject, body.bodyText, null, '<message@test.invalid>', false, [], 'existing-draft')
@@ -118,17 +151,20 @@ test('Outlook updates and sends the existing draft without creating a second mes
     return new Response(options.method ? null : JSON.stringify({ id: 'existing-draft', isDraft: true, hasAttachments: false }), { status: options.method ? 204 : 200 })
   })
   await run('outlook')
-  assert.deepEqual(calls.map(call => call.method), ['GET', 'PATCH', 'POST'])
+  assert.deepEqual(calls.map(call => call.method), ['GET', 'GET', 'PATCH', 'POST'])
   assert.ok(calls.every(call => call.url.includes('/messages/existing-draft')))
-  assert.equal(JSON.parse(calls[1].body).body.content, 'Reviewed wording')
-  assert.match(calls[2].url, /\/send$/)
+  assert.equal(JSON.parse(calls[2].body).body.content, 'Reviewed wording')
+  assert.match(calls[1].url, /\/attachments\?/);
+  assert.match(calls[3].url, /\/send$/)
 })
 test('Outlook rejects unseen attachments and previously sent drafts', async () => {
   for (const state of [{ isDraft: true, hasAttachments: true }, { isDraft: false, hasAttachments: false }]) {
     let calls = 0
-    const run = nativeProvider(async () => { calls++; return new Response(JSON.stringify({ id: 'existing-draft', ...state })) })
+    const run = nativeProvider(async (url) => { calls++; return new Response(JSON.stringify(url.includes('/attachments?')
+      ? { value: [{ id: 'unseen-file', isInline: false }] }
+      : { id: 'existing-draft', ...state })) })
     await assert.rejects(run('outlook'), /attachments|already been sent/)
-    assert.equal(calls, 1)
+    assert.equal(calls, state.hasAttachments ? 2 : 1)
   }
 })
 

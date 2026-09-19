@@ -1,3 +1,4 @@
+import type { SignatureSelection } from "./email-signatures"
 import { authenticatedAccessChangedEvent, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
 import { invalidateRegisterPages } from "@/lib/application-data-api"
 import { captureAuthenticatedScope, invalidateCachedCrmResources, readCachedCrmResource } from "@/lib/crm-read-cache"
@@ -548,9 +549,9 @@ export function previewQuoteIssueEmail(quoteId: string, recipient: QuoteIssueRec
   return invoke<{ previewHtml: string; deliveryMode: QuoteDeliveryMode }>({ action: "issue-preview", quoteId, recipient, deliveryMode, subject, bodyText, expiryPreset }, "The email preview could not be updated.")
 }
 
-export function issueQuoteWorkflow(quoteId: string, recipient: QuoteIssueRecipientInput, deliveryMode: QuoteDeliveryMode, mailboxId: string, subject: string, bodyText: string, expiryPreset: QuoteIssueExpiryPreset) {
+export function issueQuoteWorkflow(quoteId: string, recipient: QuoteIssueRecipientInput, deliveryMode: QuoteDeliveryMode, mailboxId: string, subject: string, bodyText: string, expiryPreset: QuoteIssueExpiryPreset, signature?: SignatureSelection, trackOpens = false) {
   invalidateQuoteWorkspaces()
-  return invoke<QuoteIssueResult>({ action: "issue", quoteId, recipient, deliveryMode, mailboxId, subject, bodyText, expiryPreset }, "The quote could not be sent.")
+  return invoke<QuoteIssueResult>({ action: "issue", quoteId, recipient, deliveryMode, mailboxId, subject, bodyText, expiryPreset, signature, trackOpens }, "The quote could not be sent.")
     .then((result) => {
       invalidateRegisterPages("quotes:")
       invalidateRegisterPages("dashboard:")

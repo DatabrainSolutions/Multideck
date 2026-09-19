@@ -57,14 +57,14 @@ test("account and contact details expose real empty states and permission-scoped
   assert.match(customers, /editVersion: profile\?\.CRMContact_EditVersion \?\? 1/)
 })
 
-test("account summary matches the six-tile leads summary pattern", () => {
+test("account summary keeps company metrics separate from personal consent", () => {
   const sharedSummaryClass = /grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6/
   const sharedTileClass = /h-\[44px\] min-w-0 rounded-\[var\(--md-radius-lg\)\] px-3 py-1\.5/
   assert.match(crmPage, sharedSummaryClass)
-  assert.match(accountsPage, sharedSummaryClass)
+  assert.match(accountsPage, /customerAccounts \? "xl:grid-cols-6" : "xl:grid-cols-5"/)
   assert.match(crmPage, sharedTileClass)
   assert.match(accountsPage, sharedTileClass)
-  for (const label of ["Contacts", "Needs attention", "Marketing opted in", "Unassigned"]) {
+  for (const label of ["Contacts", "Needs attention", "Unassigned"]) {
     assert.match(accountsPage, new RegExp(`t\\(\\"${label}\\"\\)`))
   }
   assert.match(accountsPage, /t\("Total companies"\)/)
@@ -170,12 +170,17 @@ test("account editing uses existing CRM reference data and preserves the current
   assert.doesNotMatch(accountDetail, /<aside[\s\S]*Company details/)
   assert.match(accountDetail, /<AccountDetailTabs account=\{currentAccount\}/)
   assert.match(accountDetail, /<AccountOperationsPanel[\s\S]*?account=\{currentAccount\}/)
-  assert.match(accountDetail, /MarketingOptInControl/)
-  assert.match(accountDetail, /<AddCustomField onAdd=\{\(label, value\) => patch\(\{ customFields:/)
+  assert.doesNotMatch(accountDetail, /MarketingOptInControl|<Zone title=\{t\("Communication preferences"\)/)
+  assert.match(accountDetail, /ContactPreferencesPopover/)
+  assert.match(accountDetail, /<AddCustomField onAdd=\{\(label, value\) => patch\(current =>/)
+  assert.match(accountDetail, /A field with this name already exists/)
   assert.match(customers, /CRM_AccountProfiles/)
   assert.match(customers, /CRM_CustomerEngagementPreferences/)
   assert.match(accountDetail, /CustomerWarehouseAccess customerId=\{currentAccount\.id\}/)
-  assert.match(accountDetail, /<Zone title=\{t\("Profile"\)}>\s*<InlineFieldGroup stacked directEdit>/)
+  assert.match(accountDetail, /hidden=\{activeTab !== "details"\}/)
+  assert.match(accountDetail, /<Zone title=\{t\("Company information"\)}>\s*<InlineFieldGroup compact>/)
+  assert.match(accountDetail, /<Zone title=\{t\("Main contact & address"\)}>\s*<InlineFieldGroup compact>/)
+  assert.match(accountDetail, /<Zone title=\{t\("Relationship & service"\)\}/)
 })
 
 test("account score explanations require current, permission-visible evidence and remain accessible", () => {

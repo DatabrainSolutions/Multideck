@@ -1,0 +1,30 @@
+.company-record .company-form-value input[type="number"],
+.company-record .company-form-value input[maxlength="1"],
+.company-record .company-form-value input[maxlength="2"] {
+  max-width: 7rem;
+}
+
+.company-record .company-form-value :is(input, textarea, select) {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.company-record .company-form-value textarea { min-height: 4rem; }
+
+@media (min-width: 640px) {
+  .company-record .company-form-value :is(input, textarea, select) { font-size: 13px; }
+}
+
+.company-meetings-orbit {
+  transform-origin: 112px 75px;
+  animation: company-meetings-float 5s ease-in-out infinite;
+}
+
+@keyframes company-meetings-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(-5deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .company-meetings-orbit { animation: none; }
+}

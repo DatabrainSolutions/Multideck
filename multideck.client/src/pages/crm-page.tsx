@@ -135,7 +135,6 @@ import {
 } from "@/lib/lead-api"
 import { getPipelineSettings, type ApiPipeline } from "@/lib/pipeline-api"
 import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
-import { setMarketingOptIn } from "@/lib/marketing-consent-api"
 import { CrmConflictError, CrmMutationOutcomeUnknownError } from "@/lib/crm-supabase"
 import { getSupabaseSession } from "@/lib/supabase"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
@@ -1877,20 +1876,6 @@ export function CrmLeadDetailPage({
     }
   }
 
-  async function changeLeadMarketingOptIn(optedIn: boolean) {
-    if (!lead) return
-    try {
-      await setMarketingOptIn("lead", lead.id, optedIn)
-      const latest = await getLead(lead.id)
-      leadRef.current = latest
-      setLead(latest)
-      toast.success(t(optedIn ? "Marketing opt-in recorded" : "Marketing opt-out recorded"))
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : t("Marketing consent could not be updated."))
-      throw cause
-    }
-  }
-
   function patchLead(change: UpdateLeadInput) {
     const save = leadSaveQueue.current.then(async () => {
       const current = leadRef.current
@@ -1911,25 +1896,6 @@ export function CrmLeadDetailPage({
     })
     leadSaveQueue.current = save.catch(() => undefined)
     return save
-  }
-
-  async function changeContactMarketingOptIn(contactId: string, optedIn: boolean) {
-    try {
-      const result = await setMarketingOptIn("contact", contactId, optedIn)
-      setLead((current) => current ? {
-        ...current,
-        contacts: current.contacts.map((contact) => contact.id === contactId ? {
-          ...contact,
-          marketingOptIn: result.marketingOptIn,
-          marketingConsentSource: result.marketingConsentSource,
-          marketingConsentUpdatedAt: result.marketingConsentUpdatedAt,
-        } : contact),
-      } : current)
-      toast.success(t(optedIn ? "Marketing opt-in recorded" : "Marketing opt-out recorded"))
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : t("Marketing consent could not be updated."))
-      throw cause
-    }
   }
 
   if (loadState === "loading") {
@@ -2118,8 +2084,6 @@ export function CrmLeadDetailPage({
           </Popover>
         ) : undefined}
         onBack={() => navigate("/crm/leads")}
-        onMarketingOptInChange={changeLeadMarketingOptIn}
-        onContactMarketingOptInChange={changeContactMarketingOptIn}
       />
 
       <PhoneCallLinkedRecordSection recordType="lead" recordId={lead.id} navigate={navigate} />

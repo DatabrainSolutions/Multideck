@@ -1,3 +1,12 @@
+import signatureBuilderSource from "@/components/multideck/signature-builder.tsx?raw"
+import inlineFieldSource from "@/components/multideck/inline-field.tsx?raw"
+import inlineFieldStyles from "@/components/multideck/inline-field.css?raw"
+import dexterVoiceSource from "@/components/multideck/dexter-voice-controls.tsx?raw"
+import signatureGlyphSource from "@/components/multideck/signature-block-glyph.tsx?raw"
+import emailSignatureControlSource from "@/components/multideck/email-signature-control.tsx?raw"
+import contactEmailActionSource from "@/components/multideck/contact-email-action.tsx?raw"
+import contactPreferencesSource from "@/components/multideck/contact-preferences-popover.tsx?raw"
+import taskAgentSource from "@/components/multideck/task-agent-components.tsx?raw"
 import bookingCustomerPanelSource from "@/components/multideck/booking-customer-panel.tsx?raw"
 import toggleGroupSource from "@/components/ui/toggle-group.tsx?raw"
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
@@ -24,7 +33,7 @@ const tableExportFoundOn = [
   { label: "Contacts", route: "/crm/contacts" },
   { label: "Opportunities", route: "/crm/deals" },
   { label: "Phone calls", route: "/crm/phone-calls" },
-  { label: "Contact cards", route: "/crm/contact-cards" },
+  { label: "Digital business cards", route: "/crm/contact-cards" },
   { label: "Customers", route: "/customers" },
   { label: "Quotes", route: "/quotes" },
   { label: "Bookings", route: "/bookings" },
@@ -65,6 +74,56 @@ function visualizationUsageCode(componentName: string, kind: string) {
 }
 
 export const galleryComponents = [
+  {
+    id: "dexter-voice-controls", name: "Dexter Voice", category: "Communication",
+    description: "Quiet microphone controls with speech streamed into the normal conversation.",
+    details: "No orb or persistent allowance text. The compact panel supports mute and end; live transcripts use the main chat. When daily voice time runs out, a dismissible notice gently appears above the composer and typing stays available. Reduced motion removes the transition. Personal settings offer named voices with previews. The gallery sample does not open a microphone or spend usage.",
+    foundOn: [{ label: "Dexter", route: "/agent-dexter" }, { label: "Dexter settings", route: "/settings?tab=dexter" }],
+    componentCode: dexterVoiceSource,
+    usageCode: `const voice = useDexterVoice({ conversationId, onRequest: runExistingDexterRequest })\nconst reachedLimit = hasReachedDailyVoiceLimit(voice)\n<DexterVoiceLimitNotice visible={reachedLimit} />\n<DexterPromptComposer voicePanel={voice.phase !== "idle" && (!reachedLimit || voice.active) ? <DexterVoicePanel voice={voice} /> : undefined} {...composerProps} />\n<DexterVoiceSettings />`,
+  },
+  {
+    id: "signature-builder", name: "Signature Builder", category: "Communication",
+    description: "Arrange email-safe rows and blocks, including shared Company details from Admin, with direct, tactile movement.",
+    details: "Drag a custom block tile into the canvas, or click to add. Blocks lift and tilt with movement, open an insertion gap and settle with a short spring. Keyboard move buttons, undo and reduced motion retain the same editing workflow. Personal fields resolve for the sender; images accept uploads or a configured Admin brand logo, and Trust badges places multiple managed images in one row. Each field has visible removal and undo. Image banner and Disclaimer presets add a wide uploaded image or editable small-print footer using the same portable blocks. Drag column dividers or image corner handles to resize; percentages and dimensions update live, with keyboard adjustment and one undo step per gesture.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: signatureBuilderSource,
+    usageCode: `<SignatureBuilder document={document} onChange={setDocument} values={employee} assets={assetUrls} onUpload={uploadImage} />`,
+  },
+  {
+    id: "signature-block-glyph", name: "Signature Block Glyph", category: "Communication",
+    description: "Custom SVG miniatures for the signature block palette.",
+    details: "Layered paper, contact details, logo and divider miniatures with an active lift state. Each communicates the block's purpose before it is placed.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: signatureGlyphSource,
+    usageCode: `<SignatureBlockGlyph kind="identity" active={dragging} />`,
+  },
+  {
+    id: "email-signature-control", name: "Email Signature Control", category: "Communication",
+    description: "Choose, preview or turn off the signature for one email.",
+    details: "Shared by Inbox, Dexter, contact-card popups and quote emails. Choices are mailbox-authorised and assigned to the current sender. Turning off is always a per-email choice, including for users with a company-managed design. The gallery preview does not access or send email.",
+    foundOn: [{label:"Inbox",route:"/inbox"},{label:"Dexter",route:"/agent-dexter"},{label:"Contacts",route:"/crm/contacts"},{label:"Companies",route:"/crm/accounts"},{label:"Leads",route:"/crm/leads"},{label:"Customers",route:"/customers"},{label:"Bookings",route:"/bookings"},{label:"Quotes",route:"/quotes"}],
+    componentCode: emailSignatureControlSource,
+    usageCode: `<EmailSignatureControl mailboxId={mailboxId} value={signature} onChange={setSignature} disabled={sending} />`,
+  },
+
+  {
+    id: "contact-email-action", name: "Contact Email Action", category: "CRM",
+    description: "Compose an email in a centred popup without leaving the record.",
+    details: "Uses the Dexter email editor with recipient chips, mailbox selection, pencil refinement and explicit sending through Inbox. Dismissal retains a private draft in the current browser tab for up to 24 hours. No email is sent in the gallery preview.",
+    foundOn: [{ label: "Companies", route: "/crm/accounts" }, { label: "Leads", route: "/crm/leads" }, { label: "Contacts", route: "/crm/contacts" }, { label: "Customers", route: "/customers" }, { label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-email-action" }],
+    componentCode: contactEmailActionSource,
+    usageCode: `<ContactEmailAction email={contact.email} name={contact.name} />`,
+  },
+  {
+    id: "contact-preferences-popover", name: "Contact Preferences", category: "CRM",
+    description: "Edit one person's contact details, preferred channel and marketing consent in place.",
+    details: "Loads the authorised contact record on demand. Changes use the existing contact version check, permissions and consent history; marketing changes require a source or reason. Company preferences are never inherited.",
+    foundOn: [{ label: "Companies", route: "/crm/accounts" }, { label: "Leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-preferences-popover" }],
+    componentCode: contactPreferencesSource,
+    usageCode: `<ContactPreferencesPopover contactId={contact.id} name={contact.name} onSaved={refreshContact} />`,
+  },
+
   {
     id: "conversation-attachments", name: "Conversation Attachments", category: "Controls",
     description: "Compact image tiles and document previews for ticket messages and Dexter, with quiet remove controls and a shared image viewer.",
@@ -138,15 +197,16 @@ export const galleryComponents = [
     name: "Auto-populated Field",
     category: "Forms",
     description: "An editable field state for values copied or derived from linked records, with quiet provenance and a reversible manual override.",
-    details: "All editable autofill controls share a left-to-right letter stagger, including inputs, comboboxes, codes, contacts and multiline notes. The real value updates immediately while the visual reveal plays without overlapping text. Long values have a bounded duration, and reduced motion shows the value immediately. Accent tint and stroke distinguish derived values without taking space from the text. Screen readers can read the source description; editing a value removes its derived state. Keep inherited, locked fields separate.",
+    details: "All editable autofill controls share a soft directional reveal with a small upward settle, including inputs, comboboxes, codes, contacts and multiline notes. A native text mirror preserves spacing, truncation and line breaks. The actual value updates immediately. New selections replace an in-flight reveal; editing, leaving the tab or enabling reduced motion ends it cleanly. Unchanged values and saved records stay quiet. The reveal takes 640ms regardless of text length, and reduced motion shows the value immediately. Accent tint and stroke distinguish derived values without taking space from the text. Screen readers can read the source description; editing a value removes its derived state. Keep inherited, locked fields separate.",
     foundOn: [
+      { label: "Customs declaration", route: "/customs/standalone/import/new" },
       { label: "Booking details", route: "/bookings/je0991133" },
       { label: "Quote details", route: "/quotes/jq20015" },
       { label: "New booking", route: "/bookings/new" },
       { label: "Components", route: "/components?component=auto-populated-field" },
     ],
-    componentCode: `export {\n  AutoPopulatedInput,\n  AutoPopulatedTextarea,\n  matchesAutoPopulation,\n} from "@/components/multideck/auto-populated-field"`,
-    usageCode: `<AutoPopulatedInput\n  value={address}\n  onChange={(event) => setAddress(event.target.value)}\n  autoPopulated={address === customer.address}\n  autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."\n/>`,
+    componentCode: `export {\n  AutoPopulatedInput,\n  AutoPopulatedTextarea,\n  useAutoPopulationMorph,\n  matchesAutoPopulation,\n} from "@/components/multideck/auto-populated-field"`,
+    usageCode: `// Start at null; increment the event when selecting a linked record.\n<AutoPopulatedInput\n  value={address}\n  autoPopulationEvent={customerSelectionEvent}\n  onChange={(event) => setAddress(event.target.value)}\n  autoPopulated={address === customer.address}\n  autoPopulationDescription="Filled from the selected customer. Edit this field to override it for this quote."\n/>`,
   },
   {
     id: "tag-entry-field",
@@ -236,10 +296,11 @@ export const galleryComponents = [
     name: "Quote Detail Controls",
     category: "Forms",
     description: "Compact freight-aware form controls for organisation recommendations, linked locations, derived values, Incoterms, units, recurrence and cargo characteristics. Cargo flags can inherit from individual goods lines without changing manual shipment handling.",
-    details: "Use these controls in quote and booking detail workflows where expected input length should shape the field. Organisation comboboxes keep current, recent and related records above a hairline and retain the full directory below it. Location fields ask for country and port/location, then derive an editable UN/LOCODE from the official directory. Derived values use the shared auto-populated state until the operator overrides them.",
+    details: "Use these controls in quote and booking detail workflows with labels aligned to the left of their controls. Labels wrap without truncation, values keep the remaining width, and validation stays below its control. Expected input length shapes the overall field width. Organisation comboboxes keep current, recent and related records above a hairline and retain the full directory below it. Location fields ask for country and port/location, then derive an editable UN/LOCODE from the official directory. Derived values use the shared auto-populated state until the operator overrides them.",
     foundOn: [
       { label: "Booking details", route: "/bookings/je0991133" },
       { label: "Quote details", route: "/quotes/jq20013" },
+      { label: "Customs import terms", route: "/customs/standalone/import/new" },
       { label: "Components", route: "/components?component=quote-detail-controls" },
     ],
     componentCode: `export {\n  CargoWiseField,\n  CargoWiseGroup,\n  CompactFieldShell,\n  CompactSectionShell,\n  CompactCombobox,\n  LocationFields,\n  AutoFilledField,\n  IncotermField,\n  AmountCurrencyField,\n  NumberUnitField,\n  RecurrenceBuilder,\n  CargoCharacteristicsField,\n} from "@/components/multideck/quote-details/quote-detail-fields"`,
@@ -320,15 +381,15 @@ export const galleryComponents = [
     name: "Inline Fields",
     category: "Forms",
     description: "Record fields that read as calm facts and become editable in place without shifting the surrounding layout.",
-    details: "Use on detail surfaces where operators review more often than they edit. Text, select, switch and grouped variants share keyboard-safe save, error and confirmation behaviour; direct-edit mode is available for compact forms that should always expose their controls.",
+    details: "Use on detail surfaces where operators review more often than they edit. Text, select, switch and grouped variants share keyboard-safe save, error and confirmation behaviour. InlineFieldGroup compact uses right-aligned side labels and visible controls. Short, medium and full widths fit the expected data; long text stays resizable. Existing stacked and read-to-edit layouts are unchanged.",
     foundOn: [
       { label: "CRM account details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" },
       { label: "CRM contact details", route: "/crm/contacts" },
       { label: "CRM deal details", route: "/crm/deals" },
       { label: "Components", route: "/components?component=inline-fields" },
     ],
-    componentCode: `export {\n  InlineField,\n  InlineSelectField,\n  InlineSwitchField,\n  InlineFieldGroup,\n  InlineFieldCard,\n} from "@/components/multideck/inline-field"`,
-    usageCode: `<InlineFieldCard title="Account facts">\n  <InlineField label="Account name" value={account.name} onSave={saveName} required />\n  <InlineSelectField label="Type" value={account.type} options={accountTypes} onSave={saveType} />\n</InlineFieldCard>`,
+    componentCode: `${inlineFieldSource}\n\n/* inline-field.css */\n${inlineFieldStyles}`,
+    usageCode: `<InlineFieldGroup compact>\n  <InlineField label="Company" value={account.name} onSave={saveName} required />\n  <InlineField label="Tier" width="short" value={account.tier} onSave={saveTier} />\n  <InlineSelectField label="Relationship" width="medium" value={account.type} options={accountTypes} onSave={saveType} />\n  <InlineField label="Summary" kind="textarea" value={account.summary} onSave={saveSummary} />\n</InlineFieldGroup>`,
   },
   {
     id: "wizard-dialog",
@@ -340,7 +401,7 @@ export const galleryComponents = [
       { label: "Customers", route: "/customers" },
       { label: "Suppliers", route: "/suppliers" },
       { label: "CRM accounts", route: "/crm/accounts" },
-      { label: "Contact cards", route: "/crm/contact-cards" },
+      { label: "Digital business cards", route: "/crm/contact-cards" },
       { label: "Reports", route: "/reports" },
       { label: "Components", route: "/components?component=wizard-dialog" },
     ],
@@ -353,9 +414,25 @@ export const galleryComponents = [
     category: "Feedback",
     description: "The single compact semantic pill treatment for workflow statuses and descriptive attributes across Multideck.",
     details: "Every status and attribute pill uses the established filled operator-table palette and footprint, whether it appears in a table, list, header, inspector, or history view. Optional icons may reinforce meaning, but the component never adds a competing dot or outlined treatment.",
-    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "To Do list", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Tasks", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn(filledPillClass, toneClass[tone], className)}\n    >\n      {indicator !== false ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
+  },
+  {
+    id: "task-agent-stack",
+    name: "Task agents", category: "AI", description: "Working agents and new results in three quiet rows, or compact outlined name-and-icon pills on smaller screens. Status colours and a route to all delegated tasks remain available.",
+    details: "Use above the support action in the app sidebar. Centre each row vertically, give task subtitles the available line width and align a small coloured status dot with the subtitle. At viewport heights up to 900px or widths up to 1440px, use two compact, transparent pills per row with only the icon and name; thin outlines convey status. The full task remains available on hover and in the conversation. Names and icons belong to saved assignments. Results remain visible until read. Reduced motion removes movement; status remains available in the hover text and accessible name.",
+    foundOn: [{label:"App sidebar",route:"/"},{label:"Tasks",route:"/to-do?view=dexter"},{label:"Agent conversation",route:"/agent-dexter"}],
+    componentCode: taskAgentSource,
+    usageCode: `<TaskAgentStack agents={agents} onOpen={agent => navigate(taskAgentUrl(agent))} onViewAll={() => navigate('/to-do?view=dexter')} />`,
+  },
+  {
+    id: "task-agent-controls",
+    name: "Task agent controls", category: "AI", description: "Clear progress with stop, retry and one-off scheduling controls.",
+    details: "Use beside a delegated task or in its saved conversation. A failed update keeps the task and entered time available. The gallery uses a local preview callback; product callers use the owner-authorised task service.",
+    foundOn: [{label:"Tasks",route:"/to-do?view=dexter"},{label:"Agent conversation",route:"/agent-dexter"}],
+    componentCode: taskAgentSource,
+    usageCode: `<TaskAgentControls agent={agent} />`,
   },
   {
     id: "todo-completion-control",
@@ -363,7 +440,7 @@ export const galleryComponents = [
     category: "Controls",
     description: "A personal-task checkbox with a tactile circle pop and a trimmed SVG tick.",
     details: "Use for completing or reopening To Do tasks. The footprint stays stable through optimistic saves, the tick draws only after direct input, and reduced-motion users receive the final state immediately.",
-    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-completion-control" }],
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-completion-control" }],
     componentCode: `export function TodoCompletionControl({ checked, busy, label, onChange }) {\n  const reduce = useReducedMotion()\n  return (\n    <button aria-label={label} aria-pressed={checked} aria-busy={busy || undefined} onClick={() => onChange(!checked)}>\n      <motion.svg viewBox="0 0 24 24" animate={reduce ? undefined : { scale: checked ? [1, 0.88, 1.08, 1] : 1 }}>\n        <motion.circle cx="12" cy="12" r="9.25" animate={{ fill: checked ? "var(--md-accent)" : "transparent" }} />\n        <motion.path d="M7.8 12.2 10.6 15l5.8-6.2" animate={{ pathLength: checked ? 1 : 0, opacity: checked ? 1 : 0 }} />\n      </motion.svg>\n    </button>\n  )\n}`,
     usageCode: `<TodoCompletionControl\n  checked={task.status === "completed"}\n  busy={saving}\n  label={task.status === "completed" ? "Reopen task" : "Mark task complete"}\n  onChange={(checked) => updateTask({ status: checked ? "completed" : "open" })}\n/>`,
   },
@@ -373,7 +450,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "The table-pill priority language for Low, Medium, High, and Urgent personal tasks.",
     details: "Use only when an operator assigns a priority. Colour and a directional icon work together, so the priority remains understandable without relying on colour alone.",
-    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-pill" }],
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-pill" }],
     componentCode: `export function TodoPriorityPill({ priority }) {\n  const { label, tone, Icon } = priorityPresentation[priority]\n  return <StatusPill kind="status" tone={tone} indicator={<Icon aria-hidden="true" />}>{label}</StatusPill>\n}`,
     usageCode: `{task.priority ? <TodoPriorityPill priority={task.priority} /> : null}`,
   },
@@ -385,7 +462,7 @@ export const galleryComponents = [
     details: "Use inside the Dexter Add to To Do action. The arrow yields to a compact progress ring during the real save, then the tick draws after confirmation. Only progress rotation is linear, and reduced motion switches states instantly.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=todo-action-state-icon" }],
     componentCode: `export function TodoActionStateIcon({ state }) {\n  return (\n    <motion.svg viewBox="0 0 24 24">\n      <motion.g animate={{ opacity: state === "idle" ? 1 : 0 }}><path d="M5 12h13M13 7l5 5-5 5" /></motion.g>\n      <motion.circle animate={{ opacity: state === "loading" ? 1 : 0 }} />\n      <motion.path d="M6.8 12.2 10.4 15.7 17.5 8.3" animate={{ pathLength: state === "success" ? 1 : 0 }} />\n    </motion.svg>\n  )\n}`,
-    usageCode: `<button disabled={state !== "idle"}>\n  <span>Add to To Do list</span>\n  <TodoActionStateIcon state={state} />\n</button>`,
+    usageCode: `<button disabled={state !== "idle"}>\n  <span>Add to Tasks</span>\n  <TodoActionStateIcon state={state} />\n</button>`,
   },
   {
     id: "todo-priority-picker",
@@ -393,7 +470,7 @@ export const galleryComponents = [
     category: "Controls",
     description: "An icon-led priority selector for assigning task urgency without making every task feel urgent.",
     details: "Use for task creation and editing. Each priority has a distinct icon and semantic colour; the menu keeps the standard Multideck surface and short entrance motion, with an explicit No priority state.",
-    foundOn: [{ label: "To Do list", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-picker" }],
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-priority-picker" }],
     componentCode: `export function TodoPriorityPicker({ value, onValueChange, ariaLabel }) {\n  return (\n    <Select value={value || "none"} onValueChange={(next) => onValueChange(next === "none" ? "" : next)}>\n      <SelectTrigger aria-label={ariaLabel}><SelectValue /></SelectTrigger>\n      <SelectContent>{priorityOptions.map((option) => <SelectItem value={option.value}><PriorityOption {...option} /></SelectItem>)}</SelectContent>\n    </Select>\n  )\n}`,
     usageCode: `<TodoPriorityPicker value={priority} ariaLabel="Priority" onValueChange={setPriority} />`,
   },
@@ -630,10 +707,13 @@ export const galleryComponents = [
     name: "Dexter Email Composer",
     category: "Agent Dexter",
     description: "An editable Gmail or Outlook email prepared inside a Dexter conversation, with in-place refinement and an explicit provider-backed Create draft or Send email action.",
-    details: "Use only for structured email actions returned by Dexter's prepare_email_draft tool. Operators can refine the whole email from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Provider draft creation and sending reuse Inbox permissions and idempotency, preserve the editable copy after failures, and show completion only after Gmail or Outlook confirms the action.",
+    details: "Use for structured Dexter email actions or direct operator composition via ContactEmailAction. Operators can refine the whole email from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Provider draft creation and sending reuse Inbox permissions and idempotency, preserve the editable copy after failures, and show completion only after Gmail or Outlook confirms the action.",
     foundOn: [
       { label: "Agent Dexter", route: "/agent-dexter" },
       { label: "Components", route: "/components?component=dexter-email-compose-card" },
+      { label: "Companies", route: "/crm/accounts" },
+      { label: "Leads", route: "/crm/leads" },
+      { label: "Contacts", route: "/crm/contacts" },
     ],
     componentCode: `export function DexterEmailComposeCard({ messageId, draft, onDraftChange }) {
   const [status, setStatus] = useState(draft.delivery.status)
@@ -982,7 +1062,7 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A compact control for moving through long operational lists without losing the current range.",
     details: "Use below tables, card grids, and list views. The range and rows-per-page selector stay visible; navigation appears only when there is more than one page. Keyboard-accessible page buttons use a short active-state transition with reduced-motion support, while mobile shows a compact page counter and larger touch targets. Navigation stays bounded for large datasets and never fetches or animates the rows itself.",
-foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Users", route: "/admin/users" }, { label: "Activity log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Settings", route: "/settings" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Components", route: "/components" }, { label: "Suppliers", route: "/suppliers" }],
+foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Purchase orders", route: "/warehouse/purchase-orders" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Users", route: "/admin/users" }, { label: "Activity log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Settings", route: "/settings" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Components", route: "/components" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: paginationSource,
     usageCode: `const [page, setPage] = useState(1)\nconst [rowsPerPage, setRowsPerPage] = useState(30)\nconst pageCount = Math.ceil(customers.length / rowsPerPage)\nconst paginatedCustomers = customers.slice((page - 1) * rowsPerPage, page * rowsPerPage)\n\n<Pagination\n  page={page}\n  pageCount={pageCount}\n  totalItems={customers.length}\n  pageSize={rowsPerPage}\n  pageSizeOptions={[10, 20, 30, 50]}\n  itemLabel="customers"\n  onPageChange={setPage}\n  onPageSizeChange={(nextRowsPerPage) => {\n    setRowsPerPage(nextRowsPerPage)\n    setPage(1)\n  }}\n/>`,
   },
@@ -1299,7 +1379,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Feedback",
     description: "The product's one waiting state: twenty-five cells lit as a travelling square spiral.",
     details: "Use it for every wait long enough to need a mark – a route still downloading, a register still fetching rows, a panel still resolving a document list. One object across the whole product means a wait never looks like a different feature loading. It animates only opacity and transform, so it can sit inside the box the loaded content will occupy without moving anything around it, and it reserves its own size so rows arriving cannot shift the page. `size=\"sm\"` fits a 32px toolbar; `decorative` drops the status role where the surrounding block already announces the wait in words. Reduced-motion mode holds the centre cell lit instead of cycling.",
-    foundOn: [{ label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `const spiralOrder = [
   0, 1, 2, 3, 4,
   15, 16, 17, 18, 5,
@@ -1692,7 +1772,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "A compact mode switch with one spring-animated selection pill for two to four exclusive choices.",
     details: "Use for short mutually exclusive view modes. The selected pill preserves spatial continuity, respects reduced motion, and stays visually identical across settings, dashboards, registers, and workflows.",
-    foundOn: [{ label: "Booking link editor", route: "/calendar/booking-links" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Meetings", route: "/calendar/meetings" }, { label: "Booking link editor", route: "/calendar/booking-links" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  const controlId = useId()\n  const shouldReduceMotion = useReducedMotion()\n\n  return (\n    <div role="group" className="relative isolate inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1">\n      {options.map((option) => (\n        <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}>\n          {value === option ? (\n            <motion.span layoutId={controlId + "-active"} transition={reduceMotion(shouldReduceMotion, mdMotion.spring)} />\n          ) : null}\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
@@ -1732,7 +1812,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "The canonical Multideck table with persisted layout, right-click row selection, field-aware CSV export, and a responsive Controls panel with full-width search and touch-friendly actions.",
     details: "Opt in to register-wide export with exportConfig.register and an explicit authorised, fully paginated loader. The icon beside column settings opens the shared Table Export dialog. Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Use pagination with onLimitChange for server-paged registers, or clientPagination only when rows contains the complete local dataset. Sorting runs before local slicing; selecting all applies to the visible page. Do not enable local paging for server pages, cursor-based lists or line editors. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
-    foundOn: [{ label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Contact cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Quotes", route: "/quotes" }, { label: "Quote carrier options", route: "/quotes/jq20013" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact card detail", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4" }, { label: "Bookings", route: "/bookings" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Rates & contracts", route: "/rates" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Quotes", route: "/quotes" }, { label: "Quote carrier options", route: "/quotes/jq20013" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact card detail", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4" }, { label: "Bookings", route: "/bookings" }, { label: "Import terms", route: "/customs/standalone/import/new" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Rates & contracts", route: "/rates" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: dataTableSource,
     usageCode: "// Server register: use the same limit and offset in the data request.\nconst [offset, setOffset] = useState(0)\nconst [limit, setLimit] = useState(30)\n<DataTable columns={columns} rows={result.rows} getRowKey={(row) => row.id}\n  pagination={{ offset, limit, total: result.total, loading, error: Boolean(error), onOffsetChange: setOffset, onLimitChange: setLimit }} />\n\n// Complete in-memory dataset: the table sorts, then slices the rows.\n<DataTable clientPagination columns={columns} rows={records} getRowKey={(row) => row.id} />",
   },
@@ -2632,7 +2712,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Phone Call Suggested Actions",
     category: "CRM",
     description: "Editable, reviewable actions inferred from a call before any task or CRM record changes.",
-    details: "Use for specific next steps such as adding a revised quote request to the To Do list or linking a call to a reviewed lead candidate. The operator can edit, approve, or dismiss each suggestion; arbitrary lead IDs are never accepted and generation is never treated as approval.",
+    details: "Use for specific next steps such as adding a revised quote request to the Tasks or linking a call to a reviewed lead candidate. The operator can edit, approve, or dismiss each suggestion; arbitrary lead IDs are never accepted and generation is never treated as approval.",
     foundOn: [{ label: "Phone call detail", route: "/crm/phone-calls/preview" }, { label: "Components", route: "/components?component=phone-call-suggested-actions" }],
     componentCode: `export function PhoneCallSuggestedActions({ actions, leadCandidates, onReview }) {
   const safeLeads = leadCandidates.filter((candidate) => candidate.recordType === "lead")
@@ -3395,7 +3475,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "contact-card-layout-picker",
     name: "Contact Card Layout Picker",
     category: "CRM",
-    description: "Four arrangements for a public QR contact card, each shown as the card it produces rather than a wireframe.",
+    description: "Four arrangements for a public digital business card, each shown as the card it produces rather than a wireframe.",
     details: "Use in Contact Card design settings. Each option is the real card at thumbnail size, carrying the live colours, header and corners, so the only visible difference between the four is the thing being chosen. One tab stop, arrows move the choice, and colour and code styling stay independent.",
     foundOn: [{ label: "Contact Card design", route: "/crm/contact-cards" }, { label: "Components", route: "/components?component=contact-card-layout-picker" }],
     componentCode: `export function ContactCardLayoutPicker({ value, onChange, branding }) {\n  return (\n    <div role="radiogroup" aria-label="Layout preset">\n      {CARD_LAYOUT_SPECS.map((preset) => (\n        <OptionTile\n          selected={value === preset.id}\n          label={preset.label}\n          detail={preset.detail}\n          onSelect={() => onChange(preset.id)}\n        >\n          <CardMiniature branding={{ ...branding, layout: preset.id }} />\n        </OptionTile>\n      ))}\n    </div>\n  )\n}`,

@@ -1,8 +1,9 @@
+import { emptyCustomsInvoiceHeader, type CustomsInvoiceHeader } from "./customs-invoices.mts"
 // Use Mistral's stable OCR alias so request features such as page confidence
 // scores stay paired with the provider version that supports them. Pinning 4.0
 // while sending 4.1-era options causes the provider to reject valid PDFs.
 export const MISTRAL_OCR_MODEL = "mistral-ocr-latest"
-export const COMMERCIAL_INVOICE_SCHEMA_VERSION = 3
+export const COMMERCIAL_INVOICE_SCHEMA_VERSION = 4
 export const MAX_COMMERCIAL_INVOICE_BYTES = 10 * 1024 * 1024
 
 // Send the already validated PDF as document content. Signed Storage URLs contain
@@ -29,10 +30,20 @@ export const commercialInvoiceAnnotationFormat = {
     schema: {
       type: "object",
       additionalProperties: false,
-      required: ["invoice_number", "currency", "lines"],
+      required: ["invoice_number", "invoice_date", "currency", "invoice_amount", "incoterms", "incoterms_place", "transaction_nature", "gross_mass_kg", "net_mass_kg", "letter_of_credit_exchange_rate", "package_count", "package_kind", "lines"],
       properties: {
         invoice_number: nullableString(),
+        invoice_date: nullableString(),
         currency: nullableString(),
+        invoice_amount: nullableNumber(),
+        incoterms: nullableString(),
+        incoterms_place: nullableString(),
+        transaction_nature: nullableString(),
+        gross_mass_kg: nullableNumber(),
+        net_mass_kg: nullableNumber(),
+        letter_of_credit_exchange_rate: nullableNumber(),
+        package_count: nullableNumber(),
+        package_kind: nullableString(),
         lines: {
           type: "array",
           items: {
@@ -189,6 +200,7 @@ export type ExtractedCommercialInvoiceLine = {
 }
 
 export type CommercialInvoiceExtraction = {
+  invoiceHeader: CustomsInvoiceHeader
   invoiceNumber: string
   lines: ExtractedCommercialInvoiceLine[]
 }
@@ -384,8 +396,18 @@ export function normalizeCommercialInvoiceAnnotation(
     }]
   })
 
+  const sourceNumber = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? String(value) : ""
   return {
     invoiceNumber: cleanText(record.invoice_number, 80),
+    invoiceHeader: {
+      ...emptyCustomsInvoiceHeader(""),
+      invoiceNumber: cleanText(record.invoice_number, 80), invoiceDate: isoDate(record.invoice_date), currency: documentCurrency,
+      totalAmount: sourceNumber(record.invoice_amount), tradeTerms: cleanText(record.incoterms, 3).toUpperCase(),
+      tradeTermsLocation: cleanText(record.incoterms_place, 35), transactionNature: cleanText(record.transaction_nature, 2),
+      grossMass: sourceNumber(record.gross_mass_kg), netMass: sourceNumber(record.net_mass_kg),
+      letterOfCreditExchangeRate: sourceNumber(record.letter_of_credit_exchange_rate),
+      packageCount: sourceNumber(record.package_count), packageKind: cleanText(record.package_kind, 35).toUpperCase(),
+    },
     lines,
   }
 }

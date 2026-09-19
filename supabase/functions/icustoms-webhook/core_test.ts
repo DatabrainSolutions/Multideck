@@ -40,6 +40,7 @@ Deno.test("captured JSON is normalized and its inline PDF is redacted", async ()
   assert(parsed.eventId === "evt-1", "Expected provider event ID.");
   assert(parsed.correlationId === "corr-1", "Expected exact correlation ID.");
   assert(parsed.providerStatus === "accepted", "Expected accepted status.");
+  assert(parsed.mrn === "26GB123", "Expected acceptance MRN to populate the declaration.");
   assert(parsed.documentBytes?.byteLength === pdf.byteLength, "Expected decoded PDF.");
   assert(!parsed.documentUrl, "Expected no document URL for inline PDF.");
   assert(String(parsed.sanitizedPayload.declaration_document).startsWith("[redacted:"), "Expected PDF redaction.");
@@ -54,6 +55,7 @@ Deno.test("observed iCustoms PDF URL remains redacted and is classified as a doc
   }));
   const parsed = await parseWebhook(body, "application/json", new Headers());
   assert(parsed.eventType === "declaration_document", "Expected PDF URL event classification.");
+  assert(parsed.mrn === "26GB98GC3CF7FGPAA1", "Expected MRN from a document notification without a status transition.");
   assert(parsed.documentUrl.startsWith("https://"), "Expected the private download URL in memory.");
   assert(String(parsed.sanitizedPayload.PDF).startsWith("[redacted:"), "Expected signed URL redaction.");
 });

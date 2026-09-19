@@ -67,6 +67,7 @@ export async function hydrateConversationArtifacts(admin: SupabaseClient, actor:
     return { ...message,
     ...(object(message.emailDraft) && draftOwners.has(String(message.emailDraft.id)) && draftOwners.get(String(message.emailDraft.id)) !== message.id ? { emailDraft: null } : {}),
     ...(delivery ? { emailDraft: delivery } : {}),
+    ...(latestEmailAction ? { pendingAction: { ...latestEmailAction, status: statuses.get(String(latestEmailAction.id)) ?? "unavailable" } } : {}),
     pendingActions: message.pendingActions.map(action => ({ ...action, status: statuses.get(String(action.id)) ?? "unavailable" })),
   } }) }
 }

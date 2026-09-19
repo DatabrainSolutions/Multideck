@@ -1,3 +1,4 @@
+import { ContactEmailAction } from "@/components/multideck/contact-email-action"
 import { useId, useMemo, type CSSProperties, type ReactNode } from "react"
 import { AiBrain, ArrowRight, Download, LayoutGrid, List, Mail, Map as MapIcon, MapPin, Phone, Plus, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
@@ -467,14 +468,7 @@ export function ContactRow({
       <div className="flex flex-col items-end gap-2">
         <p className="text-[12px] text-[var(--md-text)]">{contact.status}</p>
         <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <Mail data-icon="inline-start" strokeWidth={1.2} />
-          </Button>
+          <ContactEmailAction email={contact.email} name={contact.name} className="size-8 justify-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]"><Mail className="size-4" strokeWidth={1.2} /></ContactEmailAction>
           <Button
             variant="ghost"
             size="icon"
@@ -544,7 +538,7 @@ export function ContactProfileModule({
 
       <div className="grid gap-0 border-t border-[rgba(11,20,19,0.06)] 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
         <div className="px-5 py-4">
-          <ContactDataRow label="Email" value={<a className="text-[var(--md-accent)] hover:text-[var(--md-ink)]" href={`mailto:${contact.email}`}>{contact.email}</a>} />
+          <ContactDataRow label="Email" value={<ContactEmailAction email={contact.email} className="text-[var(--md-accent)] hover:text-[var(--md-ink)]">{contact.email}</ContactEmailAction>} />
           <ContactDataRow label="Phone" value={contact.phone} />
           <ContactDataRow label="Mobile" value={contact.mobile} />
           <ContactDataRow label="Location" value={contact.location} />

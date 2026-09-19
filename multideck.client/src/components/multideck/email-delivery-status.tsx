@@ -32,6 +32,13 @@ function presentationFor(
   t: (value: string) => string,
 ): DeliveryPresentation {
   switch (status) {
+    case "sending":
+      return {
+        icon: CircleAlert,
+        label: t("Awaiting confirmation"),
+        detail: t("The provider has not confirmed sending. Refresh this mailbox to check before sending another copy."),
+        tone: "neutral",
+      }
     case "draft":
       return {
         icon: FilePenLine,
@@ -43,14 +50,14 @@ function presentationFor(
       return {
         icon: CheckCheck,
         label: t("Delivered"),
-        detail: t("The provider confirmed delivery."),
+        detail: t("A recipient server confirmed delivery. This does not confirm delivery to every recipient."),
         tone: "positive",
       }
     case "opened_estimated":
       return {
         icon: Eye,
         label: t("Opened (estimated)"),
-        detail: t("At least one recipient's email app requested the tracking image."),
+        detail: t("The tracking image was requested. This is an estimated open signal and does not identify which recipient read the message."),
         tone: "positive",
       }
     case "replied":
@@ -71,7 +78,7 @@ function presentationFor(
       return {
         icon: Ban,
         label: t("Bounced"),
-        detail: t("The provider reported that this message could not be delivered."),
+        detail: t("A recipient server reported a delivery failure. Other recipients may still receive the message."),
         tone: "danger",
       }
     case "no_open_signal":

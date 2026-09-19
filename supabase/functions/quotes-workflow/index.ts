@@ -1,3 +1,4 @@
+import { resolveSignature } from "../inbox-api/signatures.ts"
 import { authenticateRequest, corsHeaders, FunctionError, jsonResponse, signedUrlLifetimeSeconds, templateSourcesBucket } from "../_shared/document-functions.ts"
 import {
   buildQuoteResponseUrl,
@@ -24,7 +25,7 @@ import { governedModelFetch } from "../_shared/model-gateway.ts"
 import { isTenantBrandConfigured, readConfiguredTenantBrand, TENANT_BRAND_ASSETS_BUCKET, type TenantBrand } from "../_shared/tenant-branding.ts"
 import { generateQuotePdf, removeGeneratedQuotePdf, type GeneratedQuotePdf, type QuotePdfDataset } from "../_shared/quote-pdf.ts"
 import { quoteDocumentCargo, quoteDocumentCargoTotals, quoteDocumentHandling } from "../_shared/quote-document-cargo.ts"
-import { sendMail as sendConnectedMailbox, type Actor as InboxActor } from "../inbox-api/runtime.ts"
+import { sendMail as sendConnectedMailbox, requireMailbox, type Actor as InboxActor } from "../inbox-api/runtime.ts"
 import { base64Encode, OUTBOUND_ATTACHMENT_LIMITS } from "../inbox-api/core.ts"
 
 type Row = Record<string, unknown>
@@ -1684,6 +1685,9 @@ Deno.serve(async (request) => {
       const subject = requiredText(body.subject, "Email subject", 200)
       const bodyText = requiredText(body.bodyText, "Email body", 6_000)
       const mailboxId = parseUuid(body.mailboxId, "Sending mailbox")
+      const signatureActor: InboxActor = {userId:context.operator.userId,authUserId:context.operator.authUserId,companyId:context.operator.companyId,email:context.operator.email,displayName:context.operator.displayName}
+      const signatureMailbox=await requireMailbox(admin,signatureActor,mailboxId,"send")
+      await resolveSignature(admin,signatureActor,signatureMailbox.mailbox,body.signature as Parameters<typeof resolveSignature>[3])
       const expiryPreset = parseExpiryPreset(body.expiryPreset)
       const token = responseToken()
       const expiresAt = expiryPreset === "never" ? null : new Date(Date.now() + expiryPreset * 86_400_000).toISOString()
@@ -1770,6 +1774,7 @@ Deno.serve(async (request) => {
           draftId: null,
           subject,
           bodyText: rendered.text,
+          signature: body.signature,
           addedTo: [{ address: recipientEmail, displayName: recipientName }],
           addedCc: [],
           addedBcc: [],
@@ -1779,7 +1784,7 @@ Deno.serve(async (request) => {
             mimeType: quoteDocument.mimeType,
             contentBase64: base64Encode(quotePdfBytes),
           }],
-          trackOpens: false,
+          trackOpens: body.trackOpens === true,
         }, `quote:${issued.responseLinkId}`, deliveryMode === "standard" ? { bodyHtml: rendered.html } : {})
         if (delivery.status !== "sent") throw new Error("The connected mail provider did not confirm the quote email as sent.")
         const { data: finalised, error: finaliseError } = await admin.rpc("quote_workflow_finalize_customer_response_v4", {

@@ -42,14 +42,19 @@ Deno.serve(async (request) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? ""
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-    if (!supabaseUrl || !serviceRoleKey) return pixel(method)
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("email-track configuration unavailable")
+      return pixel(method)
+    }
 
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { "x-client-info": "multideck-email-track/1" } },
     })
-    await admin.rpc("comm_record_tracking_open", { p_token_hash: await sha256(token) })
+    const { error } = await admin.rpc("comm_record_tracking_open", { p_token_hash: await sha256(token) })
+    if (error) console.error("email-track recording failed", { code: error.code })
   } catch {
+    console.error("email-track request failed")
     // Tracking is deliberately non-observable to the caller: an invalid token,
     // expired token or temporary database error returns the same blank image.
   }

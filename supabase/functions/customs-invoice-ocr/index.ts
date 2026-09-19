@@ -502,10 +502,10 @@ async function requestMistralChunk(
       image_limit: 0,
       document_annotation_format: purchaseOrder ? purchaseOrderAnnotationFormat : financePurchase ? financePurchaseAnnotationFormat : commercialInvoiceAnnotationFormat,
       document_annotation_prompt: [
-        purchaseOrder ? "Extract the purchase order header and only item rows explicitly present in the document." : financePurchase ? "Extract the supplier invoice or supplier credit note header, totals and only charge rows explicitly present in the document." : "Extract only commercial invoice item rows explicitly present in the document.",
-        purchaseOrder ? "Do not invent purchase order numbers, suppliers, dates, references, quantities, prices, tax rates or terms." : financePurchase ? "Do not invent the supplier, document type, document number, dates, currency, tax, totals or line values." : "Do not invent commodity codes, origin, weights, quantities, prices or package details.",
+        purchaseOrder ? "Extract the purchase order header and only item rows explicitly present in the document." : financePurchase ? "Extract the supplier invoice or supplier credit note header, totals and only charge rows explicitly present in the document." : "Extract the commercial invoice header and only item rows explicitly present in the document.",
+        purchaseOrder ? "Do not invent purchase order numbers, suppliers, dates, references, quantities, prices, tax rates or terms." : financePurchase ? "Do not invent the supplier, document type, document number, dates, currency, tax, totals or line values." : "Do not invent commodity codes, origin, weights, quantities, prices, dates, invoice totals, Incoterms, transaction nature or package details. Return null for header fields not explicitly stated; do not infer invoice totals from item sums. Never extract the ordinary customs exchange rate: it comes from HMRC. Extract a letter_of_credit_exchange_rate only when the invoice explicitly labels it as a letter of credit rate; keep it distinct from any other exchange rate.",
         "Use a one-based page number and preserve the source item description.",
-        purchaseOrder || financePurchase ? "Return dates as YYYY-MM-DD and three-letter ISO currency only when explicitly stated." : "Return three-letter ISO currency and two-letter ISO origin only when explicitly stated.",
+        purchaseOrder || financePurchase ? "Return dates as YYYY-MM-DD and three-letter ISO currency only when explicitly stated." : "Return invoice dates as YYYY-MM-DD, three-letter ISO currency and two-letter ISO origin only when explicitly stated. Do not confuse header gross/net weight or package totals with individual item values.",
         purchaseOrder ? "Keep header fields separate from item rows and exclude summary or subtotal rows." : financePurchase ? "Classify only explicit credit notes as credit_note; use invoice for supplier invoices. Keep summary, subtotal, freight and tax totals out of item rows unless they are explicit charge lines." : "Keep item quantity separate from package count; return package count only when explicitly stated.",
         "Ignore logos, product photography, signatures, stamps and other decorative images.",
         purchaseOrder ? "Do not return totals, tax, freight or discounts as item rows." : financePurchase ? "Return positive magnitudes for invoices and credit notes; the document_type carries the accounting sign." : "Do not return totals, tax, freight, discounts, addresses or payment terms as item rows.",
@@ -581,6 +581,7 @@ function mergeProviderPayloads(payloads: Record<string, unknown>[], pageCount: n
   return {
     extraction: {
       invoiceNumber: chunks.map((chunk) => chunk.invoiceNumber).find(Boolean) || "",
+      invoiceHeader: Object.fromEntries(Object.keys(chunks[0]?.invoiceHeader ?? {}).map(field => [field, chunks.map(chunk => chunk.invoiceHeader[field as keyof typeof chunk.invoiceHeader]).find(Boolean) || ""])),
       lines: deduplicateLines(chunks.flatMap((chunk) => chunk.lines)).map((line, index) => ({ ...line, id: `ocr-line-${index + 1}` })),
     }, evidencePages, providerModel, pagesProcessed,
   }

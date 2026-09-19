@@ -105,7 +105,7 @@ export const homeNavItem: NavItem = { label: "Home", icon: Home03, route: "/" }
  * Sales & CRM / Marketing / Email marketing, which is outbound campaign work.
  */
 export const inboxNavItem: NavItem = { label: "Inbox", icon: Inbox, route: "/inbox" }
-export const todoNavItem: NavItem = { label: "To Do list", icon: ClipboardCheck, route: "/to-do" }
+export const todoNavItem: NavItem = { label: "Tasks", icon: ClipboardCheck, route: "/to-do" }
 export const calendarNavItem: NavItem = { label: "Calendar", icon: CalendarDays, route: "/calendar" }
 
 export const sidebarAreas: SidebarArea[] = [
@@ -122,7 +122,6 @@ export const sidebarAreas: SidebarArea[] = [
         icon: Funnel,
         children: [
           { label: "Leads", icon: Users, route: "/crm/leads" },
-          { label: "Contact cards", icon: IdCard, route: "/crm/contact-cards" },
           { label: "Deals", icon: BriefcaseBusiness, route: "/crm/deals" },
         ],
       },
@@ -133,6 +132,15 @@ export const sidebarAreas: SidebarArea[] = [
         children: [
           { label: "Companies", icon: Building2, route: "/crm/accounts" },
           { label: "Contacts", icon: Users, route: "/crm/contacts" },
+        ],
+      },
+      {
+        id: "crm-marketing",
+        label: "Marketing",
+        icon: Megaphone,
+        children: [
+          { label: "Digital business cards", icon: IdCard, route: "/crm/contact-cards" },
+          { label: "Meetings", icon: CalendarDays, route: "/calendar/meetings" },
         ],
       },
       { id: "crm-drive", label: "Drive", icon: HardDrive, route: "/crm/drive" },
@@ -309,6 +317,7 @@ export const sidebarAreas: SidebarArea[] = [
       { id: "admin-broadcast", label: "Broadcast", icon: Megaphone, route: "/admin/broadcast" },
       { id: "admin-billing", label: "Billing", icon: CreditCard, route: "/admin/billing" },
       { id: "admin-branding", label: "Branding", icon: Palette, route: "/admin/branding" },
+      { id: "admin-email-signatures", label: "Email signatures", icon: Palette, route: "/admin/email-signatures" },
       { id: "admin-system-preferences", label: "System Preferences", icon: Settings2, route: "/admin/system-preferences" },
       { id: "admin-activity-log", label: "Active log", icon: Clock3, route: "/admin/activity" },
       { id: "admin-detailed-log", label: "Detailed log", icon: ListOrdered, route: "/admin/detailed-log" },
@@ -318,7 +327,7 @@ export const sidebarAreas: SidebarArea[] = [
 
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
-  { label: "To Do list", icon: ClipboardCheck, route: "/to-do" },
+  { label: "Tasks", icon: ClipboardCheck, route: "/to-do" },
   { label: "Warehouse", icon: Forklift, route: "/warehouse" },
   { label: "Customers", icon: Users, route: "/customers" },
   { label: "CRM", icon: BriefcaseBusiness, route: "/crm" },
@@ -338,7 +347,7 @@ export const crmSidebarItems: NavItem[] = [
   { label: "CRM overview", value: "Live", icon: LayoutDashboard, route: "/crm" },
   { label: "Phone calls", icon: Phone, route: "/crm/phone-calls" },
   { label: "Leads", icon: Users, route: "/crm/leads" },
-  { label: "Contact cards", icon: IdCard, route: "/crm/contact-cards" },
+  { label: "Digital business cards", icon: IdCard, route: "/crm/contact-cards" },
   { label: "Contacts", icon: Mail, route: "/crm/contacts" },
   { label: "Deals", icon: BriefcaseBusiness, route: "/crm/deals" },
   { label: "Drive", icon: HardDrive, route: "/crm/drive" },

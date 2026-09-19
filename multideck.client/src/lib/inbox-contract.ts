@@ -1,3 +1,4 @@
+import type { SignatureSelection } from "../../../shared/email-signatures"
 /**
  * The Inbox wire contract: the types the tenant Edge Function speaks, the
  * readers that turn a response into them, and the pure client-side rules for
@@ -178,6 +179,7 @@ export type MailAttachment = {
 
 export type InboxDeliveryStatus =
   | "draft"
+  | "sending"
   | "sent"
   | "delivered"
   | "opened_estimated"
@@ -261,6 +263,7 @@ export type InboxMessage = {
   replyEligible: boolean
   attachments: MailAttachment[]
   delivery?: InboxDelivery
+  draft?: { mode: SendMode; sourceMessageId: string | null; signature?: SignatureSelection; trackOpens: boolean; addedTo: MailAddress[]; addedCc: MailAddress[]; addedBcc: MailAddress[]; removedAddresses: string[] }
 }
 
 export type InboxThreadDetail = {
@@ -295,6 +298,7 @@ export type ThreadPage = {
 }
 
 export type InboxDraft = {
+  signature?: SignatureSelection
   id: string
   threadId: string | null
   mailboxId: string
@@ -331,6 +335,7 @@ export type ProviderDraftReceipt = {
  * never quietly drop somebody off a Reply all.
  */
 export type SendRequest = {
+  signature?: SignatureSelection
   mailboxId: string
   mode: SendMode
   sourceMessageId: string | null
@@ -732,8 +737,9 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
   const occurredAt = readOptionalText(pickField(record, "sentAt", "receivedAt", "occurredAt"))
   const direction = readText(pickField(record, "direction")).toLowerCase() === "outbound" ? "outbound" : "inbound"
   const rawDelivery = readRecord(pickField(record, "delivery"))
+  const draft = readRecord(pickField(record, "draft"))
   const rawDeliveryStatus = readText(pickField(rawDelivery, "status"))
-  const deliveryStatus = ["draft", "sent", "delivered", "opened_estimated", "replied", "failed", "bounced", "no_open_signal"].includes(rawDeliveryStatus)
+  const deliveryStatus = ["draft", "sending", "sent", "delivered", "opened_estimated", "replied", "failed", "bounced", "no_open_signal"].includes(rawDeliveryStatus)
     ? rawDeliveryStatus as NonNullable<InboxMessage["delivery"]>["status"]
     : "sent"
 
@@ -752,6 +758,7 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
     bodyText: readOptionalText(pickField(record, "bodyText", "text")),
     sanitizedHtml: readOptionalText(pickField(record, "sanitizedHtml", "safeBodyHtml", "bodyHtml")),
     replyEligible: readFlag(pickField(record, "replyEligible"), true),
+    ...(["new", "reply", "reply_all", "forward"].includes(String(draft.mode)) ? { draft: { mode: draft.mode as SendMode, sourceMessageId: readOptionalText(draft.sourceMessageId), signature: draft.signature as SignatureSelection | undefined, trackOpens: draft.trackOpens !== false, addedTo: normalizeAddresses(draft.addedTo ?? record.to), addedCc: normalizeAddresses(draft.addedCc ?? record.cc), addedBcc: normalizeAddresses(draft.addedBcc ?? record.bcc), removedAddresses: readList(draft.removedAddresses).filter((value): value is string => typeof value === "string") } } : {}),
     attachments: readList(pickField(record, "attachments")).map(normalizeAttachment),
     delivery: direction === "outbound" ? {
       status: deliveryStatus,
@@ -836,6 +843,7 @@ export function normalizeDraft(value: unknown, request: Partial<SendRequest>): I
     bodyText: readText(pickField(record, "bodyText"), request.bodyText ?? ""),
     trackOpens: readFlag(pickField(record, "trackOpens"), request.trackOpens ?? true),
     updatedAt: readOptionalText(pickField(record, "updatedAt")),
+    signature: (record.signature as SignatureSelection | undefined) ?? request.signature,
   }
 }
 
@@ -849,6 +857,7 @@ export function buildSendPayload(request: SendRequest) {
     draftId: request.draftId,
     subject: request.subject,
     bodyText: request.bodyText,
+    signature: request.signature,
     addedTo: request.addedTo,
     addedCc: request.addedCc,
     addedBcc: request.addedBcc,
@@ -864,6 +873,7 @@ export function buildSendPayload(request: SendRequest) {
 }
 
 export type ComposerEdits = {
+  signature?: SignatureSelection
   subject: string
   bodyText: string
   addedTo: MailAddress[]
@@ -912,6 +922,7 @@ export function buildReplyRequest({
     // Reply and reply all keep the thread's subject on the server side.
     subject: mode === "new" || mode === "forward" ? edits.subject : null,
     bodyText: edits.bodyText,
+    signature: edits.signature,
     addedTo: edits.addedTo,
     addedCc: edits.addedCc,
     addedBcc: edits.addedBcc,
@@ -923,6 +934,8 @@ export function buildReplyRequest({
 }
 
 export type ComposerState = {
+  signature?: SignatureSelection
+  removedAddresses?: string[]
   mode: SendMode
   threadId: string | null
   sourceMessageId: string | null
@@ -999,13 +1012,14 @@ export function composerEdits(state: ComposerState): ComposerEdits {
   return {
     subject: state.subject,
     bodyText: state.bodyText,
+    signature: state.signature,
     // Every field says exactly what the operator typed into it. A new message
     // and a forward carry their whole audience this way; a reply carries only
     // the people added on top of the ones the server resolves from the source.
     addedTo: dedupeAddresses(state.to),
     addedCc: dedupeAddresses(state.cc),
     addedBcc: dedupeAddresses(state.bcc),
-    removedAddresses: [],
+    removedAddresses: state.removedAddresses ?? [],
     attachments: state.attachments,
     trackOpens: state.trackOpens,
   }

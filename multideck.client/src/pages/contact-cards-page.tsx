@@ -177,7 +177,7 @@ function CreateCardWizard({
       onOpenChange={(nextOpen) => {
         if (!nextOpen) onClose()
       }}
-      title="Create a QR contact card"
+      title="Create a digital business card"
       description="A card represents one person. The public page, lead source and any automation can be set up afterwards."
       steps={steps}
       activeStepId={activeStep}
@@ -407,7 +407,7 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
     <div className="md-page md-page-stack">
       <header className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,560px)] lg:items-start">
         <div className="min-w-0">
-          <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Contact cards")}</h1>
+          <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Digital business cards")}</h1>
         </div>
         <p className="max-w-[68ch] text-[13px] leading-5 text-[var(--md-text)] lg:justify-self-end lg:pt-5 lg:text-end">
           {t("A shareable QR card for each person. Someone scans it, shares their details, and gets your contact details back. The lead lands in the CRM with the card's source.")}
@@ -421,11 +421,11 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
             <PanelSkeleton className="mt-4" rows={5} />
           </Surface>
         ) : status === "error" && cards.length === 0 ? (
-          <Surface padding="md"><PanelError message={error ?? t("Unable to load contact cards. Check your connection and try again.")} onRetry={reloadContactCards} /></Surface>
+          <Surface padding="md"><PanelError message={error ?? t("Unable to load digital business cards. Check your connection and try again.")} onRetry={reloadContactCards} /></Surface>
         ) : summary.total === 0 && !filtersActive ? (
           <Surface padding="md"><PanelMessage
             icon={IdCard}
-            title={t("No contact cards yet")}
+            title={t("No digital business cards yet")}
             body={t("Create a card for a person, print or display the code, and every scan becomes a contact exchange and a CRM lead.")}
             action={canWrite ? (
               <Button
@@ -433,7 +433,7 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
                 onClick={() => setCreateOpen(true)}
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
-                {t("New card")}
+                {t("New business card")}
               </Button>
             ) : undefined}
           /></Surface>
@@ -443,7 +443,7 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
             rows={cards}
             getRowKey={(card) => card.id}
             storageKey="contact-cards"
-            ariaLabel={t("Contact cards")}
+            ariaLabel={t("Digital business cards")}
             exportConfig={{ fileName: "contact-cards", register: {
               dateLabel: "Card created date", dateValue: (card) => card.createdAt,
               busy: query.trim() !== debouncedQuery,
@@ -456,20 +456,20 @@ export function ContactCardsPage({ navigate, currentUser }: { navigate: (path: s
             serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "activity", direction: "desc" }); setOffset(0) } }}
             pagination={{ offset, limit: pageSize, total: page.total, loading: status === "loading", onOffsetChange: setOffset, onLimitChange: setPageSize, error: status === "error" }}
             compactToolbar
-            toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search contact cards" placeholder="Search contact cards…" className="sm:w-[190px]" />}
+            toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search digital business cards" placeholder="Search digital business cards…" className="sm:w-[190px]" />}
             toolbarFilters={<>
               <RegisterFacetSelect label="Card status" allLabel="All statuses" value={statusFilter} options={[{ value: "published", label: "Live" }, { value: "draft", label: "Draft" }, { value: "paused", label: "Paused" }]} onChange={(value) => { setStatusFilter(value); setOffset(0) }} className="w-[116px]" />
               <RegisterFacetSelect label="Automation" allLabel="All automations" value={automationFilter} options={[{ value: "active", label: "Active" }, { value: "attention", label: "Needs attention" }, { value: "paused", label: "Paused" }, { value: "off", label: "Off" }]} onChange={(value) => { setAutomationFilter(value); setOffset(0) }} className="w-[132px]" />
             </>}
             contentBeforeTable={status === "error" && cards.length > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-danger)_8%,var(--md-surface))] px-3 py-2" role="alert">
-                <p className="text-[12px] text-[var(--md-danger)]" dir="auto">{error ? t(error) : t("Contact cards could not be refreshed.")}</p>
+                <p className="text-[12px] text-[var(--md-danger)]" dir="auto">{error ? t(error) : t("Digital business cards could not be refreshed.")}</p>
                 <Button type="button" variant="outline" className="h-8" onClick={() => void reloadContactCards()}>{t("Try again")}</Button>
               </div>
             ) : undefined}
             emptyState={status === "loading"
-              ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading contact cards…" /></div>
-              : <div className="grid min-h-[180px] place-items-center p-6 text-center"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No contact cards match these filters.")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Clear a filter or try another person, company or source.")}</p><Button type="button" variant="outline" className="mt-3" onClick={() => { setQuery(""); setStatusFilter(""); setAutomationFilter(""); setOffset(0) }}>{t("Clear filters")}</Button></div></div>}
+              ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading digital business cards…" /></div>
+              : <div className="grid min-h-[180px] place-items-center p-6 text-center"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No digital business cards match these filters.")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Clear a filter or try another person, company or source.")}</p><Button type="button" variant="outline" className="mt-3" onClick={() => { setQuery(""); setStatusFilter(""); setAutomationFilter(""); setOffset(0) }}>{t("Clear filters")}</Button></div></div>}
           />
         )}
       </div>
@@ -607,7 +607,7 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
     return (
       <div className="md-page md-page-stack">
         <Surface padding="md">
-          <PanelError message={error ?? t("Unable to load this contact card. Check your connection and try again.")} onRetry={() => reloadContactCard(cardId)} />
+          <PanelError message={error ?? t("Unable to load this digital business card. Check your connection and try again.")} onRetry={() => reloadContactCard(cardId)} />
         </Surface>
       </div>
     )
@@ -625,7 +625,7 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
             action={
               <Button variant="outline" className="h-9 rounded-[var(--md-radius-md)] text-[13px]" onClick={() => navigate("/crm/contact-cards")}>
                 <ArrowLeft data-icon="inline-start" strokeWidth={1.4} />
-                {t("Back to contact cards")}
+                {t("Back to digital business cards")}
               </Button>
             }
           />
@@ -699,7 +699,7 @@ export function ContactCardDetailPage({ cardId, navigate, currentUser }: { cardI
           onClick={() => navigate("/crm/contact-cards")}
         >
           <ArrowLeft className="size-3.5" strokeWidth={1.5} />
-          {t("Contact cards")}
+          {t("Digital business cards")}
         </button>
 
         <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-start xl:justify-between">
