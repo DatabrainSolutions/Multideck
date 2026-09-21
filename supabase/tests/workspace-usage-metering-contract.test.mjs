@@ -27,6 +27,9 @@ const [migration, adminUsageMigration, developerBroadcast, gateway, transcriptio
   read("functions/transcription/index.ts"),
 ])
 
+const confirmedAllowancesMigration = await read("migrations/20260921124422_confirmed_usage_allowances_and_cloud_reporting.sql")
+const cloudUsageExporter = await read("functions/cloud-usage-export/index.ts")
+
 test("every OpenAI Responses call is routed through the governed workspace ledger", async () => {
   const files = await sourceFiles(functionsDirectory)
   const directCallers = []
@@ -68,4 +71,16 @@ test("other product units keep provider-truthful completion boundaries", () => {
   assert.match(adminUsageMigration, /count\(distinct submission\."ICUSS_CustomsID"\)/)
   assert.match(adminUsageMigration, /submission\."ICUSS_SubmittedAt" >= v_period_start/)
   assert.match(adminUsageMigration, /'dataState', 'not_connected'/)
+})
+
+test("confirmed plans include one thousand Mistral pages and Carbone documents per plan user", () => {
+  assert.match(adminUsageMigration, /v_ocr_included := v_seat_count \* 1000/)
+  assert.match(confirmedAllowancesMigration, /v_documents_included := v_seat_count \* 1000/)
+})
+
+test("Cloud receives metadata-only idempotent Mistral and Carbone usage events", () => {
+  assert.match(cloudUsageExporter, /sourceEventId: `mistral:\$\{row\.AIDexterEgress_ID\}`/)
+  assert.match(cloudUsageExporter, /sourceEventId: `carbone:\$\{row\.DOCBRJ_ID\}`/)
+  assert.match(cloudUsageExporter, /documentCount: 1/)
+  assert.doesNotMatch(cloudUsageExporter, /ResultJSON|DataCategoriesJSON|document_content|prompt|apiKey/)
 })
