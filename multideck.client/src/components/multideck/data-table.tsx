@@ -935,7 +935,7 @@ export function DataTable<Row>({
       {contentBeforeTable ? <div data-table-content-before className="mb-3">{contentBeforeTable}</div> : null}
       {!showToolbar && selectionMode ? <div className="mb-2 flex justify-end"><AnimatePresence initial={false}>{selectionControls}</AnimatePresence></div> : null}
 
-      <div data-table-surface className={cn("overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", !showToolbar && "h-full")}>
+      <div data-table-surface className={cn("overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", !showToolbar && "h-full", pageRows.length === 0 && "[container-type:inline-size]")}>
       <Table aria-label={ariaLabel ? t(ariaLabel) : undefined} className={tableClassName} style={{ minWidth: minimumWidth }}>
         <TableHeader>
           <TableRow className="border-[var(--md-line)] bg-[var(--md-surface-soft)] hover:bg-[var(--md-surface-soft)]">
@@ -1151,8 +1151,10 @@ export function DataTable<Row>({
             )
           }) : (
             <TableRow className="h-[180px] border-[var(--md-line)] bg-[var(--md-surface)] hover:bg-transparent">
-              <TableCell colSpan={visibleColumns.length + (selectionMode ? 1 : 0)} className="text-center">
-                {emptyState ?? <p className="text-[13px] text-[var(--md-text)]">{t("No records to show")}</p>}
+              <TableCell colSpan={visibleColumns.length + (selectionMode ? 1 : 0)} className="p-0 text-center">
+                <div data-table-empty className="sticky start-0 w-[100cqw] max-w-full px-4 py-4">
+                  {emptyState ?? <p className="text-[13px] text-[var(--md-text)]">{t("No records to show")}</p>}
+                </div>
               </TableCell>
             </TableRow>
           )}

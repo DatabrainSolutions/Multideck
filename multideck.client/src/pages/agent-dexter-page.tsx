@@ -805,7 +805,7 @@ const dexterMarkdownComponents: MarkdownComponents = {
           p: ({ children }) => <p dir="auto" className="my-4 max-w-[68ch] whitespace-normal text-pretty first:mt-0 last:mb-0">{children}</p>,
           ul: ({ children }) => <ul dir="auto" className="my-4 max-w-[70ch] list-disc space-y-2 ps-[1.35rem] first:mt-0 last:mb-0 marker:text-[var(--md-accent)]">{children}</ul>,
           ol: ({ children }) => <ol dir="auto" className="my-4 max-w-[70ch] list-decimal space-y-2 ps-[1.35rem] first:mt-0 last:mb-0 marker:text-[var(--md-accent)]">{children}</ol>,
-          blockquote: ({ children }) => <blockquote dir="auto" className="my-5 max-w-[68ch] rounded-e-[var(--md-radius-md)] border-s-2 border-[var(--md-accent-a36)] bg-[var(--md-accent-a08)] px-4 py-3 text-[var(--md-text)] first:mt-0 last:mb-0">{children}</blockquote>,
+          blockquote: ({ children }) => <blockquote dir="auto" className="my-5 max-w-[68ch] rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-[var(--md-text)] first:mt-0 last:mb-0">{children}</blockquote>,
           a: ({ children, href, title }) => isDexterCitationUrl(href)
             ? <DexterInlineCitation href={href} title={title ?? undefined}>{children}</DexterInlineCitation>
             : <span>{children}</span>,

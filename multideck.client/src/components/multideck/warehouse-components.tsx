@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
@@ -562,7 +563,7 @@ export function WarehouseInventoryTable<T extends { id: string }>({
         </Popover>
       ) : undefined}
       renderAfterRow={renderExpandedRow}
-      emptyState={<div className="mx-auto max-w-[360px]"><p className="text-[14px] font-medium text-[var(--md-ink)]">{t(emptyMessage)}</p><p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{t(emptyHint ?? "Clear a filter or widen the search to see more.")}</p></div>}
+      emptyState={<div className="mx-auto max-w-[360px]"><EmptyStateIllustration variant="cargo" className="mb-3" /><p className="text-[14px] font-medium text-[var(--md-ink)]">{t(emptyMessage)}</p><p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{t(emptyHint ?? "Clear a filter or widen the search to see more.")}</p></div>}
       tableClassName="text-[12.5px]"
     />
   )
@@ -1737,11 +1738,10 @@ function WarehouseCalendarEventDetails({
         ["--warehouse-calendar-color" as string]: customer.color,
       }}
     >
-      <span aria-hidden="true" className="absolute inset-y-0 start-0 w-[3px]" style={{ background: "var(--warehouse-calendar-color)" }} />
-
-      <div className="ps-[3px]">
+      <div>
         <header className="px-3.5 pb-3 pt-3">
-          <p className="truncate text-[11.5px] font-medium leading-4" style={{ color: "var(--warehouse-calendar-color)" }}>
+          <p className="flex items-center gap-1.5 truncate text-[11.5px] font-medium leading-4" style={{ color: "var(--warehouse-calendar-color)" }}>
+            <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-current" />
             {t(event.type)}
           </p>
           {/* Balanced so a two-line reference splits evenly instead of leaving one

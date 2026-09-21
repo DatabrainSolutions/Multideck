@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import { createEmptyFilterQuery, filterQueryIsEmpty, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
@@ -1632,9 +1633,7 @@ export function CrmLeadsPage({ navigate, currentUser }: { navigate: (path: strin
             />}
             emptyState={summary.leads ? (
               <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
-                <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
-                  <Search className="size-4" strokeWidth={1.3} aria-hidden="true" />
-                </span>
+                <EmptyStateIllustration variant="search" />
                 <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(leadScope === "Mine" ? "No leads assigned to you." : "No leads match this view.")}</p>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(leadScope === "Mine" ? "Leads appear here when you are the current owner." : "Change or clear a filter to see more leads.")}</p>
                 <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={clearLeadFilters}>
@@ -3839,7 +3838,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
             ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading deals…" /></div>
             : dealListState === "error"
               ? <div className="grid min-h-[180px] place-items-center p-6 text-center" role="alert"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Deals could not be loaded.")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]" dir="auto">{dealListError ? t(dealListError) : null}</p><Button type="button" variant="outline" className="mt-3" onClick={() => setReloadKey((key) => key + 1)}>{t("Try again")}</Button></div></div>
-              : <div className="grid min-h-[180px] place-items-center p-6 text-center"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(dealFiltersActive ? "No deals match these filters." : "No deals yet.")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t(dealFiltersActive ? "Clear a filter or try another deal, company, pipeline or owner." : "Convert a qualified lead to create the first deal.")}</p>{dealFiltersActive ? <Button type="button" variant="outline" className="mt-3" onClick={clearDealListFilters}>{t("Clear filters")}</Button> : null}</div></div>}
+              : <div className="grid min-h-[180px] place-items-center p-6 text-center"><div><EmptyStateIllustration variant={dealFiltersActive ? "search" : "contacts"} className="mb-3" /><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(dealFiltersActive ? "No deals match these filters." : "No deals yet.")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t(dealFiltersActive ? "Clear a filter or try another deal, company, pipeline or owner." : "Convert a qualified lead to create the first deal.")}</p>{dealFiltersActive ? <Button type="button" variant="outline" className="mt-3" onClick={clearDealListFilters}>{t("Clear filters")}</Button> : null}</div></div>}
         />
       )}
       {selectedDeal ? <DealDetailDrawer deal={selectedDeal} open={detailOpen} onClose={() => setDetailOpen(false)} /> : null}

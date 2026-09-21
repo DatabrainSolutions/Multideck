@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { useReducedMotion } from "motion/react"
 import { toast } from "sonner"
@@ -5,7 +6,6 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  ClipboardCheck,
   Link2,
   Tag,
   MoreHorizontal,
@@ -14,7 +14,7 @@ import {
 import { TodoCompletionControl, TodoPriorityPicker, TodoPriorityPill } from "@/components/multideck/todo-components"
 import { TaskAgentIcon, TaskAgentControls } from '@/components/multideck/task-agent-components'
 import { useTaskAgents, handoffTask, refreshTaskAgents } from '@/lib/task-agent-store'
-import { taskAgentStatus, taskAgentUrl } from '@/lib/task-agents'
+import { isPastTaskAgent, taskAgentStatus, taskAgentUrl } from '@/lib/task-agents'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
@@ -79,7 +79,10 @@ function displayDate(value: string, language: string) {
 
 export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
   const agentState = useTaskAgents()
-  const [deletingTask, setDeletingTask] = useState<TodoTask|null>(null)
+  const [deletingTask, setDeletingTask] = useState<Pick<TodoTask, 'id' | 'title'>|null>(null)
+  const [agentView, setAgentView] = useState<'active' | 'past'>('active')
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const agentFilterRef = useRef<HTMLButtonElement | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string|null>(null)
   const [view, setView] = useState<'day'|'dexter'>(() => new URLSearchParams(window.location.search).get('view') === 'dexter' ? 'dexter' : 'day')
@@ -115,6 +118,7 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
   const greeting = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening"
   const firstName = operatorName?.trim().split(/\s+/)[0]
   const agentsByTask = useMemo(() => new Map(agentState.agents.map(agent => [agent.task_id,agent])), [agentState.agents])
+  const visibleAgents = agentState.agents.filter(agent => isPastTaskAgent(agent) === (agentView === 'past'))
 
   useEffect(() => {
     const syncView = () => {
@@ -146,10 +150,11 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
     if (!deletingTask || deleteBusy) return
     setDeleteBusy(true); setDeleteError(null)
     try {
-      await deleteTodoTask(deletingTask.id)
+      const deleted = await deleteTodoTask(deletingTask.id)
+      if (!deleted) throw new Error(t('This task could not be deleted. Try again.'))
       setTasks(current => current.filter(task => task.id !== deletingTask.id))
+      await refreshTaskAgents()
       setDeletingTask(null)
-      void refreshTaskAgents()
       setAnnouncement(t('Task deleted.'))
     } catch(error) { setDeleteError(error instanceof Error ? error.message : t('This task could not be deleted. Try again.')) }
     finally { setDeleteBusy(false) }
@@ -261,14 +266,16 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
             const agent = agentsByTask.get(task.id)
             return (
               <div key={task.id} className="group/task flex min-h-[66px] min-w-0 items-start gap-2 py-2.5 sm:items-center">
-                <TodoCompletionControl
-                  checked={completed}
-                  busy={busyTaskIds.has(task.id)}
-                  label={`${t(completed ? "Reopen task" : "Mark task complete")}: ${task.title}`}
-                  onChange={(next) => void toggleTask(task, next)}
-                />
-                <div data-i18n-skip className="min-w-0 flex-1 px-1 py-1 text-start">
-                  <span dir="auto" className={cn("block [overflow-wrap:anywhere] text-[13.5px] font-medium leading-5 text-[var(--md-ink)]", completed && "text-[var(--md-subtle)] line-through decoration-[var(--md-line-strong)]")}>{task.title}</span>
+                <div data-i18n-skip className="min-w-0 flex-1 px-1 text-start">
+                  <TodoCompletionControl
+                    checked={completed}
+                    busy={busyTaskIds.has(task.id)}
+                    label={`${t(completed ? "Reopen task" : "Mark task complete")}: ${task.title}`}
+                    title={task.title}
+                    onChange={(next) => void toggleTask(task, next)}
+                    className="w-full"
+                  />
+                  <div className="ps-[34px]">
                   {agent ? <button type="button" onClick={() => openAgent(taskAgentUrl(agent))} className="mt-1 inline-flex min-h-7 items-center gap-1.5 rounded-[var(--md-radius-sm)] text-[11px] text-[var(--md-text)] transition-transform duration-200 ease-out hover:text-[var(--md-accent)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none"><TaskAgentIcon icon={agent.icon} className="size-5"/>{agent.name}<span className="text-[var(--md-subtle)]">· {t(taskAgentStatus[agent.status])}</span></button> : null}
                   {handoffError?.id === task.id ? <p role="alert" className="mt-1 text-[12px] text-[var(--md-red)]">{handoffError.message}</p> : null}
                   {task.tags.length || task.links.length ? (
@@ -277,10 +284,11 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
                       {task.links.length ? <span className="inline-flex items-center gap-1"><Link2 className="size-3" />{task.links.length}</span> : null}
                     </span>
                   ) : null}
+                  </div>
                 </div>
                 {task.priority ? <TodoPriorityPill priority={task.priority} className="mt-1 shrink-0 sm:mt-0" /> : null}
                 {!completed && !agent && agentState.enabled ? <Button type="button" variant="ghost" size="sm" className="mt-1 h-8 shrink-0 px-2 text-[11px] text-[var(--md-subtle)] hover:text-[var(--md-accent)] active:scale-[0.98] motion-reduce:transform-none sm:mt-0" disabled={handingOff!==null} onClick={()=>void handOff(task)}>{t(handingOff===task.id?'Handing off…':'Hand to Dexter')}</Button> : null}
-                <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="mt-1 size-8 shrink-0 text-[var(--md-subtle)] sm:mt-0" aria-label={t('Task options: {title}').replace('{title}',task.title)}><MoreHorizontal className="size-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem variant="destructive" onSelect={()=>{setDeleteError(null);setDeletingTask(task)}}><Trash2 className="size-4"/>{t('Delete task')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+                <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="mt-1 size-8 shrink-0 text-[var(--md-subtle)] sm:mt-0" onClick={event => { deleteTriggerRef.current = event.currentTarget }} aria-label={t('Task options: {title}').replace('{title}',task.title)}><MoreHorizontal className="size-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem variant="destructive" onSelect={()=>{setDeleteError(null);setDeletingTask(task)}}><Trash2 className="size-4"/>{t('Delete task')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
               </div>
             )
           })}
@@ -305,18 +313,24 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
         </header>
 
         {agentState.enabled || agentState.agents.length ? <div className="mt-4 flex items-center gap-1" role="group" aria-label={t('Task view')}>
-          <Button variant="ghost" size="sm" aria-pressed={view==='day'} className={cn('h-8 text-[12px]',view==='day'&&'bg-[var(--md-selected)]')} onClick={()=>chooseView('day')}>{t('My day')}</Button>
-          <Button variant="ghost" size="sm" aria-pressed={view==='dexter'} className={cn('h-8 text-[12px]',view==='dexter'&&'bg-[var(--md-selected)]')} onClick={()=>chooseView('dexter')}>{t('With Dexter')}</Button>
+          <Button variant="ghost" size="sm" aria-pressed={view==='day'} className={cn('h-8 text-[12px]',view==='day'&&'bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]')} onClick={()=>chooseView('day')}>{t('My day')}</Button>
+          <Button variant="ghost" size="sm" aria-pressed={view==='dexter'} className={cn('h-8 text-[12px]',view==='dexter'&&'bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]')} onClick={()=>chooseView('dexter')}>{t('With Dexter')}</Button>
         </div> : null}
 
         {agentState.error ? <div className="mt-3 flex items-center gap-2"><p role="alert" className="text-[12px] text-[var(--md-red)]">{agentState.error}</p><Button variant="ghost" size="sm" onClick={()=>void refreshTaskAgents()}>{t('Try again')}</Button></div> : null}
 
         {view === 'dexter' ? <section className="mt-5" aria-label={t('Tasks with Dexter')}>
+          <div className="mb-3 flex items-center gap-1" role="group" aria-label={t('Agent task status')}>
+            <Button ref={agentView === 'active' ? agentFilterRef : undefined} variant="ghost" size="sm" aria-pressed={agentView === 'active'} className={cn('h-8 text-[12px]', agentView === 'active' && 'bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]')} onClick={() => setAgentView('active')}>{t('Active')}</Button>
+            <Button ref={agentView === 'past' ? agentFilterRef : undefined} variant="ghost" size="sm" aria-pressed={agentView === 'past'} className={cn('h-8 text-[12px]', agentView === 'past' && 'bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]')} onClick={() => setAgentView('past')}>{t('Past')}</Button>
+          </div>
           <p className="mb-3 text-[12px] text-[var(--md-subtle)]">{t('Up to three agents work at once. The rest start as a space becomes available.')}</p>
           {agentState.loading ? <p role="status" className="py-10 text-center text-[13px] text-[var(--md-subtle)]">{t('Loading your agents…')}</p> : null}
-          {!agentState.loading && !agentState.error && !agentState.agents.length ? <p className="py-10 text-center text-[13px] text-[var(--md-text)]">{t('Hand a task to Dexter from My day to get started.')}</p> : null}
-          <div className="divide-y divide-[var(--md-line)]">{agentState.agents.map(agent=><div key={agent.id} className="grid grid-cols-[36px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-3 sm:grid-cols-[36px_minmax(0,1fr)_auto] sm:items-center">
-            <TaskAgentIcon icon={agent.icon}/><button type="button" onClick={()=>openAgent(taskAgentUrl(agent))} className="min-w-0 flex-1 rounded-[var(--md-radius-sm)] text-start transition-transform duration-200 ease-out active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none"><span className="block text-[13px] font-medium text-[var(--md-ink)]">{agent.title}</span><span className="mt-1 block text-[11px] text-[var(--md-subtle)]">{agent.name}{agent.due_at ? <> · { new Intl.DateTimeFormat(language,{dateStyle:'medium',timeStyle:'short',timeZone:agent.time_zone}).format(new Date(agent.due_at))}</> : null}</span></button><div className="col-span-2 ps-12 sm:col-span-1 sm:ps-0"><TaskAgentControls agent={agent}/></div>
+          {!agentState.loading && !agentState.error && !visibleAgents.length ? <p className="py-10 text-center text-[13px] text-[var(--md-text)]">{t(agentView === 'past' ? 'No past tasks yet.' : agentState.agents.length ? 'No active tasks. Finished and stopped tasks are in Past.' : 'Hand a task to Dexter from My day to get started.')}</p> : null}
+          <div className="divide-y divide-[var(--md-line)]">{visibleAgents.map(agent=><div key={agent.id} className="grid grid-cols-[36px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-3 sm:grid-cols-[36px_minmax(0,1fr)_auto] sm:items-center">
+            <TaskAgentIcon icon={agent.icon}/><button type="button" onClick={()=>openAgent(taskAgentUrl(agent))} className="min-w-0 flex-1 rounded-[var(--md-radius-sm)] text-start transition-transform duration-200 ease-out active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none"><span className="block text-[13px] font-medium text-[var(--md-ink)]">{agent.title}</span><span className="mt-1 block text-[11px] text-[var(--md-subtle)]">{agent.name}{agent.due_at ? <> · { new Intl.DateTimeFormat(language,{dateStyle:'medium',timeStyle:'short',timeZone:agent.time_zone}).format(new Date(agent.due_at))}</> : null}</span></button><div className="col-span-2 flex flex-wrap items-center gap-2 ps-12 sm:col-span-1 sm:justify-end sm:ps-0"><TaskAgentControls agent={agent}/>
+              <Button type="button" variant="ghost" size="sm" className="text-[var(--md-subtle)] hover:text-[var(--md-red)]" aria-label={t('Delete task: {title}').replace('{title}', agent.title)} onClick={(event) => { deleteTriggerRef.current = event.currentTarget; setDeleteError(null); setDeletingTask({ id: agent.task_id, title: agent.title }) }}><Trash2 className="size-3.5" />{t('Delete')}</Button>
+            </div>
           </div>)}</div>
         </section> : <>
         {selectedDate !== today ? (
@@ -354,8 +368,6 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
           </div>
         </form>
 
-        <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
-
         <div className="mt-7 grid min-w-0 gap-7">
           {loading ? (
             <div role="status" aria-label={t("Loading your tasks…")} className="grid gap-0 divide-y divide-[var(--md-line)] border-y border-[var(--md-line)]">
@@ -370,7 +382,7 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
           ) : null}
           {!loading && !loadError && dayTasks.length === 0 ? (
             <div className="py-12 text-center">
-              <span className="mx-auto grid size-10 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-accent)]"><ClipboardCheck className="size-4" /></span>
+              <EmptyStateIllustration variant="tasks" />
               <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(selectedDate === today ? emptyStateCopy[emptyStateIndex].today : emptyStateCopy[emptyStateIndex].day)}</p>
               <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(emptyStateCopy[emptyStateIndex].detail)}</p>
             </div>
@@ -381,7 +393,9 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
         </>}
       </div>
 
-      <Dialog open={Boolean(deletingTask)} onOpenChange={open=>{if(!open&&!deleteBusy)setDeletingTask(null)}}><DialogContent className="sm:max-w-[440px]"><DialogHeader><DialogTitle>{t('Delete task?')}</DialogTitle><DialogDescription>{t('This removes the task and stops its background work.')}</DialogDescription></DialogHeader><p data-i18n-skip className="text-[13px] text-[var(--md-ink)]">{deletingTask?.title}</p>{deleteError?<p role="alert" className="text-[12px] text-[var(--md-red)]">{deleteError}</p>:null}<DialogFooter><Button variant="ghost" disabled={deleteBusy} onClick={()=>setDeletingTask(null)}>{t('Cancel')}</Button><Button variant="destructive" disabled={deleteBusy} onClick={()=>void deleteTask()}>{t(deleteBusy?'Deleting…':'Delete task')}</Button></DialogFooter></DialogContent></Dialog>
+      <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
+
+      <Dialog open={Boolean(deletingTask)} onOpenChange={open=>{if(!open&&!deleteBusy)setDeletingTask(null)}}><DialogContent className="sm:max-w-[440px]" showCloseButton={!deleteBusy} onCloseAutoFocus={event => { event.preventDefault(); (deleteTriggerRef.current?.isConnected ? deleteTriggerRef.current : agentFilterRef.current)?.focus() }}><DialogHeader><DialogTitle>{t('Delete task?')}</DialogTitle><DialogDescription>{t('This removes the task and its Dexter conversation, and stops any background work.')}</DialogDescription></DialogHeader><p data-i18n-skip className="text-[13px] text-[var(--md-ink)]">{deletingTask?.title}</p>{deleteError?<p role="alert" className="text-[12px] text-[var(--md-red)]">{deleteError}</p>:null}<DialogFooter><Button variant="ghost" disabled={deleteBusy} onClick={()=>setDeletingTask(null)}>{t('Cancel')}</Button><Button variant="destructive" disabled={deleteBusy} onClick={()=>void deleteTask()}>{t(deleteBusy?'Deleting…':'Delete task')}</Button></DialogFooter></DialogContent></Dialog>
     </main>
   )
 }

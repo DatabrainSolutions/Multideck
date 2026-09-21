@@ -1,6 +1,6 @@
+import { useSettingsAutosave } from "@/lib/use-settings-autosave"
 import { useEffect, useMemo, useState } from "react"
-import { LoaderCircle, TriangleAlert, X } from "@/components/icons/hugeicons"
-import { toast } from "sonner"
+import { TriangleAlert, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
@@ -61,7 +61,6 @@ export function AvailabilitySettingsPanel({
   const [draft, setDraft] = useState<CalendarAvailabilityPreferences | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
 
@@ -101,21 +100,23 @@ export function AvailabilitySettingsPanel({
     update({ exceptions: draft.exceptions.map((exception, exceptionIndex) => exceptionIndex === index ? { ...exception, ...patch } : exception) })
   }
 
-  async function save() {
-    if (!draft || saving) return
+  async function save(draft: CalendarAvailabilityPreferences | null) {
+    if (!draft) return
     const emptyDays = Object.values(draft.workingHours).every((ranges) => !ranges.length)
-    if (emptyDays) { setError("Turn on at least one working day, or no booking link can offer a time."); return }
-    setSaving(true); setError(null)
+    if (emptyDays) { throw new Error("Turn on at least one working day, or no booking link can offer a time.") }
+    setError(null)
     try {
       const result = await saveCalendarAvailability(draft)
-      setSaved(result.availability); setDraft(result.availability)
-      toast.success("Availability saved", { description: "Booking links now offer times from these hours." })
+      setSaved(result.availability)
+      setDraft((current) => JSON.stringify(current) === JSON.stringify(draft) ? result.availability : current)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Availability could not be saved.")
-    } finally { setSaving(false) }
+      throw reason
+    }
   }
 
-  const busy = loading || saving || !draft
+  const saveStatus = useSettingsAutosave(draft, dirty && !loading && !loadError, save)
+  const busy = loading || !draft
 
   return (
     <SettingsPanel
@@ -131,12 +132,12 @@ export function AvailabilitySettingsPanel({
         </div>
       ) : null}
 
-      <SettingsFieldRow label="Timezone" description="Working hours and booking times are read in this zone.">
+      <SettingsFieldRow label="Timezone" description="Applies to working hours and booking times.">
         {draft ? <TimeZoneSelect variant="field" value={draft.timeZone} onChange={(timeZone) => update({ timeZone })} /> : <div className="h-10 w-full max-w-[320px] animate-pulse rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]" aria-hidden="true" />}
       </SettingsFieldRow>
 
       <SettingsFieldRow label="Working hours" description="Turn off days you are unavailable." align="start">
-        {draft ? <WorkingHoursEditor value={draft.workingHours} onChange={(workingHours) => update({ workingHours })} disabled={saving} className="-mx-2" /> : <div className="grid gap-1" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <div key={index} className="h-9 animate-pulse rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]" />)}</div>}
+        {draft ? <WorkingHoursEditor value={draft.workingHours} onChange={(workingHours) => update({ workingHours })} disabled={loading} className="-mx-2" /> : <div className="grid gap-1" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <div key={index} className="h-9 animate-pulse rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]" />)}</div>}
       </SettingsFieldRow>
 
       <SettingsFieldRow label="Date exceptions" description="Override your normal hours for a specific date." align="start">
@@ -149,7 +150,7 @@ export function AvailabilitySettingsPanel({
               <div key={`${exception.date}-${index}`} className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--md-radius-lg)] px-2 py-1 transition-colors hover:bg-[var(--md-surface-tint)] sm:grid-cols-[minmax(120px,150px)_auto_minmax(0,1fr)_auto]">
                 <span className="truncate text-[12.5px] font-medium text-[var(--md-ink)]">{label}</span>
                 <label className="flex items-center gap-2 text-[11.5px] text-[var(--md-subtle)]">
-                  <Switch size="sm" checked={!unavailable} disabled={saving} aria-label={`Offer hours on ${label}`} onCheckedChange={(available) => patchException(index, available ? { unavailable: false, ranges: [[range[0], range[1]]] } : { unavailable: true, ranges: undefined })} />
+                  <Switch size="sm" checked={!unavailable} disabled={loading} aria-label={`Offer hours on ${label}`} onCheckedChange={(available) => patchException(index, available ? { unavailable: false, ranges: [[range[0], range[1]]] } : { unavailable: true, ranges: undefined })} />
                   <span className="hidden sm:inline">{unavailable ? "Unavailable" : "Available"}</span>
                 </label>
                 {unavailable ? (
@@ -161,11 +162,11 @@ export function AvailabilitySettingsPanel({
                     <MeetingTimeField label={`${label} finishes`} value={range[1]} notBefore={range[0]} onChange={(time) => patchException(index, { unavailable: false, ranges: [[range[0], time]] })} />
                   </div>
                 )}
-                <Button type="button" variant="ghost" size="icon" disabled={saving} aria-label={`Remove exception for ${label}`} onClick={() => update({ exceptions: draft.exceptions.filter((_, exceptionIndex) => exceptionIndex !== index) })} className="col-start-2 row-start-1 size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-ink)] sm:col-start-auto sm:row-start-auto"><X className="size-3.5" /></Button>
+                <Button type="button" variant="ghost" size="icon" disabled={loading} aria-label={`Remove exception for ${label}`} onClick={() => update({ exceptions: draft.exceptions.filter((_, exceptionIndex) => exceptionIndex !== index) })} className="col-start-2 row-start-1 size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-ink)] sm:col-start-auto sm:row-start-auto"><X className="size-3.5" /></Button>
               </div>
             )
           })}
-          {draft && !draft.exceptions.length ? <p className="px-2 py-2 text-[12px] text-[var(--md-subtle)]">No exceptions. Your normal week applies every day.</p> : null}
+          {draft && !draft.exceptions.length ? <p className="px-2 py-2 text-[12px] text-[var(--md-subtle)]">No date exceptions.</p> : null}
           <MultideckDatePicker
             value={null}
             onChange={addException}
@@ -193,11 +194,7 @@ export function AvailabilitySettingsPanel({
 
       <div className="flex flex-col-reverse gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
         {error ? <p role="alert" className="flex items-center gap-2 text-[12px] text-[var(--md-red)] sm:me-auto"><TriangleAlert className="size-3.5 shrink-0" />{error}</p> : null}
-        <Button type="button" variant="ghost" disabled={!dirty || saving} onClick={() => { setDraft(saved); setError(null) }} className="h-10 rounded-[var(--md-radius-lg)] px-4 text-[13px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]">Discard</Button>
-        <Button type="button" disabled={busy || !dirty} onClick={() => void save()} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-55">
-          {saving ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-          {saving ? "Saving availability" : "Save availability"}
-        </Button>
+        <span role="status" className="text-[12px] text-[var(--md-subtle)]">{saveStatus}</span>
       </div>
     </SettingsPanel>
   )

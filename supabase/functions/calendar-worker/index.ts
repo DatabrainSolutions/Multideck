@@ -1,3 +1,4 @@
+import { meetingEmailPresentation } from "../../../shared/meeting-email-presentation.ts"
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { zoomNumericReference, zoomStartTime } from "../_shared/calendar-zoom.ts"
 import { adminClient, HttpError } from "../_shared/backend.ts"
@@ -739,16 +740,6 @@ async function updateProviderMeeting(admin: SupabaseClient, state: Awaited<Retur
   return { pendingKind }
 }
 
-const emailPresentation: Record<CalendarEmailTemplateKind, { title: string; eyebrow: string }> = {
-  booking_verification: { title: "Verify your email", eyebrow: "Booking verification" },
-  standalone_confirmation: { title: "Your meeting is confirmed", eyebrow: "Meeting confirmed" },
-  management: { title: "Your meeting details", eyebrow: "Meeting confirmed" },
-  rescheduled: { title: "Your meeting has moved", eyebrow: "Meeting updated" },
-  cancelled: { title: "Your meeting has been cancelled", eyebrow: "Meeting cancelled" },
-  reminder: { title: "Your meeting is coming up", eyebrow: "Meeting reminder" },
-  group_reschedule_request: { title: "An attendee proposed new times", eyebrow: "Action required" },
-  group_reschedule_outcome: { title: "The organiser responded", eyebrow: "Meeting update" },
-}
 
 async function ensureManagementToken(admin: SupabaseClient, participant: Record<string, unknown>, meeting: Record<string, unknown>, preferred?: string | null) {
   if (preferred) return preferred
@@ -809,7 +800,7 @@ async function deliverMeetingEmail(admin: SupabaseClient, delivery: Record<strin
       attendee_name: kind === "group_reschedule_request" ? String(requester?.CALParticipant_Name ?? "An attendee") : String(participant.CALParticipant_Name),
       manage_url: manageUrl, join_url: String(state.meeting.CALMeeting_JoinURL ?? ""), verification_code: "", workspace_name: brand?.displayName || "Multideck",
     })
-    const presentation = emailPresentation[templateKind]
+    const presentation = meetingEmailPresentation[templateKind]
     const paragraphs = copy.body.split(/\n\n+/).filter(Boolean)
     const rendered = renderBrandedEmail({ subject: copy.subject, title: presentation.title, eyebrow: presentation.eyebrow, body: paragraphs, preview: paragraphs[0] || copy.subject, buttonLabel: state.meeting.CALMeeting_StatusCode === "cancelled" ? "View meeting" : kind === "group_reschedule_request" ? "Review request" : "Manage meeting", buttonUrl: manageUrl, brand })
     const standalone = ["multideck", "phone", "in_person", "zoom"].includes(String(state.meeting.CALMeeting_ProviderCode))

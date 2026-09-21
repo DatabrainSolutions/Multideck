@@ -299,7 +299,7 @@ function ShortcutRow({
           ) : null}
           <span className="truncate">{t(definition.label)}</span>
         </p>
-        <p className="mt-0.5 max-w-[62ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t(definition.description)}</p>
+        {definition.showDescription ? <p className="mt-0.5 max-w-[62ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t(definition.description)}</p> : null}
         <AnimatePresence initial={false}>
           {warning && !isRecording ? (
             <motion.p
@@ -557,7 +557,7 @@ export function KeyboardShortcutsPanel({
                   </span>
                   <div className="min-w-0">
                     <h3 className="text-[12px] font-medium uppercase tracking-[0.07em] text-[var(--md-text)]">{t(group.label)}</h3>
-                    <p className="mt-0.5 text-[12px] leading-5 text-[var(--md-subtle)]">{t(group.description)}</p>
+                    {group.id === "dictation" ? <p className="mt-0.5 text-[12px] leading-5 text-[var(--md-subtle)]">{t(group.description)}</p> : null}
                   </div>
                 </header>
                 <div>
@@ -594,7 +594,7 @@ export function KeyboardShortcutsPanel({
       <p className="px-5 py-4 text-[11.5px] leading-5 text-[var(--md-subtle)]">
         {t("Sequences are recorded by pressing two plain keys in a row. Hold the modifier and double-click inside the recorder to record a mouse gesture instead.")}
         {" "}
-        {t("Every change saves to your Multideck profile straight away, so your shortcuts follow you to any browser you sign in from.")}
+        {t("Changes save automatically and sync across your browsers.")}
       </p>
     </div>
   )

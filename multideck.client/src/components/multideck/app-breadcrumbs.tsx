@@ -35,6 +35,10 @@ const staticLeafLabels: Record<string, string> = {
   "/calendar/booking-links": "Booking links",
   "/components": "Components",
   "/crm": "CRM",
+  "/crm/trips": "Trips & mileage",
+  "/crm/trips/new": "New trip",
+  "/crm/trips/settings": "Mileage settings",
+  "/finance/mileage": "Mileage payments",
   "/crm/phone-calls": "Phone calls",
   "/crm/accounts": "Companies",
   "/crm/contacts": "Contacts",
@@ -319,6 +323,18 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Warehouse", route: "/warehouse" },
       { label: "Expected receipts", route: "/warehouse/purchase-orders" },
       { label: purchaseOrderMatch[1] === "new" ? "New expected receipt" : friendlyIdentifierLabel(purchaseOrderMatch[1], "Expected receipt"), preserveDirection: purchaseOrderMatch[1] !== "new" },
+    ]
+  }
+
+  if (route === "/crm/trips" || route.startsWith("/crm/trips/") || route === "/finance/mileage" || route.startsWith("/finance/mileage/")) {
+    const isFinance = route.startsWith("/finance/")
+    const root = isFinance ? "/finance/mileage" : "/crm/trips"
+    const suffix = route.slice(root.length + 1)
+    return [
+      { label: "Home", route: "/" },
+      { label: isFinance ? "Finance" : "Sales & CRM", ...(isFinance ? {} : { route: "/crm" }) },
+      { label: isFinance ? "Mileage payments" : "Trips & mileage", ...(suffix ? { route: root } : {}) },
+      ...(suffix ? [{ label: suffix === "new" ? "New trip" : suffix === "settings" ? "Settings" : "Trip details" }] : []),
     ]
   }
 

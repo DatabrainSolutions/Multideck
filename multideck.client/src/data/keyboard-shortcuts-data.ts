@@ -30,6 +30,8 @@ export type ShortcutDefinition = {
   group: ShortcutGroupId
   label: string
   description: string
+  /** Display guidance only when the label and binding do not explain the action. */
+  showDescription?: boolean
   defaultBinding: ShortcutBinding
   /** Marks the gesture that ought to survive a "reset everything" mistake. */
   signature?: boolean
@@ -88,6 +90,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     group: "dictation",
     label: "Hold to dictate",
     description: "Hold to speak; release to insert the transcript.",
+    showDescription: true,
     defaultBinding: chord("Fn"),
     signature: true,
   },
@@ -98,6 +101,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     group: "dexter",
     label: "Summon Dexter on anything",
     description: "Modifier-double-click to open Dexter with context.",
+    showDescription: true,
     defaultBinding: pointerGesture({ mod: true }),
     signature: true,
   },
@@ -106,6 +110,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     group: "dexter",
     label: "Summon Dexter from the keyboard",
     description: "Summons Dexter for the focused item.",
+    showDescription: true,
     defaultBinding: chord("D", { mod: true }),
     signature: true,
   },
@@ -130,6 +135,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     group: "search",
     label: "Search bookings and quotes",
     description: "Focuses the workspace command bar.",
+    showDescription: true,
     defaultBinding: chord("K", { mod: true }),
   },
   {
@@ -137,6 +143,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     group: "search",
     label: "Quick search",
     description: "Opens the command bar with one key.",
+    showDescription: true,
     defaultBinding: chord("/"),
   },
   {
@@ -262,6 +269,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
     group: "interface",
     label: "Switch light and dark",
     description: "Switch this browser's theme.",
+    showDescription: true,
     defaultBinding: chord("M", { mod: true, shift: true }),
   },
   {

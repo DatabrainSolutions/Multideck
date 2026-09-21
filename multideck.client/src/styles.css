@@ -1783,41 +1783,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     0 10px 26px rgba(0, 0, 0, 0.26);
 }
 
-/* An unread watch earns a tone-coloured edge and a warmer field. This is the
-   only thing in the rail that says "look here first", so nothing else in the
-   stack is allowed to use it. Carried on `background-image` and the inline-start
-   bar, both of which survive the `background-color` swaps hover and selection
-   make on top of them. */
-.md-watch-card[data-unread="true"]::before {
-  content: "";
-  position: absolute;
-  inset-block: 10px;
-  inset-inline-start: 0;
-  width: 3px;
-  border-start-end-radius: 999px;
-  border-end-end-radius: 999px;
-  background: var(--md-watch-tone, var(--md-accent));
-}
-
-.md-watch-card[data-unread="true"] {
-  background-image: linear-gradient(
-    to var(--md-watch-tint-dir, right),
-    color-mix(in srgb, var(--md-watch-tone, var(--md-accent)) 8%, transparent),
-    transparent 132px
-  );
-}
-
-[dir="rtl"] .md-watch-card {
-  --md-watch-tint-dir: left;
-}
-
-.dark .md-watch-card[data-unread="true"] {
-  background-image: linear-gradient(
-    to var(--md-watch-tint-dir, right),
-    color-mix(in srgb, var(--md-watch-tone, var(--md-accent)) 14%, transparent),
-    transparent 132px
-  );
-}
+/* Unread watches use the existing status dot, never a decorative edge stripe. */
 
 /* The state word is the card's first line, so it is coloured only when there is
    something to say. A rail of amber labels would flatten right back out. */
@@ -3494,16 +3460,12 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
   .md-dexter-markdown blockquote {
     max-width: 68ch;
-    border-inline-start: 2px solid var(--md-accent-a36);
-    border-radius: 0 var(--md-radius-md) var(--md-radius-md) 0;
-    background: var(--md-accent-a08);
+    border: 0;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-surface-tint);
     padding: 0.78rem 0.95rem;
     padding-inline-start: 1.05rem;
     color: var(--md-text);
-  }
-
-  [dir="rtl"] .md-dexter-markdown blockquote {
-    border-radius: var(--md-radius-md) 0 0 var(--md-radius-md);
   }
 
   .md-dexter-markdown :not(pre) > code {

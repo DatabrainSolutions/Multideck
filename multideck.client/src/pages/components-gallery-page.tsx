@@ -1,3 +1,9 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
+import { BellToggle } from "@/components/multideck/bell-toggle"
+import { SpringCheck } from "@/components/multideck/spring-check"
+import { CodeSlots } from "@/components/multideck/code-slots"
+import { InlineNotice } from "@/components/multideck/inline-notice"
+import { SuggestedUpdateIllustration } from "@/components/multideck/suggested-update-illustration"
 import { SignatureBuilder } from "@/components/multideck/signature-builder"
 import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck/dexter-voice-controls"
 import { SignatureBlockGlyph } from "@/components/multideck/signature-block-glyph"
@@ -51,7 +57,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
-import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import { DotGridLoader, DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import {
   RegisterFacetSelect,
   RegisterRefreshButton,
@@ -334,7 +340,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "bell-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -374,7 +380,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Feedback",
     helper: "Status and notifications",
-    ids: ["status-pill", "dictation-status-pill", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "toast"],
+    ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast"],
   },
   {
     label: "Settings",
@@ -384,7 +390,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Inbox",
     helper: "Mail, threads, and delivery evidence",
-    ids: ["inbox-thread-row", "email-message-renderer", "thread-summary", "mail-composer", "mail-recipient-field"],
+    ids: ["inbox-thread-row", "email-message-renderer", "thread-summary", "mail-composer", "mail-recipient-field", "suggested-update-illustration"],
   },
   {
     label: "Contact cards",
@@ -912,6 +918,10 @@ const settingsPreviewGroups: SettingsTabGroup[] = [
     ],
   },
 ]
+import mileageRoutePreview from "@/data/mileage-route-preview.json"
+import type { MileageRouteData } from "@/lib/mileage-api"
+
+const MileageRouteMapPreview = lazy(() => import("@/components/multideck/mileage-route-map").then(module => ({ default: module.MileageRouteMap })))
 const InteractiveBookingMapPreview = lazy(() =>
   import("@/components/multideck/interactive-booking-map").then((module) => ({
     default: module.InteractiveBookingMap,
@@ -1847,6 +1857,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewSidebarFavouriteIds, setPreviewSidebarFavouriteIds] = useState<string[]>([])
   const [previewTodoChecked, setPreviewTodoChecked] = useState(false)
   const [previewAvailabilitySlot, setPreviewAvailabilitySlot] = useState<string | null>(null)
+  const [previewBellSelected, setPreviewBellSelected] = useState(true)
   const [previewVerificationCode, setPreviewVerificationCode] = useState("48")
   const [previewMeetingAttendees, setPreviewMeetingAttendees] = useState<MeetingParticipant[]>([{ name: "Alex Morgan", email: "alex@northstar.example", external: true }])
   const [previewMeetingProvider, setPreviewMeetingProvider] = useState<CalendarProvider>("microsoft_teams")
@@ -2199,10 +2210,11 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "meeting-colour-picker" ? <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><MeetingColourPicker value={previewMeetingColour} onChange={setPreviewMeetingColour} /></div> : null}
 
-      {id === "calendar-day-ribbon" ? <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><p className="mb-3 text-[11px] font-medium text-[var(--md-subtle)]">Tuesday · Operational dates</p><div className="grid gap-2"><CalendarDayRibbon ribbon={previewCalendarSeed.ribbons[0]} navigate={() => toast.success("Booking opened")} /><CalendarDayRibbon ribbon={{ id: "preview-follow-up", kind: "crm_follow_up", title: "Follow up Northstar", at: previewCalendarSeed.slots[0], route: "/crm/leads", tone: "violet" }} navigate={() => toast.success("Lead opened")} /></div></div> : null}
+      {id === "calendar-day-ribbon" ? <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><p className="mb-3 text-[11px] font-medium text-[var(--md-subtle)]">Tuesday · Operational dates</p><div className="grid gap-2"><CalendarDayRibbon ribbon={previewCalendarSeed.ribbons[0]} navigate={() => toast.success("Booking opened")} compact /><CalendarDayRibbon ribbon={{ id: "preview-follow-up", kind: "crm_follow_up", title: "Follow up Northstar", at: previewCalendarSeed.slots[0], route: "/crm/leads", tone: "violet" }} navigate={() => toast.success("Lead opened")} /></div></div> : null}
 
       {id === "public-brand-identity" ? <div className="flex flex-wrap items-center gap-8"><PublicBrandIdentity /><PublicBrandIdentity brand={{ displayName: "Northstar Freight", logoUrl: null, primaryColor: "#0E7D74", secondaryColor: "#164E49", backgroundColor: "#FFFFFF", surfaceColor: "#FFFFFF", textColor: "#0B1413", appearanceMode: "light", cornerStyle: "rounded", emailSignOff: "" }} /></div> : null}
       {id === "availability-picker" ? <div className="w-full max-w-[560px]"><AvailabilityPicker slots={previewCalendarSeed.slots} selected={previewAvailabilitySlot} onSelect={setPreviewAvailabilitySlot} timeZone="Europe/London" /></div> : null}
+      {id === "code-slots" ? <div className="grid w-full max-w-[304px] gap-5"><CodeSlots value={previewVerificationCode} onChange={setPreviewVerificationCode} /><CodeSlots value="123456" onChange={() => undefined} status="error" ariaLabel="Rejected code preview" /><CodeSlots value="123456" onChange={() => undefined} disabled ariaLabel="Verifying code preview" /></div> : null}
       {id === "verification-code-input" ? <div className="grid gap-6">
         <div className="grid gap-2"><p className="text-[11px] font-medium uppercase tracking-[.07em] text-[var(--md-subtle)]">Default</p><VerificationCodeInput value={previewVerificationCode} onChange={setPreviewVerificationCode} /></div>
         <div className="grid gap-2"><p className="text-[11px] font-medium uppercase tracking-[.07em] text-[var(--md-subtle)]">Large, as sign-in uses it</p><VerificationCodeInput size="lg" value={previewVerificationCode} onChange={setPreviewVerificationCode} className="gap-[var(--md-gap-lg)]" boxClassName="bg-white hover:bg-white focus:bg-white focus-visible:bg-white disabled:bg-white/72" /></div>
@@ -2360,10 +2372,13 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "todo-completion-control" ? (
-        <div className="flex w-full max-w-[420px] items-center gap-3 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <TodoCompletionControl checked={previewTodoChecked} label={previewTodoChecked ? t("Reopen task") : t("Mark task complete")} onChange={setPreviewTodoChecked} />
-          <div><p className={cn("text-[13px] font-medium text-[var(--md-ink)]", previewTodoChecked && "line-through text-[var(--md-subtle)]")}>Review revised delivery plan</p><p className="mt-1 text-[12px] text-[var(--md-text)]">Click the circle to inspect the completion motion.</p></div>
+      {id === "spring-check" || id === "todo-completion-control" ? (
+        <div className="grid w-full max-w-[420px] gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          {id === "spring-check" ? <SpringCheck checked={previewTodoChecked} label="Review revised delivery plan" onChange={setPreviewTodoChecked} /> : <TodoCompletionControl checked={previewTodoChecked} title="Review revised delivery plan" label="Review revised delivery plan" onChange={setPreviewTodoChecked} />}
+          <SpringCheck defaultChecked label="Confirm collection with the warehouse and share the revised delivery window with the customer" />
+          <SpringCheck disabled label="Awaiting confirmation" />
+          <SpringCheck checked busy label="Saving task" />
+          <p className="text-[12px] text-[var(--md-text)]">Select a task to complete it. Select it again to reopen it.</p>
         </div>
       ) : null}
 
@@ -2565,6 +2580,38 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "empty-state-illustration" ? (
+        <div className="grid w-full grid-cols-2 gap-x-6 gap-y-8 py-5 sm:grid-cols-3">
+          {(["search", "tasks", "documents", "contacts", "cargo", "chart", "calendar", "mail", "phone", "route", "activity"] as const).map((variant) => (
+            <div key={variant} className="min-w-0 text-center">
+              <EmptyStateIllustration variant={variant} />
+              <p className="mt-3 text-[12px] capitalize text-[var(--md-text)]">{t(variant)}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {id === "suggested-update-illustration" ? (
+        <div className="flex w-full flex-wrap items-end justify-center gap-10 py-6">
+          {(["clear", "compare", "history"] as const).map((variant) => (
+            <div key={variant} className="text-center">
+              <SuggestedUpdateIllustration variant={variant} className="mx-auto mb-4" />
+              <p className="text-[12px] text-[var(--md-text)]">{t(variant === "clear" ? "Nothing needs re-keying" : variant === "compare" ? "Document comparison" : "Review history")}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {id === "inline-notice" ? (
+        <div className="flex w-full max-w-[620px] flex-col items-start gap-4">
+          <InlineNotice tone="warning" title="Reviews delayed">Reviews are currently delayed. Please check again shortly.</InlineNotice>
+          <InlineNotice tone="error" title="Your changes have not been saved" action={<Button type="button" variant="ghost" onClick={() => toast.info("Preview retry selected")}>Retry save</Button>}>Your entries are still here. Keep this page open and retry when your connection is available.</InlineNotice>
+          <InlineNotice tone="success" title="Changes saved" />
+          <InlineNotice tone="info" title="New reviews available" />
+          <InlineNotice tone="error" action={<Button type="button" variant="ghost" onClick={() => toast.info("Preview retry selected")}>Try again</Button>}>Mileage claims have not been enabled in this workspace yet. Contact your administrator.</InlineNotice>
+        </div>
+      ) : null}
+
       {id === "toast" ? (
         <div className="relative flex min-h-[300px] w-full max-w-[760px] items-start justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button
@@ -2702,6 +2749,15 @@ function ComponentPreview({ id }: { id: string }) {
         </Surface>
       ) : null}
 
+      {id === "mileage-route-map" ? (
+        <div className="w-full max-w-[780px]">
+          <Suspense fallback={<DotGridLoaderPanel label="Loading route map" />}>
+            <MileageRouteMapPreview route={mileageRoutePreview as MileageRouteData} />
+          </Suspense>
+          <p className="mt-3 text-sm text-muted-foreground">A short section of real road geometry near Castleford, shown as a gallery example. New trip supplies the complete calculated route.</p>
+        </div>
+      ) : null}
+
       {id === "interactive-map" ? (
         <div className="w-full max-w-[780px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]">
           <Suspense fallback={<div className="h-[430px] bg-[var(--md-bg-strong)]" />}>
@@ -2807,6 +2863,12 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "bell-toggle" ? (
+        <div className="grid w-60 gap-3">
+          <BellToggle label="Customs holds" offLabel="Off" onLabel="On" pressed={previewBellSelected} onChange={setPreviewBellSelected} badge={false} size="sm" />
+          <BellToggle label="Disabled notification preference" offLabel="Off" onLabel="On" pressed disabled badge={false} size="sm" />
+        </div>
+      ) : null}
       {id === "theme-toggle" ? (
         <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
           <ThemeToggle className="bg-[var(--md-glass)]" />

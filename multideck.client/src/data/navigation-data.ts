@@ -143,8 +143,9 @@ export const sidebarAreas: SidebarArea[] = [
           { label: "Meetings", icon: CalendarDays, route: "/calendar/meetings" },
         ],
       },
-      { id: "crm-drive", label: "Drive", icon: HardDrive, route: "/crm/drive" },
       { id: "quotes", label: "Quotes", icon: ReceiptText, route: "/quotes" },
+      { id: "crm-drive", label: "Drive", icon: HardDrive, route: "/crm/drive" },
+      { id: "crm-trips", label: "Trips & mileage", icon: MapPin, route: "/crm/trips" },
     ],
   },
   {
@@ -283,6 +284,7 @@ export const sidebarAreas: SidebarArea[] = [
           { label: "Import finance data", value: "Planned", icon: FileText },
         ],
       },
+      { id: "finance-mileage", label: "Mileage payments", icon: ReceiptText, route: "/finance/mileage" },
     ],
   },
   {

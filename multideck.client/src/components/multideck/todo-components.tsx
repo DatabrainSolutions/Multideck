@@ -1,3 +1,4 @@
+import { SpringCheck } from "@/components/multideck/spring-check"
 import { motion, useReducedMotion } from "motion/react"
 import { ArrowDown, ArrowUp, Minus, Zap } from "@/components/icons/hugeicons"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -62,6 +63,7 @@ export function TodoCompletionControl({
   busy = false,
   disabled = false,
   label,
+  title,
   onChange,
   className,
 }: {
@@ -69,58 +71,20 @@ export function TodoCompletionControl({
   busy?: boolean
   disabled?: boolean
   label: string
+  title?: string
   onChange: (checked: boolean) => void
   className?: string
 }) {
-  const shouldReduceMotion = Boolean(useReducedMotion())
-
   return (
-    <button
-      type="button"
-      data-i18n-skip
-      aria-label={label}
-      aria-pressed={checked}
-      aria-busy={busy || undefined}
-      disabled={disabled || busy}
-      className={cn(
-        "group grid size-10 shrink-0 place-items-center rounded-full outline-none transition-colors duration-200",
-        "focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-bg)]",
-        "disabled:cursor-wait disabled:opacity-70",
-        className,
-      )}
-      onClick={() => onChange(!checked)}
-    >
-      <motion.span
-        className="relative block size-6"
-        initial={false}
-        animate={shouldReduceMotion ? { scale: 1 } : { scale: checked ? [1, 0.88, 1.08, 1] : [1, 0.96, 1] }}
-        transition={shouldReduceMotion ? { duration: 0 } : { duration: checked ? 0.26 : 0.18, ease: mdEase, times: checked ? [0, 0.28, 0.68, 1] : [0, 0.5, 1] }}
-      >
-        <svg aria-hidden="true" className="size-6 overflow-visible" viewBox="0 0 24 24" fill="none">
-          <motion.circle
-            cx="12"
-            cy="12"
-            r="9.25"
-            strokeWidth="1.5"
-            animate={{
-              fill: checked ? "var(--md-accent)" : "transparent",
-              stroke: checked ? "var(--md-accent)" : "var(--md-line-strong)",
-            }}
-            transition={reduceMotion(shouldReduceMotion, mdMotion.fast)}
-          />
-          <motion.path
-            d="M7.8 12.2 10.6 15l5.8-6.2"
-            stroke="white"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            initial={false}
-            animate={{ pathLength: checked ? 1 : 0, opacity: checked ? 1 : 0 }}
-            transition={shouldReduceMotion ? { duration: 0 } : { duration: checked ? 0.22 : 0.12, ease: mdEase }}
-          />
-        </svg>
-      </motion.span>
-    </button>
+    <SpringCheck
+      checked={checked}
+      busy={busy}
+      disabled={disabled}
+      ariaLabel={label}
+      label={title}
+      onChange={onChange}
+      className={className}
+    />
   )
 }
 

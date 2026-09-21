@@ -1,5 +1,8 @@
+import { useSettingsAutosave } from "@/lib/use-settings-autosave"
+import { BellToggle } from "@/components/multideck/bell-toggle"
+import { CodeSlots } from "@/components/multideck/code-slots"
 import { defaultPaginationPageSize } from "@/lib/pagination"
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
@@ -322,15 +325,15 @@ function ClockDisplaySetting() {
 
 function LanguageSettingField({
   label = "Language",
-  description = "Choose the language and regional format Multideck uses across the app.",
+  description,
 }: {
   label?: string
   description?: string
 }) {
   const { language, setLanguage } = useLanguage()
   const selectedLanguage = getLanguageOption(language)
-  const languageLabels = languageOptions.map((option) => `${option.label} - ${option.nativeLabel}`)
-  const selectedLabel = `${selectedLanguage.label} - ${selectedLanguage.nativeLabel}`
+  const languageLabels = languageOptions.map((option) => option.label)
+  const selectedLabel = selectedLanguage.label
 
   return (
     <SettingsFieldRow label={label} description={description}>
@@ -485,7 +488,6 @@ function ProfileTab({
   const [profile, setProfile] = useState<ProfileFormState>(emptyProfileForm)
   const [savedProfile, setSavedProfile] = useState<ProfileFormState>(emptyProfileForm)
   const [isProfileLoading, setIsProfileLoading] = useState(true)
-  const [isProfileSaving, setIsProfileSaving] = useState(false)
   const [profileDepartments, setProfileDepartments] = useState<string[]>([])
   const initialProfilePhoto = currentUser?.profilePhoto ?? null
   const initialCoverPhoto = currentUser?.coverPhoto ?? null
@@ -695,16 +697,10 @@ function ProfileTab({
     setProfile((current) => ({ ...current, [field]: value }))
   }
 
-  function discardProfileChanges() {
-    setProfile(savedProfile)
-    toast.info("Changes discarded")
-  }
-
-  async function saveProfileChanges() {
-    if (!supabase || isProfileSaving) return
+  async function saveProfileChanges(profile: ProfileFormState) {
+    if (!supabase) throw new Error("Sign in again before saving your profile.")
 
     const nextFullName = getProfileFullName(profile)
-    setIsProfileSaving(true)
 
     try {
       const { data, error } = await authSupabase!.auth.updateUser({
@@ -730,16 +726,15 @@ function ProfileTab({
 
       const nextProfile = data.user ? createProfileFormFromUser(data.user) : profile
       nextProfile.roleTitle = savedUser.jobTitle ?? ""
-      setProfile(nextProfile)
+      setProfile((current) => JSON.stringify(current) === JSON.stringify(profile) ? nextProfile : current)
       setSavedProfile(nextProfile)
-      toast.success("Profile settings saved")
     } catch (error) {
       console.error(error)
-      toast.error("Could not save profile")
-    } finally {
-      setIsProfileSaving(false)
+      throw error
     }
   }
+
+  const profileSaveStatus = useSettingsAutosave(profile, profileDirty && !isProfileLoading, saveProfileChanges)
 
   async function changeProfilePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -1009,7 +1004,7 @@ function ProfileTab({
                 aria-label="First name"
                 autoComplete="given-name"
                 placeholder="First name"
-                disabled={isProfileLoading || isProfileSaving}
+                disabled={isProfileLoading}
                 onChange={(event) => updateProfileField("firstName", event.target.value)}
               />
               <SettingsInput
@@ -1017,18 +1012,18 @@ function ProfileTab({
                 aria-label="Last name"
                 autoComplete="family-name"
                 placeholder="Last name"
-                disabled={isProfileLoading || isProfileSaving}
+                disabled={isProfileLoading}
                 onChange={(event) => updateProfileField("lastName", event.target.value)}
               />
             </div>
             </SettingsFieldRow>
-            <SettingsFieldRow label="Preferred name" description="What Dexter and your team call you.">
+            <SettingsFieldRow label="Preferred name">
             <SettingsInput
               value={profile.preferredName}
               aria-label="Preferred name"
               autoComplete="nickname"
               placeholder="Preferred name"
-              disabled={isProfileLoading || isProfileSaving}
+              disabled={isProfileLoading}
               onChange={(event) => updateProfileField("preferredName", event.target.value)}
             />
             </SettingsFieldRow>
@@ -1053,7 +1048,7 @@ function ProfileTab({
               placeholder="+44 20 7123 4567"
               dir="ltr"
               data-i18n-skip
-              disabled={isProfileLoading || isProfileSaving}
+              disabled={isProfileLoading}
               onChange={(event) => updateProfileField("phone", event.target.value)}
             />
             </SettingsFieldRow>
@@ -1066,41 +1061,22 @@ function ProfileTab({
               placeholder="https://example.com"
               dir="ltr"
               data-i18n-skip
-              disabled={isProfileLoading || isProfileSaving}
+              disabled={isProfileLoading}
               onChange={(event) => updateProfileField("website", event.target.value)}
             />
             </SettingsFieldRow>
-            <SettingsFieldRow label={t("Job title")} description={t("Shown beneath your name across Multideck.")}>
+            <SettingsFieldRow label={t("Job title")}>
             <SettingsInput
               value={profile.roleTitle}
               aria-label={t("Job title")}
               autoComplete="organization-title"
               placeholder={t("Operations Manager")}
               maxLength={120}
-              disabled={isProfileLoading || isProfileSaving}
+              disabled={isProfileLoading}
               onChange={(event) => updateProfileField("roleTitle", event.target.value)}
             />
             </SettingsFieldRow>
-            <div className="flex flex-col-reverse gap-2 border-t border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] px-5 py-4 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={!profileDirty || isProfileSaving}
-                className="h-10 rounded-[var(--md-radius-lg)] px-4 text-[13px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
-                onClick={discardProfileChanges}
-              >
-                {t("Discard")}
-              </Button>
-              <Button
-                type="button"
-                disabled={isProfileLoading || isProfileSaving || !profileDirty}
-                className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-55"
-                onClick={() => void saveProfileChanges()}
-              >
-                {isProfileSaving ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-                {t(isProfileSaving ? "Saving changes" : "Save changes")}
-              </Button>
-            </div>
+            <p role="status" className="px-5 py-3 text-[12px] text-[var(--md-subtle)]">{t(profileSaveStatus)}</p>
         </SettingsPanel>
 
         <SettingsPanel title="Account control">
@@ -1356,21 +1332,17 @@ function TwoFactorControl({
           <code className="mt-1 block overflow-x-auto rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 py-2 text-[12px] text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
             {enrollment.secret}
           </code>
-          <form className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-start" onSubmit={verifyEnrollment}>
-            <div className="min-w-0 flex-1">
-              <label className="sr-only" htmlFor="settings-totp-code">{t("Authenticator code")}</label>
-              <SettingsInput
+          <form className="mt-4 flex flex-wrap items-start gap-2" onSubmit={verifyEnrollment}>
+            <div className="w-full min-w-0">
+              <label className="mb-2 block text-[12px] text-[var(--md-text)]" htmlFor="settings-totp-code">{t("Authenticator code")}</label>
+              <CodeSlots
                 id="settings-totp-code"
                 value={verificationCode}
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                placeholder="123456"
-                aria-invalid={verificationError ? true : undefined}
-                aria-describedby={verificationError ? "settings-totp-error" : undefined}
-                data-i18n-skip
-                onChange={(event) => setVerificationCode(event.target.value)}
+                ariaLabel={t("Authenticator code")}
+                status={verificationError ? "error" : "idle"}
+                disabled={status === "verifying"}
+                describedBy={verificationError ? "settings-totp-error" : undefined}
+                onChange={(code) => { setVerificationCode(code); setVerificationError(null) }}
               />
               {verificationError ? <p id="settings-totp-error" className="mt-1 text-[12px] leading-5 text-[var(--md-red)]">{verificationError}</p> : null}
             </div>
@@ -1527,7 +1499,7 @@ function SecurityTab() {
               description={`${navigator.platform || "Current device"} · active now`}
               right={<StatusPill tone="teal">Current</StatusPill>}
             />
-            <SettingsFieldRow label="Other sessions" description="Sign out phones, tablets, and browsers without closing this session.">
+            <SettingsFieldRow label="Other sessions" description="Keep this browser signed in.">
               <Button
                 type="button"
                 variant="ghost"
@@ -1546,7 +1518,6 @@ function SecurityTab() {
             <SettingsProgressRing
               value={securityPosture}
               label="Security posture"
-              detail={securityPosture === 100 ? "Email verification and two-factor protection are active." : "Complete the checks below to strengthen this account."}
               tone={securityPosture === 100 ? "green" : "amber"}
             />
             <div className="mt-5 space-y-2">
@@ -1753,7 +1724,7 @@ function CustomisationTab() {
         </div>
       </SettingsPanel>
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title="Interface" description="Personal display choices update immediately on this browser.">
+        <SettingsPanel title="Interface" description="Changes apply immediately in this browser.">
           <SettingsFieldRow label="Appearance">
             <div className="max-w-[320px]">
               <ThemeToggle className="bg-[var(--md-glass)]" />
@@ -1800,11 +1771,47 @@ function CustomisationTab() {
   )
 }
 
+function NotificationPreferenceRow({
+  title, description, checked, onCheckedChange, disabled,
+}: {
+  title: string
+  description?: string
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  disabled: boolean
+}) {
+  const { t } = useLanguage()
+  const id = useId()
+  return (
+    <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)] md:items-center">
+      <div className="min-w-0">
+        <label htmlFor={id} className="cursor-pointer text-[13px] font-medium text-[var(--md-ink)]">{title}</label>
+        {description ? <p id={`${id}-description`} className="mt-1 max-w-[260px] text-[12px] leading-5 text-[var(--md-text)]">{description}</p> : null}
+      </div>
+      <div className="flex justify-end">
+        <BellToggle
+          id={id}
+          label={title}
+          aria-describedby={description ? `${id}-description` : undefined}
+          offLabel={t("Off")}
+          onLabel={t("On")}
+          pressed={checked}
+          onChange={onCheckedChange}
+          disabled={disabled}
+          badge={false}
+          size="sm"
+          className="bell-toggle--preference"
+        />
+      </div>
+    </div>
+  )
+}
+
 function NotificationsTab() {
   const { language, t } = useLanguage()
   const [preferences, setPreferences] = useState<NotificationEmailPreferences>(defaultNotificationEmailPreferences)
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
+  const [savedPreferences, setSavedPreferences] = useState<NotificationEmailPreferences>(defaultNotificationEmailPreferences)
   const [isTesting, setIsTesting] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -1815,6 +1822,7 @@ function NotificationsTab() {
       .then((savedPreferences) => {
         if (cancelled) return
         setPreferences(savedPreferences)
+        setSavedPreferences(savedPreferences)
         setLoadError(null)
       })
       .catch((error) => {
@@ -1835,23 +1843,12 @@ function NotificationsTab() {
     setPreferences((current) => ({ ...current, [eventType]: isEnabled }))
   }
 
-  async function savePreferences() {
-    setIsSaving(true)
-    try {
-      await saveNotificationEmailPreferences(preferences)
-      setLoadError(null)
-      toast.success("Notification settings saved", {
-        description: "Future operational emails will follow these preferences.",
-      })
-    } catch (error) {
-      console.error("Notification preferences could not be saved.", error)
-      toast.error("Notification settings were not saved", {
-        description: "Your previous preferences are still in place. Please try again.",
-      })
-    } finally {
-      setIsSaving(false)
-    }
-  }
+  const notificationSaveStatus = useSettingsAutosave(preferences,
+    !isLoading && !loadError && JSON.stringify(preferences) !== JSON.stringify(savedPreferences),
+    async (next) => {
+      await saveNotificationEmailPreferences(next)
+      setSavedPreferences(next)
+    })
 
   async function sendTestEmail() {
     setIsTesting(true)
@@ -1887,14 +1884,7 @@ function NotificationsTab() {
               <Mail className="me-2 size-3.5" strokeWidth={1.5} />
               {isTesting ? "Sending test" : "Send test email"}
             </Button>
-            <Button
-              type="button"
-              disabled={isLoading || isSaving}
-              className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
-              onClick={() => void savePreferences()}
-            >
-              {isSaving ? "Saving" : "Save notifications"}
-            </Button>
+            <span role="status" className="text-[12px] text-[var(--md-subtle)]">{t(notificationSaveStatus)}</span>
           </>
         }
       />
@@ -1906,52 +1896,59 @@ function NotificationsTab() {
       ) : null}
       <div className="mt-[var(--md-page-stack-gap)]">
         <div className="space-y-[var(--md-page-stack-gap)]">
-          <SettingsPanel title="Operational alerts" description="Email the updates that need attention away from the Multideck workspace.">
-            <SettingsToggleRow
+          <SettingsPanel title="Operational emails">
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title={t("Note mentions")}
-              description={t("Email when a person or department tags you in a note. In-app alerts remain on.")}
+              description={t("Includes department mentions. In-app alerts stay on.")}
               checked={preferences.lifecycle_note_mention}
               onCheckedChange={(checked) => setEmailPreference("lifecycle_note_mention", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title={t("Dexter watch alerts")}
-              description={t("Email when one of your personal Dexter watch conditions becomes true. In-app alerts remain on.")}
+              description={t("When a personal watch condition is met. In-app alerts stay on.")}
               checked={preferences.dexter_watch}
               onCheckedChange={(checked) => setEmailPreference("dexter_watch", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Customs holds"
-              description="Email when a hold is raised or a required licence is missing."
+              description="Includes missing required licences."
               checked={preferences.customs_hold}
               onCheckedChange={(checked) => setEmailPreference("customs_hold", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="ETA slips over 6 hours"
-              description="Email the booking owner before a customer update is prepared."
+              description="Notifies the booking owner before a customer update is prepared."
               checked={preferences.eta_delay}
               onCheckedChange={(checked) => setEmailPreference("eta_delay", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Customer message unanswered"
-              description="Escalate when a customer has waited more than two working hours."
+              description="After two working hours without a reply."
               checked={preferences.customer_message}
               onCheckedChange={(checked) => setEmailPreference("customer_message", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Document parse below 80%"
-              description="Email when a document needs a person to check the extracted data."
+              description="Review the extracted data."
               checked={preferences.document_parse}
               onCheckedChange={(checked) => setEmailPreference("document_parse", checked)}
             />
           </SettingsPanel>
-          <SettingsPanel title="Digest and reminders">
-            <SettingsToggleRow
+          <SettingsPanel title="Email digest and reminders">
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Daily digest"
               description="Open exceptions, due work, and customer risk."
               checked={preferences.daily_digest}
               onCheckedChange={(checked) => setEmailPreference("daily_digest", checked)}
             />
-            <SettingsFieldRow label="Digest delivery time" description="Uses the timezone saved below.">
+            <SettingsFieldRow label="Digest delivery time">
               <SettingsSelect
                 value={preferences.digestTime}
                 options={["06:30", "07:00", "07:30", "08:00", "08:30", "09:00"]}
@@ -1967,15 +1964,16 @@ function NotificationsTab() {
                 ariaLabel="Digest timezone"
               />
             </SettingsFieldRow>
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Quote reminders"
-              description="Email when an open quote needs a follow-up."
+              description="Open quotes due for follow-up."
               checked={preferences.quote_reminder}
               onCheckedChange={(checked) => setEmailPreference("quote_reminder", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Product updates"
-              description="Occasional release notes for changes that affect your work."
               checked={preferences.product_updates}
               onCheckedChange={(checked) => setEmailPreference("product_updates", checked)}
             />
@@ -2081,7 +2079,6 @@ function AgentDexterTab() {
   const dictionaryMountedRef = useRef(true)
 
   const terms = normalizeTagTerms(dictionary, maximumTranscriptionTerms)
-  const agentNameDirty = agentNameDraft.trim().length > 0 && agentNameDraft.trim() !== aiAgentName
   const personalised = useCallback((copy: string) => t(copy).replaceAll("Dexter", aiAgentName), [aiAgentName, t])
 
   const loadProfile = useCallback(async () => {
@@ -2198,19 +2195,15 @@ function AgentDexterTab() {
     }
   }
 
-  async function saveProfile() {
-    if (!profile || operation) return
-    setOperation("save")
-    setProfileError(null)
-    try {
-      acceptProfile(await updateDexterWritingProfile(profile.enabled, profileText))
-      toast.success(t("Email writing profile saved"))
-    } catch (saveError) {
-      setProfileError(writingProfileErrorCopy(saveError, "Dexter could not save your writing profile. Try again.", t).replaceAll("Dexter", aiAgentName))
-    } finally {
-      setOperation(null)
-    }
-  }
+  const writingSaveStatus = useSettingsAutosave(profileText,
+    Boolean(profile?.exists && !profileLoading && profileText !== profile.profileText),
+    async (text) => {
+      if (!profile) return
+      const next = await updateDexterWritingProfile(profile.enabled, text)
+      setProfile(next)
+      setProfileText((current) => current === text ? next.profileText : current)
+      setProfileError(null)
+    })
 
   async function refreshProfile() {
     if (operation) return
@@ -2241,12 +2234,9 @@ function AgentDexterTab() {
     }
   }
 
-  function saveAgentName() {
-    const nextName = agentNameDraft.trim()
-    if (!nextName) return
-    writeAiAgentName(nextName)
-    toast.success(t("Assistant name updated"), { description: t("The new name now appears across Multideck on this device.") })
-  }
+  useSettingsAutosave(agentNameDraft, Boolean(agentNameDraft.trim() && agentNameDraft.trim() !== aiAgentName), async (name) => {
+    writeAiAgentName(name.trim())
+  })
 
   async function flushDictionarySaves() {
     if (dictionarySaveInFlightRef.current) return
@@ -2286,8 +2276,7 @@ function AgentDexterTab() {
     void flushDictionarySaves()
   }
 
-  const busy = operation !== null
-  const dirty = Boolean(profile && profileText !== profile.profileText)
+  const busy = operation !== null || Boolean(profile && profileText !== profile.profileText) || writingSaveStatus === "Saving changes…"
   const profileNotice = profileError
     ?? (profile?.status === "processing" || operation === "consent" || operation === "refresh"
       ? personalised("Dexter is updating your writing profile. You can leave this page.")
@@ -2356,7 +2345,7 @@ function AgentDexterTab() {
             id="dexter-writing-profile"
             value={profileText}
             maxLength={2400}
-            disabled={profileLoading || busy || !profile?.exists}
+            disabled={profileLoading || operation !== null || !profile?.exists}
             aria-describedby="dexter-writing-profile-description dexter-writing-profile-count"
             className="min-h-[220px] resize-y text-[16px] leading-[1.6] sm:text-[14px]"
             placeholder={t("Your tone, structure, greetings, sign-offs and preferred terminology will appear here.")}
@@ -2364,10 +2353,7 @@ function AgentDexterTab() {
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <span id="dexter-writing-profile-count" className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{profileText.length.toLocaleString(language)} / 2,400</span>
-            <Button type="button" disabled={!dirty || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100" onClick={() => void saveProfile()}>
-              {operation === "save" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-              {t(operation === "save" ? "Saving profile" : "Save profile")}
-            </Button>
+            <span role="status" className="text-[12px] text-[var(--md-subtle)]">{t(writingSaveStatus)}</span>
           </div>
         </div>
       </DexterFieldGroup>
@@ -2383,12 +2369,10 @@ function AgentDexterTab() {
         <SettingsPanel title={t("Personal assistant")}>
           <div className="px-5 py-5">
             <DexterFieldGroup label={t("Assistant name")} description={t("Only on this device.")} labelFor="dexter-assistant-name" className="max-w-[640px]">
-              <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={(event) => { event.preventDefault(); saveAgentName() }}>
+              <div className="grid gap-2">
                 <SettingsInput id="dexter-assistant-name" aria-describedby="dexter-assistant-name-description" value={agentNameDraft} maxLength={32} onChange={(event) => setAgentNameDraft(event.target.value)} />
-                <Button type="submit" disabled={!agentNameDirty} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100">
-                  {t("Save name")}
-                </Button>
-              </form>
+
+              </div>
             </DexterFieldGroup>
           </div>
         </SettingsPanel>
@@ -2449,9 +2433,7 @@ function AgentDexterTab() {
                   duplicateMessage={t("That term is already in the dictionary.")}
                   limitMessage={t("The dictionary can contain up to 100 terms.")}
                 />
-                <div className="mt-2 flex items-center">
-                  <span className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{terms.length} / {maximumTranscriptionTerms} {t("terms")}</span>
-                </div>
+                {terms.length >= maximumTranscriptionTerms - 10 ? <p role="status" className="mt-2 text-[11.5px] tabular-nums text-[var(--md-subtle)]">{terms.length} / {maximumTranscriptionTerms} {t("terms")}</p> : null}
               </div>
             </DexterFieldGroup>
           </div>
@@ -4103,7 +4085,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
             <>
               <SettingsFieldRow
                 label={t("Default mail provider")}
-                description={t("Opens first in Inbox and new emails. You can switch at any time.")}
+                description={t("Opens first in Inbox and new emails.")}
                 align="start"
               >
                 <div>
@@ -4242,7 +4224,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                     {provider === "gmail" && connection && !needsConnection ? (
                     <SettingsFieldRow
                       label={t("Google Group inboxes")}
-                      description={t("Add a Google Group delivered to this Gmail account. Multideck creates a separate view across Inbox, Spam and Trash; replies still send from your connected Gmail account.")}
+                      description={t("Separate Inbox, Spam and Trash views for groups delivered to this Gmail account.")}
                       align="start"
                       labelFor="gmail-group-mailbox-address"
                     >
@@ -4303,7 +4285,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                           <p id="gmail-group-mailbox-error" className="mt-2 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{groupMailboxError}</p>
                         ) : (
                           <p id="gmail-group-mailbox-help" className="mt-2 text-[11.5px] leading-5 text-[var(--md-subtle)]">
-                            {t("This view is read-only as the group address. Reply from the connected personal Gmail mailbox unless Google separately configures the address as a send-as identity.")}
+                            {t("Read-only as the group address. Replies use your Gmail account unless Google has configured a send-as identity.")}
                           </p>
                         )}
                       </div>
@@ -4312,7 +4294,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                   {provider === "outlook" && connection && !needsConnection ? (
                     <SettingsFieldRow
                       label={t("Shared Outlook mailboxes")}
-                      description={t("Add shared Outlook addresses you are authorised to use. Sending also requires Microsoft Send As or Send on Behalf permission.")}
+                      description={t("Requires mailbox access and Microsoft Send As or Send on Behalf permission to send.")}
                       align="start"
                       labelFor={connection.sharedMailboxAccess ? "outlook-shared-mailbox-address" : undefined}
                     >
@@ -4900,7 +4882,7 @@ function DocsTab() {
         </section>
         <aside className="space-y-[var(--md-page-stack-gap)] xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
           {filteredGuides.length > 0 ? (
-            <SettingsPanel title={selectedGuide.title} description={selectedGuide.detail}>
+            <SettingsPanel title={selectedGuide.title}>
               {selectedGuide.steps.map((step, index) => (
                 <div key={step} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 px-5 py-3.5">
                   <span className="grid size-7 place-items-center rounded-full bg-[var(--md-accent-a09)] text-[11px] font-medium tabular-nums text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
@@ -5015,9 +4997,9 @@ function LegacySupportTab() {
         eyebrow={t("Resources / Support")}
         title={t("Support")}
       />
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
+      <div className="mt-[var(--md-page-stack-gap)]">
         <form onSubmit={submitSupportTicket}>
-          <SettingsPanel title={t("Create a support ticket")} description={t("Include a booking ID, customer, or visible error when the issue is workflow-specific.")}>
+          <SettingsPanel title={t("Create a support ticket")}>
             <SettingsFieldRow label={t("Topic")}>
               <SettingsSelect
                 value={topic}
@@ -5047,7 +5029,7 @@ function LegacySupportTab() {
             </SettingsFieldRow>
             <SettingsFieldRow
               label={t("What happened?")}
-              description={t("Describe what you did, what you expected, and what you saw.")}
+              description={t("Include the steps, expected result and any error or record reference.")}
               align="start"
               labelFor="support-message"
             >
@@ -5057,7 +5039,7 @@ function LegacySupportTab() {
                 disabled={isSubmitting}
                 aria-invalid={Boolean(formError && message.trim().length < 20) || undefined}
                 aria-describedby={formError ? "support-form-error" : undefined}
-                placeholder={t("Include the booking ID, customer, or error message if you have one.")}
+                placeholder={t("Describe the issue")}
                 onChange={(event) => setMessage(event.target.value)}
               />
             </SettingsFieldRow>
@@ -5074,7 +5056,7 @@ function LegacySupportTab() {
                     <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
                       {ticketResult.duplicate
                         ? t("No duplicate was created. Your original ticket is still active.")
-                        : t("Multideck support confirmed the ticket and the support team can now act on it.")}
+                        : t("The support team has received your ticket.")}
                     </p>
                     {ticketResult.ticket.statusUrl ? (
                       <a
@@ -5092,10 +5074,10 @@ function LegacySupportTab() {
               </div>
             ) : null}
             <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p id="support-form-error" role={formError ? "alert" : "status"} className={cn("text-[12px] leading-5", formError ? "text-[var(--md-red)]" : "text-[var(--md-text)]")}>
-                  {formError ?? t("Your ticket is sent securely to Multideck support. Nothing is marked successful until a ticket number is confirmed.")}
-                </p>
+              {formError || canStartNewTicket ? <div className="min-w-0">
+                {formError ? <p id="support-form-error" role="alert" className="text-[12px] leading-5 text-[var(--md-red)]">
+                  {formError}
+                </p> : null}
                 {canStartNewTicket ? (
                   <button
                     type="button"
@@ -5105,11 +5087,11 @@ function LegacySupportTab() {
                     {t("Use these details for a new ticket")}
                   </button>
                 ) : null}
-              </div>
+              </div> : null}
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)]"
+                className="h-10 shrink-0 sm:ms-auto rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)]"
               >
                 {isSubmitting
                   ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.4} aria-hidden="true" />
@@ -5119,15 +5101,6 @@ function LegacySupportTab() {
             </div>
           </SettingsPanel>
         </form>
-        <aside className="xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <SettingsPanel title={t("What to include")}>
-            <ul className="grid gap-3 px-5 py-5 text-[12px] leading-5 text-[var(--md-text)]">
-              <li><span className="font-medium text-[var(--md-ink)]">{t("Reference")}</span><br />{t("Booking, quote, shipment, customer, or invoice ID.")}</li>
-              <li><span className="font-medium text-[var(--md-ink)]">{t("Expected result")}</span><br />{t("What you expected Multideck to do.")}</li>
-              <li><span className="font-medium text-[var(--md-ink)]">{t("Visible result")}</span><br />{t("What happened instead, including the exact error message.")}</li>
-            </ul>
-          </SettingsPanel>
-        </aside>
       </div>
     </>
   )

@@ -1382,27 +1382,7 @@
     background: var(--md-dashboard-hush);
   }
 
-  /* The one urgency device on the row. */
-  .md-queue-row-rule {
-    position: absolute;
-    inset-block: 8px;
-    inset-inline-start: 0;
-    width: 2px;
-    border-radius: 0 999px 999px 0;
-    background: var(--md-queue-tone, var(--md-subtle));
-    opacity: 0.45;
-    transition: opacity var(--md-motion);
-  }
-
-  [dir="rtl"] .md-queue-row-rule {
-    border-radius: 999px 0 0 999px;
-  }
-
-  .md-queue-row:hover .md-queue-row-rule,
-  .md-queue-row[data-overdue="true"] .md-queue-row-rule {
-    opacity: 1;
-  }
-
+  /* Urgency is carried by the status icon and explicit deadline text. */
   .md-queue-row[data-tone="red"] { --md-queue-tone: var(--md-red); }
   .md-queue-row[data-tone="amber"] { --md-queue-tone: var(--md-amber); }
   .md-queue-row[data-tone="green"] { --md-queue-tone: var(--md-green); }
@@ -1829,27 +1809,7 @@
     background: var(--md-dashboard-hush);
   }
 
-  /* The one urgency device on the row. */
-  .md-queue-row-rule {
-    position: absolute;
-    inset-block: 8px;
-    inset-inline-start: 0;
-    width: 2px;
-    border-radius: 0 999px 999px 0;
-    background: var(--md-queue-tone, var(--md-subtle));
-    opacity: 0.45;
-    transition: opacity var(--md-motion);
-  }
-
-  [dir="rtl"] .md-queue-row-rule {
-    border-radius: 999px 0 0 999px;
-  }
-
-  .md-queue-row:hover .md-queue-row-rule,
-  .md-queue-row[data-overdue="true"] .md-queue-row-rule {
-    opacity: 1;
-  }
-
+  /* Urgency is carried by the status icon and explicit deadline text. */
   .md-queue-row[data-tone="red"] { --md-queue-tone: var(--md-red); }
   .md-queue-row[data-tone="amber"] { --md-queue-tone: var(--md-amber); }
   .md-queue-row[data-tone="green"] { --md-queue-tone: var(--md-green); }
@@ -3422,7 +3382,6 @@
 
   .md-dashboard-back:hover,
   .md-kpi-cell-marker,
-  .md-queue-row-rule,
   .md-queue-row-actions,
   .md-live-row:hover .md-live-row-arrow,
   .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,

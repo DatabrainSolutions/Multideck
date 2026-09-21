@@ -107,6 +107,7 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
 
 function FinanceTopBarAction({ route, currentUser }: { route: string; currentUser?: AuthUserSummary | null }) {
   const { t } = useLanguage()
+  if (route.startsWith("/finance/mileage")) return null
   if (/^\/finance\/(receivables|payables)\/documents\/[^/]+$/.test(route)) return null
   if (route === "/finance/payables/intake") {
     if (!hasPermission(currentUser, "Finance.Payables.Draft")) return null
@@ -398,6 +399,8 @@ export function TopBar({
               <Plus data-icon="inline-start" strokeWidth={1.2} />
               <span className="hidden sm:inline">New {partyRegisterType}</span>
             </Button>
+          ) : route === "/crm/trips" && currentUser?.actorType === "internal" ? (
+            <Button className={topBarPrimaryActionClass} onClick={() => navigate("/crm/trips/new")}><Plus data-icon="inline-start" />New trip</Button>
           ) : isCrmRoute && crmCreateAction && canWriteCrm ? (
             <>
               <Button

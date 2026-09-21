@@ -1,3 +1,4 @@
+import { mileageRequest, type MileageVisit } from "@/lib/mileage-api"
 import { ContactEmailAction } from "@/components/multideck/contact-email-action"
 import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
@@ -75,6 +76,16 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   const [reference, setReference] = useState<CustomerReference | null>(null)
   const [companyTypesSaving, setCompanyTypesSaving] = useState(false)
   const [companyTypeIdsDraft, setCompanyTypeIdsDraft] = useState<string[] | null>(null)
+  const [visits, setVisits] = useState<MileageVisit[]>([])
+  const [visitsError, setVisitsError] = useState("")
+  const [visitsLoading, setVisitsLoading] = useState(true)
+  const [visitsReload, setVisitsReload] = useState(0)
+  useEffect(() => {
+    let active = true
+    setVisits([]); setVisitsError(""); setVisitsLoading(true)
+    mileageRequest<MileageVisit[]>("visits", { account_id: accountId }).then(data => { if (active) setVisits(data) }).catch(error => { if (active) setVisitsError(error instanceof Error ? error.message : "Visits could not be loaded.") }).finally(() => { if (active) setVisitsLoading(false) })
+    return () => { active = false }
+  }, [accountId, visitsReload])
   const [activeTab, setActiveTab] = useState<AccountDetailTab>("overview")
   const accountRef = useRef<ApiCustomerDetail | null>(null)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
@@ -629,6 +640,9 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                     <ScoreCell label={t("Churn risk")} score={currentAccount.churnRiskScore} tone="risk" explanation={currentAccount.scoreExplanations?.churnRisk ?? null} />
                   </div>
                 </div>
+              </Zone>
+              <Zone title={t("Recent visits")} action={<Button variant="ghost" size="sm" onClick={() => navigate("/crm/trips")}>{t("Trips & mileage")}<ArrowRight data-icon="inline-end" /></Button>}>
+                {visitsLoading ? <p role="status" className="text-[13px] text-[var(--md-text)]">{t("Loading visits…")}</p> : visitsError ? <div role="alert" className="flex flex-wrap items-center gap-3 text-[13px]"><p>{visitsError}</p><Button variant="outline" size="sm" onClick={() => setVisitsReload(value => value + 1)}>{t("Try again")}</Button></div> : !visits.length ? <p className="text-[13px] text-[var(--md-text)]">{t("No visits recorded yet.")}</p> : <ul className="flex flex-col gap-3">{visits.map(visit => <li key={visit.id} className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p data-i18n-skip className="break-words text-[13px]">{visit.purpose}</p><p data-i18n-skip className="text-[12px] text-[var(--md-text)]">{visit.employee_name} · {new Date(`${visit.trip_date}T12:00:00`).toLocaleDateString(language)}</p></div>{visit.can_open && <Button variant="ghost" size="sm" onClick={() => navigate(`/crm/trips/${visit.id}`)}>{t("View trip")}<ArrowRight data-icon="inline-end" /></Button>}</li>)}</ul>}
               </Zone>
               <div className="grid items-start gap-[var(--md-page-stack-gap-compact)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
                 <div className="grid min-w-0 content-start gap-[var(--md-page-stack-gap-compact)]">

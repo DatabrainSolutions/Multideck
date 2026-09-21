@@ -265,7 +265,7 @@ export type InlineCitationQuoteProps = ComponentProps<"blockquote">
 export function InlineCitationQuote({ children, className, ...props }: InlineCitationQuoteProps) {
   return (
     <blockquote
-      className={cn("border-s-2 border-[var(--md-line)] ps-3 text-[12px] italic text-[var(--md-text)]", className)}
+      className={cn("rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-[12px] italic text-[var(--md-text)]", className)}
       {...props}
     >
       {children}

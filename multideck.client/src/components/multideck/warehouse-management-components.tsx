@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { workspaceStorageKey } from "@/lib/workspace-environment"
@@ -672,11 +673,13 @@ export function WarehouseFacilitiesView() {
 
   const emptyState = activeFilter === "All" || search.trim() ? (
     <div className="mx-auto max-w-[360px]">
+      <EmptyStateIllustration variant="search" className="mb-3" />
       <p className="text-[13px] font-medium text-[var(--md-ink)]">No facilities match this view</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Clear a filter or widen the search to see more facilities.</p>
     </div>
   ) : (
     <div className="mx-auto max-w-[360px]">
+      <EmptyStateIllustration variant="cargo" className="mb-3" />
       <p className="text-[13px] font-medium text-[var(--md-ink)]">No facilities yet</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Create your first warehouse location to start storing customer stock.</p>
     </div>
@@ -1614,11 +1617,13 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
 
   const emptyState = activeFilter === "All" || search.trim() || facilityId ? (
     <div className="mx-auto max-w-[360px]">
+      <EmptyStateIllustration variant="search" className="mb-3" />
       <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No items match this view")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Clear a filter or widen the search to see more items.")}</p>
     </div>
   ) : (
     <div className="mx-auto max-w-[360px]">
+      <EmptyStateIllustration variant="cargo" className="mb-3" />
       <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No items yet")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(canCreate ? "Add your first item to store customer stock in a facility." : "Create a facility first, then add the items stored inside it.")}</p>
     </div>
@@ -2234,11 +2239,13 @@ export function WarehouseLocationsView() {
   const hasFacilities = facilityOptions.length > 0
   const emptyState = activeFilter === "All" || search.trim() ? (
     <div className="mx-auto max-w-[360px]">
+      <EmptyStateIllustration variant="search" className="mb-3" />
       <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No locations match this view")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Clear a filter or widen the search to see more locations.")}</p>
     </div>
   ) : (
     <div className="mx-auto max-w-[360px]">
+      <EmptyStateIllustration variant="cargo" className="mb-3" />
       <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No locations yet")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Add the first bin, rack, or position for this facility.")}</p>
     </div>

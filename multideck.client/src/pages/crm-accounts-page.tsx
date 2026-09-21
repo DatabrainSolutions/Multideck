@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
@@ -464,7 +465,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
           ? <RecordState icon={<DotGridLoader size="sm" decorative />} title={t(`Loading ${title.toLowerCase()}…`)} />
           : state === "error"
             ? <RecordState icon={<RefreshCw className="size-5" />} title={t(`${title} could not be loaded.`)} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
-            : customerAccounts ? <RecordState icon={<Building2 className="size-5" />} title={query ? t("No customer accounts match this search.") : t("No customer accounts yet.")} detail={query ? t("Clear the search or try another customer name or account code.") : t("Create the first customer before setting credit terms or raising an invoice.")} action={query ? <Button variant="outline" onClick={() => setQuery("")}>{t("Clear search")}</Button> : <Button onClick={openCreate}>{t("New customer")}</Button>} /> : <RecordState icon={<Building2 className="size-5" />} title={accountFiltersActive ? t(`No ${title.toLowerCase()} match these filters.`) : t(`No ${title.toLowerCase()} yet.`)} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t(`Create the first ${singular} to keep its contacts and operational roles together.`)} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t(`New ${singular}`)}</Button>} />}
+            : customerAccounts ? <RecordState illustration="contacts" icon={<Building2 className="size-5" />} title={query ? t("No customer accounts match this search.") : t("No customer accounts yet.")} detail={query ? t("Clear the search or try another customer name or account code.") : t("Create the first customer before setting credit terms or raising an invoice.")} action={query ? <Button variant="outline" onClick={() => setQuery("")}>{t("Clear search")}</Button> : <Button onClick={openCreate}>{t("New customer")}</Button>} /> : <RecordState illustration="contacts" icon={<Building2 className="size-5" />} title={accountFiltersActive ? t(`No ${title.toLowerCase()} match these filters.`) : t(`No ${title.toLowerCase()} yet.`)} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t(`Create the first ${singular} to keep its contacts and operational roles together.`)} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t(`New ${singular}`)}</Button>} />}
       />
 
       {organisationType !== "company" ? (
@@ -566,8 +567,8 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   )
 }
 
-function RecordState({ icon, title, detail, action }: { icon: ReactNode; title: string; detail?: string; action?: ReactNode }) {
-  return <div className="grid min-h-[260px] place-items-center border-t border-[var(--md-line)] px-6 py-10 text-center"><div className="max-w-sm"><span className="mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span><p className="mt-4 text-[14px] font-medium text-[var(--md-ink)]">{title}</p>{detail ? <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{detail}</p> : null}{action ? <div className="mt-4">{action}</div> : null}</div></div>
+function RecordState({ icon, title, detail, action, illustration }: { icon: ReactNode; title: string; detail?: string; action?: ReactNode; illustration?: "contacts" | "search" }) {
+  return <div className="grid min-h-[260px] place-items-center border-t border-[var(--md-line)] px-6 py-10 text-center"><div className="max-w-sm">{illustration ? <EmptyStateIllustration variant={illustration} /> : <span className="mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span>}<p className="mt-4 text-[14px] font-medium text-[var(--md-ink)]">{title}</p>{detail ? <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{detail}</p> : null}{action ? <div className="mt-4">{action}</div> : null}</div></div>
 }
 
 function FinancialAmount({ value, currency, language, unavailableLabel, tone = "default" }: { value: number | null | undefined; currency: string | null | undefined; language: string; unavailableLabel: string; tone?: "default" | "danger" }) {

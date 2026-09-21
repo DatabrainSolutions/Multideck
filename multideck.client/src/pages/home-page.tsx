@@ -425,15 +425,13 @@ export function HomePage({
                 <HomeDeckRow index={index}>
                   <div className="flex items-center gap-1">
                     <TodoCompletionControl
-                      className="size-7"
+                      className="min-w-0 flex-1"
                       checked={completingTaskId === task.id}
                       busy={completingTaskId === task.id}
                       label={`${t("Mark done")}: ${task.title}`}
+                      title={task.title}
                       onChange={() => void completeTask(task)}
                     />
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] leading-4 text-[var(--md-ink)]" dir="auto">
-                      {task.title}
-                    </span>
                     {task.priority === "urgent" || task.priority === "high" ? (
                       <span className="shrink-0 text-[11px] leading-4 text-[var(--md-amber)]">
                         {t(task.priority === "urgent" ? "Urgent" : "High")}

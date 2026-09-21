@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { ContactEmailAction } from "@/components/multideck/contact-email-action"
 import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
 import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react"
@@ -1060,7 +1061,7 @@ export function CrmLeadQualificationTable({
         register: registerExport ? { ...registerExport, dateLabel: "Lead created date", dateValue: (lead) => lead.createdAt } : undefined,
       }}
       serverSorting={serverSorting}
-      emptyState={emptyState ?? <p className="text-[13px] text-[var(--md-text)]">{emptyMessage}</p>}
+      emptyState={emptyState ?? <div className="py-4 text-center"><EmptyStateIllustration variant="contacts" className="mb-3" /><p className="text-[13px] text-[var(--md-text)]">{emptyMessage}</p></div>}
     />
   )
 }

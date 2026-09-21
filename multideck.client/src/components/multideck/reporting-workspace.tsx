@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { ArrowDown, ArrowLeft, ArrowUp, BarChart3, Copy, FileSpreadsheet, FileText, LoaderCircle, Plus, Save, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
@@ -306,7 +307,7 @@ export function ReportingWorkspace({ route, navigate }: { route: string; navigat
         toolbarOptions={<Button variant="ghost" size="sm" onClick={() => { setShowArchived(!showArchived); setScope("all") }}>{showArchived ? "Back to library" : "Archived reports"}</Button>}
         toolbarFilters={<div className="flex gap-2"><Choice label="Format" value={kindFilter} onChange={setKindFilter} options={[{ value: "all", label: "All formats" }, ...Object.entries(kindName).map(([value, label]) => ({ value, label }))]} /><Choice label="Owner" value={scope} onChange={setScope} options={[{ value: "all", label: "All reports" }, { value: "mine", label: "My reports" }, { value: "shared", label: "Shared with me" }]} /></div>}
         rowContextActions={r => !showArchived && r.owner_id === workspace.userId ? [{ id: "archive", label: "Archive report", icon: X, tone: "destructive", onSelect: () => setArchive(r) }] : []}
-        emptyState={<div className="grid min-h-64 place-content-center gap-3 text-center"><h2 className="text-[16px] font-medium">{showArchived ? "No archived reports match these filters" : workspace.reports.length ? "No reports match these filters" : "Your first report starts here"}</h2><p className={hint}>Choose data you want to see, then make the report your own.</p><Button className="mx-auto" onClick={() => navigate("/reports/new")}>Create report</Button></div>} /> : tab === "scheduled" ?
+        emptyState={<div className="grid min-h-64 place-content-center gap-3 py-5 text-center"><EmptyStateIllustration variant="chart" /><h2 className="text-[16px] font-medium">{showArchived ? "No archived reports match these filters" : workspace.reports.length ? "No reports match these filters" : "Your first report starts here"}</h2><p className={hint}>Choose data you want to see, then make the report your own.</p><Button className="mx-auto" onClick={() => navigate("/reports/new")}>Create report</Button></div>} /> : tab === "scheduled" ?
         <DataTable columns={[
           { id: "name", label: "Report", kind: "identity", cell: (s: ReportSchedule) => <span data-i18n-skip>{s.name}</span> },
           { id: "frequency", label: "Frequency", cell: s => `${s.frequency[0].toUpperCase()}${s.frequency.slice(1)}` },
@@ -314,14 +315,14 @@ export function ReportingWorkspace({ route, navigate }: { route: string; navigat
           { id: "next", label: "Next run", cell: s => s.paused ? "Paused" : date(s.next_run_at) },
           { id: "destination", label: "Destination", cell: () => "My run history" },
           { id: "state", label: "Status", cell: s => s.paused ? "Paused" : "Active" },
-        ]} rows={workspace.schedules} getRowKey={s => s.id} ariaLabel="Scheduled reports" toolbarTabs={tabs} enableSelectionExport={false} onRowClick={openSchedule} emptyState={<div className="grid min-h-64 place-content-center gap-2 text-center"><h2 className="text-[16px] font-medium">No scheduled reports</h2><p className={hint}>Save a report, then choose when to capture it automatically.</p></div>} /> :
+        ]} rows={workspace.schedules} getRowKey={s => s.id} ariaLabel="Scheduled reports" toolbarTabs={tabs} enableSelectionExport={false} onRowClick={openSchedule} emptyState={<div className="grid min-h-64 place-content-center gap-2 py-5 text-center"><EmptyStateIllustration variant="calendar" /><h2 className="text-[16px] font-medium">No scheduled reports</h2><p className={hint}>Save a report, then choose when to capture it automatically.</p></div>} /> :
         <DataTable columns={[
           { id: "name", label: "Report", kind: "identity", cell: (r: ReportRun) => <span data-i18n-skip>{r.name}</span> },
           { id: "created", label: "Generated", cell: r => date(r.created_at), sortValue: r => r.created_at },
           { id: "version", label: "Report version", cell: r => `Version ${r.report_version}` },
           { id: "trigger", label: "Run type", cell: r => r.schedule_id ? "Scheduled" : "On demand" },
           { id: "status", label: "Status", cell: r => busy === r.id ? "Opening…" : r.status === "ready" ? "Ready" : "Failed" },
-        ]} rows={workspace.runs} getRowKey={r => r.id} ariaLabel="Report run history" toolbarTabs={tabs} enableSelectionExport={false} onRowClick={openRun} emptyState={<div className="grid min-h-64 place-content-center gap-2 text-center"><h2 className="text-[16px] font-medium">No reports have run yet</h2><p className={hint}>Generate a snapshot from any saved report to keep and download it.</p></div>} />}
+        ]} rows={workspace.runs} getRowKey={r => r.id} ariaLabel="Report run history" toolbarTabs={tabs} enableSelectionExport={false} onRowClick={openRun} emptyState={<div className="grid min-h-64 place-content-center gap-2 py-5 text-center"><EmptyStateIllustration variant="activity" /><h2 className="text-[16px] font-medium">No reports have run yet</h2><p className={hint}>Generate a snapshot from any saved report to keep and download it.</p></div>} />}
     </>}
     <Dialog open={!!schedule} onOpenChange={open => { if (!open) setSchedule(null) }}><DialogContent><DialogHeader><DialogTitle>{schedule?.id ? "Edit schedule" : "Schedule a report"}</DialogTitle><DialogDescription>A dated snapshot will appear in your run history. Data access is checked each time. Times follow the selected timezone, including daylight saving.</DialogDescription></DialogHeader>{schedule && <div className="grid gap-4">
       <Choice label="Saved report" value={schedule.report_id || ""} onChange={report_id => setSchedule({ ...schedule, report_id })} options={[{ value: "", label: "Choose a report" }, ...workspace.reports.map(r => ({ value: r.id, label: r.name }))]} />

@@ -1,3 +1,17 @@
+import emptyStateIllustrationSource from "@/components/multideck/empty-state-illustration.tsx?raw"
+import emptyStateIllustrationStyles from "@/components/multideck/empty-state-illustration.css?raw"
+import bellToggleSource from "@/components/multideck/bell-toggle.tsx?raw"
+import bellToggleCss from "@/components/multideck/bell-toggle.css?raw"
+import springCheckSource from "@/components/multideck/spring-check.tsx?raw"
+import springCheckStyles from "@/components/multideck/spring-check.css?raw"
+import todoComponentsSource from "@/components/multideck/todo-components.tsx?raw"
+import codeSlotsSource from "@/components/multideck/code-slots.tsx?raw"
+import codeSlotsCss from "@/components/multideck/code-slots.css?raw"
+import mileageRouteMapSource from "@/components/multideck/mileage-route-map.tsx?raw"
+import inlineNoticeSource from "@/components/multideck/inline-notice.tsx?raw"
+import inlineNoticeStyles from "@/components/multideck/inline-notice.css?raw"
+import suggestedUpdateIllustrationSource from "@/components/multideck/suggested-update-illustration.tsx?raw"
+import suggestedUpdateIllustrationStyles from "@/components/multideck/suggested-update-illustration.css?raw"
 import signatureBuilderSource from "@/components/multideck/signature-builder.tsx?raw"
 import inlineFieldSource from "@/components/multideck/inline-field.tsx?raw"
 import inlineFieldStyles from "@/components/multideck/inline-field.css?raw"
@@ -188,7 +202,7 @@ export const galleryComponents = [
     category: "Foundation",
     description: "The base Multideck panel. It gives workflow areas quiet depth without creating heavy card clutter.",
     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
-    foundOn: [{ label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Quotes", route: "/quotes" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Quotes", route: "/quotes" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="@container/section-header-copy min-w-0 flex-1">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <div className="min-w-0 @min-[520px]/section-header-copy:flex @min-[520px]/section-header-copy:items-baseline @min-[520px]/section-header-copy:justify-between @min-[520px]/section-header-copy:gap-5">\n          <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n          {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)] @min-[520px]/section-header-copy:mt-0 @min-[520px]/section-header-copy:text-end">{meta}</p> : null}\n        </div>\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
@@ -403,6 +417,7 @@ export const galleryComponents = [
       { label: "CRM accounts", route: "/crm/accounts" },
       { label: "Digital business cards", route: "/crm/contact-cards" },
       { label: "Reports", route: "/reports" },
+      { label: "Trips & mileage", route: "/crm/trips/new" },
       { label: "Components", route: "/components?component=wizard-dialog" },
     ],
     componentCode: `export function WizardDialog({ open, onOpenChange, steps, activeStepId, onStepChange, onSubmit, children }) {\n  return (\n    <Dialog open={open} onOpenChange={onOpenChange}>\n      <DialogContent>\n        <WizardStepRail steps={steps} activeStepId={activeStepId} onStepChange={onStepChange} />\n        <WizardStepContent activeStepId={activeStepId}>{children}</WizardStepContent>\n        <WizardFooter onBack={goBack} onNext={goNext} onSubmit={onSubmit} />\n      </DialogContent>\n    </Dialog>\n  )\n}`,
@@ -414,7 +429,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "The single compact semantic pill treatment for workflow statuses and descriptive attributes across Multideck.",
     details: "Every status and attribute pill uses the established filled operator-table palette and footprint, whether it appears in a table, list, header, inspector, or history view. Optional icons may reinforce meaning, but the component never adds a competing dot or outlined treatment.",
-    foundOn: [{ label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Tasks", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Tasks", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn(filledPillClass, toneClass[tone], className)}\n    >\n      {indicator !== false ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
@@ -435,14 +450,24 @@ export const galleryComponents = [
     usageCode: `<TaskAgentControls agent={agent} />`,
   },
   {
+    id: "spring-check",
+    name: "Spring Check",
+    category: "Controls",
+    description: "React Bits SpringCheck with a spring fill, drawn tick and animated strike-through.",
+    details: "Use for task completion. Supports controlled or local state, wrapped labels, keyboard input, disabled and saving states, and reduced motion. Task pages retain their existing persistence and rollback handlers.",
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Home", route: "/" }, { label: "Components", route: "/components?component=spring-check" }],
+    componentCode: `${springCheckSource}\n\n/* spring-check.css */\n${springCheckStyles}`,
+    usageCode: `<SpringCheck label="Review revised delivery plan" checked={completed} onChange={setCompleted} busy={saving} />`,
+  },
+  {
     id: "todo-completion-control",
     name: "To Do Completion Control",
     category: "Controls",
-    description: "A personal-task checkbox with a tactile circle pop and a trimmed SVG tick.",
-    details: "Use for completing or reopening To Do tasks. The footprint stays stable through optimistic saves, the tick draws only after direct input, and reduced-motion users receive the final state immediately.",
-    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Components", route: "/components?component=todo-completion-control" }],
-    componentCode: `export function TodoCompletionControl({ checked, busy, label, onChange }) {\n  const reduce = useReducedMotion()\n  return (\n    <button aria-label={label} aria-pressed={checked} aria-busy={busy || undefined} onClick={() => onChange(!checked)}>\n      <motion.svg viewBox="0 0 24 24" animate={reduce ? undefined : { scale: checked ? [1, 0.88, 1.08, 1] : 1 }}>\n        <motion.circle cx="12" cy="12" r="9.25" animate={{ fill: checked ? "var(--md-accent)" : "transparent" }} />\n        <motion.path d="M7.8 12.2 10.6 15l5.8-6.2" animate={{ pathLength: checked ? 1 : 0, opacity: checked ? 1 : 0 }} />\n      </motion.svg>\n    </button>\n  )\n}`,
-    usageCode: `<TodoCompletionControl\n  checked={task.status === "completed"}\n  busy={saving}\n  label={task.status === "completed" ? "Reopen task" : "Mark task complete"}\n  onChange={(checked) => updateTask({ status: checked ? "completed" : "open" })}\n/>`,
+    description: "A task completion control using React Bits SpringCheck.",
+    details: "The checkbox and task title share one spring: the fill expands, the tick draws and the title strikes through. Busy tasks cannot be toggled twice; failed saves roll back through the existing task handler. Reduced motion shows the final state immediately.",
+    foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Home", route: "/" }, { label: "Components", route: "/components?component=todo-completion-control" }],
+    componentCode: `${todoComponentsSource}\n\n${springCheckSource}\n\n/* spring-check.css */\n${springCheckStyles}`,
+    usageCode: `<TodoCompletionControl\n  checked={task.status === "completed"}\n  busy={saving}\n  title={task.title}\n  label={task.title}\n  onChange={(checked) => updateTask({ status: checked ? "completed" : "open" })}\n/>`,
   },
   {
     id: "todo-priority-pill",
@@ -813,6 +838,36 @@ export const galleryComponents = [
     usageCode: `const [editingBlock, setEditingBlock] = useState()\n\n<ReportDocumentPage\n  page={page}\n  totalPages={pages.length}\n  editable\n  onSelectBlock={setEditingBlock}\n  onDropWidget={addWidgetById}\n/>\n<ReportBlockDataEditorDialog\n  block={editingBlock}\n  open={Boolean(editingBlock)}\n  onOpenChange={(open) => !open && setEditingBlock(undefined)}\n  onSave={saveBlock}\n/>`,
   },
   {
+    id: "empty-state-illustration",
+    name: "Empty State Illustration",
+    category: "Feedback",
+    description: "Eleven looping SVG scenes for empty registers and workspaces, matched to the operator's workflow.",
+    details: "Choose search, tasks, documents, contacts, cargo, chart, calendar, mail, phone, route or activity. Keep the existing heading, explanation and contextual action alongside the illustration. Use compact in small panels. The SVG is decorative, uses semantic theme colours and rests between movements. Reduced motion shows a complete static scene. No playback controls, progress tracks or network requests. Never use these scenes to replace loading, permission, integration or error feedback, or to imply live processing.",
+    foundOn: [{"label": "Inbox", "route": "/inbox"}, {"label": "Tasks", "route": "/to-do"}, {"label": "Bookings", "route": "/bookings"}, {"label": "Quotes and audit history", "route": "/quotes"}, {"label": "Leads", "route": "/crm/leads"}, {"label": "Deals", "route": "/crm/deals"}, {"label": "Contacts", "route": "/crm/contacts"}, {"label": "Organisations", "route": "/crm/accounts"}, {"label": "Customers", "route": "/customers"}, {"label": "Suppliers", "route": "/suppliers"}, {"label": "Phone calls", "route": "/crm/phone-calls"}, {"label": "Booking links", "route": "/calendar/booking-links"}, {"label": "Documents", "route": "/documents"}, {"label": "Warehouse inventory", "route": "/warehouse/inventory"}, {"label": "Warehouse orders", "route": "/warehouse/orders"}, {"label": "Expected receipts", "route": "/warehouse/purchase-orders"}, {"label": "Warehouse facilities", "route": "/warehouse/facilities"}, {"label": "Warehouse locations", "route": "/warehouse/locations"}, {"label": "Warehouse items", "route": "/warehouse/items"}, {"label": "Report library", "route": "/reports"}, {"label": "Scheduled reports", "route": "/reports/scheduled"}, {"label": "Report history", "route": "/reports/history"}, {"label": "Sales invoices", "route": "/finance/receivables"}, {"label": "Customer receipts", "route": "/finance/receivables/cash"}, {"label": "Supplier invoices", "route": "/finance/payables"}, {"label": "Supplier payments", "route": "/finance/payables/cash"}, {"label": "Trips and approvals", "route": "/crm/trips"}, {"label": "Mileage payments", "route": "/finance/mileage"}, {"label": "Standalone exports", "route": "/customs/standalone/export"}, {"label": "Standalone imports", "route": "/customs/standalone/import"}, {"label": "Job exports", "route": "/customs/job-related/export"}, {"label": "Job imports", "route": "/customs/job-related/import"}, {"label": "CRM activity", "route": "/crm/activity"}, {"label": "Notifications", "route": "/"}, {"label": "Components", "route": "/components?component=empty-state-illustration"}],
+    componentCode: emptyStateIllustrationSource + "\n\n/* Styles */\n" + emptyStateIllustrationStyles,
+    usageCode: `<div className="py-8 text-center">\n  <EmptyStateIllustration variant="tasks" className="mb-3" />\n  <h2>Nothing waiting here.</h2>\n  <p>Use the field above to plan the next thing.</p>\n</div>\n\n<EmptyStateIllustration variant="search" />\n<EmptyStateIllustration variant="activity" compact />`,
+  },
+  {
+    id: "suggested-update-illustration",
+    name: "Suggested Update Illustration",
+    category: "Feedback",
+    description: "Looping SVG illustrations for an empty review queue, document comparison and review history.",
+    details: "Pair these decorative illustrations with a clear empty-state heading and explanation. The clear variant settles a document into an inbox; compare scans a document and highlights a difference in its record; history shows a saved document and clock. Eight-second CSS loops include a quiet rest, with no playback controls or progress bars. Reduced motion shows a complete static illustration. Colours follow the app's semantic tokens in both themes. These illustrations explain the workflow; they do not report live processing or saved changes.",
+    foundOn: [{ label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "Components", route: "/components?component=suggested-update-illustration" }],
+    componentCode: suggestedUpdateIllustrationSource + "\n\n/* Styles */\n" + suggestedUpdateIllustrationStyles,
+    usageCode: `<div className="text-center">\n  <SuggestedUpdateIllustration variant="compare" className="mx-auto mb-5" />\n  <h2>Inbox work, without the re-keying</h2>\n  <p>When a useful document arrives, Multideck compares it with the live record and brings only the differences here.</p>\n</div>\n\n<SuggestedUpdateIllustration variant="clear" />\n<SuggestedUpdateIllustration variant="history" />`,
+  },
+  {
+    id: "inline-notice",
+    name: "Inline Notice",
+    category: "Feedback",
+    description: "Persistent feedback with a status icon, neutral rounded surface, and an optional recovery action.",
+    details: "Use for errors, warnings, information and confirmed results that must remain visible in the workflow. Keep text readable and actions below the message. Colour belongs in the icon, never in a decorative left-edge stripe. Errors use an alert role; other notices use a polite status. Do not dismiss an unresolved error automatically.",
+    foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "Mileage claim", route: "/crm/trips/new" }, { label: "Mileage finance", route: "/finance/mileage" }, { label: "Mileage settings", route: "/crm/trips/settings" }, { label: "Customs imports", route: "/customs/standalone/import/new" }, { label: "Customs exports", route: "/customs/standalone/export/new" }, { label: "Documents", route: "/documents" }, { label: "Admin preferences", route: "/admin/system-preferences" }, { label: "Components", route: "/components?component=inline-notice" }],
+    componentCode: inlineNoticeSource + "\n\n/* Styles */\n" + inlineNoticeStyles,
+    usageCode: `<InlineNotice tone="error" title="Your changes have not been saved" action={<Button type="button" variant="ghost" onClick={retrySave}>Retry save</Button>}>Your entries are still here. Keep this page open and try again.</InlineNotice>`,
+  },
+  {
     id: "toast",
     name: "Toast",
     category: "Feedback",
@@ -943,6 +998,16 @@ export const galleryComponents = [
     usageCode: `<BookingRow booking={liveBookings[0]} />`,
   },
   {
+    id: "mileage-route-map",
+    name: "Road Route Map",
+    category: "Operations",
+    description: "A road route and ordered stop markers drawn from a routing provider’s geometry.",
+    details: "Use for reviewing and reopening mileage claims. The map uses a muted monochrome background that follows light and dark mode, with an outlined route for clear contrast. It fits its route without animated movement, supports keyboard and touch zoom, and shows provider attribution. A textual stop list should accompany it. Missing geometry shows a clear empty state; never substitute a straight line for a road route.",
+    foundOn: [{ label: "New trip", route: "/crm/trips/new" }, { label: "Trips & mileage", route: "/crm/trips" }, { label: "Mileage payments", route: "/finance/mileage" }],
+    componentCode: mileageRouteMapSource,
+    usageCode: `<MileageRouteMap route={claim.route_data} />`,
+  },
+  {
     id: "interactive-map",
     name: "Interactive Booking Map",
     category: "Operations",
@@ -1035,6 +1100,16 @@ export const galleryComponents = [
 >
   <AccentPicker />
 </SettingsPanel>`,
+  },
+  {
+    id: "bell-toggle",
+    name: "Bell Toggle",
+    category: "Navigation",
+    description: "An animated bell for turning individual notification preferences on or off.",
+    details: "Adapted from React Bits. Bind pressed to the notification preference so enabled bells stay active after the animation ends. Changes save automatically. Supports disabled states, keyboard focus and reduced motion.",
+    foundOn: [{ label: "Settings · Notifications", route: "/settings?tab=notifications" }],
+    componentCode: bellToggleSource + "\n\n/* bell-toggle.css */\n" + bellToggleCss,
+    usageCode: `<BellToggle label="Customs holds" offLabel="Off" onLabel="On" pressed={preferences.customs_hold} onChange={(enabled) => setEmailPreference("customs_hold", enabled)} disabled={isLoading || isSaving} badge={false} size="sm" />`,
   },
   {
     id: "theme-toggle",
@@ -1379,7 +1454,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Feedback",
     description: "The product's one waiting state: twenty-five cells lit as a travelling square spiral.",
     details: "Use it for every wait long enough to need a mark – a route still downloading, a register still fetching rows, a panel still resolving a document list. One object across the whole product means a wait never looks like a different feature loading. It animates only opacity and transform, so it can sit inside the box the loaded content will occupy without moving anything around it, and it reserves its own size so rows arriving cannot shift the page. `size=\"sm\"` fits a 32px toolbar; `decorative` drops the status role where the surrounding block already announces the wait in words. Reduced-motion mode holds the centre cell lit instead of cycling.",
-    foundOn: [{ label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `const spiralOrder = [
   0, 1, 2, 3, 4,
   15, 16, 17, 18, 5,
@@ -1762,7 +1837,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "Compact, keyboard-accessible option buttons for single or multiple selections.",
     details: "Use for short options that should remain visible together. The ticket form composes this primitive with a travelling selection highlight. A single selection should ignore empty changes when a choice is required.",
-    foundOn: [{ label: "Submit a ticket · sidebar", route: "/" }, { label: "Components", route: "/components?component=toggle-group" }],
+    foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Submit a ticket · sidebar", route: "/" }, { label: "Components", route: "/components?component=toggle-group" }],
     componentCode: toggleGroupSource,
     usageCode: `<ToggleGroup type="single" value={ticketType} onValueChange={(value) => { if (value) setTicketType(value) }} aria-label="Ticket type">\n  <ToggleGroupItem value="bug">Bug</ToggleGroupItem>\n  <ToggleGroupItem value="feature_request">Feature request</ToggleGroupItem>\n  <ToggleGroupItem value="question">Question</ToggleGroupItem>\n</ToggleGroup>`,
   },
@@ -1792,7 +1867,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "The common independent multi-select control for rows, permissions, overrides, and checklist choices.",
     details: "Use when choices can be combined independently. Do not substitute a switch or segmented pill for multi-select behaviour.",
-    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Booking wizard", route: "/bookings/new" }, { label: "Settings", route: "/settings" }, { label: "Domestic road booking", route: "/bookings/new/domestic-road" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Components", route: "/components?component=checkbox" }],
+    foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Bookings", route: "/bookings" }, { label: "Booking wizard", route: "/bookings/new" }, { label: "Settings", route: "/settings" }, { label: "Domestic road booking", route: "/bookings/new/domestic-road" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Components", route: "/components?component=checkbox" }],
     componentCode: `export function Checkbox(props) {\n  return (\n    <CheckboxPrimitive.Root {...props} className="grid size-5 place-items-center rounded-[var(--md-radius-sm)] data-[state=checked]:bg-[var(--md-accent)]">\n      <CheckboxPrimitive.Indicator><Check /></CheckboxPrimitive.Indicator>\n    </CheckboxPrimitive.Root>\n  )\n}`,
     usageCode: `<label className="flex items-center gap-2">\n  <Checkbox checked={selected} onCheckedChange={(checked) => setSelected(checked === true)} />\n  Include customs documents\n</label>`,
   },
@@ -1812,7 +1887,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "The canonical Multideck table with persisted layout, right-click row selection, field-aware CSV export, and a responsive Controls panel with full-width search and touch-friendly actions.",
     details: "Opt in to register-wide export with exportConfig.register and an explicit authorised, fully paginated loader. The icon beside column settings opens the shared Table Export dialog. Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Use pagination with onLimitChange for server-paged registers, or clientPagination only when rows contains the complete local dataset. Sorting runs before local slicing; selecting all applies to the visible page. Do not enable local paging for server pages, cursor-based lists or line editors. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
-    foundOn: [{ label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Quotes", route: "/quotes" }, { label: "Quote carrier options", route: "/quotes/jq20013" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact card detail", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4" }, { label: "Bookings", route: "/bookings" }, { label: "Import terms", route: "/customs/standalone/import/new" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Rates & contracts", route: "/rates" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Quotes", route: "/quotes" }, { label: "Quote carrier options", route: "/quotes/jq20013" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact card detail", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4" }, { label: "Bookings", route: "/bookings" }, { label: "Import terms", route: "/customs/standalone/import/new" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Rates & contracts", route: "/rates" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: dataTableSource,
     usageCode: "// Server register: use the same limit and offset in the data request.\nconst [offset, setOffset] = useState(0)\nconst [limit, setLimit] = useState(30)\n<DataTable columns={columns} rows={result.rows} getRowKey={(row) => row.id}\n  pagination={{ offset, limit, total: result.total, loading, error: Boolean(error), onOffsetChange: setOffset, onLimitChange: setLimit }} />\n\n// Complete in-memory dataset: the table sorts, then slices the rows.\n<DataTable clientPagination columns={columns} rows={records} getRowKey={(row) => row.id} />",
   },
@@ -2451,7 +2526,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Monitor Card",
     category: "Agent Dexter",
     description: "A Watch card that answers is anything up, what happened, and which watch said so – in that order, inside the 288–336px Dexter rail.",
-    details: "Use in the right rail of Agent Dexter. The change is the loud line and the watch's own name drops beneath it; the rule text never appears here because it repeats the title. An unopened watch gets a tone-coloured inline-start bar, a tinted field and the only breathing dot in the rail, so movement always means news rather than liveness.",
+    details: "Use in the right rail of Agent Dexter. The change is the loud line and the watch's own name drops beneath it; the rule text never appears here because it repeats the title. An unopened watch keeps the neutral rounded surface and uses the only breathing status dot in the rail, so movement means news rather than liveness.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
     componentCode: `export function DexterMonitorCard({ monitor, index = 0, active, onClick }) {\n  const state = dexterWatchState(monitor, t)\n  const stamp = dexterWatchStamp(state.at, language, t)\n  return (\n    <button\n      className="md-watch-card w-full min-w-0"\n      data-active={active}\n      data-state={state.key}\n      data-unread={state.unread ? "true" : undefined}\n      style={{ "--md-watch-tone": toneToVar(state.tone), "--md-watch-delay": \`\${index * 0.9}s\` }}\n      onClick={onClick}\n    >\n      <span className="flex items-center gap-2">\n        <span className="md-watch-dot" />\n        <span className="md-watch-card__state">{state.label}</span>\n        {stamp ? <time className="ms-auto tabular-nums">{stamp}</time> : null}\n      </span>\n      <span className="line-clamp-3 font-medium">{state.news || monitor.title}</span>\n      <span className="truncate">{state.news ? monitor.title : t("Nothing has matched yet")}</span>\n    </button>\n  )\n}`,
     usageCode: `<DexterMonitorStack monitors={monitors} onAsk={openWatcherComposer} />`,
@@ -3592,7 +3667,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Calendar",
     category: "Operations",
     description: "The reusable Week and Month calendar foundation for timed work, meetings, operational dates, and readable overlaps.",
-    details: "Use when operators need time-based orientation and action. Product wrappers supply their own events and opening behaviour; Calendar keeps navigation, timezone, responsive day agenda, filters, empty-slot creation, and the two overlap treatments consistent. Drag empty time space to preview a quarter-hour-snapped range and release to open the existing creation form; Escape cancels, while touch and keyboard retain tap/click creation. Contained events inset with smaller nested corners; events that continue beyond the earlier finish keep the full column. Both use a light or dark surface-coloured stroke without shifting the label or scheduled geometry, and compact event labels stay vertically centred.",
+    details: "Use when operators need time-based orientation and action. Product wrappers supply their own events and opening behaviour; Calendar keeps navigation, timezone, responsive day agenda, filters, empty-slot creation, and the two overlap treatments consistent. Drag empty time space to preview a quarter-hour-snapped range and release to open the existing creation form; Escape cancels, while touch and keyboard retain tap/click creation. Contained events inset with smaller nested corners; events that continue beyond the earlier finish keep the full column. Both use a light or dark surface-coloured stroke without shifting the label or scheduled geometry, and compact event labels stay vertically centred. The week dates band shows two compact ribbons per day; a counted overflow button opens the complete scrollable list without moving the time grid.",
     foundOn: [{ label: "Calendar", route: "/calendar" }, { label: "Warehouse calendar", route: "/warehouse/calendar" }, { label: "Components", route: "/components?component=calendar-view" }],
     componentCode: `export function CalendarView({ events, ribbons, timeZone, onRangeChange, onOpenEvent, onCreateAt, navigate }) {
   return (
@@ -3650,21 +3725,31 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Calendar Day Ribbon",
     category: "Operations",
     description: "A thin, rounded operational date marker that keeps deadlines visible without blocking meeting availability.",
-    details: "Use above a calendar day for follow-ups, shipment milestones, and permitted Warehouse appointments. Native record links use theme-aware text and fills, wrapping labels, visible keyboard focus and 44px touch targets. They never behave like busy time.",
+    details: "Use above a calendar day for follow-ups, shipment milestones, and permitted Warehouse appointments. Native record links use theme-aware text and fills, 11px labels, a 25.6px compact week height, wrapping expanded labels, visible keyboard focus and 44px touch targets. They never behave like busy time.",
     foundOn: [{ label: "Calendar", route: "/calendar" }, { label: "Warehouse calendar", route: "/warehouse/calendar" }, { label: "Components", route: "/components?component=calendar-day-ribbon" }],
-    componentCode: `export function CalendarDayRibbon({ ribbon, navigate }) {
+    componentCode: `export function CalendarDayRibbon({ ribbon, navigate, compact = false }: { ribbon: CalendarRibbon; navigate: (path: string) => void; compact?: boolean }) {
   return (
-    <a href={ribbon.route} onClick={(event) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-      event.preventDefault()
-      navigate(ribbon.route)
-    }} className={cn("md-calendar-day-ribbon flex min-h-8 w-full items-center rounded-[var(--md-radius-lg)] px-2.5 py-1.5 text-[12px] leading-5 whitespace-normal [overflow-wrap:anywhere]", ribbonTones[ribbon.tone])}>
-      {ribbon.title}
+    <a
+      href={ribbon.route}
+      title={ribbon.title}
+      onClick={(event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        navigate(ribbon.route)
+      }}
+      className={cn(
+        "md-calendar-day-ribbon flex w-full min-w-0 items-center rounded-[var(--md-radius-md)] px-2 text-start text-[11px] font-medium leading-4 hover:underline underline-offset-2",
+        compact ? "h-[25.6px] whitespace-nowrap" : "min-h-[25.6px] py-1.5 whitespace-normal [overflow-wrap:anywhere]",
+        ribbonTones[ribbon.tone],
+      )}
+    >
+      <span className={cn("min-w-0", compact && "truncate")}>{ribbon.title}</span>
     </a>
   )
 }`,
     usageCode: `<CalendarDayRibbon
   ribbon={{ id: "delivery-1", kind: "delivery", title: "MD-22479 delivers", at: deliveryAt, route: "/bookings/MD-22479", tone: "green" }}
+  compact
   navigate={navigate}
 />`,
   },
@@ -3697,6 +3782,16 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   loading={availability.loading}
   onVisibleMonthChange={widenSlotFetch}
 />`,
+  },
+  {
+    id: "code-slots",
+    name: "Code Slots",
+    category: "Controls",
+    description: "Animated authenticator code entry, adapted from React Bits CodeSlots.",
+    details: "Six digits with native keyboard editing, paste and one-time-code autofill. Errors preserve the entered code for correction. Disable during verification and report success only after the provider accepts the code. Supports reduced motion.",
+    foundOn: [{ label: "Login & security", route: "/settings?tab=security" }, { label: "Components", route: "/components?component=code-slots" }],
+    componentCode: codeSlotsSource + "\n/* Styles */\n" + codeSlotsCss,
+    usageCode: `<CodeSlots value={code} onChange={setCode} status={error ? "error" : "idle"} disabled={verifying} ariaLabel="Authenticator code" />`,
   },
   {
     id: "verification-code-input",
@@ -3960,6 +4055,7 @@ export const galleryIcons = {
   typography: Type,
   surface: Gauge,
   "status-pill": BadgeCheck,
+  "spring-check": ClipboardCheck,
   "todo-completion-control": ClipboardCheck,
   "todo-priority-pill": ClipboardCheck,
   "todo-action-state-icon": ClipboardCheck,

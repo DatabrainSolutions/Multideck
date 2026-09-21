@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
@@ -389,13 +390,14 @@ export function WarehouseInventoryWorkspace() {
     <DotGridLoaderPanel label="Loading warehouse records" minHeight={0} />
   ) : hasFilters ? (
     <div className="mx-auto max-w-[380px]">
+      <EmptyStateIllustration variant="search" className="mb-3" />
       <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Nothing matches these filters")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Widen the search or switch warehouse to see more.")}</p>
       <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={clearFilters}>{t("Clear filters")}</Button>
     </div>
   ) : (
     <div className="mx-auto max-w-[380px]">
-      <Boxes className="mx-auto size-5 text-[var(--md-accent)]" strokeWidth={1.35} />
+      <EmptyStateIllustration variant="cargo" />
       <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t(mode === "Exceptions" ? "No open exceptions" : "Nothing here yet")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
         {t(mode === "Stock" ? "Stock appears here once an inbound order is booked in."

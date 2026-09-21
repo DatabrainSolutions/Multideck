@@ -4,6 +4,7 @@ import {
   sidebarTaskAgents,
   agentHasUpdate,
   isSidebarTaskAgent,
+  isPastTaskAgent,
   type TaskAgent,
 } from '../src/lib/task-agents.ts'
 const agent = (
@@ -30,6 +31,20 @@ const agent = (
   updated_at: `2026-09-10T12:00:0${id}Z`,
   taskStatus: 'open',
   scheduledDate: '2026-09-10',
+})
+test('Active includes future work and tasks needing attention; Past includes done and stopped tasks', () => {
+  for (const status of ['queued', 'scheduled', 'waiting', 'working', 'ready', 'needs_input', 'failed'] as const) {
+    assert.equal(isPastTaskAgent(agent('1', status)), false, status)
+  }
+  for (const status of ['completed', 'cancelled'] as const) {
+    assert.equal(isPastTaskAgent(agent('1', status, true)), true, status)
+  }
+})
+test('completed deliverables move to Past after their result is reviewed', () => {
+  const ready = { ...agent('1', 'ready', true), taskStatus: 'completed' as const }
+  assert.equal(isPastTaskAgent(ready), false)
+  assert.equal(isPastTaskAgent({ ...ready, viewed_revision: ready.result_revision }), true)
+  assert.equal(isPastTaskAgent({ ...ready, status: 'queued', taskStatus: 'open' }), false)
 })
 test('at most three visible rows, prioritising actionable updates without changing source order', () => {
   const rows = [

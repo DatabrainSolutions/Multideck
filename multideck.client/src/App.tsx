@@ -82,6 +82,7 @@ const ContactCardsPage = lazy(() => import("@/pages/contact-cards-page").then((m
 const ContactCardDetailPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardDetailPage })))
 const ContactCardPublicPage = lazy(() => import("@/pages/contact-card-public-page").then((module) => ({ default: module.ContactCardPublicPage })))
 const QuoteResponsePage = lazy(() => import("@/pages/quote-response-page").then((module) => ({ default: module.QuoteResponsePage })))
+const MileagePage = lazy(() => import("@/pages/mileage-page").then((module) => ({ default: module.MileagePage })))
 const FinancePage = lazy(() => import("@/pages/finance-page").then((module) => ({ default: module.FinancePage })))
 
 type AuthStatus = "checking" | "authenticated" | "unauthenticated"
@@ -345,6 +346,7 @@ function getRoute() {
   if (isRoadJobDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomsDeclarationEditRoute(window.location.pathname)) return window.location.pathname
   if (isQuoteDetailRoute(window.location.pathname)) return window.location.pathname
+  if (/^\/(crm\/trips|finance\/mileage)(\/(new|settings|[0-9a-f-]{36}))?$/.test(window.location.pathname)) return window.location.pathname
   if (isFinanceDocumentDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehouseOrderDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehousePurchaseOrderDetailRoute(window.location.pathname)) return window.location.pathname
@@ -885,7 +887,8 @@ export default function App() {
                   {route === "/quotes/new" ? <QuoteDetailPage key={route} variant="cargowise" quoteId="NEW" navigate={navigate} currentUser={currentUser} /> : null}
                   {route !== "/quotes/new" && isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} navigate={navigate} currentUser={currentUser} /> : null}
                   {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
-                  {route.startsWith("/finance/") ? <FinancePage route={route as FinanceRoute} navigate={navigate} currentUser={currentUser} /> : null}
+                  {(route.startsWith("/crm/trips") || route.startsWith("/finance/mileage")) ? <MileagePage key={route} route={route} navigate={navigate} /> : null}
+                  {route.startsWith("/finance/") && !route.startsWith("/finance/mileage") ? <FinancePage route={route as FinanceRoute} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/reports" || route.startsWith("/reports/")
                     ? <ReportsPage route={route} navigate={navigate} />
                     : null}

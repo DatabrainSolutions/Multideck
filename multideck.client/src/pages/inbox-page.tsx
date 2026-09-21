@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   Archive,
@@ -501,7 +502,9 @@ function WorkspaceMessage({
   description,
   action,
   tone = "neutral",
+  illustration,
 }: {
+  illustration?: "mail"
   icon: typeof Mail
   title: string
   description: string
@@ -511,7 +514,7 @@ function WorkspaceMessage({
   return (
     <div className="grid h-full min-h-[220px] place-items-center px-6 py-10">
       <div className="max-w-[46ch] text-center">
-        <span
+        {illustration ? <EmptyStateIllustration variant={illustration} /> : <span
           className={cn(
             "mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] shadow-[var(--md-shadow-line)]",
             tone === "error"
@@ -522,7 +525,7 @@ function WorkspaceMessage({
           )}
         >
           <Icon className="size-[18px]" strokeWidth={1.4} aria-hidden="true" />
-        </span>
+        </span>}
         <p className="mt-3 text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
         <p className="mt-1.5 text-pretty text-[12.5px] leading-[1.55] text-[var(--md-text)]">{description}</p>
         {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
@@ -2185,6 +2188,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
           ) : (
             <WorkspaceMessage
               icon={folder === "archive" ? Archive : MailOpen}
+              illustration="mail"
               title={emptyFolderTitle}
               description={emptyFolderDescription}
             />
@@ -2306,6 +2310,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       ) : !selectedThreadId ? (
         <WorkspaceMessage
           icon={MailOpen}
+          illustration="mail"
           title={t("Choose a conversation")}
           description={t("Open a conversation to read its messages, ask Dexter for a summary, and reply.")}
         />
