@@ -33,6 +33,7 @@ import { ThemeProfileSync, themeStorageKey } from "@/lib/theme-preferences"
 import { LanguageProfileSync } from "@/lib/language-preferences"
 import { rememberRecentWorkContext } from "@/lib/recent-work-context"
 import { invalidateWorkspaceBootstrap } from "@/lib/workspace-bootstrap"
+import { loadProductCapabilities, noProductCapabilities, type ProductCapabilities } from "@/lib/product-capabilities"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
 const HomePage = lazy(() => import("@/pages/home-page").then((module) => ({ default: module.HomePage })))
@@ -483,6 +484,7 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(isTrainingWorkspace ? trainingConfigurationError : null)
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
+  const [productCapabilities, setProductCapabilities] = useState<ProductCapabilities | null>(null)
   const [profileMediaUrls, setProfileMediaUrls] = useState<ProfileMediaUrls>(emptyProfileMediaUrls)
   const hasResolvedAuthenticatedSessionRef = useRef(false)
   const isLocalNavigationLab = import.meta.env.DEV
@@ -511,6 +513,27 @@ export default function App() {
   const handleCoverPhotoChange = useCallback((coverPhoto: UserProfilePhoto | null) => {
     setCurrentUser((user) => user ? { ...user, coverPhoto } : user)
   }, [])
+
+  useEffect(() => {
+    if (authStatus !== "authenticated") {
+      setProductCapabilities(null)
+      return
+    }
+    let active = true
+    void loadProductCapabilities().then((capabilities) => {
+      if (active) setProductCapabilities(capabilities)
+    })
+    return () => { active = false }
+  }, [authStatus, currentUser?.id])
+
+  useEffect(() => {
+    if (!productCapabilities) return
+    const unavailable = (route.startsWith("/rates") && !productCapabilities.rateManagement)
+      || ((route === "/crm/phone-calls" || isCrmPhoneCallDetailRoute(route)) && !productCapabilities.jenkarPhone)
+    if (!unavailable) return
+    window.history.replaceState({}, "", "/app")
+    startTransition(() => setRoute("/"))
+  }, [productCapabilities, route])
 
   useEffect(() => {
     if (isExternalSurface) return
@@ -767,6 +790,9 @@ export default function App() {
   }, [route])
 
   function navigate(path: string) {
+    const capabilities = productCapabilities ?? noProductCapabilities
+    if ((path.startsWith("/rates") && !capabilities.rateManagement)
+      || (path.startsWith("/crm/phone-calls") && !capabilities.jenkarPhone)) path = "/"
     path = getUnavailableCrmRoute(path) ?? path
     if (currentUser?.actorType === "customer" && !canCustomerOpenRoute(currentUser, path)) {
       path = currentUser.landingPath
@@ -839,7 +865,7 @@ export default function App() {
                 <AccountOnboardingPage navigate={navigate} />
               </Suspense>
             ) : (
-              <AppShell route={directBookingCreation ? (route === "/road-control/new" ? "/road-control" : "/bookings") : route} navigate={navigate} currentUser={currentUser}>
+              <AppShell route={directBookingCreation ? (route === "/road-control/new" ? "/road-control" : "/bookings") : route} navigate={navigate} currentUser={currentUser} productCapabilities={productCapabilities ?? noProductCapabilities}>
                 <div className="contents" inert={bookingCreationMode ? true : undefined} aria-hidden={bookingCreationMode ? true : undefined}>
                 <Suspense fallback={<RouteFallback />}>
                   {route === "/components" ? <ComponentsGalleryPage /> : null}
@@ -851,8 +877,8 @@ export default function App() {
                     />
                   ) : null}
                   {route === "/crm" ? <CrmOverviewPage /> : null}
-                  {route === "/crm/phone-calls" ? <CrmPhoneCallsPage navigate={navigate} currentUser={currentUser} /> : null}
-                  {isCrmPhoneCallDetailRoute(route) ? <CrmPhoneCallsPage callId={route.split("/").at(-1) ?? ""} navigate={navigate} currentUser={currentUser} /> : null}
+                  {route === "/crm/phone-calls" && productCapabilities?.jenkarPhone ? <CrmPhoneCallsPage navigate={navigate} currentUser={currentUser} /> : null}
+                  {isCrmPhoneCallDetailRoute(route) && productCapabilities?.jenkarPhone ? <CrmPhoneCallsPage callId={route.split("/").at(-1) ?? ""} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/crm/accounts" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmAccountDetailRoute(route) ? <CrmAccountDetailPage accountId={route.split("/").at(-1) ?? ""} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} currentUser={currentUser} /> : null}
@@ -883,7 +909,7 @@ export default function App() {
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/quotes/new" ? <QuoteDetailPage key={route} variant="cargowise" quoteId="NEW" navigate={navigate} currentUser={currentUser} /> : null}
                   {route !== "/quotes/new" && isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} navigate={navigate} currentUser={currentUser} /> : null}
-                  {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
+                  {route.startsWith("/rates") && productCapabilities?.rateManagement ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
                   {route.startsWith("/finance/") ? <FinancePage route={route as FinanceRoute} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/reports" || route.startsWith("/reports/")
                     ? <ReportsPage route={route} navigate={navigate} />

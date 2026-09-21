@@ -44,6 +44,7 @@ import { toast } from "sonner"
 import { useWorkspaceNotifications } from "@/lib/use-workspace-notifications"
 import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
+import { noProductCapabilities, type ProductCapabilities } from "@/lib/product-capabilities"
 
 const sidebarItemTransition = {
   duration: 0.18,
@@ -1080,6 +1081,7 @@ export function AppSidebar({
   navigate,
   className,
   currentUser,
+  productCapabilities = noProductCapabilities,
   collapsed = false,
   onCollapsedChange,
   onRequestClose,
@@ -1088,6 +1090,7 @@ export function AppSidebar({
   navigate: (path: string) => void
   className?: string
   currentUser?: AuthUserSummary | null
+  productCapabilities?: ProductCapabilities
   collapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
   onRequestClose?: () => void
@@ -1108,13 +1111,14 @@ export function AppSidebar({
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
   const canReadDocuments = hasPermission(currentUser, "Documents.Read")
   const canReadPhoneCalls = hasPermission(currentUser, "CRM.PhoneCalls.Read")
+  const canUsePhoneCalls = canReadPhoneCalls && productCapabilities.jenkarPhone
   const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
   const canManageSignatures = hasPermission(currentUser, "Email.Signatures.Manage")
   const canOpenAdmin = isTenantAdministrator(currentUser)
 
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
-      return sidebarAreas.filter((area) => area.id !== "administration" || canOpenAdmin || canManageSignatures).map((area) => {
+      return sidebarAreas.filter((area) => (area.id !== "administration" || canOpenAdmin || canManageSignatures) && (area.id !== "rates-contracts" || productCapabilities.rateManagement)).map((area) => {
         if (area.id === "administration" && !canOpenAdmin) return { ...area, destinations: area.destinations.filter(destination => destination.id === "admin-email-signatures") }
         if (area.id === "documents-service") {
           return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
@@ -1122,7 +1126,7 @@ export function AppSidebar({
         if (area.id !== "sales-crm") return area
         return {
           ...area,
-          destinations: area.destinations.filter((destination) => destination.id !== "crm-phone-calls" || canReadPhoneCalls),
+          destinations: area.destinations.filter((destination) => destination.id !== "crm-phone-calls" || canUsePhoneCalls),
         }
       })
     }
@@ -1130,7 +1134,7 @@ export function AppSidebar({
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, canManageSignatures])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canUsePhoneCalls, canManageSignatures, productCapabilities.rateManagement])
   const favouriteCandidates = useMemo(() => sidebarFavouriteCandidates(availableAreas), [availableAreas])
   const { scope: favouritesScope, save: saveFavourites } = useSidebarLayoutScope(favouritesScopeId)
   const favouriteIds = useMemo(
