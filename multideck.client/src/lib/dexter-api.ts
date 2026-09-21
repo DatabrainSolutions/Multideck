@@ -212,6 +212,7 @@ export type DexterUsage = {
   periodStart: string
   periodEnd: string
   planCode: "10" | "25" | "50" | "enterprise"
+  subscription?: import("./api").WorkspaceSubscription
   seatCount?: number
   categories?: UsageAllowanceCategory[]
   includedUsagePercent: number

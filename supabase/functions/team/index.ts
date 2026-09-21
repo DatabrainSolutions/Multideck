@@ -116,6 +116,17 @@ async function lookupTeamUsers(admin: any, current: any, request: Request) {
   return { users: await teamUsersByIdsReadModel(admin, current.Company_ID, ids) }
 }
 
+async function subscriptionState(admin: any, companyId: string) {
+  const { data, error } = await admin.rpc("_multideck_subscription", { p_company_id: companyId })
+  if (error || !data) throw new HttpError(503, "Workspace seat limits could not be checked. Try again or contact Multideck.")
+  return data
+}
+
+async function requireAvailableSeat(admin: any, companyId: string) {
+  const subscription = await subscriptionState(admin, companyId)
+  if (!subscription.canAddUser) throw new HttpError(409, "Your workspace has no available seats. Contact Multideck to increase your paid seats.")
+}
+
 async function listTeamPage(admin: any, current: any, request: Request) {
   if (!current.Company_ID) throw new HttpError(403, "Your Multideck user is not assigned to a company yet.")
   const url = new URL(request.url)
@@ -127,6 +138,7 @@ async function listTeamPage(admin: any, current: any, request: Request) {
   const limit = boundedInteger(url.searchParams.get("limit"), 20, 1, 50)
   const offset = boundedInteger(url.searchParams.get("offset"), 0, 0, 2_147_483_647)
 
+  const subscription = await subscriptionState(admin, current.Company_ID)
   const [{ data, error }, catalogue] = await Promise.all([
     admin.rpc("multideck_team_users_register_page", {
       p_company_id: current.Company_ID,
@@ -138,7 +150,7 @@ async function listTeamPage(admin: any, current: any, request: Request) {
     }),
     teamCatalogueReadModel(admin, current.Company_ID),
   ])
-  if (!error) return { ...catalogue, ...(data ?? { users: [], total: 0, limit, offset }) }
+  if (!error) return { ...catalogue, ...(data ?? { users: [], total: 0, limit, offset }), subscription }
   if (!["42883", "PGRST202"].includes(error.code ?? "")) throw new HttpError(500, error.message)
 
   const page = await teamUsersPageCompatibilityReadModel(admin, current.Company_ID, {
@@ -148,7 +160,7 @@ async function listTeamPage(admin: any, current: any, request: Request) {
     limit,
     offset,
   })
-  return { ...catalogue, ...page }
+  return { ...catalogue, ...page, subscription }
 }
 
 async function replacementOptions(admin: any, current: any, targetUserId: string, request: Request) {
@@ -280,10 +292,11 @@ async function setUserAccessStatus(admin: any, current: any, targetId: string, s
   }
 
   if (!target.User_RetainedAuthUserID) throw new HttpError(409, "This user no longer has an account that can be reactivated.")
+  await requireAvailableSeat(admin, current.Company_ID)
   const { data: attached, error: attachError } = await admin.from("cmp_Users").update({
     User_AccessStatus: "active", Auth_User_ID: target.User_RetainedAuthUserID, User_DeactivatedAt: null, User_DeactivatedBy: null,
   }).eq("User_ID", target.User_ID).eq("User_AccessStatus", "deactivated").select().maybeSingle()
-  if (attachError || !attached) throw new HttpError(500, "The user's workspace access could not be restored.")
+  if (attachError || !attached) throw new HttpError(attachError?.details === "paid_seat_limit_reached" ? 409 : 500, attachError?.details === "paid_seat_limit_reached" ? "Your workspace has no available seats. Contact Multideck to increase your paid seats." : "The user's workspace access could not be restored.")
   const { error: unbanError } = await admin.auth.admin.updateUserById(target.User_RetainedAuthUserID, { ban_duration: "none" })
   if (unbanError) {
     await admin.from("cmp_Users").update({ User_AccessStatus: "deactivated", Auth_User_ID: null }).eq("User_ID", target.User_ID)
@@ -424,6 +437,12 @@ Deno.serve(async (request) => {
       if (payload.roleId) {
         const { data: selectedRole } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").eq("sys_UserRole_ID", payload.roleId).maybeSingle()
         if (!selectedRole || isLegacyCustomRoleName(selectedRole.sys_UserRole_Name)) throw new HttpError(400, "Choose a valid reusable role before inviting the user.")
+      }
+      if (!profile || profile.Company_ID !== current.Company_ID || profile.User_AccessStatus !== "active") {
+        await requireAvailableSeat(admin, current.Company_ID)
+      }
+      if (profile?.User_AccessStatus === "deactivated" || profile?.User_AccessStatus === "deleted") {
+        throw new HttpError(409, "Use Reactivate for a deactivated user. Deleted users cannot be invited again through this form.")
       }
       let invited = false; let authUserId = profile?.Auth_User_ID ?? null
       if (!authUserId) {

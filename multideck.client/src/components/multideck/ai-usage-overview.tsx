@@ -439,7 +439,7 @@ function UsageAllowances({ usage, isLoading }: { usage: DexterUsage | null; isLo
       label: "Generated documents",
       description: "Operational documents created from approved Multideck templates.",
       unit: "documents",
-      included: 2000,
+      included: usage?.subscription?.paidSeats ? usage.subscription.paidSeats * 1000 : 2000,
       used: 0,
       extra: 0,
       usedPercent: 0,
@@ -461,7 +461,7 @@ function UsageAllowances({ usage, isLoading }: { usage: DexterUsage | null; isLo
             {t("Allowances cover everyone on this plan")}{periodEnd ? <> · {t("Resets")} <span data-i18n-skip>{periodEnd}</span></> : null}
           </p>
         </div>
-        {usage?.planCode ? <p className="text-[11.5px] font-medium text-[var(--md-subtle)]" data-i18n-skip>Multideck {usage.planCode}</p> : null}
+        {usage?.planCode ? <p className="text-[11.5px] font-medium text-[var(--md-subtle)]" data-i18n-skip>{usage.subscription?.planName ?? ({ "10": "Basic", "25": "Pro", "50": "Ultra", enterprise: "Enterprise" }[usage.planCode])}</p> : null}
       </div>
 
       {isLoading && categories.length === 0 ? (
