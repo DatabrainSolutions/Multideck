@@ -608,3 +608,7 @@ verify_jwt = true
 
 [functions.dexter-file-upload]
 verify_jwt = true
+
+# Invoked only by tenant-local pg_cron with a separate Vault-backed secret.
+[functions.cloud-usage-export]
+verify_jwt = false
