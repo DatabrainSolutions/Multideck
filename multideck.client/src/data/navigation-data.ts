@@ -71,6 +71,7 @@ export type SidebarArea = {
 
 export const warehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-dashboard", label: "Dashboard", icon: LayoutDashboard, route: "/warehouse" },
+  { id: "warehouse-pricing", label: "Pricing", icon: ReceiptText, route: "/warehouse/pricing" },
   { id: "warehouse-calendar", label: "Calendar", icon: CalendarDays, route: "/warehouse/calendar" },
   { id: "warehouse-inventory", label: "Inventory", icon: Boxes, route: "/warehouse/inventory" },
   { id: "warehouse-goods-in", label: "Goods in", icon: PackagePlus, route: "/warehouse/goods-in" },

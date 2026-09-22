@@ -1,3 +1,4 @@
+import { WarehousePricingWorkspace } from "@/components/multideck/warehouse-pricing-workspace"
 import { mileageRequest, type MileageVisit } from "@/lib/mileage-api"
 import { ContactEmailAction } from "@/components/multideck/contact-email-action"
 import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
@@ -86,7 +87,8 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
     mileageRequest<MileageVisit[]>("visits", { account_id: accountId }).then(data => { if (active) setVisits(data) }).catch(error => { if (active) setVisitsError(error instanceof Error ? error.message : "Visits could not be loaded.") }).finally(() => { if (active) setVisitsLoading(false) })
     return () => { active = false }
   }, [accountId, visitsReload])
-  const [activeTab, setActiveTab] = useState<AccountDetailTab>("overview")
+  const [warehouseVisited, setWarehouseVisited] = useState(() => new URLSearchParams(window.location.search).get("tab") === "warehouse")
+  const [activeTab, setActiveTab] = useState<AccountDetailTab>(() => new URLSearchParams(window.location.search).get("tab") === "warehouse" ? "warehouse" : "overview")
   const accountRef = useRef<ApiCustomerDetail | null>(null)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const confirmedCompanyTypeIdsRef = useRef<string[]>([])
@@ -454,7 +456,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
 
           </Surface>
 
-          <AccountDetailTabs account={currentAccount} activeTab={activeTab} onChange={setActiveTab} />
+          <AccountDetailTabs account={currentAccount} activeTab={activeTab} onChange={tab => { setActiveTab(tab); if (tab === "warehouse") setWarehouseVisited(true) }} />
 
           <div hidden={activeTab !== "notes"}>
             <LifecycleNotes subjectType="company" subjectId={currentAccount.id} title="Company notes" />
@@ -730,7 +732,8 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
               <PhoneCallLinkedRecordSection recordType="company" recordId={currentAccount.id} navigate={navigate} />
             </div>
           </div>
-          {activeTab === "overview" || activeTab === "notes" || activeTab === "details" ? null : activeTab === "live" ? (
+          <div hidden={activeTab !== "warehouse"}>{warehouseVisited && <WarehousePricingWorkspace key={accountId} customerOrgId={accountId} customerName={currentAccount.name} navigate={navigate} />}</div>
+          {activeTab === "overview" || activeTab === "notes" || activeTab === "details" || activeTab === "warehouse" ? null : activeTab === "live" ? (
             <CustomerLiveGrantWorkspace key={`live-${currentAccount.id}`} customerId={currentAccount.id} />
           ) : (
             <AccountOperationsPanel

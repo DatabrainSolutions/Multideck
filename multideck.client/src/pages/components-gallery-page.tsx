@@ -1,3 +1,5 @@
+import { WarehouseRateEditor, WarehousePricingFlow } from "@/components/multideck/warehouse-rate-editor"
+import { type WarehouseRate, type PricingStage } from "@/lib/warehouse-pricing"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { BellToggle } from "@/components/multideck/bell-toggle"
 import { SpringCheck } from "@/components/multideck/spring-check"
@@ -381,6 +383,11 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
     label: "Feedback",
     helper: "Status and notifications",
     ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast"],
+  },
+  {
+    label: "Warehouse",
+    helper: "Pricing and charge configuration",
+    ids: ["warehouse-pricing-flow", "warehouse-rate-editor"],
   },
   {
     label: "Settings",
@@ -1847,6 +1854,12 @@ const previewBookingQuestions: BookingQuestion[] = [
   { id: "q-lane", label: "Which lane are you shipping?", type: "select", required: true, options: ["Sea freight", "Air freight", "Road"] },
 ]
 
+function WarehousePricingPartsPreview({ flow = false }: { flow?: boolean }) {
+  const [stage, setStage] = useState<PricingStage>("storage")
+  const [rate, setRate] = useState<WarehouseRate>({ id: "preview-storage", code: "PALLET_STORAGE", name: "Standard pallet storage", stage: "storage", basis: "pallet", period: "night", amount: 2.5, currency: "GBP", minimum: 0, freePeriods: 1, from: "2026-09-22", to: "" })
+  return flow ? <WarehousePricingFlow value={stage} onChange={setStage} counts={{ receipt: 1, storage: 2, dispatch: 1, transaction: 0 }} /> : <WarehouseRateEditor rate={rate} onChange={setRate} />
+}
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -2602,6 +2615,8 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "warehouse-pricing-flow" ? <WarehousePricingPartsPreview flow /> : null}
+      {id === "warehouse-rate-editor" ? <WarehousePricingPartsPreview /> : null}
       {id === "inline-notice" ? (
         <div className="flex w-full max-w-[620px] flex-col items-start gap-4">
           <InlineNotice tone="warning" title="Reviews delayed">Reviews are currently delayed. Please check again shortly.</InlineNotice>

@@ -1,0 +1,50 @@
+.warehouse-pricing-workspace { display:grid; gap:var(--md-page-stack-gap); min-width:0; }
+.warehouse-pricing-heading,.warehouse-pricing-section-heading { display:flex; align-items:center; justify-content:space-between; gap:var(--md-gap-lg); }
+.warehouse-pricing-heading h2 { font-size:20px; font-weight:500; color:var(--md-ink); margin:4px 0; }
+.warehouse-pricing-heading p,.warehouse-pricing-section-heading p,.warehouse-pricing-preview>p { font-size:13px; color:var(--md-text); line-height:1.6; }
+.warehouse-pricing-eyebrow { font-size:11px!important; color:var(--md-subtle)!important; }
+.warehouse-pricing-flow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--md-gap-sm); }
+.warehouse-pricing-flow button { min-width:0; display:flex; align-items:center; gap:12px; padding:16px; text-align:left; border-radius:var(--md-radius-lg); background:var(--md-surface); box-shadow:var(--md-premium-stroke); color:var(--md-text); transition:background var(--md-motion); }
+.warehouse-pricing-flow button[aria-pressed=true] { background:var(--md-bg-strong); color:var(--md-accent); box-shadow:inset 0 0 0 1px var(--md-accent); }
+.warehouse-pricing-flow button:focus-visible { outline:2px solid var(--md-accent); outline-offset:3px; }
+.warehouse-pricing-flow strong { display:block; font-size:13px; font-weight:500; }
+.warehouse-pricing-flow small { display:block; font-size:11px; margin-top:3px; color:var(--md-text); }
+.warehouse-pricing-count { margin-left:auto; font-size:12px; }
+.warehouse-pricing-columns { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:var(--md-page-stack-gap); align-items:start; }
+.warehouse-pricing-main,.warehouse-pricing-preview { min-width:0; }
+.warehouse-pricing-main>.md-inline-notice { margin-top:16px; }
+.warehouse-pricing-section-heading h3,.warehouse-pricing-preview h3 { font-size:14px; font-weight:500; color:var(--md-ink); }
+.warehouse-pricing-field { display:flex; flex-direction:column; gap:6px; min-width:0; color:var(--md-text); font-size:12px; }
+.warehouse-pricing-field small { font-size:11px; color:var(--md-subtle); line-height:1.5; }
+.warehouse-pricing-field input,.warehouse-pricing-field button { width:100%; min-width:0; background:var(--md-field-bg); font-size:13px; }
+.warehouse-rate-editor { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:24px; }
+.warehouse-pricing-help { font-size:11px; color:var(--md-subtle); line-height:1.65; }
+.warehouse-rate-editor>.warehouse-pricing-help { grid-column:1/-1; }
+.warehouse-pricing-form-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:20px; }
+.warehouse-pricing-row { padding:20px 0; box-shadow:var(--md-stroke-bottom); }
+.warehouse-pricing-row-main,.warehouse-pricing-row-bottom { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.warehouse-pricing-row-main h4 { font-size:13px; font-weight:500; color:var(--md-ink); overflow-wrap:anywhere; }
+.warehouse-pricing-row-main>strong { font-size:17px; font-weight:500; white-space:nowrap; color:var(--md-ink); }
+.warehouse-pricing-source { display:block; font-size:11px; color:var(--md-subtle); margin-top:3px; }
+.warehouse-pricing-row>p { margin-top:10px; font-size:12px; color:var(--md-text); }
+.warehouse-pricing-row-bottom { margin-top:8px; font-size:11px; color:var(--md-subtle); }
+.warehouse-pricing-row-bottom>span { overflow-wrap:anywhere; }
+.warehouse-pricing-row-bottom>div { display:flex; flex-shrink:0; }
+.warehouse-pricing-empty { text-align:center; padding:45px 20px; }
+.warehouse-pricing-empty h4 { font-size:14px; font-weight:500; color:var(--md-ink); margin:12px 0 6px; }
+.warehouse-pricing-empty p { max-width:350px; margin:auto; font-size:13px; color:var(--md-text); line-height:1.7; }
+.warehouse-pricing-empty-mark { font-size:24px; color:var(--md-subtle); }
+.warehouse-pricing-save { display:flex; justify-content:space-between; align-items:center; gap:12px; padding-top:22px; margin-top:14px; }
+.warehouse-pricing-save>span { color:var(--md-subtle); font-size:11px; }
+.warehouse-pricing-save>div { display:flex; gap:6px; }
+.warehouse-pricing-preview { display:grid; gap:18px; }
+.warehouse-pricing-preview>p { margin-top:-10px; }
+.warehouse-pricing-scenario { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.warehouse-pricing-preview-line { display:flex; justify-content:space-between; gap:12px; font-size:12px; padding:12px 0; color:var(--md-ink); }
+.warehouse-pricing-preview-line small { display:block; font-size:10px; color:var(--md-subtle); margin-top:4px; }
+.warehouse-pricing-preview-line strong { font-weight:500; white-space:nowrap; }
+.warehouse-pricing-total { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; padding-top:18px; box-shadow:var(--md-stroke-top); font-size:12px; color:var(--md-text); }
+.warehouse-pricing-total strong { font-size:20px; font-weight:500; color:var(--md-ink); }
+@media(max-width:1100px) { .warehouse-pricing-columns { grid-template-columns:minmax(0,1fr); } .warehouse-pricing-flow button { padding:12px; gap:8px; } }
+@media(max-width:640px) { .warehouse-pricing-flow { grid-template-columns:1fr 1fr; } .warehouse-pricing-heading,.warehouse-pricing-save { align-items:flex-start; flex-direction:column; } .warehouse-rate-editor { grid-template-columns:1fr; } .warehouse-rate-editor>div:empty { display:none; } .warehouse-pricing-field input { font-size:16px; } .warehouse-pricing-row-bottom { align-items:flex-start; flex-direction:column; } }
+@media(prefers-reduced-motion:reduce) { .warehouse-pricing-flow button { transition:none; } }

@@ -1,3 +1,4 @@
+import { WarehousePricingWorkspace } from "@/components/multideck/warehouse-pricing-workspace"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { RefreshCw } from "@/components/icons/hugeicons"
@@ -24,7 +25,7 @@ import { getWarehouseHeaderActions, getWarehouseWorkspaceData, rescheduleOperati
 import { toast } from "sonner"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
-type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Warehouse orders" | "Expected receipts" | "Calendar" | "Users"
+type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Warehouse orders" | "Expected receipts" | "Calendar" | "Users" | "Pricing"
 
 /**
  * The grid works in local wall-clock minutes; the order stores an instant. The slot
@@ -64,6 +65,7 @@ const warehouseSectionDescriptions: Record<WarehouseSection, string | null> = {
   Items: null,
   "Expected receipts": "Goods and quantities the customer expects to arrive, usually from a customer PO, ASN, transfer or return. No stock is booked until goods are received.",
   Users: null,
+  Pricing: null,
 }
 
 export function WarehousePage({ route, currentUser, navigate }: { route: string; currentUser?: AuthUserSummary | null; navigate?: (path: string) => void }) {
@@ -106,6 +108,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
     && activeSection !== "Dashboard"
     && activeSection !== "Calendar"
     && activeSection !== "Goods out"
+    && activeSection !== "Pricing"
 
   useEffect(() => {
     if (!needsRegisterHeader) return
@@ -214,6 +217,8 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   // A detail route is its own screen: it carries its own title, its own back
   // navigation and its own actions, so the register header above it would only
   // repeat the area name and push the record further down.
+  if (activeSection === "Pricing" && !isCustomer) return <main className="md-page md-page-stack"><WarehousePricingWorkspace navigate={navigate} /></main>
+
   if (detailItemSku) {
     return (
       <main className="md-page md-page-stack">
