@@ -29,6 +29,9 @@ test('shutdown is tenant-bound and idempotent, denies old database roles, pauses
       create schema auth; create table auth.sessions(id uuid);
       create schema cron; create table cron.job(jobid bigint,jobname text,active boolean,schedule text,command text);
       insert into cron.job values(1,'multideck-test',true,'* * * * *','select 1');
+      -- State-machine fixture only. The local Supabase HTTP test exercises
+      -- the real extension permissions and supported cron.alter_job API.
+      create function cron.alter_job(job_id bigint,active boolean) returns void language sql as 'update cron.job set active=$2 where jobid=$1';
       insert into auth.sessions values(gen_random_uuid());
       create table public.lifecycle_probe(id integer);
       alter table public.lifecycle_probe enable row level security;
@@ -37,6 +40,7 @@ test('shutdown is tenant-bound and idempotent, denies old database roles, pauses
       insert into public.lifecycle_probe values(1);
       ${readFileSync(new URL('../migrations/20260915090134_cloud_product_entitlements.sql',import.meta.url),'utf8')}
       ${readFileSync(new URL('../migrations/20260922134231_tenant_lifecycle_controls.sql',import.meta.url),'utf8')}
+      ${readFileSync(new URL('../migrations/20260922144245_lifecycle_supported_cron_controls.sql',import.meta.url),'utf8')}
       insert into private.cloud_product_state(tenant_id) values('00000000-0000-4000-8000-000000000001');
       set role authenticated;
       do $$ begin if (select count(*) from public.lifecycle_probe)<>1 then raise exception 'Active access changed'; end if; end $$;
