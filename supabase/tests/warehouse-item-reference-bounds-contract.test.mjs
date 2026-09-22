@@ -26,7 +26,7 @@ test("the client requests a lean register reference and bounded action customers
 
 test("create and import open immediately and search customers after opening", () => {
   assert.match(ui, /function openCreate\(\)[\s\S]*setDialogOpen\(true\)/)
-  assert.match(ui, /function openImport\(\)[\s\S]*setImportOpen\(true\)/)
+  assert.match(ui, /subscribeTopBarAction\(topBarActionEvents.importWarehouseItems,[\s\S]*?setImportOpen\(true\)/)
   assert.match(ui, /if \(!open \|\| isEditing\) return/)
   assert.match(ui, /if \(!open\) return[\s\S]*listWarehouseItemCustomersPage/)
 })

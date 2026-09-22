@@ -1,3 +1,4 @@
+import spreadsheetImportReviewSource from "@/components/multideck/spreadsheet-import-review.tsx?raw"
 import warehouseRateEditorSource from "@/components/multideck/warehouse-rate-editor.tsx?raw"
 import emptyStateIllustrationSource from "@/components/multideck/empty-state-illustration.tsx?raw"
 import emptyStateIllustrationStyles from "@/components/multideck/empty-state-illustration.css?raw"
@@ -201,7 +202,7 @@ export const galleryComponents = [
     id: "warehouse-pricing-flow", name: "Pricing stages", category: "Warehouse",
     description: "A four-stage charge selector for goods in, storage, goods out and transactions.",
     details: "A compact navigation component, with active-rate counts and keyboard focus. Selecting a stage filters the adjacent editor; this is not a draggable automation canvas.",
-    foundOn: [{ label: "Warehouse pricing", route: "/warehouse/pricing" }, { label: "Account Warehouse tab", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000004?tab=warehouse" }],
+    foundOn: [{ label: "Warehouse items", route: "/warehouse/items" }, { label: "Warehouse pricing", route: "/warehouse/pricing" }, { label: "Account Warehouse tab", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000004?tab=warehouse" }],
     componentCode: warehouseRateEditorSource,
     usageCode: `<WarehousePricingFlow value={stage} onChange={setStage} counts={{ receipt: 1, storage: 2, dispatch: 1, transaction: 0 }} />`,
   },
@@ -370,7 +371,7 @@ export const galleryComponents = [
   {
     id: "booking-customer-panel",
     name: "Booking Customer Panel",
-    category: "Data display",
+    category: "Data",
     description: "Linked customer and saved preferences, with compact contact pills that replace the company identity with contact details and icon actions in the same panel.",
     details: "Loads the exact customer through the authenticated CRM loader. Customer changes clear previous details. Contact drill-in preserves account context and returns focus to its pill. Supports unassigned, loading, denied and missing-information states; profile links open separately and email/phone actions remain user-operated.",
     foundOn: [{ label: "Booking Overview", route: "/bookings/je0991133" }, { label: "Components", route: "/components?component=booking-customer-panel" }],
@@ -1947,6 +1948,16 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     foundOn: [{ label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components?component=warehouse-table" }],
     componentCode: `export function WarehouseInventoryTable({ rows, columns, renderRowDetail }) {\n  const [openRowId, setOpenRowId] = useState(null)\n\n  return (\n    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">\n      <Table>\n        <TableHeader>{/* calm column headers */}</TableHeader>\n        <motion.tbody variants={tableBodyReveal} initial="hidden" animate="show">\n          {rows.map((row) => (\n            <Popover key={row.id} open={openRowId === row.id} onOpenChange={(open) => setOpenRowId(open ? row.id : null)}>\n              <PopoverAnchor asChild>\n                <motion.tr variants={rowReveal} onClick={() => setOpenRowId((current) => current === row.id ? null : row.id)}>\n                  {columns.map((column) => <TableCell key={column.key}>{column.render(row)}</TableCell>)}\n                </motion.tr>\n              </PopoverAnchor>\n              <PopoverContent>{renderRowDetail?.(row)}</PopoverContent>\n            </Popover>\n          ))}\n        </motion.tbody>\n      </Table>\n    </div>\n  )\n}`,
     usageCode: `<WarehouseProductsTable rows={warehouseProducts} />\n<WarehouseOrdersTable rows={warehouseOrders} />\n<WarehouseStockTable rows={warehouseStockRows} />\n\n// Product and order rows open a compact detail popover.\n// Stock rows select into a top summary and focused location table.`,
+  },
+  {
+    id: "spreadsheet-import-review",
+    name: "Spreadsheet Import Review",
+    category: "Data",
+    description: "Review source rows, optional values and actionable validation errors before creating records.",
+    details: "Keeps real spreadsheet row numbers, exposes every error, and shows optional values progressively. A bounded table supports keyboard scrolling and narrow screens. Use completed only after the server confirms creation.",
+    foundOn: [{ label: "Warehouse items", route: "/warehouse/items" }, { label: "Components", route: "/components?component=spreadsheet-import-review" }],
+    componentCode: spreadsheetImportReviewSource,
+    usageCode: `<SpreadsheetImportReview rows={preview.results} completed={false} />`,
   },
   {
     id: "warehouse-form-field",

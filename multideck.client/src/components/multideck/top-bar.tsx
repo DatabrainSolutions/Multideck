@@ -83,6 +83,16 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
     )
   }
 
+  if (route === "/warehouse/items") {
+    return <DropdownMenu>
+      <DropdownMenuTrigger asChild><Button aria-label={t("New item")} className={topBarPrimaryActionClass}><Plus data-icon="inline-start" /><span className="hidden sm:inline">{t("New item")}</span><ChevronDown className="size-3" /></Button></DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.createWarehouseItem)}><Plus className="size-3.5" />{t("New item")}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.importWarehouseItems)}><Upload className="size-3.5" />{t("Import items")}</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  }
+
   const action = warehouseCreateActions[route]
   if (action) {
     return (

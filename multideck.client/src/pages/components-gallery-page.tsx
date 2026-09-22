@@ -1,3 +1,4 @@
+import { SpreadsheetImportReview } from "@/components/multideck/spreadsheet-import-review"
 import { WarehouseRateEditor, WarehousePricingFlow } from "@/components/multideck/warehouse-rate-editor"
 import { type WarehouseRate, type PricingStage } from "@/lib/warehouse-pricing"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
@@ -357,7 +358,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["signature-builder", "signature-block-glyph", "email-signature-control", "contact-email-action", "contact-preferences-popover", "public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["signature-builder", "signature-block-glyph", "email-signature-control", "contact-email-action", "contact-preferences-popover", "public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "spreadsheet-import-review", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
@@ -3400,6 +3401,10 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "spreadsheet-import-review" ? <SpreadsheetImportReview rows={[
+        { row: 2, sku: "BOX-001", success: true, error: null, values: { Description: "Packing carton", "Base UOM": "EA", "Gross weight KG": 0.4 } },
+        { row: 4, sku: "BOX-002", success: false, error: "Gross weight cannot be less than net weight.", values: { Description: "Insulated carton", "Net weight KG": 2, "Gross weight KG": 1 } },
+      ]} /> : null}
       {id === "warehouse-form-field" ? (
         <div className="grid w-full max-w-[520px] gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
           <WarehouseFormField label="Facility code" htmlFor="gallery-facility-code" required hint="A short unique code, e.g. FXT-DC1.">
