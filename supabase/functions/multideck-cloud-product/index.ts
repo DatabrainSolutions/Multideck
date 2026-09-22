@@ -29,7 +29,11 @@ Deno.serve(async (request: Request) => {
     const command = parseProductRequest(input, Deno.env.get('MULTIDECK_CLOUD_TENANT_ID') || '');
     // A health response requires real installation evidence. Never manufacture
     // green checks from environment settings or the caller's requested version.
-    if (command.action === 'health') return reply({ error: 'Verified installation evidence is not available.' }, 503);
+    if (command.action === 'health') {
+      const { data, error } = await adminClient().rpc('multideck_cloud_installation_health', { p_tenant_id: command.tenantId });
+      if (error || data?.tenantId !== command.tenantId) return reply({ error: 'Installation evidence could not be checked.' }, 503);
+      return reply(data, data?.healthy === true ? 200 : 503);
+    }
     // Keep delivery disabled until every App access surface is covered and the
     // complete integration rehearsal passes; storage alone is not enforcement.
     if (Deno.env.get('MULTIDECK_PRODUCT_ENFORCEMENT_READY') !== 'true') {

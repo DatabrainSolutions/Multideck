@@ -1,0 +1,13 @@
+{
+  "format": "multideck-installation-recipe-v1",
+  "baseline": ["required-extensions.sql", "public-schema.sql", "function-access.sql", "system-reference-data.sql", "storage.sql"],
+  "migrations": [
+    { "id": "20260915090134_cloud_product_entitlements", "firstRelease": "1.2.1" },
+    { "id": "20260915090826_jenkar_phone_permission_boundary", "firstRelease": "1.2.1" },
+    { "id": "20260915174500_booking_quote_charge_domain", "firstRelease": "1.2.1" },
+    { "id": "20260917152000_repair_release_database_functions", "baselineOnly": true },
+    { "id": "20260921124422_confirmed_usage_allowances_and_cloud_reporting", "firstRelease": "1.1.0" },
+    { "id": "20260921154014_modular_paid_extras", "firstRelease": "1.2.0" },
+    { "id": "20260922130328_tenant_installation_evidence", "firstRelease": "1.2.1" }
+  ]
+}
