@@ -34,7 +34,7 @@ Deno.serve(async (request: Request) => {
       if (error || data?.tenantId !== command.tenantId) return reply({ error: 'Installation evidence could not be checked.' }, 503);
       return reply(data, data?.healthy === true ? 200 : 503);
     }
-    if (command.action === 'shutdown' || command.action === 'recover' || command.action === 'lifecycle_status') {
+    if (command.action === 'shutdown' || command.action === 'verify_shutdown' || command.action === 'recover' || command.action === 'lifecycle_status') {
       if (command.action !== 'lifecycle_status' && Deno.env.get('MULTIDECK_LIFECYCLE_CONTROL_ENABLED') !== 'true') {
         return reply({error:'Access shutdown has not completed verification.'},503);
       }

@@ -21,7 +21,7 @@ test('installation refuses a database-specific empty hook that would override th
   });
 });
 
-test('shutdown is tenant-bound and idempotent, denies old database roles, pauses jobs and never invents verified offline',()=>{
+test('shutdown is tenant-bound, waits for prior access expiry, verifies offline and recovers safely',()=>{
   withProductPostgres((sql,ok)=>{
     ok(sql(`
       create role supabase_auth_admin;
@@ -41,6 +41,7 @@ test('shutdown is tenant-bound and idempotent, denies old database roles, pauses
       ${readFileSync(new URL('../migrations/20260915090134_cloud_product_entitlements.sql',import.meta.url),'utf8')}
       ${readFileSync(new URL('../migrations/20260922134231_tenant_lifecycle_controls.sql',import.meta.url),'utf8')}
       ${readFileSync(new URL('../migrations/20260922144245_lifecycle_supported_cron_controls.sql',import.meta.url),'utf8')}
+      ${readFileSync(new URL('../migrations/20260922152910_lifecycle_verified_offline_transition.sql',import.meta.url),'utf8')}
       insert into private.cloud_product_state(tenant_id) values('00000000-0000-4000-8000-000000000001');
       set role authenticated;
       do $$ begin if (select count(*) from public.lifecycle_probe)<>1 then raise exception 'Active access changed'; end if; end $$;
@@ -66,21 +67,31 @@ test('shutdown is tenant-bound and idempotent, denies old database roles, pauses
       do $$ begin if exists(select 1 from public.lifecycle_probe) then raise exception 'Anonymous reads data'; end if; end $$;
     `));
     assert.notEqual(sql(`set role service_role; select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','shutdown',1,gen_random_uuid());`).status,0);
+    assert.notEqual(sql(`set role service_role; select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','verify_shutdown',2,'00000000-0000-4000-8000-000000000005');`).status,0);
+    ok(sql(`update private.tenant_lifecycle set access_may_remain_until=clock_timestamp()-interval '1 second';
+      set role service_role;
+      select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','verify_shutdown',2,'00000000-0000-4000-8000-000000000005');
+      select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','verify_shutdown',2,'00000000-0000-4000-8000-000000000005');
+      do $$ declare status jsonb; begin
+        status:=public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','status');
+        if status->>'state'<>'offline' or not (status->>'shutdownVerified')::boolean then raise exception 'Verified offline was not recorded'; end if;
+        if not (status->'providerEvidence'->>'existingAccessWindowElapsed')::boolean then raise exception 'Access expiry evidence missing'; end if;
+      end $$;`));
     assert.notEqual(sql(`set role service_role; select set_config('request.path','/rpc/operational_rpc',false); select public.multideck_lifecycle_pre_request();`).status,0);
     ok(sql(`set role service_role; select set_config('request.path','/rpc/multideck_cloud_installation_health',false); select public.multideck_lifecycle_pre_request();
       reset role; set role supabase_auth_admin;
       do $$ begin if (public.multideck_lifecycle_auth_hook('{}')->'error'->>'http_code')<>'403' then raise exception 'Offline Auth hook allowed token'; end if; end $$;`));
     ok(sql(`update cron.job set command='select 2' where jobid=1;`));
-    assert.notEqual(sql(`set role service_role; select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','recover',2,'00000000-0000-4000-8000-000000000004');`).status,0);
+    assert.notEqual(sql(`set role service_role; select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','recover',3,'00000000-0000-4000-8000-000000000004');`).status,0);
     ok(sql(`update cron.job set command='select 1' where jobid=1;
       set role service_role;
-      select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','recover',2,'00000000-0000-4000-8000-000000000004');
-      select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','recover',2,'00000000-0000-4000-8000-000000000004');
+      select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','recover',3,'00000000-0000-4000-8000-000000000004');
+      select public.multideck_cloud_lifecycle('00000000-0000-4000-8000-000000000001','recover',3,'00000000-0000-4000-8000-000000000004');
       reset role;
       do $$ begin
         if not exists(select 1 from cron.job where active) then raise exception 'Original job was not restored'; end if;
         if exists(select 1 from auth.sessions) then raise exception 'Revoked sessions were recreated'; end if;
-        if (select count(*) from private.tenant_lifecycle_events)<>2 then raise exception 'Missing or duplicate lifecycle audit'; end if;
+        if (select count(*) from private.tenant_lifecycle_events)<>3 then raise exception 'Missing or duplicate lifecycle audit'; end if;
       end $$;
       set role authenticated;
       do $$ begin if (select count(*) from public.lifecycle_probe)<>1 then raise exception 'Recovered data missing'; end if; end $$;`));

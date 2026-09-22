@@ -99,7 +99,8 @@ export async function loadCurrentUserCoverPhoto(): Promise<UserProfilePhoto | nu
 
 export async function createProfilePhotoSignedUrl(photo: UserProfilePhoto, expiresInSeconds = 3600) {
   const client = requireSupabase()
-  const { data, error } = await client.storage.from(photo.bucket).createSignedUrl(photo.path, expiresInSeconds)
+  const boundedExpiry = Math.max(1, Math.min(Math.floor(expiresInSeconds), 3600))
+  const { data, error } = await client.storage.from(photo.bucket).createSignedUrl(photo.path, boundedExpiry)
   if (error) throw error
 
   return data.signedUrl
@@ -110,7 +111,8 @@ export async function createProfilePhotoSignedUrls(photos: readonly UserProfileP
   const uniquePaths = [...new Set(photos.filter((photo) => photo.bucket === profilePhotoBucket).map((photo) => photo.path))]
   if (uniquePaths.length === 0) return new Map<string, string>()
 
-  const { data, error } = await client.storage.from(profilePhotoBucket).createSignedUrls(uniquePaths, expiresInSeconds)
+  const boundedExpiry = Math.max(1, Math.min(Math.floor(expiresInSeconds), 3600))
+  const { data, error } = await client.storage.from(profilePhotoBucket).createSignedUrls(uniquePaths, boundedExpiry)
   if (error) throw error
 
   return new Map(

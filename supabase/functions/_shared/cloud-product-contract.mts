@@ -9,6 +9,7 @@ export type FeatureRequest = { contractVersion: 1; action: 'features'; tenantId:
 export type HealthRequest = { contractVersion: 1; action: 'health'; tenantId: string };
 export type LifecycleRequest = { contractVersion: 1; action: 'lifecycle_status'; tenantId: string; revision?: never; requestId?: never }
   | { contractVersion: 1; action: 'shutdown'; tenantId: string; revision: number; requestId: string }
+  | { contractVersion: 1; action: 'verify_shutdown'; tenantId: string; revision: number; requestId: string }
   | { contractVersion: 1; action: 'recover'; tenantId: string; revision: number; requestId: string };
 
 export function parseProductRequest(input: unknown, configuredTenantId: string): FeatureRequest | HealthRequest | LifecycleRequest {
@@ -21,7 +22,7 @@ export function parseProductRequest(input: unknown, configuredTenantId: string):
   if (value.tenantId !== configuredTenantId) throw new ProductRequestError(403, 'Customer identity does not match.');
   if (value.action === 'health') return { contractVersion: 1, action: 'health', tenantId: configuredTenantId };
   if (value.action === 'lifecycle_status') return { contractVersion: 1, action: 'lifecycle_status', tenantId: configuredTenantId };
-  if (value.action === 'shutdown' || value.action === 'recover') {
+  if (value.action === 'shutdown' || value.action === 'verify_shutdown' || value.action === 'recover') {
     if (!Number.isSafeInteger(value.revision) || Number(value.revision)<1 || typeof value.requestId!=='string' ||
         !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value.requestId)) throw new ProductRequestError(400,'Invalid lifecycle request.');
     return {contractVersion:1,action:value.action,tenantId:configuredTenantId,revision:Number(value.revision),requestId:value.requestId};
