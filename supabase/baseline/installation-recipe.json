@@ -8,6 +8,7 @@
     { "id": "20260917152000_repair_release_database_functions", "baselineOnly": true },
     { "id": "20260921124422_confirmed_usage_allowances_and_cloud_reporting", "firstRelease": "1.1.0" },
     { "id": "20260921154014_modular_paid_extras", "firstRelease": "1.2.0" },
-    { "id": "20260922130328_tenant_installation_evidence", "firstRelease": "1.2.1" }
+    { "id": "20260922130328_tenant_installation_evidence", "firstRelease": "1.2.1" },
+    { "id": "20260922134231_tenant_lifecycle_controls", "firstRelease": "1.2.1" }
   ]
 }

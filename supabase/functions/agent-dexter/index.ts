@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { listMailboxes } from "../inbox-api/runtime.ts"
 import { pendingApprovalTools, pendingApprovalReview } from "./pending-approval-review.ts"
 import { backgroundTaskInstructions, finishBackgroundTaskTool, createTaskWatchTool, validateBackgroundOutcome, type BackgroundTaskOutcome } from './background-task.ts'
@@ -5260,4 +5261,4 @@ export async function executeBackgroundTask(admin: DexterSupabaseClient, runId: 
   return {...result.taskOutcome,name:agentName}
 }
 
-if (import.meta.main) Deno.serve(handleDexterRequest)
+if (import.meta.main) serveTenant(handleDexterRequest)

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { standaloneRefinementDraft } from "./standalone-draft.ts";
 import {
   createClient,
@@ -207,7 +208,7 @@ async function requestRefinement(
   }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS")
     return new Response("ok", { headers: corsHeaders(request) });
   if (request.method !== "POST")

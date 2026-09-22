@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/assert@*": "1.0.18",
     "jsr:@std/assert@1": "1.0.14",
     "jsr:@std/assert@1.0.14": "1.0.14",
     "jsr:@std/assert@1.0.18": "1.0.18",
@@ -9,8 +10,10 @@
     "jsr:@supabase/functions-js@*": "2.112.3",
     "npm:@supabase/supabase-js@2": "2.108.2",
     "npm:@supabase/supabase-js@2.108.2": "2.108.2",
+    "npm:@types/node@*": "24.2.0",
     "npm:exceljs@4.4.0": "4.4.0",
     "npm:fast-xml-parser@5.11.1": "5.11.1",
+    "npm:fflate@0.8.3": "0.8.3",
     "npm:openai@^4.52.5": "4.104.0_ws@8.18.3",
     "npm:pdf-lib@1.17.1": "1.17.1",
     "npm:pdf-lib@^1.17.1": "1.17.1",
@@ -153,7 +156,13 @@
     "@types/node@18.19.130": {
       "integrity": "sha512-GRaXQx6jGfL8sKfaIDD6OupbIHBr9jv7Jnaml9tB7l4v068PAOXqfcujMMo5PhbIs6ggR1XODELqahT2R8v0fg==",
       "dependencies": [
-        "undici-types"
+        "undici-types@5.26.5"
+      ]
+    },
+    "@types/node@24.2.0": {
+      "integrity": "sha512-3xyG3pMCq3oYCNg7/ZP+E1ooTaGB4cG8JWRsqqOYQdbWNY4zbaV0Ennrd7stjiJEFZCaybcIgpTjJWHRfBSIDw==",
+      "dependencies": [
+        "undici-types@7.10.0"
       ]
     },
     "abort-controller@3.0.0": {
@@ -471,6 +480,9 @@
       "dependencies": [
         "pend"
       ]
+    },
+    "fflate@0.8.3": {
+      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA=="
     },
     "form-data-encoder@1.7.2": {
       "integrity": "sha512-qfqtYan3rxrnCk1VYaA4H+Ms9xdpPqvLZa6xmMgFvhO32x7/3J/ExcTd6qpxM0vH2GdMI+poehyBZvqfMTto8A=="
@@ -958,6 +970,9 @@
     },
     "undici-types@5.26.5": {
       "integrity": "sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA=="
+    },
+    "undici-types@7.10.0": {
+      "integrity": "sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag=="
     },
     "unzipper@0.10.14": {
       "integrity": "sha512-ti4wZj+0bQTiX2KmKWuwj7lhV+2n//uXEotUmGuQqrbVZSEGFMbI68+c6JCQ8aAmUWYvtHEz2A8K6wXvueR/6g==",

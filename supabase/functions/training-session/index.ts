@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createTrainingSessionHandler } from "./handler.ts"
 
-Deno.serve(createTrainingSessionHandler())
+serveTenant(createTrainingSessionHandler())

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
 import { renderBrandedEmail } from "../_shared/email-template.ts"
@@ -340,7 +341,7 @@ async function sendBroadcast(admin: any, current: any, id: string, payload: Json
   return { alreadyProcessed: false, broadcast: historyItem(finalBroadcast) }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     const { admin, user } = await authenticate(request)

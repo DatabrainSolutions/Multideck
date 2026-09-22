@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import {
   authenticateRequest,
   corsHeaders,
@@ -18,7 +19,7 @@ function string(value: unknown, maximum = 500) {
     : String(value).trim().slice(0, maximum);
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders(request) });
   }

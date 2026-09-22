@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import {
   authenticate,
   body,
@@ -185,7 +186,7 @@ function auditSearchText(row: Record<string, unknown>) {
   ].filter(Boolean).join(" ").toLowerCase()
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
 
   try {

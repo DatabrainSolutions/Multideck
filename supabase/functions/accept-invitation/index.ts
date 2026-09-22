@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { requireMainIdentityAdministration } from "../_shared/training-environment.ts"
 import { adminClient, body, corsHeaders, failure, HttpError, json } from "../_shared/backend.ts"
 import { verifyInvitationTicket } from "../_shared/invitation-ticket.ts"
@@ -10,7 +11,7 @@ type AcceptInvitationRequest = {
   password?: string
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
 
   try {

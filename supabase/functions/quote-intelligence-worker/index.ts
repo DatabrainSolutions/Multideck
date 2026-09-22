@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import { governedModelFetch, type ModelGatewayContext } from "../_shared/model-gateway.ts"
 import { refreshQuoteIntelligence, type QuoteIntelligenceSnapshot } from "../quote-intelligence/runtime.ts"
@@ -119,7 +120,7 @@ async function complete(admin: ReturnType<typeof runtime>["admin"], job: Claimed
   if (result.error) console.error("Quote intelligence queue completion failed", { quoteId: job.quote_id, code: result.error.code })
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method !== "POST") return json({ code: "method_not_allowed" }, 405)
   try {
     const { admin, openAIKey } = runtime()

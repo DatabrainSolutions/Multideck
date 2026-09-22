@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import { refreshOfsiList } from "../_shared/screening-ingest.ts"
 
@@ -26,7 +27,7 @@ async function constantTimeEqual(left: string, right: string) {
   return difference === 0
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true }, 204)
   if (request.method !== "POST") return json({ code: "method_not_allowed" }, 405)
 

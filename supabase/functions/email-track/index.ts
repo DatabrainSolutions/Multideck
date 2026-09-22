@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 
 const transparentGif = Uint8Array.from(atob("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="), (character) => character.charCodeAt(0))
@@ -29,7 +30,7 @@ function isExplicitPrefetch(request: Request) {
   })
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   const method = request.method.toUpperCase()
   // HEAD probes from gateways and security scanners are not evidence that an
   // email body was rendered. They receive the same invisible response without

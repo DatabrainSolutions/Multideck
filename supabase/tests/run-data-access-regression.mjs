@@ -12,6 +12,9 @@ for (const command of ['initdb', 'pg_ctl', 'psql']) {
   assert.equal(spawnSync(join(bin, command), ['--version']).status, 0, `${command} must be available in ${bin}`)
 }
 const tests = [
+  'tenant-lifecycle-postgres.test.mjs',
+  'tenant-lifecycle-coverage.test.mjs',
+  'cloud-installation-evidence-postgres.test.mjs',
   'cloud-product-database.test.mjs',
   'cloud-phone-boundary-postgres.test.mjs',
   'customs-reference-preferences-postgres.test.mjs',

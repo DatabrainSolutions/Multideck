@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { resolveSignature } from "../inbox-api/signatures.ts"
 import { authenticateRequest, corsHeaders, FunctionError, jsonResponse, signedUrlLifetimeSeconds, templateSourcesBucket } from "../_shared/document-functions.ts"
 import {
@@ -1540,7 +1541,7 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
   }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return jsonResponse(request, { error: "Method not allowed" }, 405)
   try {

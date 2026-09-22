@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { zipSync, strToU8 } from "npm:fflate@0.8.3"
 import { authenticate, authenticatedClient, body, corsHeaders, HttpError, json } from "../_shared/backend.ts"
 import { csv, docxEntries, workbookEntries, type ExportRun } from "./export-core.ts"
@@ -12,7 +13,7 @@ function renderer() {
   if (!authorization) throw new HttpError(503, "The PDF renderer is not configured for this workspace.")
   return { url: configured, authorization }
 }
-Deno.serve(async request => {
+serveTenant(async request => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   try {
     if (request.method !== "POST") throw new HttpError(405, "Use POST to download a report.")
@@ -41,7 +42,7 @@ Deno.serve(async request => {
       bytes = new Uint8Array(await response.arrayBuffer()); mime = "application/pdf"
       if (bytes.length > 50 * 1024 * 1024 || new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") throw new HttpError(502, "The renderer returned an invalid PDF. Please try again.")
     }
-    return new Response(bytes, { headers: { ...corsHeaders(request), "Content-Type": mime, "Cache-Control": "no-store", "Content-Disposition": `attachment; filename="report-${run.id}.${input.format}"` } })
+    return new Response(new Uint8Array(bytes), { headers: { ...corsHeaders(request), "Content-Type": mime, "Cache-Control": "no-store", "Content-Disposition": `attachment; filename="report-${run.id}.${input.format}"` } })
   } catch (e) {
     const status = e instanceof HttpError ? e.status : 500
     return json(request, { detail: e instanceof HttpError ? e.message : "The download could not be completed. Your report snapshot is saved; please try again." }, status)

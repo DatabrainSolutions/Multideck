@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { authenticate, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 
 function businessDaysOld(date: string) {
@@ -19,7 +20,7 @@ function resolve(rates: any[], from: string, to: string) {
   return { rate: target / base, row, source: rows.every((item) => item.FINRate_IsOfficial) ? "reference" : "live", provider: [...new Set(rows.map((item) => item.provider?.FINRateProvider_Name).filter(Boolean))].join(" / ") }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     if (request.method !== "GET") throw new HttpError(405, "Method not allowed.")

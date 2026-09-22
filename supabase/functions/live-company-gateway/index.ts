@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 const encoder = new TextEncoder();
 const identifier = /^[A-Za-z0-9_-]{1,128}$/;
 const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), n => n.toString(16).padStart(2, "0")).join("");
@@ -56,4 +57,4 @@ export async function handler(request: Request): Promise<Response> {
     return reply(200, await response.json());
   } catch { return reply(503, { error: "Gateway temporarily unavailable." }); }
 }
-if (import.meta.main) Deno.serve(handler);
+if (import.meta.main) serveTenant(handler);

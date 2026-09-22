@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   assertAllowedOrigin,
@@ -383,7 +384,7 @@ async function completeAuthorization(request: Request, allowedOrigins: Set<strin
   return Response.redirect(successRedirect(signedState.returnOrigin, stateRow.return_path, provider), 303)
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   const allowedOrigins = readAllowedOrigins(environment())
   if (allowedOrigins.size === 0) {
     return errorResponse(request, allowedOrigins, "oauth_configuration_missing", 503)

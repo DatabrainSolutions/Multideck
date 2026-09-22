@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import {
   assertAllowedRequestOrigin,
   corsHeaders,
@@ -18,7 +19,7 @@ const allowedOrigins = readAllowedOrigins({
   APP_URL: Deno.env.get("APP_URL"),
 })
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") {
     const origin = request.headers.get("Origin")?.trim() ?? ""
     return new Response(null, { status: allowedOrigins.has(origin) ? 204 : 403, headers: corsHeaders(request, allowedOrigins) })

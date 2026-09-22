@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import {
   authenticate,
   body,
@@ -154,7 +155,7 @@ async function checkDetail(admin: any, companyId: string, checkId: string) {
   }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     const { admin, user } = await authenticate(request)

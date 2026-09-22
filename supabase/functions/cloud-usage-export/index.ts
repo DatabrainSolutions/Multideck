@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 
@@ -29,7 +30,7 @@ async function deliver(endpoint: string, event: Record<string, unknown>) {
   if (!response.ok) throw new Error(`Cloud usage delivery failed (${response.status})`)
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method !== "POST") return json({ title: "Usage exporter endpoint not found." }, 404)
   if (!workerSecret || request.headers.get("x-multideck-cloud-usage-worker") !== workerSecret) {
     return json({ title: "Usage exporter credential denied." }, 401)

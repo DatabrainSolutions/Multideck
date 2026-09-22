@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { customsToday, verifyCustomsInvoiceHmrcRates } from "../_shared/customs-hmrc-exchange-rates.mts";
 import { calculationHistory, calculateSavedDeclaration, previewDeclarationCalculation, overrideCalculation, prepareSubmissionCalculationLink } from "../_shared/customs-calculation-service.ts";
 import { resolveCustomsInvoiceDeclaration } from "../_shared/customs-invoices.mts";
@@ -1268,7 +1269,7 @@ async function commodityDetails(input: Json) {
   };
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(request) });
   }

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { adminClient, authenticate, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission } from "../_shared/backend.ts"
 import { readTenantBrand } from "../_shared/tenant-branding.ts"
 
@@ -17,7 +18,7 @@ function metadataText(metadata: Record<string, unknown> | undefined, keys: strin
   return ""
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
 
   try {

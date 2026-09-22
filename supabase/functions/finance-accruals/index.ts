@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 
 type RunInput = { legalEntityId: string; periodCode: string; jobIds: string[]; reason: string }
@@ -73,7 +74,7 @@ async function calculateCandidates(admin: any, current: any, entity: any, target
   ])
   for (const result of [costingResult, legacyCostResult, legacyRevenueResult, documentResult, linkResult, organisationsResult, nominalResult]) if (result.error) throw new HttpError(500, result.error.message)
   const names = new Map((organisationsResult.data ?? []).map((item: any) => [item.Org_id, item.Org_Name]))
-  const nominal = new Map((nominalResult.data ?? []).map((item: any) => [item.FINNom_ID, item]))
+  const nominal = new Map<string,{FINNom_Code:string|null}>((nominalResult.data ?? []).map((item: any) => [item.FINNom_ID, item]))
   const linesByJob = new Map<string, any[]>()
   for (const line of costingResult.data ?? []) linesByJob.set(line.Job_ID, [...(linesByJob.get(line.Job_ID) ?? []), line])
   const legacyExpected = new Map<string, { cost: number; revenue: number }>()
@@ -117,7 +118,7 @@ async function calculateCandidates(admin: any, current: any, entity: any, target
         jobCostingLineId: line.JobCostingLine_ID, lineNo: line.JobCostingLine_Number, chargeCodeId: line.JobCostingLine_ChargeCodeID,
         domainCode: line.JobCostingLine_DomainCode, sourceTable: line.JobCostingLine_SourceTable,
         sourceId: line.JobCostingLine_SourceID, sourceLineId: line.JobCostingLine_SourceLineID,
-        chargeCode: null, description: line.JobCostingLine_Description, costNominalAccountId: line.JobCostingLine_CostNominalAccountID,
+        chargeCode: null as string | null, description: line.JobCostingLine_Description, costNominalAccountId: line.JobCostingLine_CostNominalAccountID,
         costNominalCode: nominal.get(line.JobCostingLine_CostNominalAccountID)?.FINNom_Code ?? null,
         revenueNominalAccountId: line.JobCostingLine_RevenueNominalAccountID,
         revenueNominalCode: nominal.get(line.JobCostingLine_RevenueNominalAccountID)?.FINNom_Code ?? null,
@@ -169,7 +170,7 @@ async function listRuns(admin: any, entityId: string) {
   const documentIds = [...new Set((releases ?? []).map((release: any) => release.FINRelease_DocumentID))]
   const { data: releaseDocuments, error: documentError } = documentIds.length ? await admin.from("FIN_Documents").select("FINDoc_ID,FINDoc_Number,FINDoc_TypeCode").in("FINDoc_ID", documentIds) : { data: [], error: null }
   if (documentError) throw new HttpError(500, documentError.message)
-  const documents = new Map((releaseDocuments ?? []).map((document: any) => [document.FINDoc_ID, document]))
+  const documents = new Map<string,{FINDoc_Number:string|null;FINDoc_TypeCode:string|null}>((releaseDocuments ?? []).map((document: any) => [document.FINDoc_ID, document]))
   const releasesByItem = new Map<string, any[]>()
   for (const release of releases ?? []) {
     const document = documents.get(release.FINRelease_DocumentID)
@@ -328,7 +329,7 @@ async function reverseRun(admin: any, current: any, runId: string, input: Revers
   return data
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     const { admin, user } = await authenticate(request); const current = await currentInternalUser(admin, user); const parts = routeParts(request, "finance-accruals")

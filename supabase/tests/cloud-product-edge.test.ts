@@ -11,6 +11,7 @@ Deno.test('phone routes fail closed before provider work and product receiver re
     SUPABASE_SERVICE_ROLE_KEY: 'offline-server-key',
     MULTIDECK_CLOUD_TENANT_ID: '11111111-1111-4111-8111-111111111111',
     MULTIDECK_PRODUCT_ENFORCEMENT_READY: '',
+    MULTIDECK_LIFECYCLE_CONTROL_ENABLED: '',
   };
   const prior = new Map(Object.keys(environment).map(key => [key, Deno.env.get(key)]));
   let handler: ((request: Request) => Promise<Response>) | undefined;
@@ -24,6 +25,10 @@ Deno.test('phone routes fail closed before provider work and product receiver re
     Deno.serve = ((callback: typeof handler) => { handler = callback; return {}; }) as typeof Deno.serve;
     globalThis.fetch = async (input, init) => {
       const url = String(input);
+      if (url.endsWith('/rpc/multideck_tenant_access_enabled')) {
+        assert.deepEqual(JSON.parse(String(init?.body)),{});
+        return Response.json(true);
+      }
       calls.push(url);
       if (url.endsWith('/rpc/multideck_cloud_installation_health')) {
         assert.deepEqual(JSON.parse(String(init?.body)),{p_tenant_id:environment.MULTIDECK_CLOUD_TENANT_ID});
@@ -61,6 +66,7 @@ Deno.test('phone routes fail closed before provider work and product receiver re
     const count = calls.length;
     assert.equal((await product(request(command))).status, 503);
     assert.equal((await product(request({ ...command, action: 'health', version: '99.0.0' }))).status, 503);
+    assert.equal((await product(request({ ...command, action: 'shutdown', requestId: environment.MULTIDECK_CLOUD_TENANT_ID }))).status, 503,'Shutdown remains disabled until its full lifecycle is verified');
     assert.equal((await product(request({ ...command, features: ['rate_management'] }))).status, 503);
     assert.equal((await product(request({ ...command, features: ['jenkar_phone'] }))).status, 400);
     assert.equal((await product(request(command, { origin: 'https://app.invalid' }))).status, 401);

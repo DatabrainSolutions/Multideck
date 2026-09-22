@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2";
 import { requireProductAccess } from "../_shared/cloud-product-access.ts";
 import {
@@ -707,7 +708,7 @@ async function recoverCapturedDelivery(request: Request, deliveryId: string) {
   }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   const recoveryId = recoveryDeliveryId(request);
   if (recoveryId) return await recoverCapturedDelivery(request, recoveryId);
 

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 
 import {
   authenticateRequest,
@@ -141,7 +142,7 @@ function parseContentSections(value: unknown): ContentSection[] {
   return unique as ContentSection[]
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return jsonResponse(request, { error: "Method not allowed" }, 405)
 

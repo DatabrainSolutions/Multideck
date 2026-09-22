@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
 
@@ -391,7 +392,7 @@ async function monthlyRefresh(admin: Db) {
   return { checked: profiles?.length ?? 0, refreshed, skipped, failed }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return json(request, { code: "method_not_allowed", message: "Method not allowed." }, 405)
 

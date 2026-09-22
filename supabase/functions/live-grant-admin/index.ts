@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import {
   liveAccessConnection,
   liveAccessRequest,
@@ -304,4 +305,4 @@ export async function handler(request: Request): Promise<Response> {
     );
   }
 }
-if (import.meta.main) Deno.serve(handler);
+if (import.meta.main) serveTenant(handler);

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import { normaliseLocale, renderBrandedEmail } from "../_shared/email-template.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
@@ -60,7 +61,7 @@ async function sendWithResend(to: string, subject: string, html: string, text: s
   return await response.json() as { id?: string }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405)
 

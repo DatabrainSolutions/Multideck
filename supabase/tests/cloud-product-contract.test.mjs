@@ -4,6 +4,12 @@ import { parseProductRequest, validProductAuthentication } from '../functions/_s
 
 const tenant = '11111111-1111-4111-8111-111111111111'
 const request = { contractVersion: 1, action: 'features', tenantId: tenant, revision: 1, features: ['icustoms'] }
+test('lifecycle commands require exact customer identity and their own revision and request identity',()=>{
+  const shutdown={contractVersion:1,action:'shutdown',tenantId:tenant,revision:1,requestId:tenant}
+  assert.deepEqual(parseProductRequest(shutdown,tenant),shutdown)
+  assert.deepEqual(parseProductRequest({...shutdown,action:'lifecycle_status'},tenant),{contractVersion:1,action:'lifecycle_status',tenantId:tenant})
+  for(const change of [{requestId:''},{revision:0},{revision:1.2},{tenantId:'22222222-2222-4222-8222-222222222222'}]) assert.throws(()=>parseProductRequest({...shutdown,...change},tenant))
+})
 test('registered paid features are accepted; protected and unknown features are rejected', () => {
   assert.deepEqual(parseProductRequest(request, tenant), request)
   assert.deepEqual(parseProductRequest({ ...request, features: [] }, tenant).features, [])

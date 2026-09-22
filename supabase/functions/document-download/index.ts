@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 
 import {
   authenticateRequest,
@@ -12,7 +13,7 @@ import {
 type DownloadRequest = { generatedDocumentId?: string }
 type AuthorisedDownload = { bucket: string; path: string; fileName: string }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return jsonResponse(request, { error: "Method not allowed" }, 405)
 

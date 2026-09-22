@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { adminClient, body, failure, HttpError, isTrustedMultideckOrigin, json as backendJson, routeParts } from "../_shared/backend.ts"
 import {
@@ -977,7 +978,7 @@ async function manageMeeting(request: Request, admin: SupabaseClient, token: str
   throw new HttpError(400, "Choose a supported meeting action.")
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return json(request, {}, 204)
   try {
     const admin = adminClient()

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import {
   authenticate,
   authenticatedClient,
@@ -852,7 +853,7 @@ function expectedVersion(value: unknown): number | null {
   return parsed
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     const { admin, user, token } = await authenticate(request)

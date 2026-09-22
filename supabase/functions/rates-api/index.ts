@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import {
   HttpError,
   adminClient,
@@ -334,7 +335,7 @@ async function applyToQuote(admin: ReturnType<typeof adminClient>, actor: Actor,
   return { quoteId, rateId, snapshotId: snapshotResult.data.RATEQuoteSelection_ID }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     await requireProductAccess("rate_management")

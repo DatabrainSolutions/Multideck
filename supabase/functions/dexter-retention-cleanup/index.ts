@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { adminClient, corsHeaders, json } from "../_shared/backend.ts"
 
 async function constantTimeEqual(left: string, right: string) {
@@ -10,7 +11,7 @@ async function constantTimeEqual(left: string, right: string) {
   return diff === 0
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return json(request, { code: "method_not_allowed" }, 405)
   const expected = Deno.env.get("DEXTER_RETENTION_CLEANUP_SECRET")?.trim() ?? ""

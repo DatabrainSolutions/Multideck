@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   assertCompetitorQuote,
@@ -163,7 +164,7 @@ async function requestIpHash(request: Request) {
   return ip && pepper ? await sha256Hex(`${pepper}:${ip}`) : null
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   const requestOrigin = request.headers.get("Origin")
   if (!isAllowedOrigin(requestOrigin)) return json(null, { error: "This quote link is not available on this workspace." }, 403)
   const origin = parseQuoteResponseOrigin(requestOrigin)

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { Webhook } from "npm:standardwebhooks@1.0.0"
 import { normaliseLocale, renderBrandedEmail, safeMultideckUrl } from "../_shared/email-template.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
@@ -134,7 +135,7 @@ async function sendWithResend(to: string, subject: string, html: string, text: s
   if (!response.ok) throw new Error(`Resend rejected the email (${response.status})`)
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
 
   try {

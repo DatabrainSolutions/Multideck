@@ -30,3 +30,10 @@ jobs:
           "$PG_TEST_BIN/pg_ctl" --version
           "$PG_TEST_BIN/psql" --version
           node supabase/tests/run-data-access-regression.mjs
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.5.2
+      - name: Verify lifecycle and product entrypoints without network access
+        run: deno test --allow-env --node-modules-dir=auto supabase/tests/tenant-lifecycle-edge.test.ts supabase/tests/cloud-product-edge.test.ts
+      - name: Type-check every packaged App function
+        run: deno check --node-modules-dir=auto supabase/functions/*/index.ts

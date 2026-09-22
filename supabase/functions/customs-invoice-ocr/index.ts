@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { authenticate, corsHeaders, currentInternalUser, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { governedModelFetch, type ModelGatewayContext } from "../_shared/model-gateway.ts"
@@ -40,7 +41,7 @@ type InvoiceInput = Awaited<ReturnType<typeof readInvoiceInput>>
 type PreparedObject = { storedObjectId: string; objectPath: string; previewExpiresAt: string }
 type PageRange = { start: number; end: number }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
 
   try {

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2";
 import { requireProductAccess } from "../_shared/cloud-product-access.ts";
 import {
@@ -4224,7 +4225,7 @@ async function reviewRoute(
   return json(request, await detail(admin, actor, callId));
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(request) });
   }

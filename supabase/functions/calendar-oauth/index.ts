@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { adminClient, authenticate, currentInternalUser, HttpError, isTrustedMultideckOrigin, json, permissionValues, routeParts } from "../_shared/backend.ts"
 import { cleanText, randomToken, sha256 } from "../_shared/calendar.ts"
@@ -308,7 +309,7 @@ async function disconnect(request: Request, admin: SupabaseClient, provider: Pro
   return json(request, { disconnected: true })
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return json(request, {}, 204)
   try {
     const admin = adminClient()

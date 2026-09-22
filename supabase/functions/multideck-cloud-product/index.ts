@@ -34,6 +34,17 @@ Deno.serve(async (request: Request) => {
       if (error || data?.tenantId !== command.tenantId) return reply({ error: 'Installation evidence could not be checked.' }, 503);
       return reply(data, data?.healthy === true ? 200 : 503);
     }
+    if (command.action === 'shutdown' || command.action === 'recover' || command.action === 'lifecycle_status') {
+      if (command.action !== 'lifecycle_status' && Deno.env.get('MULTIDECK_LIFECYCLE_CONTROL_ENABLED') !== 'true') {
+        return reply({error:'Access shutdown has not completed verification.'},503);
+      }
+      const {data,error} = await adminClient().rpc('multideck_cloud_lifecycle',{
+        p_tenant_id:command.tenantId,p_action:command.action === 'lifecycle_status' ? 'status' : command.action,
+        p_revision:command.revision ?? null,p_request_id:command.requestId ?? null,
+      });
+      if (error) return reply({error:'Lifecycle operation could not be confirmed.'},error.code==='40001'?409:503);
+      return reply(data);
+    }
     // Keep delivery disabled until every App access surface is covered and the
     // complete integration rehearsal passes; storage alone is not enforcement.
     if (Deno.env.get('MULTIDECK_PRODUCT_ENFORCEMENT_READY') !== 'true') {

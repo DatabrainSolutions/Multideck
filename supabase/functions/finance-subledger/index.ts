@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import {
   AccountingProviderPartialError,
   accountingProvider,
@@ -603,7 +604,8 @@ async function syncErpNextPartyAccount(admin: any, current: any, connection: any
 
   const duplicates = await erpNextList(doctype, ["name", nameField, "disabled"], [[nameField, "=", source.organisation.name]])
   const duplicate = duplicates.find((item: any) => item.disabled !== true && item.disabled !== 1 && item.disabled !== "1")
-  if (duplicate?.name) {
+  if (duplicate?.name && typeof duplicate.name !== 'string') throw new HttpError(502,'ERPNext returned an invalid account identifier.')
+  if (typeof duplicate?.name === 'string' && duplicate.name) {
     await upsertErpNextPartyMapping(admin, current, { connectionId: connection.ACCIC_ID, orgId: organisation.Org_id, partyType, providerPartyId: duplicate.name })
     return { action: "linked" as const, providerPartyId: duplicate.name, message: `Linked the existing ERPNext ${partyType}.` }
   }
@@ -1858,7 +1860,7 @@ async function optionalReason(request: Request) {
   }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     const { admin, user } = await authenticate(request)

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "npm:@supabase/supabase-js@2"
 import { isFreshTimestamp, parseCloudTicketCallback } from "./contract.ts"
@@ -43,7 +44,7 @@ async function verifySignature(value: string, signature: string) {
   return await crypto.subtle.verify("Ed25519", key, fromBase64(signature), encoder.encode(value))
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405)
   if (!supabaseUrl || !serviceRoleKey || !expectedTenantId || !expectedTenantHost || !publicKeyBase64) {
     return json({ error: "Ticket callback is not configured." }, 503)

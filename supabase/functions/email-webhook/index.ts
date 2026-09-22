@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   cleanString,
@@ -270,7 +271,7 @@ async function handleOutlook(
   return json({ accepted: true, eventIds }, 202)
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   const url = new URL(request.url)
   const provider = url.searchParams.get("provider")
   if (!isWebhookProvider(provider)) return failure("provider_required", 400)

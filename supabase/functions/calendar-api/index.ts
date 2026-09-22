@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   authenticate,
@@ -1374,7 +1375,7 @@ async function searchMeetingPeople(admin: SupabaseClient, actor: Actor, url: URL
   return { people }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return json(request, {}, 204)
   try {
     const { admin, user } = await authenticate(request)

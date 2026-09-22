@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { authenticate, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { governedModelFetch } from "../_shared/model-gateway.ts"
 import { removeNonVisualSvgLinks } from "../_shared/tenant-brand-logo.ts"
@@ -503,7 +504,7 @@ async function discardBrandImport(admin: any, current: any) {
   return { discarded: true }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     const { admin, user } = await authenticate(request)

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   buildDatabrainTicketPayload,
@@ -214,7 +215,7 @@ async function handleCloudTicket(request: Request, body: JsonObject, reporter: R
   }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return json(request, { code: "method_not_allowed", message: "Method not allowed." }, 405)
 

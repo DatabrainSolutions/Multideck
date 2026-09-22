@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import { cleanString, InboxHttpError, normalizeEmail, sha256Hex } from "../inbox-api/core.ts"
 import { sendMail, syncMailbox, type Actor } from "../inbox-api/runtime.ts"
@@ -245,7 +246,7 @@ async function processQuoteFollowUps(admin: any, limit = 2) {
   return results
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method !== "POST") return json({ code: "method_not_allowed" }, 405)
 
   try {

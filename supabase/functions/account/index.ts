@@ -1,9 +1,10 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { authenticate, body, corsHeaders, failure, HttpError, json, routeParts } from "../_shared/backend.ts"
 import { workspaceBootstrap } from "../_shared/workspace-bootstrap.ts"
 import { accountOnboarding } from "./onboarding.ts"
 import { readOnboardingState } from "../_shared/account-onboarding.ts"
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
     const { admin, user } = await authenticate(request)

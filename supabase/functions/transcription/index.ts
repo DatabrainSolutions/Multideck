@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   bytesToBase64,
@@ -52,7 +53,7 @@ async function requestBody(request: Request) {
   return isJsonObject(value) ? value : null
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return fail(request, "method_not_allowed", "Method not allowed.", 405)
 

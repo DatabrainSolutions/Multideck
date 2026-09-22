@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import {
   authenticateRequest,
   corsHeaders,
@@ -138,7 +139,7 @@ function fromBase64(value: string) {
 }
 
 async function sha256Hex(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
@@ -161,7 +162,7 @@ function parseSampleData(value: unknown) {
 }
 
 function binaryResponse(request: Request, bytes: Uint8Array, contentType: string) {
-  return new Response(bytes, {
+  return new Response(new Uint8Array(bytes), {
     status: 200,
     headers: {
       ...corsHeaders(request),
@@ -368,7 +369,7 @@ async function approveTemplate(
   return data
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return jsonResponse(request, { error: "Method not allowed" }, 405)
 

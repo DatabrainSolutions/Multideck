@@ -1,9 +1,10 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 // @ts-nocheck
 import { createClient } from "npm:@supabase/supabase-js@2.108.2";
 import { handleDashboard } from "./routes/dashboard.ts";
 import { MAX_BODY_BYTES, HttpError, cors, json, resolveActor } from "./shared/mod.ts";
 
-Deno.serve(async (request)=>{
+serveTenant(async (request)=>{
   if (request.method === "OPTIONS") {
     return new Response("ok", {
       headers: cors(request)

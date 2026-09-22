@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { adminClient } from "../_shared/backend.ts"
 import { cleanText, sha256 } from "../_shared/calendar.ts"
@@ -237,7 +238,7 @@ async function zoomWebhook(request: Request, admin: SupabaseClient, raw: string)
   return empty(202)
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method !== "POST") return empty(405)
   const url = new URL(request.url)
   const provider = cleanText(url.searchParams.get("provider"), 20)

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { adminClient, corsHeaders } from '../_shared/backend.ts'
 import { executeBackgroundTask } from '../agent-dexter/index.ts'
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
@@ -24,7 +25,7 @@ async function equal(a: string, b: string) {
   )
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === 'OPTIONS')
     return new Response('ok', { headers: corsHeaders(request) })
   if (request.method !== 'POST')

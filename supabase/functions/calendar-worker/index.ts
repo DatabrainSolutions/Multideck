@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { zoomNumericReference, zoomStartTime } from "../_shared/calendar-zoom.ts"
 import { adminClient, HttpError } from "../_shared/backend.ts"
@@ -1016,7 +1017,7 @@ async function recordFailure(admin: SupabaseClient, delivery: Record<string, unk
   }
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method !== "POST") return response({ detail: "Method not allowed." }, 405)
   const workerSecret = Deno.env.get("CALENDAR_WORKER_SECRET")
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")

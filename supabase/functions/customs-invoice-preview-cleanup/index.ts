@@ -1,9 +1,10 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 
 const documentBucket = "multideck-documents"
 const maximumRowsPerRun = 100
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method !== "POST") return response({ detail: "Method not allowed." }, 405)
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
   const authorization = request.headers.get("Authorization") ?? ""

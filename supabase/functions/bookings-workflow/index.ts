@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { authenticateRequest, corsHeaders, jsonResponse } from "../_shared/document-functions.ts"
 import { BookingWorkflowError, parseAction, parseOpeningDirection, parseModeChangeConfirmation, parsePayload, parseQuoteSyncFields, parseQuoteReviewToken, parseReference, parseSequenceKey, parseUuid, toClientError } from "./core.ts"
 
@@ -105,7 +106,7 @@ async function canonicalBookingReference(
   return String(alias?.canonicalReference || requestedReference)
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return jsonResponse(request, { error: "Method not allowed" }, 405)
 

@@ -1,3 +1,4 @@
+import { serveTenant } from "../_shared/tenant-lifecycle.ts";
 import { HttpError, json } from "../_shared/backend.ts"
 import { adminClient } from "../_shared/backend.ts"
 
@@ -23,7 +24,7 @@ async function verified(request: Request, raw: string) {
   return equal(base64(digest), signature)
 }
 
-Deno.serve(async (request) => {
+serveTenant(async (request) => {
   if (request.method !== "POST") return new Response(null, { status: 405 })
   try {
     const raw = await request.text()
