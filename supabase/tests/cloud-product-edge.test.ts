@@ -16,6 +16,7 @@ Deno.test('phone routes fail closed before provider work and product receiver re
   let handler: ((request: Request) => Promise<Response>) | undefined;
   let granted = false;
   let unavailable = false;
+  let health: Record<string, unknown> = {tenantId:environment.MULTIDECK_CLOUD_TENANT_ID,healthy:false,status:'unverified'};
   const calls: string[] = [];
   try {
     for (const [key, value] of Object.entries(environment)) Deno.env.set(key, value);
@@ -24,6 +25,10 @@ Deno.test('phone routes fail closed before provider work and product receiver re
     globalThis.fetch = async (input, init) => {
       const url = String(input);
       calls.push(url);
+      if (url.endsWith('/rpc/multideck_cloud_installation_health')) {
+        assert.deepEqual(JSON.parse(String(init?.body)),{p_tenant_id:environment.MULTIDECK_CLOUD_TENANT_ID});
+        return Response.json(health);
+      }
       assert.equal(url, 'http://127.0.0.1:1/rest/v1/rpc/multideck_cloud_product_access');
       assert.deepEqual(JSON.parse(String(init?.body)), { p_feature: 'jenkar_phone' });
       return unavailable
@@ -61,7 +66,13 @@ Deno.test('phone routes fail closed before provider work and product receiver re
     assert.equal((await product(request(command, { origin: 'https://app.invalid' }))).status, 401);
     assert.equal((await product(request(command, { authorization: 'Bearer user-token' }))).status, 401);
     assert.equal((await product(request('x'.repeat(5000)))).status, 413);
-    assert.equal(calls.length, count, 'Unverified receiver must not mutate permissions');
+    assert.equal(calls.length, count + 1, 'Only the read-only health operation may reach the database');
+    health = {...health,healthy:true,status:'verified',version:'1.2.1'};
+    const checked = await product(request({...command,action:'health',version:'99.0.0'}));
+    assert.equal(checked.status,200);
+    assert.equal((await checked.json()).version,'1.2.1','Returns recorded evidence, never the requested version');
+    health = {...health,tenantId:'22222222-2222-4222-8222-222222222222'};
+    assert.equal((await product(request({...command,action:'health'}))).status,503,'Reject conflicting database identity');
   } finally {
     Deno.serve = originalServe;
     globalThis.fetch = originalFetch;
