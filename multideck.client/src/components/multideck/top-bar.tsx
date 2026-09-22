@@ -83,12 +83,14 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
     )
   }
 
-  if (route === "/warehouse/items") {
+  if (route === "/warehouse/items" || route === "/warehouse/locations") {
+    const items = route === "/warehouse/items"
+    const label = items ? "New item" : "New location"
     return <DropdownMenu>
-      <DropdownMenuTrigger asChild><Button aria-label={t("New item")} className={topBarPrimaryActionClass}><Plus data-icon="inline-start" /><span className="hidden sm:inline">{t("New item")}</span><ChevronDown className="size-3" /></Button></DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild><Button aria-label={t(label)} className={topBarPrimaryActionClass}><Plus data-icon="inline-start" /><span className="hidden sm:inline">{t(label)}</span><ChevronDown className="size-3" /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.createWarehouseItem)}><Plus className="size-3.5" />{t("New item")}</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.importWarehouseItems)}><Upload className="size-3.5" />{t("Import items")}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => dispatchTopBarAction(items ? topBarActionEvents.createWarehouseItem : topBarActionEvents.createWarehouseLocation)}><Plus className="size-3.5" />{t(label)}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => dispatchTopBarAction(items ? topBarActionEvents.importWarehouseItems : topBarActionEvents.importWarehouseLocations)}><Upload className="size-3.5" />{t(items ? "Import items" : "Import locations")}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   }

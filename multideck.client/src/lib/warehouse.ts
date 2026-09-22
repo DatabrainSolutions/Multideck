@@ -452,6 +452,17 @@ async function uploadWarehouseImport(path: string, form: FormData, preview: bool
   return result
 }
 
+export function downloadWarehouseLocationsTemplate(facilityId: string) {
+  return downloadWarehouseImportTemplate(`/facilities/${facilityId}/locations/import/template`, "multideck-locations-template.xlsx")
+}
+
+export function importWarehouseLocations(input: { facilityId: string; defaultTypeCode: string; file: File; preview?: boolean }): Promise<ImportItemsResult> {
+  const form = new FormData()
+  form.set("file", input.file)
+  form.set("defaultTypeCode", input.defaultTypeCode)
+  return uploadWarehouseImport(`/facilities/${input.facilityId}/locations/import`, form, input.preview ?? false)
+}
+
 export type WarehouseLocation = {
   id: string
   facilityId: string

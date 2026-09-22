@@ -9,6 +9,7 @@ export const topBarActionEvents = {
   createWarehouseFacility: "multideck:warehouse:create-facility",
   importWarehouseItems: "multideck:warehouse:import-items",
   createWarehouseItem: "multideck:warehouse:create-item",
+  importWarehouseLocations: "multideck:warehouse:import-locations",
   createWarehouseLocation: "multideck:warehouse:create-location",
   createCrmAccount: "multideck:crm:create-account",
   createCrmContact: "multideck:crm:create-contact",

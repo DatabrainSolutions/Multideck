@@ -1,9 +1,7 @@
 
 // @ts-nocheck
 import {
-  BUCKET,
   HttpError,
-  allowedExtensions,
   bodyObject,
   bool,
   boundedPage,
@@ -15,13 +13,13 @@ import {
   numberOrNull,
   one,
   oneOrNull,
-  requireCapability,
-  requireCustomerScope,
   requireInternalWarehouseRead,
   requireInternalWarehouseWrite,
-  required,
   uuid,
 } from "../shared/mod.ts";
+import { locationImportColumns, validateLocationInput } from "../shared/location-input.ts";
+import { importLocationRows } from "../shared/location-import.ts";
+import { buildImportWorkbook, loadImportWorkbook, parseImportSheet, validateImportFile } from "../shared/spreadsheet-import.ts";
 
 export async function handleLocations(request, path, url, admin, actor) {
   if (request.method === "GET") requireInternalWarehouseRead(actor);
@@ -97,6 +95,133 @@ export async function handleLocations(request, path, url, admin, actor) {
       updatedAt: row.WMSLocation_UpdatedAt
     };
   };
+  const zoneByType = new Map();
+  const prepareLocationPayload = async (rawInput, creating) => {
+    const input = validateLocationInput(rawInput, { types, statuses, zoneTypes });
+    const { code, typeCode, statusCode, zoneTypeCode } = input;
+    let zoneId = null;
+    if (zoneTypeCode) {
+      const definition = zoneTypes.find((row)=>row.WMSZoneType_Code === zoneTypeCode);
+      if (!definition) {
+        throw new HttpError(400, `'${zoneTypeCode}' is not a valid zone.`);
+      }
+      let zone = zoneByType.get(zoneTypeCode);
+      if (!zone) zone = await oneOrNull(admin.from("WMS_Zones")
+        .select("*")
+        .eq("WMSZone_FacilityID", facilityId)
+        .eq("WMSZone_TypeCode", zoneTypeCode)
+        .eq("WMSZone_IsDeleted", false)
+        .limit(1)
+        .maybeSingle());
+      if (!zone) {
+        zone = await one(admin.from("WMS_Zones").insert({
+          WMSZone_ID: id(),
+          WMSZone_FacilityID: facilityId,
+          WMSZone_Code: zoneTypeCode.slice(0, 50),
+          WMSZone_Name: definition.WMSZoneType_Name,
+          WMSZone_TypeCode: zoneTypeCode,
+          WMSZone_StatusCode: "available",
+          WMSZone_SettingsJSON: {},
+          WMSZone_IsActive: true,
+          WMSZone_IsDeleted: false,
+          WMSZone_CreatedBy: actor.userId
+        }).select().single(), "Could not create the warehouse zone.");
+      }
+      zoneId = zone.WMSZone_ID;
+      zoneByType.set(zoneTypeCode, zone);
+      zoneById.set(zone.WMSZone_ID, zone);
+    }
+    const min = input.temperatureMinC, max = input.temperatureMaxC;
+    const payload = {
+      WMSLocation_FacilityID: facilityId,
+      WMSLocation_ZoneID: zoneId,
+      WMSLocation_Code: code,
+      WMSLocation_Barcode: clean(input.barcode, 160),
+      WMSLocation_TypeCode: typeCode,
+      WMSLocation_StatusCode: statusCode,
+      WMSLocation_Aisle: clean(input.aisle, 40),
+      WMSLocation_Bay: clean(input.bay, 40),
+      WMSLocation_Level: clean(input.level, 40),
+      WMSLocation_Position: clean(input.position, 40),
+      WMSLocation_LengthM: numberOrNull(input.lengthM),
+      WMSLocation_WidthM: numberOrNull(input.widthM),
+      WMSLocation_HeightM: numberOrNull(input.heightM),
+      WMSLocation_MaxWeightKG: numberOrNull(input.maxWeightKg),
+      WMSLocation_MaxVolumeCBM: numberOrNull(input.maxVolumeCbm),
+      WMSLocation_TemperatureMinC: min,
+      WMSLocation_TemperatureMaxC: max,
+      WMSLocation_AllowsMultiSKU: bool(input.allowsMultiSku),
+      WMSLocation_AllowsBondedStock: bool(input.allowsBondedStock),
+      WMSLocation_AllowedCustomsStatusesJSON: [],
+      WMSLocation_IsActive: creating ? true : bool(rawInput.isActive, true),
+      WMSLocation_UpdatedAt: new Date().toISOString()
+    };
+    return payload;
+  };
+  const saveLocation = async (rawInput, creating, locationId = null) => {
+    const payload = await prepareLocationPayload(rawInput, creating);
+    const saved = creating ? await one(admin.from("WMS_Locations").insert({
+      WMSLocation_ID: id(),
+      ...payload,
+      WMSLocation_CreatedBy: actor.userId
+    }).select().single(), "Could not create the location.") : await one(admin.from("WMS_Locations").update(payload).eq("WMSLocation_ID", locationId).eq("WMSLocation_FacilityID", facilityId).eq("WMSLocation_IsDeleted", false).select().single(), "This location does not exist in this facility.");
+    return map(saved);
+  };
+  const saveLocationBatch = async (inputs) => {
+    const payloads = [];
+    for (const input of inputs) payloads.push({
+      WMSLocation_ID: id(),
+      ...await prepareLocationPayload(input, true),
+      WMSLocation_CreatedBy: actor.userId,
+    });
+    // Each PostgREST insert is one database transaction: a concurrent duplicate
+    // rejects this whole chunk without partially inserting its rows.
+    await one(admin.from("WMS_Locations").insert(payloads).select("WMSLocation_ID"), "Could not create these locations.");
+  };
+  if (tail[0] === "import") {
+    if (request.method === "GET" && tail[1] === "capabilities" && tail.length === 2) return { version: 1, preview: true };
+    const descriptions = {
+      code: "Unique code within this facility. Keep as text to preserve leading zeros.",
+      typeCode: `Optional override for the type selected before upload. Valid codes: ${types.map((row) => row.WMSLocationType_Code).join(", ")}.`,
+      statusCode: `Defaults to available. Valid codes: ${statuses.map((row) => row.WMSLocationStatus_Code).join(", ")}.`,
+      zoneTypeCode: `Optional. Valid codes: ${zoneTypes.map((row) => row.WMSZoneType_Code).join(", ")}.`,
+      allowsMultiSku: "Yes or No. Defaults to Yes.",
+      allowsBondedStock: "Yes or No. Defaults to No.",
+    };
+    const columns = locationImportColumns.map((column) => ({ ...column, description: descriptions[column.key], example: column.key === "code" ? "A-01-01" : undefined }));
+    if (request.method === "GET" && tail[1] === "template" && tail.length === 2) {
+      const { default: ExcelJS } = await import("npm:exceljs@4.4.0");
+      const book = buildImportWorkbook(ExcelJS, "Locations", columns, [
+        "Choose the facility and default location type in Multideck before uploading. Only Code is needed in each row; Type can override the selected default.",
+        "Locations start active. Blank status means available, multiple SKUs defaults to Yes, and bonded stock defaults to No.",
+        "The Examples sheet is for guidance only and is never imported. Correct all reported rows before confirming.",
+      ]);
+      const lookups = book.addWorksheet("Lookup codes");
+      lookups.addRow(["Field", "Code", "Name"]);
+      for (const row of types) lookups.addRow(["Type", row.WMSLocationType_Code, row.WMSLocationType_Name]);
+      for (const row of statuses) lookups.addRow(["Status", row.WMSLocationStatus_Code, row.WMSLocationStatus_Name]);
+      for (const row of zoneTypes) lookups.addRow(["Zone", row.WMSZoneType_Code, row.WMSZoneType_Name]);
+      lookups.columns.forEach((column) => { column.width = 32; column.font = { name: "Arial" }; });
+      lookups.getRow(1).font = { name: "Arial", bold: true };
+      return new Response(await book.xlsx.writeBuffer(), { headers: {
+        ...cors(request),
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": "attachment; filename=multideck-locations-template.xlsx",
+      } });
+    }
+    if (request.method === "POST" && tail.length === 1) {
+      const form = await request.formData();
+      const file = form.get("file");
+      validateImportFile(file);
+      const defaultTypeCode = typeof form.get("defaultTypeCode") === "string" ? form.get("defaultTypeCode").trim() : null;
+      const { default: ExcelJS } = await import("npm:exceljs@4.4.0");
+      const sheet = await loadImportWorkbook(file, ExcelJS, "Locations");
+      return await importLocationRows({ rows: parseImportSheet(sheet, columns), references: { types, statuses, zoneTypes },
+        defaultTypeCode, admin, facilityId, preview: form.get("preview") === "true",
+        saveBatch: saveLocationBatch });
+    }
+    throw new HttpError(405, "This import action is not supported.");
+  }
   if (request.method === "GET" && tail[0] === "reference") {
     return {
       types: types.filter((row)=>row.WMSLocationType_IsActive).map((row)=>({
@@ -168,70 +293,7 @@ export async function handleLocations(request, path, url, admin, actor) {
     }).eq("WMSLocation_ID", locationId);
     return undefined;
   }
-  const input = bodyObject(await request.json()), code = required(input.code, "Enter a location code.", "code", 80), typeCode = required(input.typeCode, "Choose a location type.", "typeCode", 60), statusCode = clean(input.statusCode, 60) ?? "available", zoneTypeCode = clean(input.zoneTypeCode, 60);
-  if (!types.some((row)=>row.WMSLocationType_Code === typeCode) || !statuses.some((row)=>row.WMSLocationStatus_Code === statusCode)) throw new HttpError(400, "Choose valid location type and status values.");
-  let zoneId = null;
-  if (zoneTypeCode) {
-    const definition = zoneTypes.find((row)=>row.WMSZoneType_Code === zoneTypeCode);
-    if (!definition) {
-      throw new HttpError(400, `'${zoneTypeCode}' is not a valid zone.`);
-    }
-    let zone = await oneOrNull(admin.from("WMS_Zones")
-      .select("*")
-      .eq("WMSZone_FacilityID", facilityId)
-      .eq("WMSZone_TypeCode", zoneTypeCode)
-      .eq("WMSZone_IsDeleted", false)
-      .limit(1)
-      .maybeSingle());
-    if (!zone) {
-      zone = await one(admin.from("WMS_Zones").insert({
-        WMSZone_ID: id(),
-        WMSZone_FacilityID: facilityId,
-        WMSZone_Code: zoneTypeCode.slice(0, 50),
-        WMSZone_Name: definition.WMSZoneType_Name,
-        WMSZone_TypeCode: zoneTypeCode,
-        WMSZone_StatusCode: "available",
-        WMSZone_SettingsJSON: {},
-        WMSZone_IsActive: true,
-        WMSZone_IsDeleted: false,
-        WMSZone_CreatedBy: actor.userId
-      }).select().single(), "Could not create the warehouse zone.");
-    }
-    zoneId = zone.WMSZone_ID;
-    zoneById.set(zone.WMSZone_ID, zone);
-  }
-  const min = numberOrNull(input.temperatureMinC), max = numberOrNull(input.temperatureMaxC);
-  if (min !== null && max !== null && max < min) {
-    throw new HttpError(400, "Maximum temperature cannot be below the minimum temperature.");
-  }
-  const payload = {
-    WMSLocation_FacilityID: facilityId,
-    WMSLocation_ZoneID: zoneId,
-    WMSLocation_Code: code,
-    WMSLocation_Barcode: clean(input.barcode, 160),
-    WMSLocation_TypeCode: typeCode,
-    WMSLocation_StatusCode: statusCode,
-    WMSLocation_Aisle: clean(input.aisle, 40),
-    WMSLocation_Bay: clean(input.bay, 40),
-    WMSLocation_Level: clean(input.level, 40),
-    WMSLocation_Position: clean(input.position, 40),
-    WMSLocation_LengthM: numberOrNull(input.lengthM),
-    WMSLocation_WidthM: numberOrNull(input.widthM),
-    WMSLocation_HeightM: numberOrNull(input.heightM),
-    WMSLocation_MaxWeightKG: numberOrNull(input.maxWeightKg),
-    WMSLocation_MaxVolumeCBM: numberOrNull(input.maxVolumeCbm),
-    WMSLocation_TemperatureMinC: min,
-    WMSLocation_TemperatureMaxC: max,
-    WMSLocation_AllowsMultiSKU: bool(input.allowsMultiSku),
-    WMSLocation_AllowsBondedStock: bool(input.allowsBondedStock),
-    WMSLocation_AllowedCustomsStatusesJSON: [],
-    WMSLocation_IsActive: request.method === "POST" ? true : bool(input.isActive, true),
-    WMSLocation_UpdatedAt: new Date().toISOString()
-  };
-  const saved = request.method === "POST" ? await one(admin.from("WMS_Locations").insert({
-    WMSLocation_ID: id(),
-    ...payload,
-    WMSLocation_CreatedBy: actor.userId
-  }).select().single(), "Could not create the location.") : await one(admin.from("WMS_Locations").update(payload).eq("WMSLocation_ID", locationId).select().single(), "This location does not exist in this facility.");
-  return map(saved);
+  if (request.method !== "POST" && request.method !== "PUT") throw new HttpError(405, "This action is not supported.");
+  if (request.method === "PUT" && !existing) throw new HttpError(404, "This location does not exist in this facility.");
+  return await saveLocation(bodyObject(await request.json()), request.method === "POST", locationId);
 }

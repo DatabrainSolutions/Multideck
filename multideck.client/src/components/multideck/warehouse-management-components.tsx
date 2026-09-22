@@ -37,6 +37,8 @@ import {
   createWarehouseItem,
   createWarehouseLocation,
   downloadWarehouseItemsTemplate,
+  downloadWarehouseLocationsTemplate,
+  importWarehouseLocations,
   importWarehouseItems,
   deleteWarehouseFacility,
   deleteWarehouseItem,
@@ -1395,7 +1397,7 @@ function ImportItemsDialog({
 
           </fieldset>
           {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
-          {importing ? <p role="status" className="flex items-center gap-2 text-[13px]"><DotGridLoader decorative />{t(reviewed ? "Creating items. Keep this window open…" : "Checking your spreadsheet…")}</p> : null}
+          {importing ? <div role="status" className="flex items-center gap-2 text-[13px]"><DotGridLoader decorative />{t(reviewed ? "Creating items. Keep this window open…" : "Checking your spreadsheet…")}</div> : null}
           {result ? <SpreadsheetImportReview rows={result.results} completed={completed} /> : null}
 
         </div>
@@ -2081,6 +2083,107 @@ function LocationDialog({
   )
 }
 
+function ImportLocationsDialog({ open, onOpenChange, facilityId, facilityName, reference, onImported }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  facilityId: string
+  facilityName: string
+  reference: WarehouseLocationReference | null
+  onImported: () => void
+}) {
+  const { t } = useLanguage()
+  const [defaultTypeCode, setDefaultTypeCode] = useState("")
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const busyRef = useRef(false)
+  const [result, setResult] = useState<ImportItemsResult | null>(null)
+  const [reviewed, setReviewed] = useState(false)
+  const [completed, setCompleted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function resetReview() {
+    setResult(null)
+    setReviewed(false)
+    setCompleted(false)
+    setError(null)
+  }
+  useEffect(() => {
+    if (!open) return
+    setDefaultTypeCode(reference?.types.find((type) => type.code === "bin")?.code ?? reference?.types[0]?.code ?? "")
+    setFile(null)
+    resetReview()
+  }, [open, facilityId, reference])
+
+  async function download() {
+    setDownloading(true)
+    setError(null)
+    try { await downloadWarehouseLocationsTemplate(facilityId) }
+    catch (error) { setError(error instanceof Error ? error.message : String(error)) }
+    finally { setDownloading(false) }
+  }
+  async function submit() {
+    if (!file || !defaultTypeCode || busyRef.current) return
+    if (!file.name.toLowerCase().endsWith(".xlsx") || file.size === 0 || file.size > 10 * 1024 * 1024) {
+      setError(t("Choose an .xlsx file no larger than 10 MB."))
+      return
+    }
+    busyRef.current = true
+    setBusy(true)
+    setError(null)
+    try {
+      const preview = !reviewed
+      const response = await importWarehouseLocations({ facilityId, defaultTypeCode, file, preview })
+      setResult(response)
+      setReviewed(preview && response.failed === 0 && response.results.length > 0)
+      setCompleted(response.preview === false)
+      if (!response.results.length) setError(t("No rows were found. Fill in the template and upload it again."))
+      if (!preview && response.created > 0) onImported()
+    } catch (error) {
+      setReviewed(false)
+      setResult(null)
+      setError(error instanceof Error ? error.message : String(error))
+      if (reviewed) onImported()
+    } finally { busyRef.current = false; setBusy(false) }
+  }
+
+  return <Dialog open={open} onOpenChange={(value) => { if (!busyRef.current) onOpenChange(value) }}>
+    <DialogContent showCloseButton={!busy} className="max-h-[90dvh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] sm:max-w-[680px]">
+      <DialogHeader className={warehouseDialogHeaderClass}>
+        <DialogTitle>{t("Import locations")}</DialogTitle>
+        <DialogDescription>{t("Add locations to")} <span data-i18n-skip>{facilityName}</span>. {t("Only a location code is required per row. Choose the default type once, then review before creating.")}</DialogDescription>
+      </DialogHeader>
+      <div className="grid min-h-0 gap-4 overflow-y-auto px-6 py-4">
+        <fieldset disabled={busy} className="grid min-w-0 gap-4">
+          <WarehouseFormField label={t("Default location type")} required hint={t("Used when Type is blank in the spreadsheet. Override it on individual rows if needed.")}>
+            <Select value={defaultTypeCode} onValueChange={(value) => { resetReview(); setDefaultTypeCode(value) }}>
+              <SelectTrigger aria-label={t("Default location type")} className={fieldControlClass}><SelectValue placeholder={t("Choose a location type")} /></SelectTrigger>
+              <SelectContent>{reference?.types.map((type) => <SelectItem key={type.code} value={type.code}>{type.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </WarehouseFormField>
+          {!reference ? <InlineNotice tone="warning">{t("Location types could not be loaded. Close this window and try again.")}</InlineNotice> : null}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1"><p className="text-[13px] font-medium">{t("1. Download the template")}</p><p className="mt-1 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Optional columns cover type, zone, barcode, position, capacity, temperature and storage rules. Instructions, examples and valid codes are included.")}</p></div>
+            <Button variant="outline" disabled={downloading || !reference} onClick={() => void download()}><Download className="size-4" />{t(downloading ? "Preparing…" : "Template")}</Button>
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="warehouse-location-import-file" className="text-[13px] font-medium">{t("2. Upload the filled-in file")}</label>
+            <Input id="warehouse-location-import-file" type="file" accept=".xlsx" aria-label={t("Upload locations spreadsheet")} className="h-auto min-h-10 py-2" onChange={(event) => { resetReview(); setFile(event.target.files?.[0] ?? null) }} />
+            <p className="text-[12px] text-[var(--md-subtle)]">{t("Excel .xlsx · up to 2,000 rows / 10 MB. Existing locations are never overwritten.")}</p>
+          </div>
+        </fieldset>
+        {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+        {busy ? <div role="status" className="flex items-center gap-2 text-[13px]"><DotGridLoader decorative />{t(reviewed ? "Creating locations. Keep this window open…" : "Checking your spreadsheet…")}</div> : null}
+        {result ? <SpreadsheetImportReview rows={result.results} completed={completed} /> : null}
+      </div>
+      <DialogFooter className={warehouseDialogFooterClass}>
+        <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>{t(result ? "Close" : "Cancel")}</Button>
+        <Button disabled={busy || !file || !defaultTypeCode || completed || Boolean(result?.failed)} onClick={() => void submit()}><Upload className="size-4" />{t(reviewed ? `Create ${result?.results.length ?? 0} locations` : "Review file")}</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+}
+
 export function WarehouseLocationsView() {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -2097,6 +2200,7 @@ export function WarehouseLocationsView() {
   const [search, setSearch] = useState("")
   const [activeFilter, setActiveFilter] = useState<(typeof locationFilters)[number]>(locationFilters[0])
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState<WarehouseLocation | null>(null)
 
   useEffect(() => {
@@ -2119,6 +2223,7 @@ export function WarehouseLocationsView() {
   useEffect(() => {
     if (!selectedFacilityId) return
     let active = true
+    setReference(null)
     getWarehouseLocationReference(selectedFacilityId)
       .then((data) => { if (active) setReference(data) })
       .catch(() => { /* reference is optional for viewing */ })
@@ -2176,6 +2281,10 @@ export function WarehouseLocationsView() {
     }
     return subscribeTopBarAction(topBarActionEvents.createWarehouseLocation, openFromTopBar)
   }, [selectedFacilityId])
+
+  useEffect(() => subscribeTopBarAction(topBarActionEvents.importWarehouseLocations, () => {
+    if (selectedFacilityId) setImportOpen(true)
+  }), [selectedFacilityId])
 
   function openEdit(location: WarehouseLocation) {
     setEditing(location)
@@ -2320,6 +2429,7 @@ export function WarehouseLocationsView() {
         </motion.div>
       )}
 
+      <ImportLocationsDialog open={importOpen} onOpenChange={setImportOpen} facilityId={selectedFacilityId} facilityName={facilityOptions.find((facility) => facility.id === selectedFacilityId)?.name ?? ""} reference={reference} onImported={() => void refresh()} />
       <LocationDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
