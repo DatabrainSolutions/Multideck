@@ -11,6 +11,7 @@ import {
   requirePermission,
   routeParts,
 } from "../_shared/backend.ts"
+import { requireProductAccess } from "../_shared/cloud-product-access.ts"
 
 type Json = Record<string, unknown>
 type Actor = { User_ID: string; Company_ID: string; User_FullName?: string; First_Name?: string; Last_Name?: string }
@@ -336,6 +337,7 @@ async function applyToQuote(admin: ReturnType<typeof adminClient>, actor: Actor,
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
+    await requireProductAccess("rate_management")
     const admin = adminClient(); const { user } = await authenticate(request, admin); const actor = await currentInternalUser(admin, user) as Actor
     const permissions = await permissionValues(admin, actor.User_ID); const parts = routeParts(request, "rates-api"); const method = request.method.toUpperCase()
     if (!permissions.includes("Rates.View") && !permissions.includes("Rates.Manage")) throw new HttpError(403, "You do not have permission to view rates.")

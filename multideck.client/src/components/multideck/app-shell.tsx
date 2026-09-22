@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowRight, CheckCircle2, Menu, PencilEdit01, TriangleAlert, X, XCircle } from "@/components/icons/hugeicons"
 import type { AuthUserSummary } from "@/lib/auth-user"
+import type { ProductCapabilities } from "@/lib/product-capabilities"
 import { useSidebarCollapsed } from "@/lib/sidebar-preferences"
 import { useLanguage } from "@/i18n/language-provider"
 import { Button } from "@/components/ui/button"
@@ -214,11 +215,13 @@ export function AppShell({
   navigate,
   children,
   currentUser,
+  productCapabilities,
 }: {
   route: string
   navigate: (path: string) => void
   children: ReactNode
   currentUser?: AuthUserSummary | null
+  productCapabilities: ProductCapabilities
 }) {
   const isSettingsRoute = route === "/settings"
   const isHomeRoute = route === "/"
@@ -275,6 +278,7 @@ export function AppShell({
           route={route}
           navigate={navigate}
           currentUser={currentUser}
+          productCapabilities={productCapabilities}
           collapsed={sidebarCollapsed}
           onCollapsedChange={setSidebarCollapsed}
           className="hidden h-screen min-h-0 lg:flex"
@@ -307,6 +311,7 @@ export function AppShell({
                   navigate(path)
                 }}
                 currentUser={currentUser}
+                productCapabilities={productCapabilities}
                 onRequestClose={() => setMobileSidebarOpen(false)}
               />
             </SheetContent>
@@ -322,7 +327,7 @@ export function AppShell({
             !isSettingsRoute && !isFullHeightRoute && !isChromeTightRoute && "px-[var(--md-page-pad)] pb-[var(--md-page-pad)]",
           )}
         >
-          {isSettingsRoute || isFullHeightRoute || isChromeTightRoute ? null : <TopBar route={route} navigate={navigate} currentUser={currentUser} />}
+          {isSettingsRoute || isFullHeightRoute || isChromeTightRoute ? null : <TopBar route={route} navigate={navigate} currentUser={currentUser} productCapabilities={productCapabilities} />}
           {children}
         </main>
       </div>

@@ -13,6 +13,7 @@ import { openMeetingComposer } from "@/lib/meeting-composer-events"
 import { AppBreadcrumbs } from "./app-breadcrumbs"
 import { CommandInput } from "./command-input"
 import { AppSidebar } from "./app-sidebar"
+import type { ProductCapabilities } from "@/lib/product-capabilities"
 
 const topBarGhostActionClass =
   "h-9 rounded-[var(--md-radius-lg)] bg-white/42 px-3 text-[12.5px] font-medium leading-none text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
@@ -158,10 +159,12 @@ export function TopBar({
   route,
   navigate,
   currentUser,
+  productCapabilities,
 }: {
   route: string
   navigate: (path: string) => void
   currentUser?: AuthUserSummary | null
+  productCapabilities?: ProductCapabilities
 }) {
   const partyRegisterType = route === "/customers" ? "customer" : route === "/suppliers" ? "supplier" : null
   const isPartyRegister = partyRegisterType !== null
@@ -262,6 +265,7 @@ export function TopBar({
           <AppSidebar
             route={route}
             currentUser={currentUser}
+            productCapabilities={productCapabilities}
             navigate={(path) => {
               setMobileSidebarOpen(false)
               navigate(path)

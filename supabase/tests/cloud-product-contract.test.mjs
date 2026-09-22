@@ -4,10 +4,12 @@ import { parseProductRequest, validProductAuthentication } from '../functions/_s
 
 const tenant = '11111111-1111-4111-8111-111111111111'
 const request = { contractVersion: 1, action: 'features', tenantId: tenant, revision: 1, features: ['icustoms'] }
-test('only iCustoms is purchasable; identity and revision are mandatory', () => {
+test('registered paid features are accepted; protected and unknown features are rejected', () => {
   assert.deepEqual(parseProductRequest(request, tenant), request)
   assert.deepEqual(parseProductRequest({ ...request, features: [] }, tenant).features, [])
-  for (const features of [['jenkar_phone'], ['phone_calls'], ['warehouse'], ['icustoms', 'icustoms'], [null], 'icustoms']) {
+  assert.deepEqual(parseProductRequest({ ...request, features: ['rate_management', 'icustoms'] }, tenant).features, ['rate_management', 'icustoms'])
+  assert.deepEqual(parseProductRequest({ ...request, features: ['icustoms', 'icustoms'] }, tenant).features, ['icustoms'])
+  for (const features of [['jenkar_phone'], ['phone_calls'], ['warehouse'], [null], 'icustoms']) {
     assert.throws(() => parseProductRequest({ ...request, features }, tenant))
   }
   for (const revision of [0, -1, 1.1, '1', Number.MAX_SAFE_INTEGER + 1]) {

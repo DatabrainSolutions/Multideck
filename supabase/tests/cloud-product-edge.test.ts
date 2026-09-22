@@ -56,6 +56,7 @@ Deno.test('phone routes fail closed before provider work and product receiver re
     const count = calls.length;
     assert.equal((await product(request(command))).status, 503);
     assert.equal((await product(request({ ...command, action: 'health', version: '99.0.0' }))).status, 503);
+    assert.equal((await product(request({ ...command, features: ['rate_management'] }))).status, 503);
     assert.equal((await product(request({ ...command, features: ['jenkar_phone'] }))).status, 400);
     assert.equal((await product(request(command, { origin: 'https://app.invalid' }))).status, 401);
     assert.equal((await product(request(command, { authorization: 'Bearer user-token' }))).status, 401);
