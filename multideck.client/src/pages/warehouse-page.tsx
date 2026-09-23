@@ -25,7 +25,7 @@ import { getWarehouseHeaderActions, getWarehouseWorkspaceData, rescheduleOperati
 import { toast } from "sonner"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
-type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Warehouse orders" | "Expected receipts" | "Calendar" | "Users" | "Pricing"
+type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Warehouse orders" | "Expected receipts" | "Calendar" | "Users" | "Default pricing"
 
 /**
  * The grid works in local wall-clock minutes; the order stores an instant. The slot
@@ -65,7 +65,7 @@ const warehouseSectionDescriptions: Record<WarehouseSection, string | null> = {
   Items: null,
   "Expected receipts": "Goods and quantities the customer expects to arrive, usually from a customer PO, ASN, transfer or return. No stock is booked until goods are received.",
   Users: null,
-  Pricing: null,
+  "Default pricing": null,
 }
 
 export function WarehousePage({ route, currentUser, navigate }: { route: string; currentUser?: AuthUserSummary | null; navigate?: (path: string) => void }) {
@@ -108,7 +108,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
     && activeSection !== "Dashboard"
     && activeSection !== "Calendar"
     && activeSection !== "Goods out"
-    && activeSection !== "Pricing"
+    && activeSection !== "Default pricing"
 
   useEffect(() => {
     if (!needsRegisterHeader) return
@@ -217,7 +217,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   // A detail route is its own screen: it carries its own title, its own back
   // navigation and its own actions, so the register header above it would only
   // repeat the area name and push the record further down.
-  if (activeSection === "Pricing" && !isCustomer) return <main className="md-page md-page-stack"><WarehousePricingWorkspace navigate={navigate} /></main>
+  if (activeSection === "Default pricing" && !isCustomer) return <main className="md-page md-page-stack"><WarehousePricingWorkspace navigate={navigate} /></main>
 
   if (detailItemSku) {
     return (
