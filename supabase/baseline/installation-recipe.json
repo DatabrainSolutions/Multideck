@@ -11,6 +11,7 @@
     { "id": "20260922130328_tenant_installation_evidence", "firstRelease": "1.2.1" },
     { "id": "20260922134231_tenant_lifecycle_controls", "firstRelease": "1.2.1" },
     { "id": "20260922144245_lifecycle_supported_cron_controls", "firstRelease": "1.2.1" },
-    { "id": "20260922152910_lifecycle_verified_offline_transition", "firstRelease": "1.2.1" }
+    { "id": "20260922152910_lifecycle_verified_offline_transition", "firstRelease": "1.2.1" },
+    { "id": "20260923133528_harden_template_function_access", "firstRelease": "1.2.2" }
   ]
 }
