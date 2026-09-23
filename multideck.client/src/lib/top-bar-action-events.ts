@@ -1,4 +1,5 @@
 export const topBarActionEvents = {
+  createJournal: "multideck:finance:create-journal",
   createTodoTask: "multideck:todo:create-task",
   createCalendarMeeting: "multideck:calendar:create-meeting",
   createBookingLink: "multideck:calendar:create-booking-link",

@@ -530,6 +530,8 @@ export async function getFinanceSetup() { return normaliseFinanceSetup(await cal
 export function getFinanceReportOptions() { return call<FinanceReportOptions>("/report-options") }
 export function getFinanceReports(legalEntityId: string, from: string, to: string) { return call<FinanceReportingSnapshot>(`/reports?legalEntityId=${encodeURIComponent(legalEntityId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`) }
 export function getErpNextCompanies() { return call<{ companies: Array<{ name: string; company_name?: string; country?: string; default_currency?: string }> }>("/erpnext/companies") }
+export function getErpNextAccountCatalog(connectionId: string) { return call<{ accounts: Array<{ name: string; account_number?: string; account_name?: string; account_type?: string; root_type?: string; is_group?: boolean | number }> }>(`/erpnext/catalog?connectionId=${encodeURIComponent(connectionId)}`) }
+export function getSage50NominalCatalog(connectionId: string) { return call<{ connectionId: string; accounts: Array<{ name: string; account_number: string; account_name: string; is_group?: boolean | number }> }>(`/sage-50/nominals?connectionId=${encodeURIComponent(connectionId)}`) }
 export function createFinanceConfigurationRun(input: FinanceConfigurationInput) { return post<{ FINConfigRun_ID: string; FINConfigRun_StatusCode: string; FINConfigRun_PreviewJSON: FinanceConfigurationPreview }>("/configuration-runs", input) }
 export function approveFinanceConfigurationRun(id: string) { return post<{ runId: string; status: string; connectionId: string }>(`/configuration-runs/${encodeURIComponent(id)}/approve`) }
 export function processFinanceIntegrationQueue(id: string) { return post<{ id: string; status: string; provider: AccountingProviderCode; externalObjectType: string; externalId: string; externalNumber: string | null; externalUrl: string | null }>(`/integration-queue/${encodeURIComponent(id)}/process`) }
@@ -565,3 +567,18 @@ export function rejectFinanceDocument(id: string, reason: string) { return post<
 export function requestFinanceCashReview(id: string, reason?: string) { return post<FinanceCashTransaction>(`/cash/${encodeURIComponent(id)}/request-review`, { reason }) }
 export function approveFinanceCash(id: string, reason?: string) { return post<FinanceCashTransaction>(`/cash/${encodeURIComponent(id)}/approve`, { reason }) }
 export function rejectFinanceCash(id: string, reason: string) { return post<FinanceCashTransaction>(`/cash/${encodeURIComponent(id)}/reject`, { reason }) }
+
+export type AccountingPartySettings = { enabled: boolean; customerGroup?: string; supplierGroup?: string; territory?: string }
+export type AccountingPartyHealth = {
+  incoming: { scope: "document_delivery"; fullLedgerReconciled: false; pending: number; matched: number; attention: number; issues: Array<{ id: string; document_type: string; document_number: string; message: string | null; received_at: string }> };
+  scope: "party_master"; workerEnabled: boolean; connectionId: string; checkedAt: string; total: number; synced: number; queued: number; attention: number; oldestVerification: string | null; fullLedgerReconciled: false;
+  settings: AccountingPartySettings;
+  issues: Array<{ id: string; org_id: string; organisation_name: string; party_type: "customer" | "supplier"; status: string; last_error: string | null; attempts: number; verified_at: string | null; provider_id: string | null }>;
+}
+export const getAccountingPartyHealth = (id: string) => call<AccountingPartyHealth>(`/account-sync/${encodeURIComponent(id)}`)
+export const recheckAccountingParties = (id: string) => post<{ queued: number; scope: "party_master" }>(`/account-sync/${encodeURIComponent(id)}/check`, {})
+export const saveAccountingPartySettings = (id: string, settings: AccountingPartySettings) => put<{ settings: AccountingPartySettings }>(`/account-sync/${encodeURIComponent(id)}/settings`, settings)
+
+export type AccountingIdentityReview = { reviews: Array<{ jobId: string; orgId: string; partyType: string; organisationName: string; providerId: string; providerName: string; fingerprint: string; changes: Array<{ field: string; from: unknown; to: unknown }>; addressChanges: Array<{ field: string; from: unknown; to: unknown }>; addressAction: string }>; issues: Array<{ jobId: string; message: string }> }
+export const getAccountingIdentityReview = (id: string) => call<AccountingIdentityReview>(`/account-sync/${encodeURIComponent(id)}/identity-review`)
+export const confirmAccountingIdentityReview = (id: string, reviews: AccountingIdentityReview["reviews"]) => post<{ results: Array<{ jobId: string; queued: boolean; message?: string }> }>(`/account-sync/${encodeURIComponent(id)}/identity-review`, { reviews: reviews.map(({ jobId, fingerprint }) => ({ jobId, fingerprint })) })

@@ -69,3 +69,21 @@ export async function hyperExtStatus() {
     odbcStatusOk: status?.odbcStatusOk === true,
   }
 }
+
+export function parseHyperExtNominals(payload: unknown) {
+  if (!payload || typeof payload !== "object" || !Array.isArray((payload as { results?: unknown }).results)) {
+    throw new HttpError(502, "HyperExt did not return a nominal account list.")
+  }
+  const accounts = new Map<string, { name: string; account_number: string; account_name: string }>()
+  for (const item of (payload as { results: unknown[] }).results) {
+    if (!item || typeof item !== "object") throw new HttpError(502, "HyperExt returned an invalid nominal account.")
+    const record = item as Record<string, unknown>
+    const code = typeof record.accountRef === "string" ? record.accountRef.trim() : ""
+    const name = typeof record.name === "string" ? record.name.trim() : ""
+    if (!code || !name) throw new HttpError(502, "HyperExt returned a nominal account without a code or name.")
+    if (record.inactiveFlag === true || record.inactiveFlag === 1 || record.inactiveFlag === "1") continue
+    if (accounts.has(code)) throw new HttpError(502, "HyperExt returned duplicate nominal account codes.")
+    accounts.set(code, { name: code, account_number: code, account_name: name })
+  }
+  return [...accounts.values()].sort((left, right) => left.account_number.localeCompare(right.account_number, "en-GB", { numeric: true }))
+}

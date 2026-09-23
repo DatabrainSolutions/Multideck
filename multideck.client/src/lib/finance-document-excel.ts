@@ -97,7 +97,9 @@ function numeric(value: string, label: string, row: number) {
   return parsed
 }
 
-export async function parseFinanceDocumentWorkbook(file: File): Promise<ImportedFinanceDocumentLine[]> {
+export type FinanceWorkbookData = { sheetName: string; sheetNames: string[]; dateSystem: "1900" | "1904"; rows: Array<{ number: number; values: string[]; cellTypes: string[] }> }
+
+export async function readFinanceWorkbook(file: File, options: { rejectFormulas?: boolean; sheetName?: string; catalogOnly?: boolean } = {}): Promise<FinanceWorkbookData> {
   if (file.size > MAX_FILE_BYTES) throw new Error("The Excel file must be 5 MB or smaller.")
   if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("Choose an Excel .xlsx file.")
 
@@ -129,29 +131,57 @@ export async function parseFinanceDocumentWorkbook(file: File): Promise<Imported
   const relationshipBytes = archive["xl/_rels/workbook.xml.rels"]
   if (!workbookBytes || !relationshipBytes) throw new Error("The Excel file does not contain a readable workbook.")
   const workbook = parseXml(workbookBytes, "Workbook")
-  const firstSheet = workbook.getElementsByTagNameNS("*", "sheet")[0]
-  const relationshipId = [...(firstSheet?.attributes ?? [])].find((attribute) => attribute.localName === "id")?.value
+  const sheets = [...workbook.getElementsByTagNameNS("*", "sheet")]
+  const selectedSheet = options.sheetName ? sheets.find(sheet => sheet.getAttribute("name") === options.sheetName) : sheets[0]
+  if (!selectedSheet) throw new Error("Choose a worksheet in this workbook.")
+  const sheetNames = sheets.map(sheet => sheet.getAttribute("name") ?? "")
+  if (sheetNames.some(name => !name) || new Set(sheetNames).size !== sheetNames.length) throw new Error("The workbook has missing or duplicate worksheet names.")
+  const dateSystem = ["1", "true"].includes(workbook.getElementsByTagNameNS("*", "workbookPr")[0]?.getAttribute("date1904") ?? "") ? "1904" : "1900"
+  if (options.catalogOnly) return { rows: [], sheetName: "", sheetNames, dateSystem }
+  const relationshipId = [...selectedSheet.attributes].find((attribute) => attribute.localName === "id")?.value
   const relationships = parseXml(relationshipBytes, "Workbook relationships")
   const target = [...relationships.getElementsByTagNameNS("*", "Relationship")].find((relationship) => relationship.getAttribute("Id") === relationshipId)?.getAttribute("Target")
   const sheetPath = target ? `xl/${target.replace(/^\/?xl\//, "").replace(/^\//, "")}` : "xl/worksheets/sheet1.xml"
   const sheetBytes = archive[sheetPath]
-  if (!sheetBytes) throw new Error("The first Excel worksheet could not be read.")
+  if (!sheetBytes) throw new Error("The selected Excel worksheet could not be read.")
 
   const sharedStrings = archive["xl/sharedStrings.xml"]
     ? [...parseXml(archive["xl/sharedStrings.xml"], "Shared strings").getElementsByTagNameNS("*", "si")].map((item) => [...item.getElementsByTagNameNS("*", "t")].map((node) => node.textContent ?? "").join(""))
     : []
   const sheet = parseXml(sheetBytes, "Worksheet")
-  const rows = [...sheet.getElementsByTagNameNS("*", "row")].map((row) => {
+  const sourceRows = [...sheet.getElementsByTagNameNS("*", "row")]
+  if (sourceRows.length > 50100) throw new Error("The worksheet exceeds 50,100 rows. Export the required accounting data only.")
+  const seenRows = new Set<number>()
+  const rows = sourceRows.map((row) => {
     const values: string[] = []
+    const cellTypes: string[] = []
+    const number = Number(row.getAttribute("r"))
+    if (!Number.isSafeInteger(number) || number < 1 || number > 1048576 || seenRows.has(number)) throw new Error("The worksheet has invalid or duplicate row references.")
+    seenRows.add(number)
     for (const cell of [...row.getElementsByTagNameNS("*", "c")]) {
-      const index = columnIndex(cell.getAttribute("r") ?? "")
+      if (options.rejectFormulas && cell.getElementsByTagNameNS("*", "f").length) throw new Error("Replace spreadsheet formulas with values before importing.")
+      const reference = cell.getAttribute("r") ?? ""
+      if (!/^[A-Z]{1,3}[1-9]\d*$/.test(reference) || Number(reference.replace(/^[A-Z]+/, "")) !== number) throw new Error("The worksheet has an invalid cell row reference.")
+      const index = columnIndex(reference)
+      if (index < 0 || index >= 256 || cellTypes[index] !== undefined) throw new Error("The worksheet has invalid or duplicate cell references, or exceeds 256 columns.")
       const type = cell.getAttribute("t")
       const raw = cell.getElementsByTagNameNS("*", "v")[0]?.textContent ?? ""
-      values[index] = type === "s" ? sharedStrings[Number(raw)] ?? "" : type === "inlineStr" ? [...cell.getElementsByTagNameNS("*", "t")].map((node) => node.textContent ?? "").join("") : raw
+      if (type === "s" && (!/^\d+$/.test(raw) || sharedStrings[Number(raw)] === undefined)) throw new Error("The worksheet contains an invalid shared text reference.")
+      values[index] = type === "s" ? sharedStrings[Number(raw)] : type === "inlineStr" ? [...cell.getElementsByTagNameNS("*", "t")].map((node) => node.textContent ?? "").join("") : raw
+      cellTypes[index] = type === "e" ? "error" : type === "b" ? "boolean" : type === "d" ? "date" : ["s", "inlineStr", "str"].includes(type ?? "") ? "text" : raw ? "number" : "blank"
     }
-    return { number: Number(row.getAttribute("r")) || 0, values }
+    return { number, values, cellTypes }
   })
 
+  return { rows: rows.sort((a, b) => a.number - b.number), sheetName: selectedSheet.getAttribute("name") ?? "", sheetNames, dateSystem }
+}
+
+export async function readFinanceWorkbookRows(file: File, rejectFormulas = false): Promise<Array<{ number: number; values: string[] }>> {
+  return (await readFinanceWorkbook(file, { rejectFormulas })).rows
+}
+
+export async function parseFinanceDocumentWorkbook(file: File): Promise<ImportedFinanceDocumentLine[]> {
+  const rows = await readFinanceWorkbookRows(file)
   const aliases = {
     chargeCode: ["charge code", "product code", "item code", "item number", "code"],
     description: ["description", "item description", "name"],

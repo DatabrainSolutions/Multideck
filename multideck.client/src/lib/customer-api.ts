@@ -76,6 +76,7 @@ export type CustomerReference = {
     countryCode: string | null
     timeZone: string
   }[]
+  countries: { code: string; name: string }[]
   currencies: { code: string; name: string }[]
   legalEntities: {
     id: string
@@ -100,6 +101,22 @@ export type CustomerReference = {
     ratePercent: number
     transactionTypeCode: string
   }[]
+}
+
+export type AddressSearchSuggestion = { id: string; label: string; detail: string; source: string }
+export type AddressSearchResult = {
+  source: string
+  sourceId: string
+  formattedAddress: string | null
+  name: string | null
+  line1: string | null
+  line2: string | null
+  townCity: string | null
+  countyState: string | null
+  postZipCode: string | null
+  countryCode: string | null
+  phone: string | null
+  website: string | null
 }
 
 export type OrganisationOfficeAssignment = {
@@ -777,6 +794,18 @@ export async function saveOrganisationAddress(accountId: string, input: UpsertOr
   })
   invalidateCrmResources(session.user.id, ["accounts:", `account-detail:${accountId}`])
   return account
+}
+
+export async function searchOnlineAddresses(input: { query: string; countryCode: string; sessionToken: string }) {
+  const session = await requireCustomerSession("Sign in again to search for an address.")
+  const query = registerQuery({ q: input.query, country: input.countryCode, sessionToken: input.sessionToken })
+  return customerRequest<{ items: AddressSearchSuggestion[] }>(`/address-search/suggestions${query}`, session.access_token)
+}
+
+export async function getOnlineAddress(placeId: string, sessionToken: string) {
+  const session = await requireCustomerSession("Sign in again to load this address.")
+  const query = registerQuery({ sessionToken })
+  return customerRequest<AddressSearchResult>(`/address-search/details/${encodeURIComponent(placeId)}${query}`, session.access_token)
 }
 
 export async function archiveOrganisationAddress(accountId: string, addressId: string, expectedVersion: number) {
