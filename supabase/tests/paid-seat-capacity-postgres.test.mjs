@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { spawnSync, spawn } from 'node:child_process'
 const bin = process.env.PG_TEST_BIN || spawnSync('pg_config',['--bindir'],{encoding:'utf8'}).stdout.trim()
 const migration = readFileSync(new URL('../migrations/20260921120000_paid_seat_pricing_and_capacity.sql',import.meta.url),'utf8')
+const voiceMigration = readFileSync(new URL('../migrations/20260921130000_preserve_paid_seat_voice_usage.sql',import.meta.url),'utf8')
 test('paid seats govern AI, prices, documents and concurrent admissions without browser writes', async () => {
  const dir=mkdtempSync(join(tmpdir(),'paid-seats-')), data=join(dir,'db'); let started=false
  const run=(cmd,args,input)=>{const r=spawnSync(join(bin,cmd),args,{input,encoding:'utf8',timeout:30000});assert.equal(r.status,0,`${r.stderr}\n${r.stdout}`);return r.stdout}
@@ -31,7 +32,14 @@ test('paid seats govern AI, prices, documents and concurrent admissions without 
  if current_setting('test.active',true) is distinct from 'true' then raise exception 'inactive' using errcode='42501';end if;
  return query select 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid,current_setting('test.company')::uuid;end$$;
  create function private.is_tenant_administrator(uuid) returns boolean language sql as $$select current_setting('test.admin',true)='true'$$;
+ create table public."AI_DexterVoiceSessions"(company_id uuid,seconds numeric,ended_at timestamptz,created_at timestamptz);
+ create table public."cmp_Company_Modules"("Company_ID" uuid,"Module_Code" text,"Is_Enabled" boolean);
+ create table public."cmp_Offices"("Office_ID" uuid,"Company_ID" uuid);
+ create table public."ICUS_ApiConnections"("ICUSC_OrgOfficeID" uuid,"ICUSC_IsActive" boolean);
+ alter table public."AI_DexterModelEgressAudit" add column "AIDexterEgress_InputUnits" integer,add column "AIDexterEgress_Purpose" text;
+ create function public._multideck_usage_team(uuid,timestamptz,timestamptz,text,integer,numeric) returns jsonb language sql as $$select '[]'::jsonb$$;
  ${migration}
+ ${voiceMigration}
  insert into public."cmp_Company" values ('11111111-1111-1111-1111-111111111111'),('22222222-2222-2222-2222-222222222222');
  insert into public."AI_DexterUsagePolicies"("AIUsagePolicy_CompanyID","AIUsagePolicy_PaidSeats") values('11111111-1111-1111-1111-111111111111',2);
  do $$declare c uuid:='11111111-1111-1111-1111-111111111111'; s jsonb; n integer; price integer;begin
@@ -43,6 +51,11 @@ test('paid seats govern AI, prices, documents and concurrent admissions without 
  if (public._multideck_dexter_allowance_state(c)->>'includedUsageGbp')::numeric<>n*50*0.8 then raise exception 'AI allowance wrong';end if;
  end loop;
  update public."AI_DexterUsagePolicies" set "AIUsagePolicy_PlanCode"='25',"AIUsagePolicy_PaidSeats"=2,"AIUsagePolicy_AiOverrideGbp"=123,"AIUsagePolicy_DocumentOverride"=2 where "AIUsagePolicy_CompanyID"=c;
+ s:=public._multideck_usage_categories(c);
+ if (s->>'seatCount')::integer<>2 or (s->'subscription'->>'paidSeats')::integer<>2 then raise exception 'Paid-seat category context lost';end if;
+ if (select count(*) from jsonb_array_elements(s->'categories') x where x->>'id'='voice')<>1 then raise exception 'Voice category lost or duplicated';end if;
+ if (select (x->>'included')::integer from jsonb_array_elements(s->'categories') x where x->>'id'='documents')<>2 then raise exception 'Document override lost in category';end if;
+ if (select (x->>'included')::integer from jsonb_array_elements(s->'categories') x where x->>'id'='ocr')<>2000 then raise exception 'OCR paid seats lost';end if;
  if (public._multideck_dexter_allowance_state(c)->>'includedUsageGbp')::numeric<>123 then raise exception 'Override lost';end if;
  insert into public."cmp_Users"("User_ID","Company_ID") values('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',c),(gen_random_uuid(),c);
  update public."cmp_Users" set "Auth_User_ID"='cccccccc-cccc-cccc-cccc-cccccccccccc' where "User_ID"='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
