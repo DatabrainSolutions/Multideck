@@ -15,6 +15,7 @@ const tests = [
   'tenant-lifecycle-postgres.test.mjs',
   'tenant-lifecycle-coverage.test.mjs',
   'cloud-installation-evidence-postgres.test.mjs',
+  'paid-seat-capacity-postgres.test.mjs',
   'cloud-product-database.test.mjs',
   'cloud-phone-boundary-postgres.test.mjs',
   'customs-reference-preferences-postgres.test.mjs',

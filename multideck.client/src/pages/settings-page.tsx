@@ -221,12 +221,13 @@ function compactAction(label: string, onClick?: () => void) {
   )
 }
 
-function primaryAction(label: string, onClick?: () => void) {
+function primaryAction(label: string, onClick?: () => void, disabled = false) {
   return (
     <Button
       type="button"
       className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
       onClick={onClick}
+      disabled={disabled}
     >
       {label}
     </Button>
@@ -3373,12 +3374,12 @@ export function AdminUsersContent() {
         <div className="flex items-center justify-end gap-1">
           <UserActionTooltip label={user.authUserId === currentAuthUserId ? t("Use Security settings to change your own password") : user.status !== "Active" || !user.authUserId ? t("Reactivate this user before resetting their password") : t("Reset password")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId || user.status !== "Active" || !user.authUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Reset password")} ${user.displayName}`} onClick={() => openPasswordReset(user)}><KeyRound className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
           <UserActionTooltip label={t("Edit")}><Button type="button" variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Edit")} ${user.displayName}`} onClick={() => openUserEditor(user)}><EditUser02 className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
-          <UserActionTooltip label={t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")} ${user.displayName}`} onClick={() => setStatusCandidate(user)}>{user.status === "Deactivated" ? <UserRoundCheck className="size-3.5" strokeWidth={1.5} aria-hidden="true" /> : <Ban className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}</Button></UserActionTooltip>
+          <UserActionTooltip label={t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId || (user.status === "Deactivated" && !team?.subscription?.canAddUser)} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")} ${user.displayName}`} onClick={() => setStatusCandidate(user)}>{user.status === "Deactivated" ? <UserRoundCheck className="size-3.5" strokeWidth={1.5} aria-hidden="true" /> : <Ban className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}</Button></UserActionTooltip>
           <UserActionTooltip label={user.authUserId === currentAuthUserId ? t("You cannot remove your own access") : t("Delete user")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]" aria-label={`${t("Delete user")} ${user.displayName}`} onClick={() => void openDeleteUser(user)}><Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
         </div>
       ),
     },
-  ], [currentAuthUserId, deletingInvite, resendingUserId, roles, t, teamPhotoUrl])
+  ], [currentAuthUserId, deletingInvite, resendingUserId, roles, t, teamPhotoUrl, team?.subscription?.canAddUser])
 
   return (
     <>
@@ -3392,11 +3393,15 @@ export function AdminUsersContent() {
             {primaryAction(t("Invite user"), () => {
               setRoleComposerTarget(null)
               setInviteOpen(true)
-            })}
+            }, loading || !team?.subscription?.canAddUser)}
           </div>
         )}
       />
       <div className="mt-[var(--md-page-stack-gap)]">
+        {team?.subscription ? <div className="mb-4 text-[13px] text-[var(--md-text)]" role="status">
+          <p>{team.subscription.planName} · {team.subscription.occupiedSeats} / {team.subscription.seatLimit ?? "Unconfirmed"} seats occupied</p>
+          <p className="mt-1 text-[12px]">Active users and pending invitations count towards your seat limit. {team.subscription.canAddUser ? `${team.subscription.remainingSeats} seats available.` : "No seats available."} <a className="underline" href="mailto:support@multideck.co.uk?subject=Multideck%20paid%20seats">Request more seats</a></p>
+        </div> : !loading && !loadError ? <p role="status" className="mb-4 text-[13px] text-[var(--md-text)]">Seat limits could not be confirmed. Contact Multideck before adding users.</p> : null}
         {loadError ? (
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]" role="alert">
             <p className="text-[13px] font-medium text-[var(--md-red)]">{t("Users could not be loaded.")}</p>
@@ -3550,7 +3555,7 @@ export function AdminUsersContent() {
                   </div>
                   {selectedInviteRole ? <div className="flex items-start justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3.5 py-3 shadow-[var(--md-shadow-line)]"><div className="min-w-0"><p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedInviteRole.name}</p><p className="mt-1 text-[11.5px] leading-5 text-[var(--md-text)]">{t(selectedInviteRole.description || "Reusable workspace role.")}</p></div><StatusPill tone={selectedInviteRole.isSystem ? "blue" : "teal"}>{t(selectedInviteRole.isSystem ? "Predefined" : "Saved role")}</StatusPill></div> : null}
                   <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Invite expires")}<Select value={inviteForm.invitationExpiry} onValueChange={(invitationExpiry) => setInviteForm((current) => ({ ...current, invitationExpiry: invitationExpiry as ApiInvitationExpiry }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="3d">{t("3 days")}</SelectItem><SelectItem value="7d">{t("7 days")}</SelectItem><SelectItem value="30d">{t("30 days")}</SelectItem><SelectItem value="never">{t("Never (until accepted)")}</SelectItem></SelectContent></Select></label>
-                  <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={inviting} onClick={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button type="submit" disabled={inviting || !team?.offices.length || !assignableRoles.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{inviting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}{t(inviting ? "Sending invitation" : "Send invitation")}</Button></DialogFooter>
+                  <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={inviting} onClick={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button type="submit" disabled={inviting || !team?.subscription?.canAddUser || !team?.offices.length || !assignableRoles.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{inviting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}{t(inviting ? "Sending invitation" : "Send invitation")}</Button></DialogFooter>
                 </form>
               </motion.div>
             )}
@@ -4489,106 +4494,33 @@ function ApiTab() {
 }
 
 export function AdminBillingContent() {
-  const invoices = [
-    ["INV-2026-0618", "18 Jun 2026", "EUR 1,284", "Paid"],
-    ["INV-2026-0518", "18 May 2026", "EUR 1,196", "Paid"],
-    ["INV-2026-0418", "18 Apr 2026", "EUR 1,142", "Paid"],
-  ]
-
-  return (
-    <>
-      <SettingsPageHeader
-        eyebrow="Workspace / Billing"
-        title="Billing"
-        actions={compactAction("Download invoices", () => toast.success("Invoices prepared"))}
-      />
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-3 sm:grid-cols-3">
-        {[
-          [CreditCard, "Current plan", "Operations", "Annual billing"],
-          [Users, "Seats", "14 / 18", "4 seats available"],
-          [CalendarClock, "Renews", "14 Jan 2027", "EUR 18,400 annual"],
-        ].map(([Icon, label, value, detail]) => (
-          <section key={label as string} className="group rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
-            <div className="flex items-start justify-between gap-3">
-              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-transform duration-200 group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100">
-                <Icon className="size-4" strokeWidth={1.35} aria-hidden="true" />
-              </span>
-              <span className="text-[11px] text-[var(--md-subtle)]">{label as string}</span>
-            </div>
-            <p className="mt-5 text-[20px] font-medium tracking-[-0.02em] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{value as string}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{detail as string}</p>
-          </section>
-        ))}
-      </div>
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-[var(--md-page-stack-gap)]">
-          <SettingsPanel title="Plan and seats">
-            <SettingsFieldRow label="Seats">
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                <div>
-                  <div className="h-2 overflow-hidden rounded-full bg-[var(--md-surface-tint)]">
-                    <span className="block h-full w-[77.8%] rounded-full bg-[var(--md-accent)]" />
-                  </div>
-                  <p className="mt-2 text-[12px] tabular-nums text-[var(--md-text)]">14 active · 18 included</p>
-                </div>
-                {compactAction("Manage seats")}
-              </div>
-            </SettingsFieldRow>
-            <SettingsFieldRow label="Billing cadence">
-              <ChoiceSetting options={["Monthly", "Annual"]} initialValue="Annual" />
-            </SettingsFieldRow>
-            <SettingsFieldRow label="Renewal">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
-                <span className="text-[13px] text-[var(--md-text)]">14 Jan 2027</span>
-                <span className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]">EUR 18,400</span>
-              </div>
-            </SettingsFieldRow>
-          </SettingsPanel>
-          <SettingsPanel title="Invoices">
-            {invoices.map(([number, date, amount, status]) => (
-              <div key={number} className="grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_110px_110px_auto] sm:items-center">
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{number}</p>
-                  <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{date}</p>
-                </div>
-                <p className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{amount}</p>
-                <StatusPill tone="teal">{status}</StatusPill>
-                <Button type="button" variant="ghost" size="icon" aria-label={`Download ${number}`} className="size-9 rounded-[var(--md-radius-lg)] hover:bg-[var(--md-hover)]">
-                  <FileText className="size-4" strokeWidth={1.3} aria-hidden="true" />
-                </Button>
-              </div>
-            ))}
-          </SettingsPanel>
-        </div>
-        <aside className="space-y-[var(--md-page-stack-gap)] xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <section className="rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Payment method</p>
-            <div className="mt-4 rounded-[var(--md-radius-xl)] bg-[var(--md-ink)] p-4 text-white shadow-[var(--md-shadow-soft)]">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-white/60">Company card</span>
-                <CreditCard className="size-4 text-white/70" strokeWidth={1.3} aria-hidden="true" />
-              </div>
-              <p className="mt-8 text-[14px] font-medium tracking-[0.12em]" dir="ltr" data-i18n-skip>•••• 4242</p>
-              <div className="mt-3 flex items-center justify-between text-[11px] text-white/60">
-                <span>Northwind Forwarding</span>
-                <span>01/29</span>
-              </div>
-            </div>
-            <div className="mt-3">{compactAction("Update payment method")}</div>
-          </section>
-          <SettingsSummaryCard
-            title="Next invoice"
-            rows={[
-              ["Forecast", "EUR 1,284"],
-              ["Billing date", "18 Jul 2026"],
-              ["Tax", "Calculated at checkout"],
-              ["Payment status", "Healthy"],
-            ]}
-          />
-        </aside>
-      </div>
-    </>
-  )
+  const [usage, setUsage] = useState<DexterUsage | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try { setUsage(await getDexterUsage()) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Subscription could not be loaded.") }
+    finally { setLoading(false) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+  const subscription = usage?.subscription
+  const money = (value: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(value)
+  return <>
+    <SettingsPageHeader eyebrow="Workspace / Billing" title="Billing" />
+    <div className="mt-[var(--md-page-stack-gap)] space-y-4">
+      {loading ? <p role="status">Loading subscription…</p> : error ? <div role="alert"><p>{error}</p><Button variant="outline" onClick={() => void load()}>Retry</Button></div> :
+        <SettingsPanel title={subscription?.planName ?? "Subscription"} description="Your contracted users and monthly platform price.">
+          <SettingsFieldRow label="Paid seats"><span>{subscription?.paidSeats ?? "Awaiting contract confirmation"}</span></SettingsFieldRow>
+          <SettingsFieldRow label="Occupied seats"><span>{subscription?.occupiedSeats ?? "Unavailable"} · includes pending invitations</span></SettingsFieldRow>
+          <SettingsFieldRow label="Monthly price"><span>{subscription?.monthlyGbp != null ? money(subscription.monthlyGbp) + " excluding VAT and optional add-ons" : "Confirmed in your agreement"}</span></SettingsFieldRow>
+          {subscription?.baseMonthlyGbp != null && subscription?.paidSeats != null ? <SettingsFieldRow label="Price breakdown"><span>{money(subscription.baseMonthlyGbp)} platform + {subscription.paidSeats} × £149</span></SettingsFieldRow> : null}
+          <SettingsFieldRow label="Manage subscription"><a href="mailto:support@multideck.co.uk?subject=Multideck%20subscription" className="underline">Request seats or discuss your plan</a></SettingsFieldRow>
+        </SettingsPanel>}
+      <p className="text-[12px] text-[var(--md-text)]">Enterprise pricing, invoices, payment terms and any existing agreement are managed with Multideck. Changes to seats or plans require confirmation before they take effect.</p>
+    </div>
+  </>
 }
 
 function AiUsageOverviewScreen({

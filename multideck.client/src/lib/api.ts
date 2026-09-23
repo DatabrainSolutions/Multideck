@@ -107,7 +107,22 @@ export type ApiAuthSession = {
   expiresAt: string | null
 }
 
+export type WorkspaceSubscription = {
+  planCode: string
+  planName: string
+  paidSeats: number | null
+  seatLimit: number | null
+  occupiedSeats: number
+  remainingSeats: number
+  canAddUser: boolean
+  pricingConfigured: boolean
+  baseMonthlyGbp: number | null
+  seatMonthlyGbp: number | null
+  monthlyGbp: number | null
+}
+
 export type ApiTeamUsersResponse = {
+  subscription?: WorkspaceSubscription
   company: ApiCompany | null
   offices: ApiOffice[]
   departments: ApiDepartment[]
