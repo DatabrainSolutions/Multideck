@@ -1,3 +1,4 @@
+import { parseDexterActivities, type DexterActivity } from "../../../shared/dexter-activity"
 import type { SignatureSelection } from "../../../shared/email-signatures"
 import type { DexterModelId } from "@/data/dexter-models"
 import type { AutomationAction, AutomationCondition } from "@/data/contact-card-data"
@@ -39,6 +40,7 @@ export type DexterMessage = {
   continuationMessageId?: string
   recordTables?: DexterRecordTable[]
   steeringInputs?: {input: string; responseId: string}[]
+  activities?: DexterActivity[]
   reasoningSummary?: string | null
   responseToUserMessageId?: string | null
   responseVersion?: number | null
@@ -339,7 +341,7 @@ export type SendDexterMessageInput = {
 }
 
 export class DexterApiError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly retrySafe = false) {
     super(message)
     this.name = "DexterApiError"
   }
@@ -774,6 +776,7 @@ export async function streamDexterMessage(
     onAnswerReset?: () => void
     onAnswerDelta?: (delta: string) => void
     onReasoningDelta?: (delta: string) => void
+    onActivity?: (activity: DexterActivity) => void
     onApprovalWithdrawn?: (approvalId: string) => void
     onPendingAction?: (action: DexterPendingAction) => void
     onEmailDraft?: (draft: DexterEmailDraft) => void
@@ -886,6 +889,9 @@ export async function streamDexterMessage(
         if (typeof handlers !== "function") handlers.onAnswerReset?.()
       } else if ("type" in payload && payload.type === "delta" && "delta" in payload && typeof payload.delta === "string") {
         onAnswerDelta?.(payload.delta)
+      } else if ("type" in payload && payload.type === "activity" && "activity" in payload) {
+        const activity = parseDexterActivities([payload.activity])[0]
+        if (activity && typeof handlers !== "function") handlers.onActivity?.(activity)
       } else if ("type" in payload && payload.type === "reasoning_delta" && "delta" in payload && typeof payload.delta === "string") {
         onReasoningDelta?.(payload.delta)
       } else if (
@@ -919,7 +925,9 @@ export async function streamDexterMessage(
         const message = "message" in payload && typeof payload.message === "string"
           ? payload.message
           : "Dexter's response was interrupted. Try again in a moment."
-        throw new DexterApiError(message)
+        // Only the server can confirm that no tools or changes were performed.
+        // A disconnect, timeout or later-round failure still needs reconciliation.
+        throw new DexterApiError(message, "retrySafe" in payload && payload.retrySafe === true)
       }
     }
 

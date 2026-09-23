@@ -114,3 +114,22 @@ Deno.test('resized columns survive repeated save validation and field edits, inc
  assert.match(output.html,/<td width="67%"/)
  assert.deepEqual(validateSignatureDocument(newSignatureDocument('side')).rows[0].columnWidths,[50,50])
 })
+
+Deno.test('headshots send each sender\'s own profile photo inline and a new photo requires fresh review',async()=>{
+ const f=fixture();const doc=newSignatureDocument('stacked');doc.rows[0].columns[0].unshift({...newSignatureBlock('image'),imageRole:'photo',imageSource:'person',width:72,radius:999})
+ f.tables.email_signature_templates[0].published_document=doc
+ Object.assign(f.tables.cmp_Users[0],{User_ProfilePhotoBucket:'profile-photos',User_ProfilePhotoPath:`${f.user}/photo.jpg`,User_ProfilePhotoMimeType:'image/jpeg',User_ProfilePhotoSizeBytes:4,User_ProfilePhotoUpdatedAt:'2026-09-20T10:00:00Z'})
+ f.db.storage={from:(bucket:string)=>({download:(path:string)=>Promise.resolve(bucket==='profile-photos'&&path===`${f.user}/photo.jpg`?{data:new Blob([new Uint8Array([255,216,255,0])]),error:null}:{data:null,error:{message:'missing'}})})}
+ const profile={...values,name:'Alex Morgan',email:'shared@example.test',website:'',companyDetails:'Example'}
+ const withPhoto=await sha256Hex(JSON.stringify([f.id,1,profile,`${f.user}/photo.jpg`,'2026-09-20T10:00:00Z']))
+ const resolved=await resolveSignature(f.db,f.actor,f.mailbox,{enabled:true,templateId:f.id,revision:1,fingerprint:withPhoto})
+ assert.match(resolved.html,new RegExp(`cid:signature-photo-${f.user}@multideck" alt="Alex Morgan"`))
+ assert.equal(resolved.attachments.length,1);assert.equal(resolved.attachments[0].isInline,true);assert.equal(resolved.attachments[0].mimeType,'image/jpeg')
+ const withoutPhoto=await sha256Hex(JSON.stringify([f.id,1,profile]))
+ await assert.rejects(()=>resolveSignature(f.db,f.actor,f.mailbox,{enabled:true,templateId:f.id,revision:1,fingerprint:withoutPhoto}),/signature changed/)
+ f.tables.cmp_Users[0].User_ProfilePhotoUpdatedAt='2026-09-21T10:00:00Z'
+ await assert.rejects(()=>resolveSignature(f.db,f.actor,f.mailbox,{enabled:true,templateId:f.id,revision:1,fingerprint:withPhoto}),/signature changed/)
+ f.tables.cmp_Users[0].User_ProfilePhotoSizeBytes=3*1024*1024
+ const oversized=await resolveSignature(f.db,f.actor,f.mailbox,{enabled:true,templateId:f.id,revision:1,fingerprint:withoutPhoto})
+ assert.equal(oversized.attachments.length,0);assert.doesNotMatch(oversized.html,/<img/)
+})

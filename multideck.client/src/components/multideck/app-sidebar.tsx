@@ -1,5 +1,4 @@
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
-import { SidebarTaskAgents } from "@/components/multideck/task-agent-components"
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
@@ -2210,7 +2209,6 @@ export function AppSidebar({
       </div>
 
       <div className="relative z-10 mt-[var(--md-page-stack-gap)] shrink-0">
-        <SidebarTaskAgents collapsed={collapsed} onNavigate={(path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')); onRequestClose?.() }} />
         {supportTicketFeatureEnabled ? <><Separator className="sidebar-support-divider mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
         <button
           type="button"

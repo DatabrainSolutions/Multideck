@@ -108,7 +108,7 @@ test('event delegation needs a watch actually created by this run', () => {
   )
 })
 
-Deno.test('Do now and due runs override the original execution time while keeping the research date', () => {
+test('Do now and due runs override the original execution time while keeping the research date', () => {
  const instructions = backgroundTaskInstructions({ phase: 'execute', now: '2026-09-11T00:00:00Z', time_zone: 'Europe/London', scheduledDate: '2026-09-12', instruction: 'Tomorrow at 09:00 summarise my meetings' })
  if (!instructions.includes('EXECUTE NOW') || !instructions.includes('overrides any future execution time') || !instructions.includes('Keep the requested subject/date')) throw new Error('Missing execution override')
  try {
@@ -119,7 +119,7 @@ Deno.test('Do now and due runs override the original execution time while keepin
  }
 })
 
-Deno.test('delayed execution preserves the original relative-date anchor', () => {
+test('delayed execution preserves the original relative-date anchor', () => {
  const instructions=backgroundTaskInstructions({phase:'execute',now:'2026-09-12T08:00:00Z',instructionReceivedAt:'2026-09-11T00:00:00Z',time_zone:'Europe/London',scheduledDate:'2026-09-11',instruction:'Tomorrow at 09:00 summarise my meetings'})
  assert.match(instructions,/Original request received at: 2026-09-11T00:00:00Z/)
  assert.match(instructions,/never from a later execution\/retry date/)

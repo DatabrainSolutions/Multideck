@@ -25,6 +25,7 @@ export type TodoTask = {
   tags: TodoTag[]
   source: "manual" | "dexter_context" | "dexter_action"
   sourceDexterMessageId: string | null
+  dexterConversationId: string | null
   editVersion: number
   createdAt: string
   updatedAt: string
@@ -108,6 +109,7 @@ function normaliseTask(value: unknown): TodoTask {
     tags: normaliseTags(row.tags),
     source,
     sourceDexterMessageId: cleanString(row.sourceDexterMessageId, 80) || null,
+    dexterConversationId: cleanString(row.dexterConversationId, 80) || null,
     editVersion: Math.max(1, Math.trunc(Number(row.editVersion) || 1)),
     createdAt: cleanString(row.createdAt, 80),
     updatedAt: cleanString(row.updatedAt, 80),
@@ -162,4 +164,16 @@ export async function deleteTodoTask(taskId: string) {
   const { data, error } = await client().rpc("multideck_todo_delete", { p_task_id: taskId })
   if (error) throw apiError(error, "That task could not be removed.")
   return Boolean(data && typeof data === "object" && !Array.isArray(data) && (data as Record<string, unknown>).deleted)
+}
+
+/** Create or reopen the task's ordinary Dexter chat under the task owner's identity. */
+export async function openTodoDexterChat(taskId: string) {
+  const { data, error } = await client().rpc("multideck_todo_open_dexter_chat", { p_task_id: taskId })
+  if (error) throw apiError(error, "Dexter could not open this task. Try again.")
+  const conversationId = data && typeof data === "object" && !Array.isArray(data)
+    ? cleanString((data as Record<string, unknown>).conversationId, 80) : ""
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(conversationId)) {
+    throw new TodoApiError("Dexter did not return a conversation. Try again.")
+  }
+  return { conversationId, isNew: (data as Record<string, unknown>).isNew === true }
 }

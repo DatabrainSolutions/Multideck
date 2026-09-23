@@ -1,3 +1,7 @@
+import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"
+import dexterActivityTrailSource from "@/components/multideck/dexter-activity-trail.tsx?raw"
+import type { DexterActivity } from "../../../shared/dexter-activity"
+import { DealLossDialog, DealNextActionPanel, type DealNextActionPanelProps } from "@/components/multideck/crm-deal-actions"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { BellToggle } from "@/components/multideck/bell-toggle"
 import { SpringCheck } from "@/components/multideck/spring-check"
@@ -6,13 +10,17 @@ import { InlineNotice } from "@/components/multideck/inline-notice"
 import { SuggestedUpdateIllustration } from "@/components/multideck/suggested-update-illustration"
 import { SignatureBuilder } from "@/components/multideck/signature-builder"
 import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck/dexter-voice-controls"
-import { SignatureBlockGlyph } from "@/components/multideck/signature-block-glyph"
+import { SignatureBlockGlyph, type SignatureGlyphKind } from "@/components/multideck/signature-block-glyph"
+import { SignatureTemplatePicker } from "@/components/multideck/signature-template-picker"
+import { SignatureThumbnail } from "@/components/multideck/signature-thumbnail"
+import { ValueSlider } from "@/components/multideck/value-slider"
+import { SwatchPicker } from "@/components/multideck/swatch-picker"
+import { signaturePaletteLabels, type SignaturePaletteKind } from "@/lib/signature-blocks"
+import { signaturePreviewDocument, signatureStarters } from "@/lib/signature-templates"
 import { EmailSignatureControl } from "@/components/multideck/email-signature-control"
-import { newSignatureDocument, renderSignature, signatureKinds, type SignatureBlockKind, type SignatureSelection } from "@/lib/email-signatures"
+import { newSignatureDocument, renderSignature, type SignatureSelection } from "@/lib/email-signatures"
 import { ContactEmailAction } from "@/components/multideck/contact-email-action"
 import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
-import { TaskAgentStack, TaskAgentControls } from "@/components/multideck/task-agent-components"
-import type { TaskAgent } from "@/lib/task-agents"
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
 import dexterRecordTableSource from "@/components/multideck/dexter-record-table.tsx?raw"
 import dexterComponentsSource from "@/components/multideck/agent-dexter-components.tsx?raw"
@@ -44,11 +52,6 @@ import {
   ContextContentHeader,
   ContextTrigger,
 } from "@/components/ai-elements/context"
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from "@/components/ai-elements/reasoning"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   ContextMenu,
@@ -157,6 +160,7 @@ import { ScreeningListFreshness, ScreeningMatchList, ScreeningMatchRow, Screenin
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
 import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
+import { DashboardModeChart } from "@/components/multideck/dashboard-mode-chart"
 import { DashboardPerformancePanel } from "@/components/multideck/dashboard-performance-panel"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { DashboardCoveragePanel } from "@/components/multideck/dashboard-coverage-panel"
@@ -313,6 +317,32 @@ import { TicketAttachmentsPreview } from "@/components/multideck/ticket-attachme
 import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
 
+function DexterActivityPreview({ completed = false }: { completed?: boolean }) {
+  const [open, setOpen] = useState(true)
+  const [step, setStep] = useState(completed ? 4 : 1)
+  const [failed, setFailed] = useState(false)
+  const labels = [
+    ["Searching Gmail", "Searched Gmail"],
+    ["Reading Gmail emails", "Read Gmail emails"],
+    ["Searching Outlook", "Searched Outlook"],
+    ["Reading Outlook emails", "Read Outlook emails"],
+  ]
+  const activities: DexterActivity[] = labels.slice(0, Math.min(step + 1, 4)).map((label, index) => ({
+    id: `preview-${index}`, providers: [index < 2 ? "gmail" : "outlook"],
+    status: failed && index === step ? "failed" : index < step ? "completed" : "running",
+    label: failed && index === step ? "Could not read emails" : label[index < step ? 1 : 0],
+    ...(failed && index === step ? { detail: "Dexter reached the three-page email limit for this request. Ask it to read the remaining email in a new request." } : {}),
+  }))
+  return <div className="w-full max-w-[680px] space-y-6">
+    <DexterActivityTrail content={step >= 4 ? "Compared the matching email threads and prepared a summary with links to the original messages." : ""}
+      activities={activities} isStreaming={step < 4 && !failed} open={open} onOpenChange={setOpen} />
+    {!completed ? <div className="flex flex-wrap gap-2">
+      <Button variant="outline" size="sm" onClick={() => { setFailed(false); setStep(current => (current + 1) % 5) }}>{step >= 4 ? "Restart preview" : "Next activity"}</Button>
+      <Button variant="ghost" size="sm" disabled={step >= 4} onClick={() => setFailed(value => !value)}>{failed ? "Retry preview" : "Preview failure"}</Button>
+    </div> : null}
+  </div>
+}
+
 type GalleryIconKey = keyof typeof galleryIcons
 
 const sectionLinks = ["Introduction", "Components", "Usage", "Theming", "Tokens"]
@@ -335,12 +365,12 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Chart components",
     helper: "Graphs, KPI boxes, report visuals",
-    ids: ["metric-card", "performance-panel", "breakdown-panel", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
+    ids: ["metric-card", "series-chart", "performance-panel", "breakdown-panel", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
   },
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "bell-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "bell-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "value-slider", "swatch-picker", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -355,17 +385,17 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["signature-builder", "signature-block-glyph", "email-signature-control", "contact-email-action", "contact-preferences-popover", "public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["signature-builder", "signature-block-glyph", "signature-template-picker", "signature-thumbnail", "email-signature-control", "contact-email-action", "contact-preferences-popover", "public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
   },
   {
     label: "CRM",
     helper: "Calls, leads, contacts, deals, activity, Drive, settings",
-    ids: ["phone-call-metric-strip", "phone-call-analysis-launcher", "phone-call-provider-health", "phone-call-volume-chart", "phone-call-attention-list", "phone-call-reason-list", "phone-call-coverage", "phone-call-status", "unified-phone-call-transcript", "phone-call-linked-record", "phone-call-identity-match-review", "phone-call-suggested-actions", "crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "drive-folder-tile", "drive-file-tile", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder", "organisation-foundation-panel", "marketing-opt-in-control", "score-explanation-popover"],
+    ids: ["phone-call-metric-strip", "phone-call-analysis-launcher", "phone-call-provider-health", "phone-call-volume-chart", "phone-call-attention-list", "phone-call-reason-list", "phone-call-coverage", "phone-call-status", "unified-phone-call-transcript", "phone-call-linked-record", "phone-call-identity-match-review", "phone-call-suggested-actions", "crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "deal-next-action", "deal-loss-dialog", "crm-pipeline-editor", "drive-folder-tile", "drive-file-tile", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder", "organisation-foundation-panel", "marketing-opt-in-control", "score-explanation-popover"],
   },
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["task-agent-stack", "task-agent-controls", "dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Home",
@@ -404,6 +434,28 @@ const previewHomeSuggestions: HomePromptSuggestion[] = [
   { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
   { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
 ]
+
+function DealWorkflowPreview({ loss = false }: { loss?: boolean }) {
+  const [lossOpen, setLossOpen] = useState(false)
+  const [simulateFailure, setSimulateFailure] = useState(false)
+  const [readOnly, setReadOnly] = useState(false)
+  const [deal, setDeal] = useState<DealNextActionPanelProps["deal"]>(() => ({
+    ownerId: "maya", statusCode: "open", nextActionDueAt: null, actionHistory: [],
+    nextAction: { id: "example-action", title: "Confirm weekly volumes and target start date with Alex", type: "call", ownerId: "maya", ownerName: "Maya Stone", dueAt: new Date(Date.now() + 86400000).toISOString(), status: "open", completedAt: null, completionNote: null, taskId: "example-task", createdAt: new Date().toISOString() },
+  }))
+  const owners = [{ id: "maya", name: "Maya Stone" }, { id: "sam", name: "Sam Taylor" }]
+  async function validatePreviewSave() { if (simulateFailure) throw new Error("Could not confirm this change. Your draft is still here; switch off the failure preview and try again.") }
+  return <div className="grid w-full max-w-[680px] gap-4">
+    <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" aria-pressed={simulateFailure} onClick={() => setSimulateFailure(!simulateFailure)}>Failure preview: {simulateFailure ? "on" : "off"}</Button>{!loss ? <Button variant="outline" size="sm" aria-pressed={readOnly} onClick={() => setReadOnly(!readOnly)}>Read only: {readOnly ? "on" : "off"}</Button> : null}</div>
+    {loss ? <><Button onClick={() => setLossOpen(true)}>Mark example deal lost</Button><DealLossDialog open={lossOpen} onOpenChange={setLossOpen} dealName="Marlow Apparel · weekly ocean imports" onConfirm={async () => { await validatePreviewSave(); toast.success("Preview deal marked lost") }} /></> : <DealNextActionPanel deal={deal} owners={owners} canEdit={!readOnly} onOpenTasks={() => toast.info("The real deal opens the assignee’s Tasks for that date.")} onSave={async (input) => {
+      await validatePreviewSave()
+      setDeal((current) => ({ ...current, nextAction: { ...input, id: `preview-${Date.now()}`, ownerName: owners.find((owner) => owner.id === input.ownerId)?.name ?? null, status: "open", completedAt: null, completionNote: null, taskId: "example-task", createdAt: new Date().toISOString() }, actionHistory: [...(current.nextAction ? [{ ...current.nextAction, status: "superseded" as const }] : []), ...(current.actionHistory ?? [])] }))
+    }} onComplete={async (_id, note) => {
+      await validatePreviewSave()
+      setDeal((current) => ({ ...current, nextAction: null, actionHistory: [...(current.nextAction ? [{ ...current.nextAction, status: "completed" as const, completedAt: new Date().toISOString(), completionNote: note }] : []), ...(current.actionHistory ?? [])] }))
+    }} />}
+  </div>
+}
 
 function DexterVoiceControlsPreview() {
   const [muted, setMuted] = useState(false)
@@ -2392,14 +2444,6 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="flex w-full max-w-[520px] items-center justify-center rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]"><TodoPriorityPicker value="high" ariaLabel="Priority" onValueChange={() => undefined} /></div>
       ) : null}
 
-      {id === "task-agent-controls" ? <div className="w-full max-w-[480px] p-4"><TaskAgentControls agent={{id:'preview-controls',task_id:'preview-task',conversation_id:'preview-conversation',title:'Prepare Tuesday’s brief',name:'Harper',icon:1,status:'scheduled',summary:'Scheduled for Tuesday',instruction:'Prepare Tuesday’s brief',time_zone:'Europe/London',due_at:'2026-09-15T08:00:00Z',outcome:null,message_id:null,result_revision:0,viewed_revision:0,version:1,updated_at:'2026-09-10T09:00:00Z',taskStatus:'open',scheduledDate:'2026-09-15'}} onControl={async agent=>agent}/></div> : null}
-
-      {id === "task-agent-stack" ? <div className="w-[260px] p-3"><TaskAgentStack agents={[
-        {id:'preview-1',task_id:'task-1',conversation_id:'conversation-1',title:'Prepare Tuesday’s meeting brief',name:'Harper',icon:1,status:'working',summary:'Checking the latest context',result_revision:0,viewed_revision:0,updated_at:'2026-09-10T09:00:00Z'},
-        {id:'preview-2',task_id:'task-2',conversation_id:'conversation-2',title:'Reply to Sam about the quote',name:'Xylo',icon:4,status:'ready',summary:'Your draft is ready',result_revision:1,viewed_revision:0,updated_at:'2026-09-10T08:00:00Z'},
-        {id:'preview-3',task_id:'task-3',conversation_id:'conversation-3',title:'Find the invoice for the shipment',name:'Ternus',icon:5,status:'needs_input',summary:'Choose between two matching invoices',result_revision:1,viewed_revision:0,updated_at:'2026-09-10T07:00:00Z'},
-      ] as TaskAgent[]} onOpen={()=>undefined} onViewAll={()=>undefined}/></div> : null}
-
       {id === "todo-action-state-icon" ? (
         <div className="flex w-full max-w-[520px] items-center justify-center gap-8 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
           {(["idle","loading","success"] as const).map((state) => <div key={state} className="grid justify-items-center gap-2"><TodoActionStateIcon state={state} /><span className="text-[11px] capitalize text-[var(--md-text)]">{state}</span></div>)}
@@ -3517,6 +3561,13 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "series-chart" ? (
+        <div className="grid w-full max-w-[950px] gap-5">
+          <DashboardModeChart title="Weekly sales outcomes" subtitle="Recorded outcomes on one shared scale" labels={["1 Jun", "8 Jun", "15 Jun", "22 Jun", "29 Jun", "6 Jul"]} series={[{ key: "won", label: "Won", color: "var(--md-accent)", values: [2, 4, 3, 6, 5, 8] }, { key: "lost", label: "Lost", color: "var(--md-amber)", values: [1, 2, 1, 2, 2, 1] }]} height={252} />
+          <DashboardModeChart title="Low-volume activity" subtitle="Zero remains a measured result; missing history is not added" labels={["8 Jun", "15 Jun", "22 Jun"]} series={[{ key: "created", label: "New deals", color: "var(--md-accent)", values: [0, 1, 0] }, { key: "entered", label: "Stage entries", color: "var(--md-amber)", values: [1, 0, 1] }]} height={170} />
+        </div>
+      ) : null}
+
       {id === "performance-panel" ? (
         <div className="md-kpi-scope w-full max-w-[1120px]">
           <KpiStrip
@@ -3851,7 +3902,11 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "signature-builder" ? <SignatureBuilderGallery /> : null}
-      {id === "signature-block-glyph" ? <div className="flex flex-wrap gap-5 p-8">{Object.keys(signatureKinds).map(kind=><div key={kind} className="text-center text-[11px]"><SignatureBlockGlyph kind={kind as SignatureBlockKind}/><p>{signatureKinds[kind as SignatureBlockKind]}</p></div>)}</div> : null}
+      {id === "signature-block-glyph" ? <div className="grid w-full max-w-[560px] grid-cols-4 gap-x-3 gap-y-5 p-8">{(Object.keys(signaturePaletteLabels) as SignaturePaletteKind[]).map(kind=><div key={kind} className="grid justify-items-center gap-2 text-center text-[11px] text-[var(--md-text)]"><SignatureBlockGlyph kind={kind as SignatureGlyphKind}/><p>{signaturePaletteLabels[kind]}</p></div>)}</div> : null}
+      {id === "signature-template-picker" ? <SignatureTemplatePickerGallery /> : null}
+      {id === "signature-thumbnail" ? <SignatureThumbnailGallery /> : null}
+      {id === "value-slider" ? <ValueSliderGallery /> : null}
+      {id === "swatch-picker" ? <SwatchPickerGallery /> : null}
       {id === "email-signature-control" ? <SignatureControlGallery /> : null}
       {id === "contact-email-action" ? <div className="w-full max-w-md p-6"><p className="text-[14px] font-medium">Alex Morgan</p><p className="mb-3 text-[12px] text-[var(--md-subtle)]">Operations manager</p><ContactEmailAction email="alex@example.test" name="Alex Morgan" preview /></div> : null}
       {id === "contact-preferences-popover" ? <ContactPreferencesPopover contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /> : null}
@@ -3975,33 +4030,8 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "dexter-live-reasoning" ? (
-        <div className="w-full max-w-[680px] py-1">
-          <Reasoning defaultOpen={false} isStreaming className="mb-0">
-            <ReasoningTrigger
-              className="min-h-8 text-[12.5px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]"
-              getThinkingMessage={() => <span>Reasoning</span>}
-            />
-            <ReasoningContent className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
-              {"Understanding your request\n\nChecking connected workspace data\n\nPreparing a grounded response"}
-            </ReasoningContent>
-          </Reasoning>
-        </div>
-      ) : null}
-
-      {id === "dexter-reasoning-summary" ? (
-        <div className="w-full max-w-[680px] py-1">
-          <Reasoning defaultOpen={false} isStreaming={false} className="mb-0">
-            <ReasoningTrigger
-              className="min-h-8 text-[12.5px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]"
-              getThinkingMessage={() => <span>Reasoning summary</span>}
-            />
-            <ReasoningContent className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
-              {"Matched the booking reference to the attached Marlow Apparel context.\n\nCompared the current milestones and exception data before preparing the answer."}
-            </ReasoningContent>
-          </Reasoning>
-        </div>
-      ) : null}
+      {id === "dexter-live-reasoning" ? <DexterActivityPreview /> : null}
+      {id === "dexter-reasoning-summary" ? <DexterActivityPreview completed /> : null}
 
       {id === "dexter-record-table" ? <DexterRecordTable table={{
         id: "gallery-leads", title: "Leads to follow up", domain: "leads", retrievedAt: "2026-09-09T12:00:00Z",
@@ -4013,11 +4043,13 @@ function ComponentPreview({ id }: { id: string }) {
           <DexterActionApproval
             action={{
               id: "preview-update-lead",
-              title: "Update lead",
+              title: "Set deal next action",
               target: { id: "preview-lead", label: "Northwind Logistics", url: "/crm/leads" },
-              description: "Set the next follow-up deadline for this lead.",
+              description: "Set the next action and add it to Jordan’s Tasks. The current action remains in the deal history.",
               changes: [
-                { field: "next action due at", value: "2026-09-10T09:00:00Z", before: null, after: "2026-09-10T09:00:00Z", beforeKnown: true, kind: "added" },
+                { field: "Next action", value: "Confirm weekly volumes", before: "Send the quote", after: "Confirm weekly volumes", beforeKnown: true, kind: "changed" },
+                { field: "Assigned to", value: "Jordan", before: "Alex", after: "Jordan", beforeKnown: true, kind: "changed" },
+                { field: "Due", value: "2026-09-23T09:00:00Z", before: null, after: "2026-09-23T09:00:00Z", beforeKnown: true, kind: "added" },
               ],
             }}
             onDecision={(decision) => toast.success(decision === "approve" ? "Change approved" : "Change denied")}
@@ -4254,6 +4286,9 @@ function ComponentPreview({ id }: { id: string }) {
           <CrmPriorityActionsPanel />
         </div>
       ) : null}
+
+      {id === "deal-next-action" ? <DealWorkflowPreview /> : null}
+      {id === "deal-loss-dialog" ? <DealWorkflowPreview loss /> : null}
 
       {id === "crm-pipeline-board" ? (
         <div className="w-full max-w-[1180px]">
@@ -5081,7 +5116,7 @@ export function ComponentsGalleryPage() {
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
-                <CopyButton value={(selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.id === "dexter-prompt-composer" ? dexterComponentsSource.slice(dexterComponentsSource.indexOf("function DexterRecordingWaveform"), dexterComponentsSource.indexOf("export function DexterSpecialistPicker")) : selected.componentCode)} />
+                <CopyButton value={(["dexter-live-reasoning", "dexter-reasoning-summary"].includes(selected.id) ? dexterActivityTrailSource : selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.id === "dexter-prompt-composer" ? dexterComponentsSource.slice(dexterComponentsSource.indexOf("function DexterRecordingWaveform"), dexterComponentsSource.indexOf("export function DexterSpecialistPicker")) : selected.componentCode)} />
                 <Button variant="ghost" size="icon" className="rounded-[var(--md-radius-lg)] bg-white/50 shadow-[var(--md-shadow-line)]" onClick={() => moveSelection(-1)}>
                   <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
                 </Button>
@@ -5112,7 +5147,7 @@ export function ComponentsGalleryPage() {
 
               <TabsContent value="code" id="code" className="mt-[var(--md-page-stack-gap)]">
                 <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-                  <CodeBlock code={(selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.id === "dexter-prompt-composer" ? dexterComponentsSource.slice(dexterComponentsSource.indexOf("function DexterRecordingWaveform"), dexterComponentsSource.indexOf("export function DexterSpecialistPicker")) : selected.componentCode)} />
+                  <CodeBlock code={(["dexter-live-reasoning", "dexter-reasoning-summary"].includes(selected.id) ? dexterActivityTrailSource : selected.id === "dexter-record-table" ? dexterRecordTableSource : selected.id === "dexter-prompt-composer" ? dexterComponentsSource.slice(dexterComponentsSource.indexOf("function DexterRecordingWaveform"), dexterComponentsSource.indexOf("export function DexterSpecialistPicker")) : selected.componentCode)} />
                 </Surface>
               </TabsContent>
 
@@ -5150,9 +5185,28 @@ export function ComponentsGalleryPage() {
 
 const signatureGalleryValues={name:"Alex Morgan",jobTitle:"Operations manager",email:"alex@example.test",phone:"+44 20 7946 0123",mobile:"",company:"Example Logistics",website:"https://example.test",address:"London",companyDetails:"Example Logistics\nhttps://example.test\n+44 20 7946 0123\nLondon"}
 function SignatureBuilderGallery(){
- const [document,setDocument]=useState(()=>newSignatureDocument('side'))
+ const [document,setDocument]=useState(()=>signatureStarters.find(starter=>starter.id==="logo-beside")!.build("#0e7d74"))
  const [assets,setAssets]=useState<Record<string,string>>({})
- return <div className="w-full p-3"><SignatureBuilder document={document} onChange={setDocument} values={signatureGalleryValues} assets={assets} onUpload={async file=>{const id=crypto.randomUUID();const url=URL.createObjectURL(file);setAssets(a=>({...a,[id]:url}));return {id,url}}}/></div>
+ return <div className="w-full p-3"><SignatureBuilder document={document} onChange={setDocument} values={signatureGalleryValues} assets={assets} allowTemplates onUpload={async file=>{const id=crypto.randomUUID();const url=URL.createObjectURL(file);setAssets(a=>({...a,[id]:url}));return {id,url}}}/></div>
+}
+function SignatureTemplatePickerGallery(){
+ const [open,setOpen]=useState(false)
+ const [chosen,setChosen]=useState("")
+ return <div className="grid justify-items-center gap-3 p-8 text-[12px] text-[var(--md-subtle)]"><Button onClick={()=>setOpen(true)}>Browse templates</Button>{chosen?<p>Chose {chosen}</p>:<p>Preview only. Choosing a template does not create a signature.</p>}<SignatureTemplatePicker open={open} onOpenChange={setOpen} accent="#0e7d74" values={signatureGalleryValues} onChoose={(_,templateId)=>{setChosen(signatureStarters.find(starter=>starter.id===templateId)?.name??"Start from scratch");setOpen(false)}}/></div>
+}
+function SignatureThumbnailGallery(){
+ const items=useMemo(()=>["portrait","night","book-a-call"].map(id=>{const document=signatureStarters.find(starter=>starter.id===id)!.build("#0e7d74");const preview=signaturePreviewDocument(document,signatureGalleryValues);return {id,width:document.width,html:renderSignature(preview.document,signatureGalleryValues,preview.assets).html}}),[])
+ return <div className="grid w-full gap-4 p-6 sm:grid-cols-3">{items.map(item=><SignatureThumbnail key={item.id} html={item.html} width={item.width} height={150} className="rounded-[var(--md-radius-lg)] bg-white shadow-[var(--md-shadow-line)]"/>)}</div>
+}
+function ValueSliderGallery(){
+ const [width,setWidth]=useState(480)
+ const [spacing,setSpacing]=useState(12)
+ const [commits,setCommits]=useState(0)
+ return <div className="grid w-full max-w-[300px] gap-6 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><ValueSlider label="Width" value={width} min={240} max={640} unit="px" marks={[320,480,600]} onChange={setWidth} onCommit={()=>setCommits(c=>c+1)}/><ValueSlider label="Spacing" value={spacing} min={0} max={40} unit="px" onChange={setSpacing} onCommit={()=>setCommits(c=>c+1)}/><ValueSlider label="Disabled" value={50} min={0} max={100} unit="%" disabled onChange={()=>undefined}/><p className="text-[11px] text-[var(--md-subtle)]">{commits} committed {commits===1?"change":"changes"}</p></div>
+}
+function SwatchPickerGallery(){
+ const [colour,setColour]=useState("#0e7d74")
+ return <div className="grid w-full max-w-[300px] gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><SwatchPicker label="Accent colour" value={colour} onChange={setColour} swatches={[{value:"#0e7d74",label:"Accent"},{value:"#1f2a28",label:"Ink"},{value:"#66736f",label:"Muted"},{value:"#ffffff",label:"White"},{value:"#2f5bd3",label:"Blue"},{value:"#7a4fd6",label:"Violet"},{value:"#c2410c",label:"Amber"},{value:"#b4235a",label:"Rose"}]}/><div className="h-8 rounded-[var(--md-radius-md)]" style={{background:colour}}/></div>
 }
 function SignatureControlGallery(){
  const [choice]=useState(()=>({id:'gallery-signature',name:'Operations',revision:1,fingerprint:'preview',personal:false,...renderSignature(newSignatureDocument('stacked'),signatureGalleryValues)}))

@@ -13,6 +13,7 @@ const conversationMigration=readFileSync(new URL('../migrations/20260910220611_d
 const deletedControlMigration=readFileSync(new URL('../migrations/20260910221122_dexter_task_deleted_control.sql',import.meta.url),'utf8')
 const scheduleClaimMigration=readFileSync(new URL('../migrations/20260910235915_dexter_schedule_claim_race.sql',import.meta.url),'utf8')
 const completionMigration=readFileSync(new URL('../migrations/20260911110000_dexter_complete_delivered_tasks.sql',import.meta.url),'utf8')
+const chatHandoffMigration=readFileSync(new URL('../migrations/20260922190000_todo_dexter_chat_handoff.sql',import.meta.url),'utf8')
 test('durable tasks: owner isolation, three slots, leases, saved results, schedules, events and confirmed completion',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'dexter-tasks-'));const data=join(dir,'data');let started=false
  const run=(cmd,args,input)=>{const r=spawnSync(join(bin,cmd),args,{input,encoding:'utf8',timeout:30000});assert.equal(r.status,0,`${r.stderr}\n${r.stdout}`)}
@@ -36,7 +37,7 @@ test('durable tasks: owner isolation, three slots, leases, saved results, schedu
  create table "sys_AIDexterDataDomains"("AIDexterDomain_Code" text,"AIDexterDomain_Name" text,"AIDexterDomain_Description" text);
  create table "sys_AIDexterWatchCapabilities"("AIDexterWatchCapability_Code" text,"AIDexterWatchCapability_Name" text,"AIDexterWatchCapability_Description" text,"AIDexterWatchCapability_FieldsJSON" jsonb);
  create function _multideck_dexter_context() returns table(user_id uuid,company_id uuid) language plpgsql as $$begin return query select "User_ID","Company_ID" from "cmp_Users" where "Auth_User_ID"=auth.uid() and "User_AccessStatus"='active';if not found then raise insufficient_privilege;end if;end$$;
- create function _multideck_todo_task_json(t "OPS_UserTasks") returns jsonb language sql as $$select to_jsonb(t)$$;
+ create function _multideck_todo_task_json(p_task "OPS_UserTasks") returns jsonb language sql as $$select to_jsonb(p_task)$$;
  create function _multideck_todo_update_for_actor(c uuid,u uuid,t uuid,p jsonb) returns jsonb language plpgsql as $$begin update "OPS_UserTasks" set "TodoTask_StatusCode"=p->>'status' where "TodoTask_ID"=t and "TodoTask_CompanyID"=c and "TodoTask_OwnerUserID"=u;return p;end$$;
  create function multideck_dexter_set_watch_status(id uuid,s text) returns void language sql as $$update "AI_DexterWatches" set "AIDexterWatch_StatusCode"=s where "AIDexterWatch_ID"=id$$;
  create function multideck_dexter_list_domains() returns jsonb language sql as $$select jsonb_build_object('user',auth.uid(),'role',auth.role())$$;
@@ -237,5 +238,31 @@ test('durable tasks: owner isolation, three slots, leases, saved results, schedu
  assert.equal(await holderDone,0,holderErr);assert.equal(await claimDone,0,claimErr)
  assert.ok(claimOut.includes('[]'),`replaced run was claimed: ${claimOut}`)
  sql(`do $$begin if (select count(*) from "AI_DexterTaskRuns" r join "AI_DexterTaskAssignments" a on a.id=r.assignment_id where a.task_id='${qaTask}' and r.state='queued' and r.due_at>now())<>1 or exists(select 1 from "AI_DexterTaskRuns" r join "AI_DexterTaskAssignments" a on a.id=r.assignment_id where a.task_id='${qaTask}' and r.state='running') then raise exception 'reschedule race started old work';end if;end$$;`)
+ sql(`alter table "OPS_UserTasks" add column "TodoTask_SourceCode" text default 'manual',add column "TodoTask_SourceDexterMessageID" uuid,add column "TodoTask_EditVersion" integer default 1,add column "TodoTask_UpdatedAt" timestamptz default now();
+ ${chatHandoffMigration}
+ do $$declare old_chat uuid;new_task uuid;new_chat uuid;result jsonb;other_user uuid:=gen_random_uuid();begin
+   if (select enabled from "AI_DexterTaskSettings") or exists(select 1 from "AI_DexterTaskRuns" where state in ('queued','running')) then raise exception 'retired queue still active';end if;
+   if has_function_privilege('authenticated','public.multideck_task_handoff(uuid,text,text)','EXECUTE') or
+      has_function_privilege('authenticated','public.multideck_task_control(uuid,text,integer,text,integer,timestamptz)','EXECUTE') then
+     raise exception 'retired browser worker controls still callable';
+   end if;
+   select "TodoTask_DexterConversationID" into old_chat from "OPS_UserTasks" where "TodoTask_ID"='${qaTask}';
+   if old_chat is null then raise exception 'old conversation was lost';end if;
+   perform set_config('request.jwt.claim.sub','${qaAuth}',true);
+   perform set_config('request.jwt.claim.role','authenticated',true);
+   result:=multideck_todo_open_dexter_chat('${qaTask}');
+   if (result->>'conversationId')::uuid<>old_chat or result->>'isNew'<>'false' then raise exception 'existing chat duplicated';end if;
+   insert into "OPS_UserTasks"("TodoTask_CompanyID","TodoTask_OwnerUserID","TodoTask_Title") values('${qaCompany}','${qaOwner}','New chat handoff') returning "TodoTask_ID" into new_task;
+   result:=multideck_todo_open_dexter_chat(new_task);new_chat:=(result->>'conversationId')::uuid;
+   if result->>'isNew'<>'true' or new_chat is null or (select "TodoTask_DexterConversationID" from "OPS_UserTasks" where "TodoTask_ID"=new_task)<>new_chat then raise exception 'chat handoff not linked';end if;
+   if exists(select 1 from "AI_DexterTaskAssignments" where task_id=new_task) or exists(select 1 from "AI_DexterTaskRuns" where assignment_id in(select id from "AI_DexterTaskAssignments" where task_id=new_task)) then raise exception 'new handoff queued a worker';end if;
+   if multideck_todo_open_dexter_chat(new_task)->>'conversationId'<>new_chat::text then raise exception 'repeat click created another chat';end if;
+   insert into "cmp_Users" values(other_user,'${qaCompany}',gen_random_uuid(),'active',null,null,null);
+   perform set_config('request.jwt.claim.sub',(select "Auth_User_ID" from "cmp_Users" where "User_ID"=other_user)::text,true);
+   begin perform multideck_todo_open_dexter_chat(new_task);raise exception 'colleague opened personal task';exception when insufficient_privilege then null;end;
+   perform set_config('request.jwt.claim.sub','${qaAuth}',true);
+   update "OPS_UserTasks" set "TodoTask_StatusCode"='completed' where "TodoTask_ID"=new_task;
+   begin perform multideck_todo_open_dexter_chat(new_task);raise exception 'completed task handed off';exception when insufficient_privilege then null;end;
+ end$$;`)
  }finally{if(started)spawnSync(join(bin,'pg_ctl'),['-D',data,'-m','immediate','-w','stop']);rmSync(dir,{recursive:true,force:true})}
 })

@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useId,
   useMemo,
   useState,
@@ -121,6 +122,15 @@ export function DashboardModeChart({
     },
     [box, crosshairX, ready, shouldReduceMotion, tooltipX, total],
   )
+
+  // Keep the selected week aligned when the viewport or reporting period changes.
+  useEffect(() => {
+    if (activeIndex === null) return
+    const index = Math.min(activeIndex, total - 1)
+    if (index < 0) { setActiveIndex(null); return }
+    if (index !== activeIndex) setActiveIndex(index)
+    moveCrosshair(index, false)
+  }, [activeIndex, moveCrosshair, total])
 
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -289,12 +299,12 @@ export function DashboardModeChart({
             </motion.g>
 
             {labels.map((label, index) =>
-              index % labelStride === 0 || index === total - 1 ? (
+              (index % labelStride === 0 && (index === 0 || total - 1 - index >= labelStride)) || index === total - 1 ? (
                 <text
                   key={`${label}-${index}`}
                   x={projectX(index, total, box)}
                   y={box.height - 6}
-                  textAnchor="middle"
+                  textAnchor={total === 1 ? "middle" : index === 0 ? "start" : index === total - 1 ? "end" : "middle"}
                   className={cn(
                     "md-area-chart-axis",
                     index === total - 1 && "md-area-chart-axis-current",

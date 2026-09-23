@@ -12,9 +12,7 @@ import {
   Trash2,
 } from "@/components/icons/hugeicons"
 import { TodoCompletionControl, TodoPriorityPicker, TodoPriorityPill } from "@/components/multideck/todo-components"
-import { TaskAgentIcon, TaskAgentControls } from '@/components/multideck/task-agent-components'
-import { useTaskAgents, handoffTask, refreshTaskAgents } from '@/lib/task-agent-store'
-import { isPastTaskAgent, taskAgentStatus, taskAgentUrl } from '@/lib/task-agents'
+import { rememberDexterTodoHandoff } from '@/lib/dexter-navigation'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
@@ -25,12 +23,12 @@ import {
   createTodoTask,
   deleteTodoTask,
   listTodoTasks,
+  openTodoDexterChat,
   updateTodoTask,
   type TodoPriority,
   type TodoStatus,
   type TodoTask,
 } from "@/lib/todo-api"
-import { cn } from "@/lib/utils"
 
 const emptyStateCopy = [
   { today: "You’re all clear for today.", day: "This day is all clear.", detail: "Add a task above when something needs your attention." },
@@ -78,14 +76,10 @@ function displayDate(value: string, language: string) {
 }
 
 export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
-  const agentState = useTaskAgents()
   const [deletingTask, setDeletingTask] = useState<Pick<TodoTask, 'id' | 'title'>|null>(null)
-  const [agentView, setAgentView] = useState<'active' | 'past'>('active')
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null)
-  const agentFilterRef = useRef<HTMLButtonElement | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string|null>(null)
-  const [view, setView] = useState<'day'|'dexter'>(() => new URLSearchParams(window.location.search).get('view') === 'dexter' ? 'dexter' : 'day')
   const [handingOff, setHandingOff] = useState<string|null>(null)
   const [handoffError, setHandoffError] = useState<{id:string;message:string}|null>(null)
   const { language, t } = useLanguage()
@@ -106,10 +100,6 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
   const [heldTaskGroups, setHeldTaskGroups] = useState<Record<string, TodoStatus>>({})
   const [emptyStateIndex] = useState(() => Math.floor(Math.random() * emptyStateCopy.length))
 
-  const agentCompletionKey=agentState.agents.map(agent=>`${agent.task_id}:${agent.taskStatus}`).join('|')
-  const previousCompletionKey=useRef(agentCompletionKey)
-  useEffect(()=>{if(previousCompletionKey.current!==agentCompletionKey){previousCompletionKey.current=agentCompletionKey;setReloadToken(value=>value+1)}},[agentCompletionKey])
-
   const dayTasks = useMemo(() => tasks.filter(task => task.scheduledDate === selectedDate), [tasks, selectedDate])
   const openTasks = useMemo(() => dayTasks.filter((task) => (heldTaskGroups[task.id] ?? task.status) === "open"), [heldTaskGroups,dayTasks])
   const completedTasks = useMemo(() => dayTasks.filter((task) => (heldTaskGroups[task.id] ?? task.status) === "completed"), [heldTaskGroups,dayTasks])
@@ -117,31 +107,28 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
   const hour = new Date().getHours()
   const greeting = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening"
   const firstName = operatorName?.trim().split(/\s+/)[0]
-  const agentsByTask = useMemo(() => new Map(agentState.agents.map(agent => [agent.task_id,agent])), [agentState.agents])
-  const visibleAgents = agentState.agents.filter(agent => isPastTaskAgent(agent) === (agentView === 'past'))
-
   useEffect(() => {
     const syncView = () => {
       const query = new URLSearchParams(window.location.search)
-      setView(query.get('view') === 'dexter' ? 'dexter' : 'day')
       setSelectedDate(validDateKey(query.get('date')) ?? localDateKey())
     }
     window.addEventListener('popstate', syncView)
     return () => window.removeEventListener('popstate', syncView)
   }, [])
 
-  function chooseView(next: 'day'|'dexter') {
-    setView(next)
-    window.history.replaceState({}, '', next === 'dexter' ? '/to-do?view=dexter' : `/to-do?date=${selectedDate}`)
-  }
-
   async function handOff(task: TodoTask) {
     if (handingOff) return
     setHandingOff(task.id); setHandoffError(null)
     try {
-      await handoffTask(task.id)
-      setAnnouncement(t('Handed to Dexter. You can keep working.'))
-      toast.success(t('Handed to Dexter'), {description:t('Your agent will find the context and bring back a result.')})
+      const result = await openTodoDexterChat(task.id)
+      setTasks(current => current.map(item => item.id === task.id
+        ? { ...item, dexterConversationId: result.conversationId } : item))
+      if (result.isNew) {
+        const references = task.links.map(link => `${link.label}: ${link.url}`).join('\n')
+        rememberDexterTodoHandoff(result.conversationId,
+          `Help me with this task from my To Do list: ${task.title}${references ? `\nRelevant links:\n${references}` : ''}`)
+      }
+      openAgent(`/agent-dexter?conversation=${encodeURIComponent(result.conversationId)}`)
     } catch(error) {setHandoffError({id:task.id,message:error instanceof Error?error.message:t('This task could not be handed off. Try again.')})}
     finally {setHandingOff(null)}
   }
@@ -153,7 +140,6 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
       const deleted = await deleteTodoTask(deletingTask.id)
       if (!deleted) throw new Error(t('This task could not be deleted. Try again.'))
       setTasks(current => current.filter(task => task.id !== deletingTask.id))
-      await refreshTaskAgents()
       setDeletingTask(null)
       setAnnouncement(t('Task deleted.'))
     } catch(error) { setDeleteError(error instanceof Error ? error.message : t('This task could not be deleted. Try again.')) }
@@ -263,7 +249,6 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
         <div className="min-w-0 divide-y divide-[var(--md-line)]">
           {rows.map((task) => {
             const completed = task.status === "completed"
-            const agent = agentsByTask.get(task.id)
             return (
               <div key={task.id} className="group/task flex min-h-[66px] min-w-0 items-start gap-2 py-2.5 sm:items-center">
                 <div data-i18n-skip className="min-w-0 flex-1 px-1 text-start">
@@ -276,7 +261,7 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
                     className="w-full"
                   />
                   <div className="ps-[34px]">
-                  {agent ? <button type="button" onClick={() => openAgent(taskAgentUrl(agent))} className="mt-1 inline-flex min-h-7 items-center gap-1.5 rounded-[var(--md-radius-sm)] text-[11px] text-[var(--md-text)] transition-transform duration-200 ease-out hover:text-[var(--md-accent)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none"><TaskAgentIcon icon={agent.icon} className="size-5"/>{agent.name}<span className="text-[var(--md-subtle)]">· {t(taskAgentStatus[agent.status])}</span></button> : null}
+                  {task.dexterConversationId ? <button type="button" onClick={() => openAgent(`/agent-dexter?conversation=${encodeURIComponent(task.dexterConversationId!)}`)} className="mt-1 inline-flex min-h-7 items-center rounded-[var(--md-radius-sm)] text-[11px] text-[var(--md-accent)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]">{t('Open Dexter conversation')}</button> : null}
                   {handoffError?.id === task.id ? <p role="alert" className="mt-1 text-[12px] text-[var(--md-red)]">{handoffError.message}</p> : null}
                   {task.tags.length || task.links.length ? (
                     <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--md-subtle)]">
@@ -287,7 +272,7 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
                   </div>
                 </div>
                 {task.priority ? <TodoPriorityPill priority={task.priority} className="mt-1 shrink-0 sm:mt-0" /> : null}
-                {!completed && !agent && agentState.enabled ? <Button type="button" variant="ghost" size="sm" className="mt-1 h-8 shrink-0 px-2 text-[11px] text-[var(--md-subtle)] hover:text-[var(--md-accent)] active:scale-[0.98] motion-reduce:transform-none sm:mt-0" disabled={handingOff!==null} onClick={()=>void handOff(task)}>{t(handingOff===task.id?'Handing off…':'Hand to Dexter')}</Button> : null}
+                {!completed && !task.dexterConversationId ? <Button type="button" variant="ghost" size="sm" className="mt-1 h-8 shrink-0 px-2 text-[11px] text-[var(--md-subtle)] hover:text-[var(--md-accent)] active:scale-[0.98] motion-reduce:transform-none sm:mt-0" disabled={handingOff!==null} onClick={()=>void handOff(task)}>{t(handingOff===task.id?'Opening Dexter…':'Hand to Dexter')}</Button> : null}
                 <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" className="mt-1 size-8 shrink-0 text-[var(--md-subtle)] sm:mt-0" onClick={event => { deleteTriggerRef.current = event.currentTarget }} aria-label={t('Task options: {title}').replace('{title}',task.title)}><MoreHorizontal className="size-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem variant="destructive" onSelect={()=>{setDeleteError(null);setDeletingTask(task)}}><Trash2 className="size-4"/>{t('Delete task')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
               </div>
             )
@@ -302,37 +287,16 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
       <div className="mx-auto w-full max-w-[900px] pb-[var(--md-page-bottom-pad)]">
         <header className="flex flex-col gap-4 border-b border-[var(--md-line)] pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0"><h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t(greeting)}{firstName ? <>, <span data-i18n-skip dir="auto">{firstName}</span></> : null}</h1></div>
-          {view==='day'?<div className="flex min-h-10 items-center self-start rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)] sm:self-auto">
+          <div className="flex min-h-10 items-center self-start rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)] sm:self-auto">
             <Button type="button" variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)]" aria-label={t("Previous day")} onClick={() => chooseDate(shiftedDate(selectedDate,-1))}><ChevronLeft className="size-4 rtl:rotate-180" /></Button>
             <label className="relative grid h-8 min-w-[164px] cursor-pointer place-items-center rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-ink)] hover:bg-[var(--md-hover)]">
               <span>{selectedDate === today ? t("Today") : displayDate(selectedDate,language)}</span>
               <input type="date" value={selectedDate} aria-label={t("Choose date")} className="absolute inset-0 cursor-pointer opacity-0" dir="ltr" onChange={(event) => chooseDate(event.target.value)} />
             </label>
             <Button type="button" variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)]" aria-label={t("Next day")} onClick={() => chooseDate(shiftedDate(selectedDate,1))}><ChevronRight className="size-4 rtl:rotate-180" /></Button>
-          </div>:null}
+          </div>
         </header>
 
-        {agentState.enabled || agentState.agents.length ? <div className="mt-4 flex items-center gap-1" role="group" aria-label={t('Task view')}>
-          <Button variant="ghost" size="sm" aria-pressed={view==='day'} className={cn('h-8 text-[12px]',view==='day'&&'bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]')} onClick={()=>chooseView('day')}>{t('My day')}</Button>
-          <Button variant="ghost" size="sm" aria-pressed={view==='dexter'} className={cn('h-8 text-[12px]',view==='dexter'&&'bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]')} onClick={()=>chooseView('dexter')}>{t('With Dexter')}</Button>
-        </div> : null}
-
-        {agentState.error ? <div className="mt-3 flex items-center gap-2"><p role="alert" className="text-[12px] text-[var(--md-red)]">{agentState.error}</p><Button variant="ghost" size="sm" onClick={()=>void refreshTaskAgents()}>{t('Try again')}</Button></div> : null}
-
-        {view === 'dexter' ? <section className="mt-5" aria-label={t('Tasks with Dexter')}>
-          <div className="mb-3 flex items-center gap-1" role="group" aria-label={t('Agent task status')}>
-            <Button ref={agentView === 'active' ? agentFilterRef : undefined} variant="ghost" size="sm" aria-pressed={agentView === 'active'} className={cn('h-8 text-[12px]', agentView === 'active' && 'bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]')} onClick={() => setAgentView('active')}>{t('Active')}</Button>
-            <Button ref={agentView === 'past' ? agentFilterRef : undefined} variant="ghost" size="sm" aria-pressed={agentView === 'past'} className={cn('h-8 text-[12px]', agentView === 'past' && 'bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]')} onClick={() => setAgentView('past')}>{t('Past')}</Button>
-          </div>
-          <p className="mb-3 text-[12px] text-[var(--md-subtle)]">{t('Up to three agents work at once. The rest start as a space becomes available.')}</p>
-          {agentState.loading ? <p role="status" className="py-10 text-center text-[13px] text-[var(--md-subtle)]">{t('Loading your agents…')}</p> : null}
-          {!agentState.loading && !agentState.error && !visibleAgents.length ? <p className="py-10 text-center text-[13px] text-[var(--md-text)]">{t(agentView === 'past' ? 'No past tasks yet.' : agentState.agents.length ? 'No active tasks. Finished and stopped tasks are in Past.' : 'Hand a task to Dexter from My day to get started.')}</p> : null}
-          <div className="divide-y divide-[var(--md-line)]">{visibleAgents.map(agent=><div key={agent.id} className="grid grid-cols-[36px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-3 sm:grid-cols-[36px_minmax(0,1fr)_auto] sm:items-center">
-            <TaskAgentIcon icon={agent.icon}/><button type="button" onClick={()=>openAgent(taskAgentUrl(agent))} className="min-w-0 flex-1 rounded-[var(--md-radius-sm)] text-start transition-transform duration-200 ease-out active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] motion-reduce:transform-none"><span className="block text-[13px] font-medium text-[var(--md-ink)]">{agent.title}</span><span className="mt-1 block text-[11px] text-[var(--md-subtle)]">{agent.name}{agent.due_at ? <> · { new Intl.DateTimeFormat(language,{dateStyle:'medium',timeStyle:'short',timeZone:agent.time_zone}).format(new Date(agent.due_at))}</> : null}</span></button><div className="col-span-2 flex flex-wrap items-center gap-2 ps-12 sm:col-span-1 sm:justify-end sm:ps-0"><TaskAgentControls agent={agent}/>
-              <Button type="button" variant="ghost" size="sm" className="text-[var(--md-subtle)] hover:text-[var(--md-red)]" aria-label={t('Delete task: {title}').replace('{title}', agent.title)} onClick={(event) => { deleteTriggerRef.current = event.currentTarget; setDeleteError(null); setDeletingTask({ id: agent.task_id, title: agent.title }) }}><Trash2 className="size-3.5" />{t('Delete')}</Button>
-            </div>
-          </div>)}</div>
-        </section> : <>
         {selectedDate !== today ? (
           <div className="mt-3 flex justify-end"><Button type="button" variant="ghost" size="sm" onClick={() => chooseDate(today)}><CalendarDays className="size-3.5" />{t("Today")}</Button></div>
         ) : null}
@@ -390,12 +354,11 @@ export function ToDoPage({ operatorName }: { operatorName?: string | null }) {
           {!loading && !loadError ? renderTaskGroup("Open tasks",openTasks) : null}
           {!loading && !loadError ? renderTaskGroup("Completed tasks",completedTasks) : null}
         </div>
-        </>}
       </div>
 
       <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
 
-      <Dialog open={Boolean(deletingTask)} onOpenChange={open=>{if(!open&&!deleteBusy)setDeletingTask(null)}}><DialogContent className="sm:max-w-[440px]" showCloseButton={!deleteBusy} onCloseAutoFocus={event => { event.preventDefault(); (deleteTriggerRef.current?.isConnected ? deleteTriggerRef.current : agentFilterRef.current)?.focus() }}><DialogHeader><DialogTitle>{t('Delete task?')}</DialogTitle><DialogDescription>{t('This removes the task and its Dexter conversation, and stops any background work.')}</DialogDescription></DialogHeader><p data-i18n-skip className="text-[13px] text-[var(--md-ink)]">{deletingTask?.title}</p>{deleteError?<p role="alert" className="text-[12px] text-[var(--md-red)]">{deleteError}</p>:null}<DialogFooter><Button variant="ghost" disabled={deleteBusy} onClick={()=>setDeletingTask(null)}>{t('Cancel')}</Button><Button variant="destructive" disabled={deleteBusy} onClick={()=>void deleteTask()}>{t(deleteBusy?'Deleting…':'Delete task')}</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={Boolean(deletingTask)} onOpenChange={open=>{if(!open&&!deleteBusy)setDeletingTask(null)}}><DialogContent className="sm:max-w-[440px]" showCloseButton={!deleteBusy} onCloseAutoFocus={event => { event.preventDefault(); deleteTriggerRef.current?.focus() }}><DialogHeader><DialogTitle>{t('Delete task?')}</DialogTitle><DialogDescription>{t('This removes the task. Its Dexter conversation stays in chat history.')}</DialogDescription></DialogHeader><p data-i18n-skip className="text-[13px] text-[var(--md-ink)]">{deletingTask?.title}</p>{deleteError?<p role="alert" className="text-[12px] text-[var(--md-red)]">{deleteError}</p>:null}<DialogFooter><Button variant="ghost" disabled={deleteBusy} onClick={()=>setDeletingTask(null)}>{t('Cancel')}</Button><Button variant="destructive" disabled={deleteBusy} onClick={()=>void deleteTask()}>{t(deleteBusy?'Deleting…':'Delete task')}</Button></DialogFooter></DialogContent></Dialog>
     </main>
   )
 }

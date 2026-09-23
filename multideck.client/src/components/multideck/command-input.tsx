@@ -82,7 +82,7 @@ export function CommandInput({
   }
 
   return (
-    <div className={cn("relative w-full", className)}>
+    <div className={cn("md-command-input relative min-w-0 w-full", className)}>
       <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.2} />
       <Input
         ref={inputRef}
@@ -90,7 +90,7 @@ export function CommandInput({
         aria-expanded={Boolean(normalizedQuery)}
         aria-controls="multideck-command-results"
         aria-keyshortcuts={bindingAriaKeyshortcuts(searchShortcut)}
-        className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white/70 ps-9 pe-16 text-[13px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+        className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white/70 ps-9 pe-3 text-base md:pe-16 md:text-[13px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         placeholder={placeholder}
         value={query}
         onFocus={prepareSearch}
@@ -104,11 +104,11 @@ export function CommandInput({
           else event.currentTarget.blur()
         }}
       />
-      <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 end-2 my-auto flex h-fit items-center">
+      <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 end-2 my-auto hidden h-fit md:flex items-center">
         <ShortcutKeys binding={searchShortcut} keyClassName="bg-[var(--md-surface-tint)]" emptyLabel="" />
       </span>
       {normalizedQuery ? (
-        <div id="multideck-command-results" role="listbox" className="absolute inset-x-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[var(--md-radius-xl)] bg-[rgba(255,255,255,0.98)] p-1.5 shadow-[var(--md-shadow-lift)] ring-1 ring-[rgba(11,20,19,0.08)] backdrop-blur-xl">
+        <div id="multideck-command-results" role="listbox" className="absolute inset-x-0 top-[calc(100%+8px)] z-50 max-h-[min(420px,60dvh)] overflow-y-auto overscroll-contain rounded-[var(--md-radius-xl)] bg-[rgba(255,255,255,0.98)] p-1.5 shadow-[var(--md-shadow-lift)] ring-1 ring-[rgba(11,20,19,0.08)] backdrop-blur-xl">
           {!searchData ? (
             <p className="px-3 py-4 text-center text-[12px] text-[var(--md-text)]">{t("Loading search results…")}</p>
           ) : hasResults ? (

@@ -1,0 +1,34 @@
+name: Dexter regression
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dexter:
+    name: Dexter regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            multideck.client/package-lock.json
+      - name: Install test dependencies
+        run: |
+          npm ci
+          npm ci --prefix multideck.client
+      - name: Install PostgreSQL for lifecycle and isolation tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql postgresql-client libpq-dev
+      - name: Verify Dexter approvals, conversations, recovery and access
+        run: npm run test:dexter

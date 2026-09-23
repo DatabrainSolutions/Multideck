@@ -910,7 +910,7 @@ function ProfileTab({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="size-9 rounded-[var(--md-radius-lg)] bg-black/45 text-white opacity-0 shadow-[var(--md-shadow-line)] backdrop-blur-md transition-opacity hover:bg-black/60 focus-visible:opacity-100 group-hover/cover:opacity-100"
+                  className="size-9 rounded-[var(--md-radius-lg)] bg-black/45 text-white opacity-0 shadow-[var(--md-shadow-line)] backdrop-blur-md transition-opacity hover:bg-black/60 focus-visible:opacity-100 group-hover/cover:opacity-100 [@media(hover:none)]:opacity-100"
                   aria-label={t("Remove cover photo")}
                   disabled={coverPhotoBusy}
                   onClick={() => void removeCoverPhoto()}
@@ -923,7 +923,7 @@ function ProfileTab({
                 variant="ghost"
                 className={cn(
                   "h-9 rounded-[var(--md-radius-lg)] bg-black/45 px-3 text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] backdrop-blur-md transition-opacity hover:bg-black/60 focus-visible:opacity-100",
-                  coverPhoto ? "opacity-0 group-hover/cover:opacity-100" : "opacity-100",
+                  coverPhoto ? "opacity-0 group-hover/cover:opacity-100 [@media(hover:none)]:opacity-100" : "opacity-100",
                 )}
                 disabled={coverPhotoBusy}
                 onClick={() => coverPhotoInputRef.current?.click()}

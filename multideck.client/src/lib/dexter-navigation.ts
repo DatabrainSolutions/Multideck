@@ -15,6 +15,8 @@ export function announceDexterConversationsChanged(detail: DexterConversationsCh
 
 const conversationHandoffKey = workspaceStorageKey("multideck.dexterConversationHandoff")
 const taskHandoffKey = workspaceStorageKey("multideck.dexterTaskHandoff")
+const todoHandoffKey = workspaceStorageKey("multideck.dexterTodoHandoff")
+let volatileTodoHandoff: { conversationId: string; prompt: string } | null = null
 const conversationQueryKey = "conversation"
 const conversationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -112,4 +114,39 @@ export function takeDexterTaskHandoff() {
   } catch {
     return null
   }
+}
+
+/** One-shot automatic send after the linked To Do conversation has loaded. */
+export function rememberDexterTodoHandoff(conversationId: string, prompt: string) {
+  if (!conversationIdPattern.test(conversationId) || !prompt.trim()) return
+  volatileTodoHandoff = { conversationId, prompt: prompt.trim() }
+  try {
+    window.sessionStorage.setItem(todoHandoffKey, JSON.stringify(volatileTodoHandoff))
+  } catch {
+    // The in-memory handoff still works for normal in-app navigation.
+  }
+}
+
+export function takeDexterTodoHandoff() {
+  let value = volatileTodoHandoff
+  volatileTodoHandoff = null
+  if (typeof window === "undefined") return value
+  try {
+    const stored = window.sessionStorage.getItem(todoHandoffKey)
+    window.sessionStorage.removeItem(todoHandoffKey)
+    if (stored) value = JSON.parse(stored) as typeof value
+  } catch {
+    // Keep the in-memory copy if storage is unavailable or malformed.
+  }
+  return value && conversationIdPattern.test(value.conversationId) && typeof value.prompt === "string" && value.prompt.trim()
+    ? { conversationId: value.conversationId, prompt: value.prompt.trim() } : null
+}
+
+export function shouldSendDexterTodoHandoff(
+  pendingConversationId: string | null,
+  activeConversationId: string | null,
+  savedMessageCount: number,
+  loading: boolean,
+) {
+  return Boolean(pendingConversationId && pendingConversationId === activeConversationId && !loading && savedMessageCount === 0)
 }

@@ -92,6 +92,7 @@ const staticLeafLabels: Record<string, string> = {
 }
 
 const crmChildLabels: Record<string, string> = {
+  insights: "Insights",
   accounts: "Companies",
   contacts: "Contacts",
   deals: "Deals",

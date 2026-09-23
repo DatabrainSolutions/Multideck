@@ -4,7 +4,14 @@ type RpcArguments = Record<string, unknown>
 
 const SAFE_DATABASE_ERROR_CODES = new Set(["22023", "23505", "42501", "55000", "P0002"])
 
-export class CrmSupabaseError extends Error {}
+export class CrmSupabaseError extends Error {
+  readonly code?: string
+
+  constructor(message: string, code?: string) {
+    super(message)
+    this.code = code
+  }
+}
 export class CrmConflictError extends CrmSupabaseError {}
 export class CrmMutationOutcomeUnknownError extends CrmSupabaseError {}
 
@@ -28,7 +35,7 @@ export async function callCrmRpc<T>(
 
   const session = await getSupabaseSession()
   if (!session?.access_token) {
-    throw new CrmSupabaseError(signInMessage)
+    throw new CrmSupabaseError(signInMessage, "AUTH_REQUIRED")
   }
 
   const controller = new AbortController()
@@ -44,7 +51,7 @@ export async function callCrmRpc<T>(
         throw new CrmConflictError(error.message.replace(/^CRM_CONFLICT:\s*/, ""))
       }
       const message = SAFE_DATABASE_ERROR_CODES.has(error.code) ? error.message : fallback
-      throw new CrmSupabaseError(message || fallback)
+      throw new CrmSupabaseError(message || fallback, error.code)
     }
     if ((data === null && !allowNull) || data === undefined) {
       throw new CrmSupabaseError(fallback)

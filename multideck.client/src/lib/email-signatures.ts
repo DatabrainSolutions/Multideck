@@ -24,6 +24,9 @@ export type SignaturePerson = {
   mobile: string;
   departmentIds: string[];
   allowCustomisation: boolean | null;
+  /** Signed link to the person's profile photo, used by headshot blocks. */
+  photoUrl?: string;
+  photoStatus?: "ready" | "missing" | "too_large";
 };
 export type SignatureWorkspace = {
   templates: SignatureTemplate[];

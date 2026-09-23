@@ -1,0 +1,154 @@
+/* Shared responsive behaviour. Keep data grids scrollable in their own region;
+   never conceal a wide workflow with a page-wide overflow rule. */
+.md-app-shell {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+}
+
+[data-slot="select-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"] {
+  max-width: calc(100vw - 24px);
+  overscroll-behavior: contain;
+}
+
+[data-slot="select-value"] {
+  min-width: 0;
+}
+
+[data-slot="sheet-content"] {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.md-data-table[data-table-compact] [data-table-toolbar] {
+  flex-wrap: wrap;
+}
+
+.md-data-table[data-table-compact] [data-table-tabs] {
+  max-width: 100%;
+  flex-shrink: 1;
+  overflow-x: auto;
+}
+
+.md-data-table[data-table-compact] [data-table-trailing-controls] {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+/* Narrow screens need touch-sized controls even during desktop-browser QA.
+   Pointer detection also covers larger tablets and landscape phones. */
+@media (max-width: 767px), (pointer: coarse) {
+  [data-slot="button"],
+  button[data-slot]:not([data-slot="checkbox"]):not([data-slot="switch"]):not([data-slot="radio-group-item"]),
+  [data-slot="input"]:not([type="hidden"]):not([type="file"]),
+  input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  [data-slot="select-trigger"],
+  [data-slot="tabs-trigger"],
+  :root select,
+  .md-dropdown-option,
+  .md-data-table [data-table-toolbar] button,
+  [data-slot="segmented-control"] > button[role="radio"],
+  [role="tablist"] > button[role="tab"] {
+    min-height: 44px;
+  }
+
+  button[data-size^="icon"],
+  .md-data-table [data-table-toolbar] button {
+    min-width: 44px;
+  }
+
+  [data-slot="segmented-control"],
+  [data-slot="tabs-list"] {
+    height: auto;
+  }
+
+  /* Explicit font size protects phone and tablet text entry from iOS focus
+     zoom, including fields whose callers request desktop-sized type. */
+  [data-slot="input"]:not([type="hidden"]):not([type="file"]),
+  input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  [data-slot="textarea"],
+  :root textarea,
+  :root select,
+  [contenteditable="true"] {
+    font-size: 16px;
+  }
+
+  .md-command-input input {
+    padding-inline-end: 12px;
+  }
+
+  .md-command-input > span[aria-hidden="true"] {
+    display: none;
+  }
+
+  .md-table-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--md-line-strong) transparent;
+  }
+
+  .md-table-scroll::-webkit-scrollbar {
+    display: block;
+    height: 6px;
+  }
+
+  .md-table-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: var(--md-line-strong);
+  }
+
+  [data-table-column-row] {
+    display: grid;
+    height: auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2px;
+    padding-block: 8px;
+  }
+
+  [data-table-column-row] > svg {
+    display: none;
+  }
+
+  [data-table-column-row] > span {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+
+  [data-table-column-manager] button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  [data-table-column-row] button:not(:disabled) {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 639px) {
+  .md-side-drawer-panel {
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-left: max(12px, env(safe-area-inset-left));
+  }
+
+  .md-topbar-actions {
+    flex-basis: 100%;
+  }
+
+  [data-slot="dialog-content"] {
+    max-width: calc(100vw - 24px);
+  }
+
+  [data-slot="dialog-header"] {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  [data-slot="dialog-content"]:has(> [data-slot="dialog-close"]) > [data-slot="dialog-header"] {
+    padding-inline-end: 48px;
+  }
+}

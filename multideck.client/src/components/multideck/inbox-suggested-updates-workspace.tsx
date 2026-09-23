@@ -225,7 +225,7 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--md-bg)]">
-      <header className="flex shrink-0 flex-wrap items-center gap-2 px-[var(--md-page-pad)] py-2.5 ps-14 shadow-[var(--md-stroke-bottom)] lg:ps-[var(--md-page-pad)]">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 px-[var(--md-page-pad)] py-2.5 ps-[76px] shadow-[var(--md-stroke-bottom)] lg:ps-[var(--md-page-pad)]">
         <AiEditing className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

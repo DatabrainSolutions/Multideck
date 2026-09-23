@@ -4,32 +4,77 @@
     {
       "name": "multideck-client",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "multideck.client"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "multideck.client"
+      ],
       "port": 5173
     },
     {
       "name": "multideck-client-5183",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "multideck.client", "--", "--port", "5183", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "multideck.client",
+        "--",
+        "--port",
+        "5183",
+        "--strictPort"
+      ],
       "port": 5183
     },
     {
       "name": "multideck-client-3000",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "multideck.client", "--", "--port", "3000", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "multideck.client",
+        "--",
+        "--port",
+        "3000",
+        "--strictPort"
+      ],
       "port": 3000
     },
     {
       "name": "multideck-website",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "multideck.website"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "multideck.website"
+      ],
       "port": 4321
     },
     {
       "name": "multideck-client-accent",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "multideck.client", "--", "--port", "5199", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "multideck.client",
+        "--",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
       "port": 5199
+    },
+    {
+      "name": "signature-qa",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "multideck.client/tests/signature-preview/serve.mjs"
+      ],
+      "port": 3017
     }
   ]
 }

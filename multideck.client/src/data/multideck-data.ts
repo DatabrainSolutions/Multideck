@@ -1,3 +1,5 @@
+import dashboardModeChartSource from "@/components/multideck/dashboard-mode-chart.tsx?raw"
+import crmDealActionsSource from "@/components/multideck/crm-deal-actions.tsx?raw"
 import emptyStateIllustrationSource from "@/components/multideck/empty-state-illustration.tsx?raw"
 import emptyStateIllustrationStyles from "@/components/multideck/empty-state-illustration.css?raw"
 import bellToggleSource from "@/components/multideck/bell-toggle.tsx?raw"
@@ -17,10 +19,16 @@ import inlineFieldSource from "@/components/multideck/inline-field.tsx?raw"
 import inlineFieldStyles from "@/components/multideck/inline-field.css?raw"
 import dexterVoiceSource from "@/components/multideck/dexter-voice-controls.tsx?raw"
 import signatureGlyphSource from "@/components/multideck/signature-block-glyph.tsx?raw"
+import signaturePropertiesSource from "@/components/multideck/signature-properties.tsx?raw"
+import signatureTemplatePickerSource from "@/components/multideck/signature-template-picker.tsx?raw"
+import signatureThumbnailSource from "@/components/multideck/signature-thumbnail.tsx?raw"
+import valueSliderSource from "@/components/multideck/value-slider.tsx?raw"
+import valueSliderStyles from "@/components/multideck/value-slider.css?raw"
+import swatchPickerSource from "@/components/multideck/swatch-picker.tsx?raw"
+import swatchPickerStyles from "@/components/multideck/swatch-picker.css?raw"
 import emailSignatureControlSource from "@/components/multideck/email-signature-control.tsx?raw"
 import contactEmailActionSource from "@/components/multideck/contact-email-action.tsx?raw"
 import contactPreferencesSource from "@/components/multideck/contact-preferences-popover.tsx?raw"
-import taskAgentSource from "@/components/multideck/task-agent-components.tsx?raw"
 import bookingCustomerPanelSource from "@/components/multideck/booking-customer-panel.tsx?raw"
 import toggleGroupSource from "@/components/ui/toggle-group.tsx?raw"
 import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.tsx?raw"
@@ -33,6 +41,7 @@ import bookingSecurityEvidenceSource from "@/components/multideck/booking-securi
 import paginationSource from "@/components/multideck/pagination.tsx?raw"
 import lifecycleNotesSource from "@/components/multideck/lifecycle-notes.tsx?raw"
 import screeningComponentsSource from "@/components/multideck/screening-components.tsx?raw"
+import sideDrawerSource from "@/components/multideck/side-drawer.tsx?raw"
 import dataTableSource from "@/components/multideck/data-table.tsx?raw"
 import tableCsvExportDialogSource from "@/components/multideck/table-csv-export-dialog.tsx?raw"
 import publicBrandIdentitySource from "@/components/multideck/public-brand-identity.tsx?raw"
@@ -98,19 +107,35 @@ export const galleryComponents = [
   },
   {
     id: "signature-builder", name: "Signature Builder", category: "Communication",
-    description: "Arrange email-safe rows and blocks, including shared Company details from Admin, with direct, tactile movement.",
-    details: "Drag a custom block tile into the canvas, or click to add. Blocks lift and tilt with movement, open an insertion gap and settle with a short spring. Keyboard move buttons, undo and reduced motion retain the same editing workflow. Personal fields resolve for the sender; images accept uploads or a configured Admin brand logo, and Trust badges places multiple managed images in one row. Each field has visible removal and undo. Image banner and Disclaimer presets add a wide uploaded image or editable small-print footer using the same portable blocks. Drag column dividers or image corner handles to resize; percentages and dimensions update live, with keyboard adjustment and one undo step per gesture.",
+    description: "Arrange email-safe rows and blocks with direct, tactile movement, then style them from one properties panel.",
+    details: "Sixteen blocks in five groups: name and role, contact list, single detail, company details, logo, headshot, banner, trust badges, text, tagline, working hours, legal note, social profiles, button, divider and space. Drag a tile into the canvas, or click to add it after the selected block; a clicked tile flies into place on a spring. Blocks lift and tilt while dragged, a drop line opens where they will land, and a ring settles when they do. The canvas mirrors the sent email — background, inner padding, corner radius, typeface, column rules and vertical alignment — with a desktop/mobile width toggle. Templates can be swapped in place, and every change, including a whole slider drag, is one undo step (⌘Z / ⇧⌘Z). Reduced motion removes flight, tilt and spring settle.",
     foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
-    componentCode: signatureBuilderSource,
-    usageCode: `<SignatureBuilder document={document} onChange={setDocument} values={employee} assets={assetUrls} onUpload={uploadImage} />`,
+    componentCode: `${signatureBuilderSource}\n\n// signature-properties.tsx\n${signaturePropertiesSource}`,
+    usageCode: `<SignatureBuilder\n  document={document}\n  onChange={setDocument}\n  values={employee}\n  assets={assetUrls}\n  onUpload={uploadImage}\n  brandColours={[brand.primaryColor, brand.secondaryColor]}\n  brandLogo={{ url: brand.logoUrl, load: () => signatureBrandImageFile(brand.logoUrl) }}\n  allowTemplates\n/>`,
   },
   {
     id: "signature-block-glyph", name: "Signature Block Glyph", category: "Communication",
-    description: "Custom SVG miniatures for the signature block palette.",
-    details: "Layered paper, contact details, logo and divider miniatures with an active lift state. Each communicates the block's purpose before it is placed.",
+    description: "One 24px duotone icon family for every signature block.",
+    details: "Each mark pairs a soft accent shape with a crisp outline on the same grid, so the palette reads as one set. The detail that differs between blocks nudges on hover with a slight overshoot, and the tile lifts while the block is being dragged. Use tile for palette and header placements, or tile={false} for inline marks such as the selected-block tag.",
     foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
     componentCode: signatureGlyphSource,
-    usageCode: `<SignatureBlockGlyph kind="identity" active={dragging} />`,
+    usageCode: `<SignatureBlockGlyph kind="photo" active={dragging} />\n<SignatureBlockGlyph kind="details" tile={false} className="size-3.5" />`,
+  },
+  {
+    id: "signature-template-picker", name: "Signature Template Picker", category: "Communication",
+    description: "Start from scratch or choose one of twenty signature templates, each previewed live with the viewer's own details.",
+    details: "Tiles are the real email renderer's output, scaled to fit, with the saved brand logo and colour where available and illustrative placeholders for images still to be uploaded. Filters reflow the grid with a layout animation; the selection ring travels between tiles, and the large preview cross-fades with a short blur and speed ramp. Click once to preview and again (or double-click) to use. The same picker swaps a template in place from the builder, where Undo restores the previous design. Below 860px the preview collapses to a footer.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: signatureTemplatePickerSource,
+    usageCode: `<SignatureTemplatePicker\n  open={open}\n  onOpenChange={setOpen}\n  accent={brand.primaryColor}\n  values={employee}\n  brandLogoUrl={brand.logoUrl}\n  onChoose={(document, templateId) => createSignature(document, templateId)}\n/>`,
+  },
+  {
+    id: "signature-thumbnail", name: "Signature Thumbnail", category: "Communication",
+    description: "Rendered signature HTML scaled to fit any box, measured before paint so it never flashes at full size.",
+    details: "Pass the signature's own width; the thumbnail scales down (never up) and either follows the scaled height or centres inside a fixed height, fading the lower edge when the content is taller. Content is marked to skip regional spelling so user-entered text is preserved.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: signatureThumbnailSource,
+    usageCode: `<SignatureThumbnail html={renderSignature(document, values, assets).html} width={document.width} height={180} />`,
   },
   {
     id: "email-signature-control", name: "Email Signature Control", category: "Communication",
@@ -125,7 +150,7 @@ export const galleryComponents = [
     id: "contact-email-action", name: "Contact Email Action", category: "CRM",
     description: "Compose an email in a centred popup without leaving the record.",
     details: "Uses the Dexter email editor with recipient chips, mailbox selection, pencil refinement and explicit sending through Inbox. Dismissal retains a private draft in the current browser tab for up to 24 hours. No email is sent in the gallery preview.",
-    foundOn: [{ label: "Companies", route: "/crm/accounts" }, { label: "Leads", route: "/crm/leads" }, { label: "Contacts", route: "/crm/contacts" }, { label: "Customers", route: "/customers" }, { label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-email-action" }],
+    foundOn: [{ label: "Deal next actions", route: "/crm/deals" }, { label: "Companies", route: "/crm/accounts" }, { label: "Leads", route: "/crm/leads" }, { label: "Contacts", route: "/crm/contacts" }, { label: "Customers", route: "/customers" }, { label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-email-action" }],
     componentCode: contactEmailActionSource,
     usageCode: `<ContactEmailAction email={contact.email} name={contact.name} />`,
   },
@@ -202,7 +227,7 @@ export const galleryComponents = [
     category: "Foundation",
     description: "The base Multideck panel. It gives workflow areas quiet depth without creating heavy card clutter.",
     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
-    foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Quotes", route: "/quotes" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "CRM dashboard", route: "/crm" }, { label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Quotes", route: "/quotes" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="@container/section-header-copy min-w-0 flex-1">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <div className="min-w-0 @min-[520px]/section-header-copy:flex @min-[520px]/section-header-copy:items-baseline @min-[520px]/section-header-copy:justify-between @min-[520px]/section-header-copy:gap-5">\n          <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n          {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)] @min-[520px]/section-header-copy:mt-0 @min-[520px]/section-header-copy:text-end">{meta}</p> : null}\n        </div>\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
@@ -432,22 +457,6 @@ export const galleryComponents = [
     foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Overview", route: "/" }, { label: "Tasks", route: "/to-do" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Inbox suggested updates", route: "/inbox?view=suggested" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `export function StatusPill({ tone = "neutral", kind, indicator, children, className }) {\n  const tableKind = useContext(TablePillKindContext)\n  const resolvedKind = kind ?? tableKind ?? "status"\n\n  return (\n    <Badge\n      data-pill-kind={resolvedKind}\n      data-tone={tone}\n      data-table-pill="true"\n      className={cn(filledPillClass, toneClass[tone], className)}\n    >\n      {indicator !== false ? indicator : null}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="purple">New</StatusPill>\n<StatusPill kind="status" tone="orange">Contacted</StatusPill>\n<StatusPill kind="status" tone="blue">Qualified</StatusPill>\n<StatusPill kind="status" tone="amber">Nurturing</StatusPill>\n<StatusPill kind="status" tone="green">Converted</StatusPill>\n<StatusPill kind="status" tone="red">Disqualified</StatusPill>\n\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
-  },
-  {
-    id: "task-agent-stack",
-    name: "Task agents", category: "AI", description: "Working agents and new results in three quiet rows, or compact outlined name-and-icon pills on smaller screens. Status colours and a route to all delegated tasks remain available.",
-    details: "Use above the support action in the app sidebar. Centre each row vertically, give task subtitles the available line width and align a small coloured status dot with the subtitle. At viewport heights up to 900px or widths up to 1440px, use two compact, transparent pills per row with only the icon and name; thin outlines convey status. The full task remains available on hover and in the conversation. Names and icons belong to saved assignments. Results remain visible until read. Reduced motion removes movement; status remains available in the hover text and accessible name.",
-    foundOn: [{label:"App sidebar",route:"/"},{label:"Tasks",route:"/to-do?view=dexter"},{label:"Agent conversation",route:"/agent-dexter"}],
-    componentCode: taskAgentSource,
-    usageCode: `<TaskAgentStack agents={agents} onOpen={agent => navigate(taskAgentUrl(agent))} onViewAll={() => navigate('/to-do?view=dexter')} />`,
-  },
-  {
-    id: "task-agent-controls",
-    name: "Task agent controls", category: "AI", description: "Clear progress with stop, retry and one-off scheduling controls.",
-    details: "Use beside a delegated task or in its saved conversation. A failed update keeps the task and entered time available. The gallery uses a local preview callback; product callers use the owner-authorised task service.",
-    foundOn: [{label:"Tasks",route:"/to-do?view=dexter"},{label:"Agent conversation",route:"/agent-dexter"}],
-    componentCode: taskAgentSource,
-    usageCode: `<TaskAgentControls agent={agent} />`,
   },
   {
     id: "spring-check",
@@ -843,7 +852,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Eleven looping SVG scenes for empty registers and workspaces, matched to the operator's workflow.",
     details: "Choose search, tasks, documents, contacts, cargo, chart, calendar, mail, phone, route or activity. Keep the existing heading, explanation and contextual action alongside the illustration. Use compact in small panels. The SVG is decorative, uses semantic theme colours and rests between movements. Reduced motion shows a complete static scene. No playback controls, progress tracks or network requests. Never use these scenes to replace loading, permission, integration or error feedback, or to imply live processing.",
-    foundOn: [{"label": "Inbox", "route": "/inbox"}, {"label": "Tasks", "route": "/to-do"}, {"label": "Bookings", "route": "/bookings"}, {"label": "Quotes and audit history", "route": "/quotes"}, {"label": "Leads", "route": "/crm/leads"}, {"label": "Deals", "route": "/crm/deals"}, {"label": "Contacts", "route": "/crm/contacts"}, {"label": "Organisations", "route": "/crm/accounts"}, {"label": "Customers", "route": "/customers"}, {"label": "Suppliers", "route": "/suppliers"}, {"label": "Phone calls", "route": "/crm/phone-calls"}, {"label": "Booking links", "route": "/calendar/booking-links"}, {"label": "Documents", "route": "/documents"}, {"label": "Warehouse inventory", "route": "/warehouse/inventory"}, {"label": "Warehouse orders", "route": "/warehouse/orders"}, {"label": "Expected receipts", "route": "/warehouse/purchase-orders"}, {"label": "Warehouse facilities", "route": "/warehouse/facilities"}, {"label": "Warehouse locations", "route": "/warehouse/locations"}, {"label": "Warehouse items", "route": "/warehouse/items"}, {"label": "Report library", "route": "/reports"}, {"label": "Scheduled reports", "route": "/reports/scheduled"}, {"label": "Report history", "route": "/reports/history"}, {"label": "Sales invoices", "route": "/finance/receivables"}, {"label": "Customer receipts", "route": "/finance/receivables/cash"}, {"label": "Supplier invoices", "route": "/finance/payables"}, {"label": "Supplier payments", "route": "/finance/payables/cash"}, {"label": "Trips and approvals", "route": "/crm/trips"}, {"label": "Mileage payments", "route": "/finance/mileage"}, {"label": "Standalone exports", "route": "/customs/standalone/export"}, {"label": "Standalone imports", "route": "/customs/standalone/import"}, {"label": "Job exports", "route": "/customs/job-related/export"}, {"label": "Job imports", "route": "/customs/job-related/import"}, {"label": "CRM activity", "route": "/crm/activity"}, {"label": "Notifications", "route": "/"}, {"label": "Components", "route": "/components?component=empty-state-illustration"}],
+    foundOn: [{ label: "CRM dashboard", route: "/crm" }, {"label": "Inbox", "route": "/inbox"}, {"label": "Tasks", "route": "/to-do"}, {"label": "Bookings", "route": "/bookings"}, {"label": "Quotes and audit history", "route": "/quotes"}, {"label": "Leads", "route": "/crm/leads"}, {"label": "Deals", "route": "/crm/deals"}, {"label": "Contacts", "route": "/crm/contacts"}, {"label": "Organisations", "route": "/crm/accounts"}, {"label": "Customers", "route": "/customers"}, {"label": "Suppliers", "route": "/suppliers"}, {"label": "Phone calls", "route": "/crm/phone-calls"}, {"label": "Booking links", "route": "/calendar/booking-links"}, {"label": "Documents", "route": "/documents"}, {"label": "Warehouse inventory", "route": "/warehouse/inventory"}, {"label": "Warehouse orders", "route": "/warehouse/orders"}, {"label": "Expected receipts", "route": "/warehouse/purchase-orders"}, {"label": "Warehouse facilities", "route": "/warehouse/facilities"}, {"label": "Warehouse locations", "route": "/warehouse/locations"}, {"label": "Warehouse items", "route": "/warehouse/items"}, {"label": "Report library", "route": "/reports"}, {"label": "Scheduled reports", "route": "/reports/scheduled"}, {"label": "Report history", "route": "/reports/history"}, {"label": "Sales invoices", "route": "/finance/receivables"}, {"label": "Customer receipts", "route": "/finance/receivables/cash"}, {"label": "Supplier invoices", "route": "/finance/payables"}, {"label": "Supplier payments", "route": "/finance/payables/cash"}, {"label": "Trips and approvals", "route": "/crm/trips"}, {"label": "Mileage payments", "route": "/finance/mileage"}, {"label": "Standalone exports", "route": "/customs/standalone/export"}, {"label": "Standalone imports", "route": "/customs/standalone/import"}, {"label": "Job exports", "route": "/customs/job-related/export"}, {"label": "Job imports", "route": "/customs/job-related/import"}, {"label": "CRM activity", "route": "/crm/activity"}, {"label": "Notifications", "route": "/"}, {"label": "Components", "route": "/components?component=empty-state-illustration"}],
     componentCode: emptyStateIllustrationSource + "\n\n/* Styles */\n" + emptyStateIllustrationStyles,
     usageCode: `<div className="py-8 text-center">\n  <EmptyStateIllustration variant="tasks" className="mb-3" />\n  <h2>Nothing waiting here.</h2>\n  <p>Use the field above to plan the next thing.</p>\n</div>\n\n<EmptyStateIllustration variant="search" />\n<EmptyStateIllustration variant="activity" compact />`,
   },
@@ -863,7 +872,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Persistent feedback with a status icon, neutral rounded surface, and an optional recovery action.",
     details: "Use for errors, warnings, information and confirmed results that must remain visible in the workflow. Keep text readable and actions below the message. Colour belongs in the icon, never in a decorative left-edge stripe. Errors use an alert role; other notices use a polite status. Do not dismiss an unresolved error automatically.",
-    foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "Mileage claim", route: "/crm/trips/new" }, { label: "Mileage finance", route: "/finance/mileage" }, { label: "Mileage settings", route: "/crm/trips/settings" }, { label: "Customs imports", route: "/customs/standalone/import/new" }, { label: "Customs exports", route: "/customs/standalone/export/new" }, { label: "Documents", route: "/documents" }, { label: "Admin preferences", route: "/admin/system-preferences" }, { label: "Components", route: "/components?component=inline-notice" }],
+    foundOn: [{ label: "CRM dashboard", route: "/crm" }, { label: "Trips & mileage", route: "/crm/trips" }, { label: "Mileage claim", route: "/crm/trips/new" }, { label: "Mileage finance", route: "/finance/mileage" }, { label: "Mileage settings", route: "/crm/trips/settings" }, { label: "Customs imports", route: "/customs/standalone/import/new" }, { label: "Customs exports", route: "/customs/standalone/export/new" }, { label: "Documents", route: "/documents" }, { label: "Admin preferences", route: "/admin/system-preferences" }, { label: "Components", route: "/components?component=inline-notice" }],
     componentCode: inlineNoticeSource + "\n\n/* Styles */\n" + inlineNoticeStyles,
     usageCode: `<InlineNotice tone="error" title="Your changes have not been saved" action={<Button type="button" variant="ghost" onClick={retrySave}>Retry save</Button>}>Your entries are still here. Keep this page open and try again.</InlineNotice>`,
   },
@@ -1847,7 +1856,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "A compact mode switch with one spring-animated selection pill for two to four exclusive choices.",
     details: "Use for short mutually exclusive view modes. The selected pill preserves spatial continuity, respects reduced motion, and stays visually identical across settings, dashboards, registers, and workflows.",
-    foundOn: [{ label: "Meetings", route: "/calendar/meetings" }, { label: "Booking link editor", route: "/calendar/booking-links" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "CRM dashboard", route: "/crm" }, { label: "Meetings", route: "/calendar/meetings" }, { label: "Booking link editor", route: "/calendar/booking-links" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  const controlId = useId()\n  const shouldReduceMotion = useReducedMotion()\n\n  return (\n    <div role="group" className="relative isolate inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1">\n      {options.map((option) => (\n        <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}>\n          {value === option ? (\n            <motion.span layoutId={controlId + "-active"} transition={reduceMotion(shouldReduceMotion, mdMotion.spring)} />\n          ) : null}\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
@@ -2143,6 +2152,24 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `const items = dashboardPriorityQueue(bookings, quotes)\n\n<DashboardPriorityQueue\n  items={items}\n  operatorName={operatorName}\n  onOpenItem={(item) =>\n    navigate(item.bookingId ? getBookingDetailPath(item.bookingId) : \`/quotes/\${item.quoteReference}\`)\n  }\n  onHandOverToDexter={(item) => {\n    rememberDexterTaskHandoff(buildTaskPrompt(item))\n    navigate("/agent-dexter")\n  }}\n/>`,
   },
   {
+    id: "series-chart",
+    name: "Series Chart",
+    category: "Data",
+    description: "Several measured series on one shared time axis, with pointer and keyboard inspection.",
+    details: "Use for trends that need a common baseline. All series share the same count scale. Supply at least two time points; show a single-period summary when only one observation exists, and keep accessible tabular source detail nearby. Arrow keys, Home and End inspect points. Supports reduced motion and the current theme.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM dashboard", route: "/crm" }, { label: "Components", route: "/components?component=series-chart" }],
+    componentCode: dashboardModeChartSource,
+    usageCode: `<DashboardModeChart
+  title="Weekly sales outcomes"
+  labels={["1 Jun", "8 Jun", "15 Jun", "22 Jun"]}
+  series={[
+    { key: "won", label: "Won", color: "var(--md-accent)", values: [2, 4, 3, 6] },
+    { key: "lost", label: "Lost", color: "var(--md-amber)", values: [1, 2, 1, 2] },
+  ]}
+  height={252}
+/>`,
+  },
+  {
     id: "performance-panel",
     name: "Performance Panel",
     category: "Data",
@@ -2433,23 +2460,23 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   },
   {
     id: "dexter-live-reasoning",
-    name: "Dexter Live Reasoning",
+    name: "Dexter Activity Trail",
     category: "Agent Dexter",
-    description: "A compact disclosure for Dexter's in-progress reasoning summary, with the text continuing to stream when the operator opens it.",
-    details: "Use while Dexter is producing a reply. The operator can open and close the live summary without it reopening itself. Keep the same disclosure mounted: when the first answer text arrives, collapse an expanded trail before releasing the answer, and relabel the trigger Reasoning summary. A controlled Reasoning owns its own open/close lifecycle.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Account setup", route: "/onboarding?preview=1&step=dexter" }, { label: "Components", route: "/components?component=dexter-live-reasoning" }],
-    componentCode: `<Reasoning defaultOpen={false} isStreaming>\n  <ReasoningTrigger getThinkingMessage={() => <span>Reasoning</span>} />\n  <ReasoningContent>{streamedReasoning}</ReasoningContent>\n</Reasoning>`,
-    usageCode: `<Reasoning open={reasoningOpen} onOpenChange={setReasoningOpen} isStreaming={isThinking} className="mb-0 max-w-[680px] py-1">\n  <ReasoningTrigger getThinkingMessage={() => <span>{t(isThinking ? "Reasoning" : "Reasoning summary")}</span>} />\n  <ReasoningContent>{reasoningContent}</ReasoningContent>\n</Reasoning>`,
+    description: "A continuous text shimmer names Dexter's current operation, with Gmail and Outlook logos beside confirmed service activity.",
+    details: "Activity comes from real tool events, never a timer or an inferred thought. Expand to inspect each operation and its outcome alongside the provider's reasoning summary. Completed work remains available with the saved response. Reduced motion keeps a static, readable status.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-live-reasoning" }],
+    componentCode: `import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"`,
+    usageCode: `<DexterActivityTrail\n  content={reasoningContent}\n  activities={message.activities}\n  isStreaming={isStreaming}\n  answerStarted={Boolean(message.content)}\n  open={open}\n  onOpenChange={setOpen}\n/>`,
   },
   {
     id: "dexter-reasoning-summary",
-    name: "Dexter Reasoning Summary",
+    name: "Dexter Activity Summary",
     category: "Agent Dexter",
-    description: "The completed state of Dexter's persistent reasoning disclosure, letting the operator revisit the supported summary attached to an answer.",
-    details: "Keep the same disclosure used during streaming and change its label in place after completion. Render only provider-supported summary content, keep it closed by default, and do not add a card background.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Account setup", route: "/onboarding?preview=1&step=dexter" }, { label: "Components", route: "/components?component=dexter-reasoning-summary" }],
-    componentCode: `<Reasoning defaultOpen={false} isStreaming={false}>\n  <ReasoningTrigger getThinkingMessage={() => <span>Reasoning summary</span>} />\n  <ReasoningContent>{reasoningSummary}</ReasoningContent>\n</Reasoning>`,
-    usageCode: `<Reasoning open={summaryOpen} onOpenChange={setSummaryOpen} isStreaming={false}>\n  <ReasoningTrigger getThinkingMessage={() => <span>Reasoning summary</span>} />\n  <ReasoningContent>{message.reasoningSummary ?? ""}</ReasoningContent>\n</Reasoning>`,
+    description: "The saved activity trail identifies the services used and preserves completed or failed checks beside the answer.",
+    details: "Uses the same component as the live status. The shimmer stops when work ends; only confirmed operations are marked completed. Older responses retain their reasoning summary without invented activity or provider logos.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-reasoning-summary" }],
+    componentCode: `import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"`,
+    usageCode: `<DexterActivityTrail\n  content={message.reasoningSummary ?? ""}\n  activities={message.activities}\n  isStreaming={false}\n  open={open}\n  onOpenChange={setOpen}\n/>`,
   },
   {
     id: "dexter-record-table",
@@ -2466,7 +2493,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Action Approval",
     category: "Agent Dexter",
     description: "The explicit review checkpoint for a workspace change, with animated field-level before and after comparisons plus clear Approve and Deny actions.",
-    details: "Use only for a prepared allowlisted write. Identify the record with its authorised source link, show deadlines with an explicit time zone, and keep each action independently reviewable. Completed and denied actions retain their final state. Show changed values as red previous and green proposed panels, identify additions and removals, keep the proposal visible while either decision is processing, and retain it with an inline error when the server cannot confirm the result.",
+    details: "Use only for a prepared allowlisted write. Identify the record with its authorised source link, show deadlines with an explicit time zone, and keep each action independently reviewable. Completed and denied actions retain their final state. Use compact, neutral before-and-after rows, format due times in the operator’s time zone, and expand older structured proposals into readable fields. If a saved proposal lacks an identifiable assignee or other essential details, explain how to prepare it again and disable approval. Preserve explicit removals and keep the proposal visible while either decision is processing, and retain it with an inline error when the server cannot confirm the result.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-action-approval" }],
     componentCode: `<DexterActionApproval\n  action={pendingAction}\n  pendingDecision={pendingDecision}\n  error={decisionError}\n  onDecision={handleActionDecision}\n/>`,
     usageCode: `{message.pendingAction ? (\n  <DexterActionApproval\n    action={message.pendingAction}\n    pendingDecision={pendingActionDecision}\n    error={actionDecisionError}\n    onDecision={(decision) => handleActionDecision(message.pendingAction, decision)}\n  />\n) : null}`,
@@ -2556,45 +2583,9 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Side Drawer",
     category: "Operations",
     description: "The inset slide-in panel used for detail and settings surfaces, with modal and register-inspector modes, direction-aware motion, Escape handling, and focus restore.",
-    details: "Use modal mode when a settings task needs exclusive focus. Use non-modal mode when an operator should keep a register visible and switch directly between records, as on Warehouse locations. The panel leans in from its docked edge and becomes instant when reduced motion is preferred. Pass an icon only when the drawer is a settings surface rather than a record.",
+    details: "Use modal mode when a settings task needs exclusive focus. Use non-modal mode when an operator should keep a register visible and switch directly between records, as on Warehouse locations. On phones the drawer fills the viewport and becomes modal, with contained scrolling and trapped focus. On wider screens it keeps its inset layout. Escape closes the panel and focus returns to its opener. The panel respects reduced motion. Pass an icon only when the drawer is a settings surface rather than a record.",
     foundOn: [{ label: "CRM deals", route: "/crm/deals" }, { label: "Warehouse locations", route: "/warehouse/locations" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SideDrawer({ open, onClose, eyebrow, title, icon: Icon, width = 480, modal = true, children }) {
-  const { direction, t } = useLanguage()
-  const reduce = Boolean(useReducedMotion())
-
-  const offset = 40
-
-  return (
-    <AnimatePresence initial={false}>
-      {open ? (
-        <div className={cn("fixed inset-0 z-50 flex justify-end p-3", !modal && "pointer-events-none")} dir={direction}>
-          {modal ? <motion.button
-            className="absolute inset-0 bg-[rgba(11,20,19,0.14)] backdrop-blur-[6px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={reduceMotion(reduce, mdMotion.fast)}
-            onClick={onClose}
-          /> : null}
-          <motion.aside
-            role={modal ? "dialog" : "region"}
-            aria-modal={modal ? "true" : undefined}
-            aria-label={title}
-            className="relative z-10 flex h-full w-full flex-col rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-3"
-            style={{ maxWidth: width }}
-            initial={{ x: offset, opacity: 0, filter: "blur(8px)" }}
-            animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
-            exit={{ x: offset * 0.7, opacity: 0, filter: "blur(8px)" }}
-            transition={reduceMotion(reduce, mdMotion.panel)}
-          >
-            <DrawerHeader eyebrow={eyebrow} title={title} icon={Icon} onClose={onClose} />
-            <div className="md-scrollbar min-h-0 flex-1 overflow-y-auto">{children}</div>
-          </motion.aside>
-        </div>
-      ) : null}
-    </AnimatePresence>
-  )
-}`,
+    componentCode: sideDrawerSource,
     usageCode: `<SideDrawer\n  open={settingsOpen}\n  onClose={() => setSettingsOpen(false)}\n  eyebrow={t("Deals")}\n  title={t("Pipeline settings")}\n  icon={Settings2}\n  width={980}\n>\n  <CrmSettingsBuilder canEdit={canEdit} />\n</SideDrawer>\n\n<SideDrawer\n  open={Boolean(selectedLocation)}\n  onClose={() => setSelectedLocation(null)}\n  eyebrow={t("Location details")}\n  title={t("Edit location")}\n  modal={false}\n>\n  <LocationForm location={selectedLocation} />\n</SideDrawer>`,
   },
   {
@@ -2866,6 +2857,26 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     foundOn: [{ label: "CRM overview", route: "/crm" }, { label: "Components", route: "/components" }],
     componentCode: `export function CrmPriorityActionsPanel({ actions = crmPriorityActions }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title="Priority actions" meta="ranked by revenue and urgency" />\n      {actions.map((action) => (\n        <button key={action.title} type="button">\n          <span>{action.title}</span>\n          <StatusPill tone={action.tone}>{action.due}</StatusPill>\n          <span>{action.impact}</span>\n        </button>\n      ))}\n    </Surface>\n  )\n}`,
     usageCode: `<CrmPriorityActionsPanel />\n\n<CrmPriorityActionsPanel actions={crmPriorityActions} />`,
+  },
+  {
+    id: "deal-next-action",
+    name: "Deal Next Action",
+    category: "CRM",
+    description: "One clear next commitment with an assignee, due time and completion history.",
+    details: "Use at the top of a deal. The action is linked to the assigned colleague’s Tasks. Changing it retains the previous action; completion records an optional outcome. Editors preserve input on failure and respect the deal’s write permission. Closed deals keep their history without offering another action.",
+    foundOn: [{ label: "Deal details", route: "/crm/deals" }, { label: "Components", route: "/components?component=deal-next-action" }],
+    componentCode: crmDealActionsSource,
+    usageCode: `<DealNextActionPanel\n  deal={deal} owners={people.owners} canEdit={people.canEdit}\n  onSave={(input) => saveNextAction(deal.id, input)}\n  onComplete={(id, note) => completeAction(deal.id, id, note)}\n  onOpenTasks={(date) => navigate(taskDatePath(date))}\n/>`,
+  },
+  {
+    id: "deal-loss-dialog",
+    name: "Deal Loss Capture",
+    category: "CRM",
+    description: "Consistent loss reasons, useful context and an optional revisit date.",
+    details: "Use before closing a deal or confirming a board move to Lost. This follows the quote loss pattern. The reason is required; Other needs an explanation. The dialog preserves entered notes and presents a recoverable error if saving fails.",
+    foundOn: [{ label: "Deal board and details", route: "/crm/deals" }, { label: "Components", route: "/components?component=deal-loss-dialog" }],
+    componentCode: crmDealActionsSource,
+    usageCode: `<DealLossDialog\n  open={lossOpen} onOpenChange={setLossOpen} dealName={deal.name}\n  onConfirm={(input) => loseDeal(deal.id, deal.editVersion, input)}\n/>`,
   },
   {
     id: "crm-pipeline-board",
@@ -3689,6 +3700,26 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
 />`,
   },
   {
+    id: "value-slider",
+    name: "Value Slider",
+    category: "Controls",
+    description: "A labelled range with an editable readout, optional snap marks and one commit per gesture.",
+    details: "The track thickens on hover, the thumb springs larger with an accent core while dragged, and a value bubble rises above it. Marks light up as the thumb passes. Type an exact value into the readout, or use arrow keys there (Shift for tens). onChange follows the pointer; onCommit fires once when the gesture settles, so callers can record a single undo step. Reduced motion removes the scaling and bubble travel.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: `${valueSliderSource}\n\n/* value-slider.css */\n${valueSliderStyles}`,
+    usageCode: `<ValueSlider\n  label="Width"\n  value={width}\n  min={240}\n  max={640}\n  unit="px"\n  marks={[320, 480, 600]}\n  onChange={setWidthLive}\n  onCommit={recordWidth}\n/>`,
+  },
+  {
+    id: "swatch-picker",
+    name: "Swatch Picker",
+    category: "Controls",
+    description: "A row of colour swatches with a travelling selection ring, a custom picker and a hex field.",
+    details: "Swatches commit immediately; the native picker streams through onChange and settles with onCommit. Arrow keys move between swatches. The check mark switches between light and dark ink for contrast. Use it for content colours such as email signatures; interface theming keeps its own bounded accent picker.",
+    foundOn: [{label:"Company signatures",route:"/admin/email-signatures"},{label:"Personal signatures",route:"/inbox/signatures"}],
+    componentCode: `${swatchPickerSource}\n\n/* swatch-picker.css */\n${swatchPickerStyles}`,
+    usageCode: `<SwatchPicker\n  label="Button colour"\n  value={colour}\n  swatches={[{ value: "#0e7d74", label: "Accent" }, { value: "#1f2a28", label: "Ink" }]}\n  onChange={setColourLive}\n  onCommit={recordColour}\n/>`,
+  },
+  {
     id: "meeting-colour-picker",
     name: "Meeting Colour Picker",
     category: "Controls",
@@ -4112,6 +4143,8 @@ export const galleryIcons = {
   "contact-profile": Users,
   "primary-contacts-panel": Users,
   "segmented-control": LayoutDashboard,
+  "value-slider": SlidersHorizontal,
+  "swatch-picker": Palette,
   "multi-select-menu": SlidersHorizontal,
   "filter-chips": Users,
   "data-table": Users,
@@ -4160,6 +4193,8 @@ export const galleryIcons = {
   "phone-call-identity-match-review": Users,
   "phone-call-suggested-actions": Sparkles,
   "crm-pipeline-board": BriefcaseBusiness,
+  "deal-next-action": ClipboardCheck,
+  "deal-loss-dialog": ChartAnalysis,
   "crm-asset-folder-card": Boxes,
   "crm-asset-row": FileText,
   "contact-create-dialog": Users,

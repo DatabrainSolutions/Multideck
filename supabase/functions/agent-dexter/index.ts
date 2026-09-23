@@ -1,3 +1,7 @@
+import { strictNestedSchemaError } from "./strict-action-schema.ts"
+import { chooseWatchRecord, validateWatchRule } from "./watch-definition.ts"
+import { createDexterActivityTracker } from "./activity.ts"
+import type { DexterActivity } from "../../../shared/dexter-activity.ts"
 import { listMailboxes } from "../inbox-api/runtime.ts"
 import { pendingApprovalTools, pendingApprovalReview } from "./pending-approval-review.ts"
 import { backgroundTaskInstructions, finishBackgroundTaskTool, createTaskWatchTool, validateBackgroundOutcome, type BackgroundTaskOutcome } from './background-task.ts'
@@ -16,6 +20,7 @@ import { governedResponsesSocket } from "./governed-responses-socket.ts"
 import { preparedActionErrorMessage } from "./action-error.ts"
 import { companyEditActionReview } from "./company-edit-review.ts"
 import { dealStageActionReview } from "./deal-stage-review.ts"
+import { dealSalesActionReview } from "./deal-sales-review.ts"
 import { requestedInboxProviders } from "./inbox-intent.ts"
 import { prepareProviderDraftSend } from "./provider-draft-send.ts"
 import { createRecordTable, recordTableTool, recordActionTarget } from "./record-tables.ts"
@@ -104,6 +109,7 @@ type DexterAgentResult = {
   promptVersion: string
   availableDomains: string[]
   reasoningSummary?: string
+  activities?: DexterActivity[]
   usage?: TokenUsage
   pendingAction?: JsonObject
   continuationMessageId?: string
@@ -1334,6 +1340,7 @@ async function saveExchange(
       taskOutcome: result.taskOutcome ?? null,
       reasoningEffort: result.reasoningEffort,
       reasoningSummary: result.reasoningSummary ?? "",
+      activities: result.activities ?? [],
       locale: result.locale,
       promptVersion: result.promptVersion,
       availableDomains: result.availableDomains,
@@ -1392,7 +1399,7 @@ function strictActionParameterSchemaError(parameters: JsonObject) {
     return "required_properties_mismatch"
   }
 
-  return null
+  return strictNestedSchemaError(parameters)
 }
 
 function parseActions(value: unknown): DataAction[] {
@@ -1969,6 +1976,7 @@ Avoid filler such as "great question", "absolutely", "happy to help", "exciting"
 Do not repeat the operator's question unless clarification is necessary.
 
 # Evidence and uncertainty contract
+CRM sales: when deal_sales is available, read the exact current deal and its people options before proposing update_deal_sales. Show the action title, type, assignee, due date and local task date when known; completion outcome; owner/main contact before and after; loss reason with optional details/competitor/revisit date; or the reopening reason and exact open destination stage read from the same pipeline. Reopening is only for lost deals and preserves the previous outcome history. Never substitute unknown people IDs. Existing next actions retain their assignee after a deal ownership change. These writes always require approval and current editVersion. A next action is shared deal work linked to its assignee's personal task, not a grant to their other tasks. sales_insights contains measured sales evidence for the last 90 days; cite its source deals and coverage limitations. Win rate means won / (won + lost) among closed deals, not lead conversion. Stage progression is observed departures among observed stage entries, not proof the deal advanced or won. The sales_briefing domain reads the saved company-wide 90-day briefing, including its generated date and refresh state. Sales changes queue background analysis with a quiet debounce and a six-hour company ceiling; unchanged evidence skips the model. Opening Insights never requests generation. Do not offer a force-generation write or claim that filtered charts change the scope of the saved whole-team briefing. Use /crm/insights for recorded outcome trends, stage comparisons, date movement and inline source evidence. Historical weekly decisions may include later-reopened deals and are distinct from the current closed-deal win rate; partial weeks are not full-period comparisons. Deal watches can follow ownership, next action, completion and loss changes; sales_briefing watches follow newly saved changed evidence once. Aggregate metric threshold watches remain unsupported. Ordinary watches and page reads make no recurring model calls. Narrative themes in schemaVersion 3 are AI-generated classifications of shared lost-deal feedback and completed deal-action outcomes, supported by exact source excerpts. Theme memberships can overlap and cover a bounded recent corpus; never present their counts as the whole pipeline or a representative sample. Current outcome, stage and owner metadata is reprojected on read without a model call. Explain the difference between the saved classification date and current measured counts. CRM_Notes, personal tasks, private mail and call content are excluded from this corpus; do not claim to analyse them. These themes are not win probabilities, calibrated forecasts or proven causes. The page integrates chart-specific explanations and thematic outcome/stage comparisons, with source wording available inline.
 Shipment chargeable weight overrides are separate from per-line cargo weights, monetary goods values and air waybill weights. When booking_shipment_value returns chargeableWeightOverrideKg, read the exact Booking and updatedAt before proposing update_booking_weight_override. Show the current override and proposed kg value explicitly; null clears only this override. Always request approval in both access modes. Do not derive, distribute or infer an override from cargo totals or modify an AWB. The existing shipment-values watch can notify on chargeableWeightOverrideKg changes only, without thresholds or automatic edits. If this field/action is unavailable, direct the operator to Booking Details > Cargo rather than claiming generic Booking edits support it.
 Never invent or guess facts. This includes names, people, companies, roles, relationships, contact details, record references, quantities, dates, times, locations, routes, statuses, prices, totals, percentages, documents, events, actions, or outcomes.
 A factual claim may come only from the operator's current message, operator-attached context, conversation history, a successful workspace data-tool result, or stable general knowledge. Do not treat an example, placeholder, suggested value, or your own prior unsupported statement as fact.
@@ -2080,7 +2088,7 @@ Calendar and external_events accept an exact event ID, title words, or YYYY-MM-D
 
 Mileage claims are available through the mileage read domain with claimant, assigned-approver and Finance boundaries. Never infer access from a linked CRM company. The app automatically calculates road mileage, shows a review map, accepts reviewed mileage overrides and optional private odometer photos, and creates/submits the claim on confirmation. Luna photo reading is an explicit in-app suggestion requiring review; never claim to inspect those photos through chat. Claim creation, edits, route calculations, approval, payment recording and mileage Watching for you rules are unsupported: no reviewed write or private-claim watch adapter is registered. Explain this explicitly and link to [Trips & mileage](/crm/trips) or [Mileage payments](/finance/mileage). Do not substitute generic Finance actions or company watches. The app sends deterministic in-app claim notifications; this is not a saved Dexter watch.
 
-Tasks are the operator’s personal task list. The todo domain includes an assigned agent’s name, status and conversation route. Watching for you supports agentStatus and agentName changes on an owned task, using deterministic events. Hand-off, stop, retry, scheduling and follow-up controls are available in Tasks and the saved agent conversation. Creating more background agents through chat or a watch action is intentionally unsupported to prevent recursive delegation and bypassing the working-agent limit; direct the operator to the exact task’s Hand to Dexter control. Never claim you queued work using the ordinary task create/update action.
+Tasks are the operator’s personal task list. The todo domain can read owned tasks and their Dexter conversation route. Watching for you supports saved task changes using deterministic events. Hand to Dexter opens the task's ordinary Dexter chat and immediately sends the task there. Do not claim that a task create/update action delegated work or started a background agent.
 
 Keep email searches concise and identifying. Put a person or address in sender when the operator says from, by or sender; put the remaining clues such as invoice, subject, company, reference or attachment name in query. Set hasAttachment=true only when an attachment is required. Leave out conversational words such as find, show, email, subject, from and sent.
 Search results can mark matchQuality as corrected_sender or possible_sender when the mailbox safely recovered a likely typo. Treat that as a candidate, not a confirmed identity: verify the returned matchedSender, the thread's From participant, the subject and any requested attachment before presenting it. Never silently substitute a different domain. If more than one candidate remains plausible, show the short evidence-backed choices or ask for one useful detail instead of guessing.
@@ -2110,7 +2118,7 @@ When a tool is needed, call it without writing a user-facing preamble. Write the
 For navigation-only questions, answer only the current navigation question. Do not repeat earlier email-draft, approval or completion commentary, and do not attach or describe an old composer unless the current question asks about it. Use these product routes and controls without querying unrelated business records. Link the named page directly. Do not invent a record ID or a tab URL.
 - Company address details: [Companies](/crm/accounts), open the company, select Details, then Main contact & address for its main postal details, or Company setup → Addresses & billing for purpose-specific addresses. Use Edit on the relevant address card, or Add address for a new one. The separate Addresses tab manages collection/delivery rules and booking instructions. The Customers finance overview does not expose these Details controls.
 - Optional company profile facts (registered name, registration number, website, LinkedIn company URL, employee count and source) have no typed Dexter read, write or field-specific watch capability yet. Explicitly state that these fields are unsupported in chat and Watching for you, and direct the operator to [Companies](/crm/accounts) → company → Details → Company information. Do not infer them or use generic queries or unrelated actions as a substitute. Existing approved foundation/address actions and ordinary saved account update watches are unchanged.
-- Deal stages: [Deals](/crm/deals), choose the relevant pipeline and Board view, then drag the deal card to the destination stage. The stage rail on the standalone deal detail page is read-only. Conversion stages open their required customer-conversion review. When the operator asks Dexter to perform a move, use move_deal_stage only if it is listed among the available actions; keep its existing approval and conversion boundaries.
+- Deal stages: [Deals](/crm/deals), choose the relevant pipeline and Board view, then drag the deal card to the destination stage. The standalone deal page also has a current-stage chooser. Conversion stages open their required customer-conversion review, and lost stages open structured loss capture. When the operator asks Dexter to perform a move, use move_deal_stage only if it is listed among the available actions; keep its existing approval and conversion boundaries.
 - Email connection: [Settings → Integrations](/settings?tab=integrations), choose Connect Gmail or Connect Outlook (Reconnect when access needs renewal). A connected provider instead shows Disconnect; never tell the operator to disconnect merely to add a shared mailbox. The same section has Shared Outlook mailboxes with Add mailbox when authorised. An empty [Inbox](/inbox) offers Connect Gmail and Connect Outlook. The operator must complete provider authorisation; Dexter cannot connect or grant mailbox access on their behalf.
 If a requested control is not covered by verified guidance or returned evidence, say what is known and do not guess its label or location.
 
@@ -3213,6 +3221,7 @@ async function runStreamedAgent(
   let totalToolCalls = 0
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
   const reasoningSummaries: string[] = []
+  const activity = createDexterActivityTracker(emit)
   const currentRecordsById = new Map<string, JsonObject>()
   const allowedDraftAddresses = new Set(security.authorisedRecipientAddresses)
   let emailAction = requestedEmailAction(operatorPrompt)
@@ -3232,7 +3241,7 @@ async function runStreamedAgent(
     if (!pendingActions.length && !recordTables.length && !preparedEmailDraft) return null
     return { answer: message, model: lane, providerModel: route.model, reasoningEffort: route.effort,
       locale, promptVersion: PROMPT_VERSION, availableDomains: domainCodes, usage,
-      reasoningSummary: reasoningSummaries.join("\n\n"), steeringInputs, providerResponseIds, activeRunId: activeWorker?.id, providerHistory: runCompleted ? providerHistory ?? undefined : undefined, pendingActions, recordTables, deferredWork,
+      activities: activity.activities, reasoningSummary: reasoningSummaries.join("\n\n"), steeringInputs, providerResponseIds, activeRunId: activeWorker?.id, providerHistory: runCompleted ? providerHistory ?? undefined : undefined, pendingActions, recordTables, deferredWork,
       ...(preparedEmailDraft ? { emailDraft: preparedEmailDraft,
         pendingAction: pendingActions.find(action => action.emailDraftId === preparedEmailDraft?.id) } : {}),
       emailAttachments: emailState?.surfacedAttachments ?? [],
@@ -3273,7 +3282,8 @@ async function runStreamedAgent(
         }
     return toolOutput
   }
-  const earlyRead = asyncDomainReads(args => readDomain(sanitiseArguments(args)))
+  const trackedReadDomain = (args: JsonObject) => activity.run("query_data_domain", args, [], () => readDomain(args))
+  const earlyRead = asyncDomainReads(args => trackedReadDomain(sanitiseArguments(args)))
   let providerInputOffset = 0
   let streamDelta: (kind: "answer" | "reasoning", delta: string) => void = () => {}
   let activeWorker: Awaited<ReturnType<typeof activeRunWorker>> | null = null
@@ -3423,6 +3433,7 @@ async function runStreamedAgent(
       emit({
         type: "error",
         code: "dexter_provider_unavailable",
+        retrySafe: round === 0,
         message: "Dexter could not reach its reasoning service. Try again in a moment.",
       })
       return null
@@ -3440,6 +3451,7 @@ async function runStreamedAgent(
       emit({
         type: "error",
         code: "dexter_provider_error",
+        retrySafe: round === 0,
         message: "Dexter could not complete this request. Try again in a moment.",
       })
       return null
@@ -3474,7 +3486,7 @@ async function runStreamedAgent(
         locale,
         promptVersion: PROMPT_VERSION,
         availableDomains: [...domainCodes, ...emailProviders.map((provider) => `email:${provider}`)],
-        reasoningSummary: reasoningSummaries.join("\n\n"), steeringInputs, providerResponseIds, activeRunId: activeWorker?.id, providerHistory: runCompleted ? providerHistory ?? undefined : undefined,
+        activities: activity.activities, reasoningSummary: reasoningSummaries.join("\n\n"), steeringInputs, providerResponseIds, activeRunId: activeWorker?.id, providerHistory: runCompleted ? providerHistory ?? undefined : undefined,
         usage,
         emailAttachments: emailState?.surfacedAttachments ?? [],
         pendingActions,
@@ -3535,7 +3547,7 @@ async function runStreamedAgent(
       if (backgroundTask && call.name === 'finish_background_task') {
         try {
           const taskOutcome = validateBackgroundOutcome(args, {phase:backgroundTask.phase,watchIds:taskWatchIds,hasPending:pendingActions.length>0,incompleteDraft:Boolean(preparedEmailDraft && (!Array.isArray(preparedEmailDraft.to) || !preparedEmailDraft.to.length)),draftOnly:Boolean(preparedEmailDraft && !emailSendRequested(operatorPrompt) && pendingActions.every(action=>action.emailDraftId===preparedEmailDraft?.id))})
-          return {answer:taskOutcome.summary,taskOutcome,model:lane,providerModel:route.model,reasoningEffort:route.effort,locale,promptVersion:PROMPT_VERSION,availableDomains:domainCodes,usage,reasoningSummary:reasoningSummaries.join('\n\n'),pendingActions,recordTables,deferredWork,emailDraft:preparedEmailDraft,pendingAction:pendingActions.find(action=>action.emailDraftId===preparedEmailDraft?.id),emailAttachments:emailState?.surfacedAttachments??[],providerResponseIds,activeRunId:activeWorker?.id}
+          return {answer:taskOutcome.summary,taskOutcome,model:lane,providerModel:route.model,reasoningEffort:route.effort,locale,promptVersion:PROMPT_VERSION,availableDomains:domainCodes,usage,activities:activity.activities,reasoningSummary:reasoningSummaries.join('\n\n'),pendingActions,recordTables,deferredWork,emailDraft:preparedEmailDraft,pendingAction:pendingActions.find(action=>action.emailDraftId===preparedEmailDraft?.id),emailAttachments:emailState?.surfacedAttachments??[],providerResponseIds,activeRunId:activeWorker?.id}
         } catch(error) {toolOutput={error:error instanceof Error?error.message:'Invalid task outcome'}}
       } else if (backgroundTask && call.name === 'list_task_watch_capabilities') {
         const {data,error}=await userClient.rpc('multideck_dexter_list_watch_capabilities')
@@ -3567,9 +3579,9 @@ async function runStreamedAgent(
           emailState?.surfacedAttachments ?? [],
         )
         emit({ type: "delta", delta: result.answer })
-        return result
+        return { ...result, activities: activity.activities }
       } else if (call.name === "query_data_domain") {
-        toolOutput = socket ? await earlyRead(call) : await readDomain(args)
+        toolOutput = socket ? await earlyRead(call) : await trackedReadDomain(args)
       } else if (call.name === "show_record_table") {
         const result = createRecordTable(args, tableRecords)
         if (result.table) {
@@ -3579,10 +3591,10 @@ async function runStreamedAgent(
         } else toolOutput = result
       } else if (call.name === DEXTER_DOCUMENT_OCR_TOOL) {
         try {
-          const extraction = await extractDexterUploadedDocument(
+          const extraction = await activity.run("read_document", {}, [], () => extractDexterUploadedDocument(
             authorization,
             cleanString(args.upload_id, 80),
-          )
+          ))
           latestDocumentExtraction = isObject(extraction) ? extraction : null
           toolOutput = extraction
         } catch (error) {
@@ -3592,13 +3604,13 @@ async function runStreamedAgent(
           }
         }
       } else if (call.name === EMAIL_STYLE_TOOL) {
-        toolOutput = await loadOperatorEmailStyle(userClient)
+        toolOutput = await activity.run("load_operator_email_style", {}, [], () => loadOperatorEmailStyle(userClient))
         emailStyleLoaded = true
       } else if (call.name === PREPARE_EMAIL_DRAFT_TOOL) {
         if (!emailStyleLoaded) {
           toolOutput = { error: "Load the operator email style before preparing the draft." }
         } else {
-          const prepared = await prepareEmailDraft(userClient, args, operatorPrompt, allowedDraftAddresses, emailAction)
+          const prepared = await activity.run("prepare_email_draft", {}, [], () => prepareEmailDraft(userClient, args, operatorPrompt, allowedDraftAddresses, emailAction))
           if (prepared.draft) {
             let emailDraft = prepared.draft
             if (selfMailbox && emailDraft.mode === "new") {
@@ -3616,6 +3628,8 @@ async function runStreamedAgent(
               pendingAction = secured.pendingAction
             } catch (error) {
               console.error("Dexter secured email action failed", error instanceof Error ? error.message : "unknown")
+              const retained = partialResult("The earlier work is kept below. I could not prepare the email action. Review the saved proposals, then ask me to retry the email. Nothing was sent.")
+              if (retained) return retained
               emit({ type: "error", code: "prepared_email_unavailable", message: "Dexter could not secure that email action. Nothing was sent or created." })
               return null
             }
@@ -3631,7 +3645,11 @@ async function runStreamedAgent(
           if (!prepared.draft) toolOutput = prepared
         }
       } else if (emailState && isEmailToolName(call.name)) {
-        const emailResult = await executeEmailTool(call.name, args, emailState)
+        const emailToolName = call.name
+        const emailResult = await activity.run(emailToolName, args,
+          emailToolName === "read_email_attachment" ? emailState.providers : emailState.searchProviders,
+          () => executeEmailTool(emailToolName, args, emailState),
+          result => result.surfacedAttachment ? { ...result.output, ...result.surfacedAttachment } : result.output)
         toolOutput = emailResult.output
         if (emailResult.modelInput) deferredModelInputs.push(emailResult.modelInput)
         if (emailResult.surfacedAttachment) {
@@ -3644,8 +3662,8 @@ async function runStreamedAgent(
         } else if (requiresExplicitActionApproval(action.code, accessMode)) {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
           let dealMoveReview: ReturnType<typeof dealStageActionReview> | null = null
-          if (["move_deal_stage", "update_company_foundation", "upsert_company_address", "transfer_company_contact"].includes(action.code)) {
-            try { dealMoveReview = action.code === "transfer_company_contact" ? contactTransferReview(currentRecordsById, actionArguments) : action.code === "move_deal_stage"
+          if (["update_deal_sales", "move_deal_stage", "update_company_foundation", "upsert_company_address", "transfer_company_contact"].includes(action.code)) {
+            try { dealMoveReview = action.code === "update_deal_sales" ? dealSalesActionReview(currentRecordsById, actionArguments) : action.code === "transfer_company_contact" ? contactTransferReview(currentRecordsById, actionArguments) : action.code === "move_deal_stage"
               ? dealStageActionReview(currentRecordsById, actionArguments)
               : companyEditActionReview(currentRecordsById, actionArguments, action.code) }
             catch (error) {
@@ -3697,6 +3715,8 @@ async function runStreamedAgent(
             })
           } catch (error) {
             console.error("Dexter prepared-action persistence failed", error instanceof Error ? error.message : "unknown")
+            const retained = partialResult("The earlier work is kept below. I could not prepare the next change. Review the saved proposals, then ask me to retry the remaining step. No new change was applied.")
+            if (retained) return retained
             emit({ type: "error", code: "prepared_action_unavailable", message: "Dexter could not secure that proposed change. Nothing was changed." })
             return null
           }
@@ -3731,7 +3751,7 @@ async function runStreamedAgent(
               locale,
               promptVersion: PROMPT_VERSION,
               availableDomains: [...domainCodes, ...emailProviders.map((provider) => `email:${provider}`)],
-              reasoningSummary: reasoningSummaries.join("\n\n"), steeringInputs, providerResponseIds, activeRunId: activeWorker?.id, providerHistory: runCompleted ? providerHistory ?? undefined : undefined,
+              activities: activity.activities, reasoningSummary: reasoningSummaries.join("\n\n"), steeringInputs, providerResponseIds, activeRunId: activeWorker?.id, providerHistory: runCompleted ? providerHistory ?? undefined : undefined,
               usage,
               emailAttachments: emailState?.surfacedAttachments ?? [],
             }
@@ -3866,11 +3886,9 @@ export const handleDexterRequest = async (request: Request) => {
     return json(request, { code: "invalid_conversation", message: "That Dexter conversation is not valid." }, 400)
   }
 
-  if (conversationId && operation === 'message' && !body.actionDecision) {
-    const {data:assignment,error:assignmentError}=await admin.from('AI_DexterTaskAssignments').select('id,status').eq('conversation_id',conversationId).eq('owner_id',actor.userId).eq('company_id',actor.companyId).maybeSingle()
-    if (assignment) return json(request,{code:'background_task_conversation',message:'Send this follow-up through the task agent so it stays in the background queue.'},409)
-    if (assignmentError && assignmentError.code !== '42P01' && assignmentError.code !== 'PGRST205') return json(request,{code:'task_status_unavailable',message:'The conversation status could not be checked. Try again.'},503)
-  }
+  // Task handovers remain normal conversations for manual follow-ups. The
+  // authenticated conversation RPC below enforces the same owner/access checks
+  // as any other chat; the background assignment retains its own lifecycle.
 
   if (operation === "steer" || operation === "active-run-status") {
     const result = await steeringRequest(admin, actor, body)
@@ -4286,6 +4304,9 @@ export const handleDexterRequest = async (request: Request) => {
     }
     const capabilities = parseWatchCapabilities(capabilityData)
     const actions = parseActions(actionData)
+    if (!capabilities.length) {
+      return json(request, { status: "unsupported", message: "There are no watchable sources available for this account." })
+    }
     const fieldNames = [...new Set(capabilities.flatMap((capability) => capability.fields))]
     const compilerResult: { response?: JsonObject; status: number; requestId: string } = await requestOpenAI({ admin, companyId: actor.companyId, userId: actor.userId }, openAIKey, {
       model: MODEL_ROUTES.fast.model,
@@ -4367,8 +4388,15 @@ export const handleDexterRequest = async (request: Request) => {
     const capability = cleanString(definition.capability, 40)
     const capabilityEntry = capabilities.find((item) => item.code === capability)
     const field = cleanString(definition.field, 60)
-    if (!capabilityEntry || !capabilityEntry.fields.includes(field)) {
+    if (!capabilityEntry) {
       return json(request, { status: "unsupported", message: "That field is not available as a live watch signal yet." })
+    }
+    const operator = cleanString(definition.operator, 20)
+    const value = cleanString(definition.value, 500)
+    const ruleError = validateWatchRule(capabilityEntry.fields, field, operator, value)
+    if (ruleError) return json(request, { status: "clarification", message: ruleError })
+    if (!cleanString(definition.title, 180) || !cleanString(definition.summary, 2_000)) {
+      return json(request, { status: "clarification", message: "Describe the change you want Dexter to watch." })
     }
 
     let targetId = cleanString(definition.targetId, 80)
@@ -4416,29 +4444,37 @@ export const handleDexterRequest = async (request: Request) => {
       if (!resolved.ok) return json(request, { status: "clarification", message: resolved.message })
       targetId = resolved.targetId
       targetLabel = resolved.targetLabel
-    } else if (capability !== "email" && targetSearch) {
-      const { data: domainData, error: domainError } = await userClient.rpc("multideck_dexter_query_domain", { p_domain: capability, p_search: targetSearch, p_take: 4 })
+    } else if (capability !== "email" && (targetSearch || targetId)) {
+      const explicitIds = new Set([
+        ...(prompt.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) ?? []),
+        ...attachments.map(attachment => attachment.id),
+      ].map(id => id.toLowerCase()))
+      if (targetId && !explicitIds.has(targetId.toLowerCase())) {
+        if (!targetSearch) return json(request, { status: "clarification", message: "Which exact record should Dexter watch?" })
+        targetId = ""
+      }
+      const search = targetSearch || targetLabel || targetId
+      const { data: domainData, error: domainError } = await userClient.rpc("multideck_dexter_query_domain", { p_domain: capability, p_search: search, p_take: 25 })
       if (domainError) return json(request, { status: "clarification", message: "Dexter could not verify that record. Check its name or reference and try again." })
       const returnedCandidates = watchCandidates(capability, domainData)
-      const explicitIds = new Set((prompt.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) ?? []).map(id => id.toLowerCase()))
-      const exactCandidates = returnedCandidates.filter(record => explicitIds.has(String(record.recordId).toLowerCase()))
-      const namedCandidates = returnedCandidates.filter(record => watchTargetLabel(capability, record).toLowerCase() === targetSearch.toLowerCase())
-      const candidates = capability === "customers"
-        ? explicitIds.size ? exactCandidates : namedCandidates.length ? namedCandidates : returnedCandidates
-        : returnedCandidates
-      if (candidates.length !== 1) {
+      const chosen = chooseWatchRecord(returnedCandidates, targetSearch, targetId, explicitIds,
+        record => watchTargetLabel(capability, record))
+      if (!chosen.record) {
+        const candidates = chosen.candidates
         const labels = candidates.slice(0, 3).map((record) => watchTargetLabel(capability, record)).join(", ")
         return json(request, {
           status: "clarification",
           message: candidates.length === 0
-            ? `I could not find “${targetSearch}” in ${capability}. Check the reference and try again.`
-            : `I found more than one match for “${targetSearch}”${labels ? `: ${labels}` : ""}. Which one should I watch?`,
+            ? `I could not find “${search}” in ${capability}. Check the reference and try again.`
+            : `I could not verify one exact match for “${search}”${labels ? `: ${labels}` : ""}. Which one should I watch?`,
         })
       }
-      targetId = cleanString(candidates[0].recordId, 80)
-      targetLabel = watchTargetLabel(capability, candidates[0])
+      targetId = cleanString(chosen.record.recordId, 80)
+      targetLabel = watchTargetLabel(capability, chosen.record)
     }
-    if (targetId && !isUuid(targetId)) targetId = ""
+    if (targetId && !isUuid(targetId)) {
+      return json(request, { status: "clarification", message: "That record reference is invalid. Choose a saved record and try again." })
+    }
 
     let action: JsonObject | null = null
     const actionCode = cleanString(definition.actionCode, 50)
@@ -4456,7 +4492,7 @@ export const handleDexterRequest = async (request: Request) => {
         action = null
       }
     }
-    const rule = { field, operator: cleanString(definition.operator, 20), value: cleanString(definition.value, 500) }
+    const rule = { field, operator, value: operator === "changed" ? "" : value }
     const { data: watch, error: createError } = await userClient.rpc("multideck_dexter_create_watch", {
       p_capability: capability,
       p_title: cleanString(definition.title, 180),
@@ -5274,4 +5310,3 @@ export async function executeBackgroundTask(admin: DexterSupabaseClient, runId: 
 }
 
 if (import.meta.main) Deno.serve(handleDexterRequest)
-

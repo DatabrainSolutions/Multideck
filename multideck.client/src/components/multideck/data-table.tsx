@@ -1,4 +1,4 @@
-import { Fragment, isValidElement, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react"
+import { Fragment, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Csv02Icon } from "@hugeicons/core-free-icons"
@@ -277,12 +277,11 @@ export function DataTable<Row>({
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null)
-  const [stickyColumnsEnabled, setStickyColumnsEnabled] = useState(() => (
-    typeof window === "undefined" || window.matchMedia("(min-width: 768px)").matches
-  ))
-  const [mobileToolbarControls, setMobileToolbarControls] = useState(() => (
-    typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches
-  ))
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+  // A tablet with its sidebar open, or a table inside a drawer, can have much
+  // less room than the viewport. Adapt to the space the register actually owns.
+  const mobileToolbarControls = containerWidth > 0 && containerWidth < 768
   const resizeStart = useRef<{ columnId: string; x: number; width: number; min: number; max: number } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
   const rowContextMenuRef = useRef<HTMLDivElement>(null)
@@ -308,20 +307,15 @@ export function DataTable<Row>({
     )
   }, [hidden, order, sort, storageKey, widths])
 
-  useEffect(() => {
-    const media = window.matchMedia("(min-width: 768px)")
-    const syncStickyColumns = () => setStickyColumnsEnabled(media.matches)
-    media.addEventListener("change", syncStickyColumns)
-    syncStickyColumns()
-    return () => media.removeEventListener("change", syncStickyColumns)
-  }, [])
-
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 639px)")
-    const syncMobileToolbar = () => setMobileToolbarControls(media.matches)
-    media.addEventListener("change", syncMobileToolbar)
-    syncMobileToolbar()
-    return () => media.removeEventListener("change", syncMobileToolbar)
+  useLayoutEffect(() => {
+    const container = tableContainerRef.current
+    if (!container) return
+    setContainerWidth(Math.round(container.getBoundingClientRect().width))
+    const observer = new ResizeObserver(([entry]) => {
+      setContainerWidth(Math.round(entry.contentRect.width))
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
@@ -439,6 +433,9 @@ export function DataTable<Row>({
     pinnedOffsets.set(column.id, nextOffset)
     nextOffset += columnWidth(column)
   })
+  // Keep enough unpinned space to read and swipe through the remaining columns.
+  // Saved pins are retained and return when the register has room again.
+  const stickyColumnsEnabled = containerWidth >= 768 && nextOffset <= containerWidth * 0.5
 
   const minimumWidth = (minimumWidthOverride ?? Math.max(visibleColumns.reduce((width, column) => width + columnWidth(column), 0), 720)) + selectionColumnWidth
   const hasCustomLayout = Boolean(sort) || hidden.size !== defaultHidden.length || [...hidden].some((id) => !defaultHidden.includes(id)) || Object.keys(widths).length > 0 || pinned.size > 0 || order.some((id, index) => id !== columnIds[index])
@@ -819,7 +816,7 @@ export function DataTable<Row>({
   ) : null
 
   return (
-    <div className={cn("w-full min-w-0", className)}>
+    <div ref={tableContainerRef} data-table-compact={mobileToolbarControls || undefined} className={cn("md-data-table w-full min-w-0", className)}>
       {/* The toolbar wraps by group, never by control. A register with a view
           switch, three filters and a search will not fit one line on a laptop, and
           two clean rows read far better than a leading group floating in the
@@ -829,7 +826,7 @@ export function DataTable<Row>({
         {/* The minimum width is what makes the trailing controls drop to their own
             line as one block. Without it they wrap control by control around the
             leading group and the row loses its reading order. */}
-        {hasTrailingToolbar ? <div data-table-trailing-controls className={cn("ms-auto flex flex-none flex-nowrap items-center justify-end gap-1.5 sm:flex-wrap", compactToolbar ? "sm:min-w-[min(100%,520px)]" : "sm:min-w-[min(100%,560px)]")}>
+        {hasTrailingToolbar ? <div data-table-trailing-controls className={cn("ms-auto flex flex-none max-w-full flex-nowrap items-center justify-end gap-1.5 sm:flex-wrap", compactToolbar ? "sm:min-w-[min(100%,520px)]" : "sm:min-w-[min(100%,560px)]")}>
           <AnimatePresence initial={false}>{selectionControls}</AnimatePresence>
           {mobileToolbarControls && (toolbarSearch || toolbarFilters || toolbarOptions) ? <Popover>
             <PopoverTrigger asChild>
@@ -882,7 +879,7 @@ export function DataTable<Row>({
               {hasCustomLayout ? <span className="absolute end-0.5 top-0.5 size-1.5 rounded-full bg-[var(--md-accent)] shadow-[0_0_0_1px_var(--md-surface)]" aria-hidden="true" /> : null}
             </button>
           </PopoverTrigger>
-          <PopoverContent align="end" sideOffset={6} className="w-[310px] gap-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-popover)]">
+          <PopoverContent data-table-column-manager align="end" sideOffset={6} className="w-[310px] gap-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-popover)]">
             <div className="flex items-start justify-between gap-3 px-3 py-2.5">
               <div>
                 <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Table columns")}</p>
@@ -900,6 +897,7 @@ export function DataTable<Row>({
                   return (
                     <motion.div
                       layout={!reduceMotion}
+                      data-table-column-row
                       key={column.id}
                       draggable
                       onDragStart={() => setDraggingId(column.id)}

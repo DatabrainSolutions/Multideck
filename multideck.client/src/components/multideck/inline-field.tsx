@@ -78,7 +78,7 @@ function FieldStatus({ state, editing, showEditHint = true }: { state: SaveState
           a motion value: an animated opacity would win over the hover rule and leave
           the pencil showing on every field at rest. */}
       {state === "idle" && !editing && showEditHint ? (
-        <span className="absolute text-[var(--md-subtle)] opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+        <span className="absolute text-[var(--md-subtle)] opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
           <Pencil className="size-3" strokeWidth={1.5} />
         </span>
       ) : null}
@@ -463,7 +463,7 @@ export function InlineTagField({
               type="button"
               aria-label={`${t("Remove")} ${label}`}
               onClick={() => void onRemove()}
-              className="absolute -end-1 -top-1 grid size-[18px] place-items-center rounded-full bg-[var(--md-surface)] text-[var(--md-subtle)] opacity-0 shadow-[var(--md-shadow-line)] transition-opacity duration-150 hover:text-[var(--md-red)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] group-hover:opacity-100"
+              className="absolute -end-1 -top-1 grid size-[18px] place-items-center rounded-full bg-[var(--md-surface)] text-[var(--md-subtle)] opacity-0 shadow-[var(--md-shadow-line)] transition-opacity duration-150 hover:text-[var(--md-red)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] group-hover:opacity-100 [@media(hover:none)]:opacity-100"
             >
               <X className="size-3" strokeWidth={2} />
             </button>

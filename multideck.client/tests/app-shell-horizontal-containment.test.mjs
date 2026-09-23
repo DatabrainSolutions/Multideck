@@ -7,8 +7,8 @@ const quoteSource = await readFile(new URL("../src/pages/quotes-page.tsx", impor
 const quoteStyles = await readFile(new URL("../src/quotes-transfer.css", import.meta.url), "utf8")
 
 test("the shared application shell cannot become a horizontal page scroller", () => {
-  assert.match(appShellSource, /h-screen w-full max-w-full overflow-hidden/u)
-  assert.match(appShellSource, /flex h-screen w-full min-h-0 min-w-0 overflow-hidden/u)
+  assert.match(appShellSource, /h-dvh w-full max-w-full overflow-hidden/u)
+  assert.match(appShellSource, /flex h-full w-full min-h-0 min-w-0 overflow-hidden/u)
   assert.match(appShellSource, /min-h-0 min-w-0 max-w-full flex-1 overscroll-x-none/u)
   assert.match(appShellSource, /overflow-x-clip overflow-y-auto md-scrollbar/u)
 })

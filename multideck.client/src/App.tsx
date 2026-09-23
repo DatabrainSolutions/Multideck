@@ -243,6 +243,7 @@ function isCustomsDeclarationEditRoute(path: string) {
 
 /** Old CRM links still land on their current product destination. */
 function getLegacyCrmRoute(path: string) {
+  if (path === "/crm/insights") return "/crm"
   if (path === "/crm/marketing") return "/crm/drive"
   if (path === "/crm/suppliers") return "/suppliers"
   const supplierDetail = path.match(/^\/crm\/suppliers\/([^/]+)$/)
@@ -765,7 +766,7 @@ export default function App() {
   // bar only shows routes that operators can genuinely use.
   useEffect(() => {
     if (window.location.pathname === "/finance/setup" || window.location.pathname === "/admin/finance" || getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname)) {
-      window.history.replaceState(window.history.state, "", route)
+      window.history.replaceState(window.history.state, "", `${route}${window.location.search}`)
     }
   }, [route])
 
@@ -853,7 +854,7 @@ export default function App() {
                       navigate={navigate}
                     />
                   ) : null}
-                  {route === "/crm" ? <CrmOverviewPage /> : null}
+                  {route === "/crm" ? <CrmOverviewPage navigate={navigate} /> : null}
                   {route === "/crm/phone-calls" ? <CrmPhoneCallsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmPhoneCallDetailRoute(route) ? <CrmPhoneCallsPage callId={route.split("/").at(-1) ?? ""} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/crm/accounts" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} /> : null}

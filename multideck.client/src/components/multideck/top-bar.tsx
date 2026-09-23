@@ -239,7 +239,7 @@ export function TopBar({
   }, [route])
 
   return (
-    <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl">
+    <header className="md-topbar sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] flex-wrap items-center gap-2 bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl sm:gap-[var(--md-gap-lg)]">
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetTrigger asChild>
           <Button
@@ -275,7 +275,7 @@ export function TopBar({
       {isPartyDetail ? (
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="md-topbar-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Button
               variant="ghost"
               className={topBarGhostActionClass}
@@ -304,7 +304,7 @@ export function TopBar({
       ) : isCrmLeadDetail ? (
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
-          {currentRecordName ? <div className="ml-auto flex items-center gap-2">
+          {currentRecordName ? <div className="md-topbar-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Button
               variant="ghost"
               className={topBarGhostActionClass}
@@ -323,7 +323,7 @@ export function TopBar({
       ) : isCrmAccountDetail ? (
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
-          {currentRecordName ? <div className="ml-auto flex items-center gap-2">
+          {currentRecordName ? <div className="md-topbar-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Button
               className={topBarPrimaryActionClass}
               onClick={() => openMeetingComposer({ source: "crm", linkedRecord: { type: "account", id: route.split("/").at(-1)!, name: currentRecordName } })}

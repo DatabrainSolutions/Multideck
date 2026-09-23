@@ -86,7 +86,11 @@ import {
   CrmOpportunityValue,
   CrmQuietLeads,
 } from "@/components/multideck/crm-dashboard"
+import { hasMappableCrmAreas } from "@/lib/crm-dashboard"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
+import { CrmDashboardInsights, type CrmDashboardPending } from "@/pages/crm-dashboard-analysis"
+import { parseSalesInsightFilters } from "@/lib/crm-insights"
+import type { SalesInsightFilters } from "@/lib/crm-insights-api"
 import { Pagination } from "@/components/multideck/pagination"
 import { PhoneCallLinkedRecordSection } from "@/components/multideck/phone-call-components"
 import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
@@ -109,7 +113,9 @@ import { mdMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiTeamUsersByIds } from "@/lib/api"
 import { createCustomer, createCustomerContact, getCustomerReference, listAccountsPage, type ApiCustomer } from "@/lib/customer-api"
-import { getDeal, listDealsPage, markDealWon, moveDealStage, type ApiDeal, type DealRegisterPage, type DealRegisterSort } from "@/lib/deal-api"
+import { DealLossDialog } from "@/components/multideck/crm-deal-actions"
+import { isLostDealStage } from "@/lib/deal-workflow"
+import { getDeal, listDealsPage, loseDeal, markDealWon, moveDealStage, type ApiDeal, type DealRegisterPage, type DealRegisterSort } from "@/lib/deal-api"
 import {
   createFollowUpLead,
   getCrmDashboard,
@@ -192,7 +198,7 @@ function getDealValueFormatter(currency: string, compact: boolean, language = "e
 }
 
 function isDealOpen(deal: ApiDeal) {
-  return !deal.isWon && !deal.wonAt && !deal.statusCode.toLocaleLowerCase().includes("lost")
+  return !deal.isWon && !deal.wonAt && !deal.isLost && !deal.statusCode.toLocaleLowerCase().includes("lost")
 }
 
 function isDealCloseOverdue(deal: ApiDeal) {
@@ -216,6 +222,8 @@ function formatDealNextAction(value: string | null, language: string, translate:
 }
 
 function apiDealTone(deal: ApiDeal): StatusTone {
+  if (deal.isLost) return "red"
+  if (deal.isWon || deal.wonAt) return "green"
   const stage = `${deal.stageCode} ${deal.stageName} ${deal.statusCode}`.toLowerCase()
   if (stage.includes("lost") || stage.includes("cancel")) return "red"
   if (stage.includes("won") || stage.includes("commit")) return "green"
@@ -239,7 +247,8 @@ function apiDealToBoardDeal(deal: ApiDeal, tone: StatusTone, language: string, t
   const margin = deal.expectedMarginAmount === null
     ? translate("Not recorded")
     : getDealValueFormatter(deal.currencyCode || "GBP", false, language).format(deal.expectedMarginAmount)
-  const nextAction = formatDealNextAction(deal.nextActionDueAt, language, translate)
+  const actionDue = formatDealNextAction(deal.nextAction?.dueAt ?? deal.nextActionDueAt, language, translate)
+  const nextAction = (deal.isLost || deal.loss) ? `${translate("Lost")}: ${translate(deal.loss?.reasonName || "Reason not recorded")}` : deal.nextAction ? `${deal.nextAction.title} · ${actionDue}` : deal.isWon ? translate("Won") : deal.nextActionDueAt ? `${translate("Action needed")} · ${actionDue}` : translate("Set the next action")
 
   return {
     id: deal.id,
@@ -249,12 +258,13 @@ function apiDealToBoardDeal(deal: ApiDeal, tone: StatusTone, language: string, t
     value,
     due,
     owner,
-    status: deal.statusName,
+    status: deal.isLost ? translate("Lost") : deal.isWon ? translate("Won") : deal.statusName,
     isOverdue: isDealCloseOverdue(deal),
+    isClosed: !isDealOpen(deal),
+    actionSummary: nextAction,
+    actionOverdue: Boolean(deal.nextAction && new Date(deal.nextAction.dueAt).getTime() < Date.now()),
     summary: deal.customerNeed || deal.serviceInterest || translate("Commercial scope ready for qualification."),
-    nextStep: deal.nextActionDueAt
-      ? `${translate("Next action due")} ${nextAction}.`
-      : translate("Set the next customer-facing action."),
+    nextStep: nextAction,
     tone: tone === "neutral" ? apiDealTone(deal) : tone,
     cardFields: {
       expectedValue: value,
@@ -822,6 +832,7 @@ function CrmPageHeader({
   title,
   summary,
   meta,
+  controls,
   action,
   onSpeakToDexter,
 }: {
@@ -829,11 +840,15 @@ function CrmPageHeader({
   title: string
   summary?: ReactNode
   meta?: string
+  /** Page-wide view controls, such as a dashboard period. They lead the
+   *  action group so the primary action keeps the far edge. */
+  controls?: ReactNode
   action?: ReactNode
   onSpeakToDexter?: () => void
 }) {
-  const actions = action || onSpeakToDexter ? (
-    <div className="flex shrink-0 flex-wrap items-center gap-2">
+  const actions = action || onSpeakToDexter || controls ? (
+    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+      {controls}
       {onSpeakToDexter ? <DexterActionPill onClick={onSpeakToDexter} /> : null}
       {action}
     </div>
@@ -1160,10 +1175,25 @@ function DealDetailDrawer({
   )
 }
 
-/** How long an open lead can sit without contact before it counts as quiet. */
-const crmInactivityDays = 90
+type CrmDashboardDays = SalesInsightFilters["days"]
 
-export function CrmOverviewPage() {
+const crmDashboardPeriods = ["30", "90", "180", "365"] as const
+
+function crmPeriodLabel(days: string) {
+  return days === "365" ? "12 months" : `${days} days`
+}
+
+/**
+ * The dashboard period drives every period-based figure on the page: sales
+ * analysis, activity, and how long a lead can sit without contact before it
+ * counts as quiet. The quiet-lead check has a longest window of 180 days, so a
+ * 12-month view uses 180 and says so on the panel.
+ */
+function quietWindow(days: CrmDashboardDays): 30 | 90 | 180 {
+  return days === 365 ? 180 : days
+}
+
+export function CrmOverviewPage({ navigate }: { navigate: (route: string) => void }) {
   const { language, t } = useLanguage()
   const [dexterOpen, setDexterOpen] = useState(false)
   const [data, setData] = useState<CrmDashboardData | null>(null)
@@ -1173,10 +1203,14 @@ export function CrmOverviewPage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [createOpportunity, setCreateOpportunity] = useState<CrmFollowUpOpportunity | null>(null)
   const [createKind, setCreateKind] = useState<FollowUpCreateKind | null>(null)
+  const [days, setDays] = useState<CrmDashboardDays>(() => parseSalesInsightFilters(window.location.search).days)
+  const crmInactivityDays = quietWindow(days)
 
   useEffect(() => {
     let active = true
-    setState("loading")
+    // A period change keeps the current figures on screen while the next ones
+    // load; only the first visit shows the skeleton.
+    setState((current) => current === "ready" ? current : "loading")
     setError(null)
     Promise.all([
       getCrmDashboard(crmInactivityDays),
@@ -1194,7 +1228,7 @@ export function CrmOverviewPage() {
         setState("error")
       })
     return () => { active = false }
-  }, [reloadKey, t])
+  }, [crmInactivityDays, reloadKey, t])
 
   useEffect(() => {
     const refresh = () => setReloadKey((key) => key + 1)
@@ -1219,9 +1253,7 @@ export function CrmOverviewPage() {
     notation: "compact",
     maximumFractionDigits: 1,
   }), [data?.summary.currencyCode, language])
-  const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
   const shortDate = useMemo(() => new Intl.DateTimeFormat(language, { day: "numeric", month: "short" }), [language])
-  const formatDateTime = useCallback((value: string) => dateTime.format(new Date(value)), [dateTime])
   const formatShortDate = useCallback((value: string) => shortDate.format(new Date(value)), [shortDate])
   const formatMoney = useCallback(
     (value: number, currency: string) =>
@@ -1272,6 +1304,18 @@ export function CrmOverviewPage() {
   ), [])
 
   const openLead = useCallback((leadId: string) => { window.location.href = `/crm/leads/${leadId}` }, [])
+  const openActivityRecord = useCallback((item: CrmDashboardData["activity"][number]) => {
+    if (item.dealId) window.location.href = `/crm/deals/${item.dealId}`
+    else if (item.leadId) window.location.href = `/crm/leads/${item.leadId}`
+  }, [])
+
+  const showAreaMap = data ? hasMappableCrmAreas(data.areas) : false
+  const pending = useMemo<CrmDashboardPending[]>(() => (data && !showAreaMap ? [{
+    title: "Leads by area",
+    detail: data.areas.length
+      ? "Appears once an account address has a recognised town or city."
+      : "Appears once lead accounts have an address recorded.",
+  }] : []), [data, showAreaMap])
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("CRM dashboard")} className="md-page md-page-stack-compact md-dashboard md-crm-dashboard">
@@ -1279,6 +1323,16 @@ export function CrmOverviewPage() {
         title={t("CRM dashboard")}
         summary={<>{t("Your assigned leads and follow-ups, with the company deal pipeline in one consistent view.")}</>}
         onSpeakToDexter={() => setDexterOpen(true)}
+        controls={(
+          <SegmentedControl
+            options={crmDashboardPeriods}
+            value={String(days) as (typeof crmDashboardPeriods)[number]}
+            onChange={(value) => setDays(Number(value) as CrmDashboardDays)}
+            ariaLabel={t("Dashboard period")}
+            renderOption={(value) => t(crmPeriodLabel(value))}
+            className="md-crm-period"
+          />
+        )}
         action={<Button className="h-10 rounded-[var(--md-radius-lg)]" onClick={() => { window.location.href = "/crm/deals" }}>{t("Open deals")}</Button>}
       />
 
@@ -1328,21 +1382,27 @@ export function CrmOverviewPage() {
             </CrmBand>
 
             {/* Money quietly at risk, where the leads are, and what has just
-                happened – the three supporting reads. */}
-            <CrmBand index={2} className="md-crm-trio">
+                happened – the operational reads, before the analysis. */}
+            <CrmBand index={2} className="md-crm-trio" count={showAreaMap ? 3 : 2}>
               <CrmQuietLeads
                 leads={data.followUps}
                 inactivityDays={crmInactivityDays}
+                openLeads={data.summary.openLeads}
                 formatValue={formatMoney}
                 formatDate={formatShortDate}
                 onOpenLead={openLead}
                 onViewAll={() => { window.location.href = "/crm/leads" }}
               />
-              <CrmAreaHeatmap areas={data.areas} onOpen={() => { window.location.href = "/crm/accounts" }} />
+              {showAreaMap ? <CrmAreaHeatmap areas={data.areas} onOpen={() => { window.location.href = "/crm/accounts" }} /> : null}
               <CrmActivityFeed
                 activity={data.activity}
-                formatDateTime={formatDateTime}
+                periodDays={days}
+                onOpenRecord={openActivityRecord}
               />
+            </CrmBand>
+
+            <CrmBand index={3}>
+              <CrmDashboardInsights navigate={navigate} days={days} pending={pending} />
             </CrmBand>
           </motion.div>
         ) : null}
@@ -3410,6 +3470,8 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
   const lastConsumedListReloadKey = useRef(0)
   const [pendingWin, setPendingWin] = useState<{ deal: ApiDeal; stage: ApiPipeline["stages"][number] } | null>(null)
   const [winning, setWinning] = useState(false)
+  const [pendingLoss, setPendingLoss] = useState<{ deal: ApiDeal; stage: ApiPipeline["stages"][number] } | null>(null)
+  const canEditDeals = hasPermission(currentUser, "CRM.Write")
   const restoreNewDealFocus = useDialogReturnFocus(newDealOpen)
   const requestedDealIdRef = useRef(new URLSearchParams(window.location.search).get("record"))
   const canManagePipelines = hasPermission(currentUser, "Settings.Manage")
@@ -3584,7 +3646,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
       kind: "status",
       width: 130,
       sortValue: (deal) => deal.statusName,
-      cell: (deal) => <StatusPill tone={apiDealTone(deal)}>{deal.statusName}</StatusPill>,
+      cell: (deal) => <StatusPill tone={apiDealTone(deal)}>{deal.isLost ? t("Lost") : deal.isWon ? t("Won") : deal.statusName}</StatusPill>,
     },
     {
       id: "owner",
@@ -3620,11 +3682,11 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
     {
       id: "next-action",
       label: "Next action",
-      kind: "date",
-      width: 190,
+      kind: "long-text",
+      width: 260,
+      minWidth: 220,
       resizable: true,
-      defaultHidden: true,
-      cell: (deal) => <span className={deal.nextActionDueAt ? "block truncate text-[12px] text-[var(--md-text)]" : "block truncate text-[12px] text-[var(--md-subtle)]"} data-i18n-skip={Boolean(deal.nextActionDueAt) || undefined} dir="auto">{formatDealNextAction(deal.nextActionDueAt, language, t)}</span>,
+      cell: (deal) => deal.loss ? <div className="min-w-0"><p className="truncate text-[12px] text-[var(--md-text)]">{t(deal.loss.reasonName || "Reason not recorded")}</p>{deal.loss.revisitDate ? <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Revisit")}: {new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(new Date(deal.loss.revisitDate))}</p> : null}</div> : deal.nextAction ? <div className="min-w-0"><p className="truncate text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{deal.nextAction.title}</p><p className={new Date(deal.nextAction.dueAt).getTime() < Date.now() ? "mt-0.5 truncate text-[11px] text-[var(--md-amber)]" : "mt-0.5 truncate text-[11px] text-[var(--md-text)]"} data-i18n-skip>{formatDealNextAction(deal.nextAction.dueAt, language, t)} · {deal.nextAction.ownerName}</p></div> : <span className="text-[12px] text-[var(--md-subtle)]">{t(deal.isLost ? "Reason not recorded" : deal.isWon ? "Won" : "Set next action")}</span>,
     },
     {
       id: "created",
@@ -3706,6 +3768,8 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
   async function persistDealMove(dealId: string, pipelineId: string, stageId: string) {
     const destinationStage = livePipelines.find((pipeline) => pipeline.id === pipelineId)?.stages.find((stage) => stage.id === stageId)
     const sourceDeal = liveDeals.find((deal) => deal.id === dealId)
+    if (!canEditDeals || (sourceDeal && !isDealOpen(sourceDeal))) return
+    if (destinationStage && isLostDealStage(destinationStage) && sourceDeal) { setPendingLoss({ deal: sourceDeal, stage: destinationStage }); return }
     if (destinationStage?.isConversion && sourceDeal) {
       setPendingWin({ deal: sourceDeal, stage: destinationStage })
       return
@@ -3763,7 +3827,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
         </div>
       </header>
 
-      {viewMode === "Board" ? (loading ? (
+      {viewMode === "Board" ? (loading && livePipelines.length === 0 ? (
         <Surface padding="lg" className="min-h-[280px] animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-surface)]">
           <span className="sr-only">{t("Loading deals")}</span>
         </Surface>
@@ -3793,6 +3857,7 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
           onPipelineChange={switchPipeline}
           onOpenSettings={() => setSettingsOpen(true)}
           onMoveDeal={persistDealMove}
+          canMoveDeal={canEditDeals}
           stagePaging={Object.fromEntries(livePipelines.flatMap((pipeline) => pipeline.stages.map((stage) => [stage.id, {
             total: stagePages[stage.id]?.total ?? 0,
             loading: stagePages[stage.id]?.loading ?? false,
@@ -3902,6 +3967,19 @@ export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUser
           </div>
         </DialogContent>
       </Dialog>
+      {pendingLoss ? <DealLossDialog key={pendingLoss.deal.id} open onOpenChange={(open) => { if (!open) { setPendingLoss(null); setReloadKey((key) => key + 1) } }} dealName={pendingLoss.deal.name} onConfirm={async (input) => {
+        try {
+          const updated = await loseDeal(pendingLoss.deal.id, pendingLoss.deal.editVersion, { ...input, pipelineStageId: pendingLoss.stage.id })
+          reconcileStageTotals(pendingLoss.deal, updated)
+          setLiveDeals((deals) => deals.map((deal) => deal.id === updated.id ? updated : deal))
+          setDealListRows((deals) => deals.map((deal) => deal.id === updated.id ? updated : deal))
+          toast.success(t("Deal marked lost"))
+        } catch (cause) {
+          const latest = await getDeal(pendingLoss.deal.id, { forceRefresh: true }).catch(() => null)
+          if (latest) setPendingLoss((pending) => pending ? { ...pending, deal: latest } : null)
+          throw cause
+        }
+      }} /> : null}
       <Dialog open={pendingWin !== null} onOpenChange={(open) => {
         if (!open && !winning) {
           setPendingWin(null)
