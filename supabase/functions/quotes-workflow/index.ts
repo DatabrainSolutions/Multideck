@@ -381,6 +381,19 @@ function printable(value: unknown, fallback = "–") {
   return fallback
 }
 
+function quoteHasApplicableContainerRequests(quote: Record<string, unknown>, facts: Record<string, unknown>) {
+  const shipment = printable(quote.shipmentType, "").split(" - ", 1)[0].trim().toUpperCase().replaceAll(" ", "_")
+  if (shipment && !["FCL", "CONTAINER"].includes(shipment)) return false
+  const modeKey = (value: unknown) => printable(value, "").toLowerCase().replaceAll("-", "_").replaceAll(" ", "_")
+  const containerModes = ["sea", "ocean", "sea_fcl", "sea_lcl", "rail", "inland_waterway"]
+  const mode = modeKey(quote.mode)
+  const legs = Array.isArray(facts.routingLegs) ? facts.routingLegs : []
+  // Preserve older unclassified evidence; explicit Air/Road/etc. must not
+  // reintroduce hidden equipment retained from an earlier draft selection.
+  return !mode || containerModes.includes(mode)
+    || legs.some((leg) => isObject(leg) && containerModes.includes(modeKey(leg.mode)))
+}
+
 function customerIncotermLabel(value: unknown, namedPlace: unknown) {
   const incoterm = printable(value, "")
   if (incoterm.toUpperCase() === "N/A") return "Not supplied / not applicable"
@@ -431,6 +444,12 @@ async function quotePdfDataset(
     throw new QuoteWorkflowError(409, "This quote version has no usable saved document details. Review the version before sending.")
   }
   const quote = isObject(snapshot.quote) ? snapshot.quote : snapshot
+  const journeyMode = printable(quote.mode, "").toLowerCase()
+  const journeyLabels = journeyMode === "air"
+    ? ["Departure airport", "Arrival airport"]
+    : ["sea", "ocean"].includes(journeyMode)
+      ? ["Port of loading", "Port of discharge"]
+      : ["Origin", "Destination"]
   const facts = isObject(quote.shipmentFacts) ? quote.shipmentFacts : {}
   const payer = isObject(quote.payer) ? quote.payer : {}
   const cargo = quoteDocumentCargo(facts)
@@ -544,8 +563,8 @@ async function quotePdfDataset(
     },
     journey: [
       { label: "Collection point", value: printable(quote.collectionAddress) },
-      { label: "Port of loading", value: printable(quote.loadingPoint) },
-      { label: "Port of discharge", value: printable(quote.dischargePoint) },
+      { label: journeyLabels[0], value: printable(quote.loadingPoint) },
+      { label: journeyLabels[1], value: printable(quote.dischargePoint) },
       { label: "Delivery address", value: printable(quote.deliveryAddress) },
     ],
     routes,
@@ -556,7 +575,7 @@ async function quotePdfDataset(
         label: "Shipment / container",
         value: [
           printable(quote.shipmentType, ""),
-          printable(facts.container, ""),
+          quoteHasApplicableContainerRequests(quote, facts) ? printable(facts.container, "") : "",
         ].filter(Boolean).join(" · ") || "–",
       },
       { label: "Pieces / weight", value: [cargoTotals.packageQuantity, cargoTotals.grossWeightKg ? `${cargoTotals.grossWeightKg} kg` : ""].filter(Boolean).join(" · ") || "–" },

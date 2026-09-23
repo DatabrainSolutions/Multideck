@@ -8,12 +8,40 @@ const bin=process.env.PG_TEST_BIN||'/opt/homebrew/opt/postgresql@17/bin'
 const available=spawnSync(join(bin,'initdb'),['--version']).status===0
 const migration=readFileSync(new URL('../migrations/20260910151110_booking_provisional_lifecycle.sql',import.meta.url),'utf8')
 const financeMigration=readFileSync(new URL('../migrations/20260910151116_provisional_no_financial_records.sql',import.meta.url),'utf8')
+const cancelCustomerMigration=readFileSync(new URL('../migrations/20260922115340_provisional_cancel_without_customer.sql',import.meta.url),'utf8')
 const cancellationMigrationName='20260919080625_provisional_cancellation_audit.sql'
 const cancellationMigration=readFileSync(new URL(`../migrations/${cancellationMigrationName}`,import.meta.url),'utf8')
 const cancellationChecks=readFileSync(new URL('./provisional-cancellation-checks.sql',import.meta.url),'utf8')
 const chargeDomainMigration=readFileSync(new URL('../migrations/20260915174500_booking_quote_charge_domain.sql',import.meta.url),'utf8')
+const planningMigration=readFileSync(new URL('../migrations/20260919095813_booking_planning_charge_foundation.sql',import.meta.url),'utf8')
+const planningChecks=readFileSync(new URL('./booking-planning-charge-foundation-checks.sql',import.meta.url),'utf8')
+const planningCancellationMigration=readFileSync(new URL('../migrations/20260919102445_booking_manual_planning_cancellation.sql',import.meta.url),'utf8')
+const planningCancellationChecks=readFileSync(new URL('./booking-manual-planning-cancellation-checks.sql',import.meta.url),'utf8')
+const planningReleaseMigration=readFileSync(new URL('../migrations/20260919102957_booking_planning_charge_release.sql',import.meta.url),'utf8')
+const planningReleaseChecks=readFileSync(new URL('./booking-planning-charge-release-checks.sql',import.meta.url),'utf8')
+const planningAccessMigration=readFileSync(new URL('../migrations/20260919110708_booking_planning_charge_access.sql',import.meta.url),'utf8')
+const planningAccessChecks=readFileSync(new URL('./booking-planning-charge-access-checks.sql',import.meta.url),'utf8')
+const planningPartyMigration=readFileSync(new URL('../migrations/20260919113132_booking_planning_charge_parties.sql',import.meta.url),'utf8')
+const planningPartyChecks=readFileSync(new URL('./booking-planning-charge-party-checks.sql',import.meta.url),'utf8')
 assert.ok(cancellationMigrationName > '20260915174500_booking_quote_charge_domain.sql', 'Cancellation protection must run after the freight-domain function replacement')
 const baseline=readFileSync(new URL('../baseline/public-schema.sql',import.meta.url),'utf8')
+// Optional read-only release snapshot: rehearse deployed lifecycle definitions
+// in this disposable database, never against the connected service.
+const releaseDefinitions=process.env.BOOKING_RELEASE_DEFINITIONS
+ ? JSON.parse(readFileSync(process.env.BOOKING_RELEASE_DEFINITIONS,'utf8')) : []
+const liveLifecycleDefinitions=releaseDefinitions.filter(row=>!row.signature.includes('workspace_before_goods_value')).map(row=>row.definition+';').join('\n')
+const chargeProjectionSource=releaseDefinitions.find(row=>row.signature.includes('workspace_before_goods_value'))?.definition ?? baseline
+const readbackMigration=readFileSync(new URL('../migrations/20260919151833_booking_planning_charge_readback.sql',import.meta.url),'utf8')
+const auditDetailsMigration=readFileSync(new URL('../migrations/20260919202654_booking_planning_audit_details.sql',import.meta.url),'utf8')
+const chargeProjectionEnd=chargeProjectionSource.indexOf('into charges_value from public."Job_Costing_Lines" charge where charge."Job_ID" = job_row."Job_ID";')
+const chargeProjection=chargeProjectionSource.slice(chargeProjectionSource.lastIndexOf('  select coalesce(jsonb_agg',chargeProjectionEnd),chargeProjectionEnd)+'into charges_value from public."Job_Costing_Lines" charge where charge."Job_ID" = job_row."Job_ID";'
+assert.ok(chargeProjectionEnd>0 && chargeProjection.includes('costAmount'))
+const crmAccessStart=baseline.indexOf('CREATE OR REPLACE FUNCTION "public"."multideck_crm_company_can_access_account"(')
+const crmAccessFunction=baseline.slice(crmAccessStart,baseline.indexOf('\nALTER FUNCTION',crmAccessStart))
+assert.ok(crmAccessStart>=0 && crmAccessFunction.includes('developmentFixture'))
+const financeChargeStart=baseline.indexOf('CREATE OR REPLACE FUNCTION "public"."_multideck_finance_upsert_job_charge"(')
+const financeChargeFunction=baseline.slice(financeChargeStart,baseline.indexOf('\nALTER FUNCTION',financeChargeStart))
+assert.ok(financeChargeStart>=0 && financeChargeFunction.includes('return v_line_id;'), 'Use the real Finance charge function in the release fixture')
 const tableStart=baseline.indexOf('CREATE TABLE IF NOT EXISTS "public"."Job_Costing_Lines" (')
 const costingTable=baseline.slice(tableStart,baseline.indexOf('\n);',tableStart)+3)
 const registerSource=readFileSync(new URL('../migrations/20260818201000_commercial_register_paging.sql',import.meta.url),'utf8')
@@ -39,6 +67,21 @@ test('real lifecycle migration: same record, validation rollback, scope, concurr
  try{
  run('initdb',['-D',data,'-A','trust','-U','postgres','--no-locale','-E','UTF8'])
  run('pg_ctl',['-D',data,'-l',join(dir,'postgres.log'),'-o',`-k ${dir} -c listen_addresses=''`,'-w','start']);started=true
+ run('psql',['-h',dir,'-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1'],`
+ create table public."Job_Header"("Job_Status" varchar(30),"Job_Customer" uuid,"Job_ProvisionalCancelled" boolean default false,
+ constraint "CK_Job_Header_customer_after_draft" check ("Job_Status"='draft' or "Job_Customer" is not null));
+ ${cancelCustomerMigration}
+ insert into public."Job_Header" values('draft',null,false),('cancelled',null,true),('open',gen_random_uuid(),false);
+ do $$declare state text;begin
+ foreach state in array array['open','complete','cancelled'] loop
+  begin insert into public."Job_Header" values(state,null,false);
+   raise exception 'Missing customer allowed for %',state;
+  exception when check_violation then null;end;
+ end loop;
+ update public."Job_Header" set "Job_Status"='draft',"Job_ProvisionalCancelled"=false where "Job_Status"='cancelled';
+ end $$;
+ drop table public."Job_Header";
+ `)
  run('psql',['-h',dir,'-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1'],`
  create role anon;create role authenticated;create role service_role;create schema booking_api;
  create table public."cmp_Users"("Auth_User_ID" uuid,"Company_ID" uuid,"User_AccessStatus" text,can_write boolean);
@@ -159,10 +202,86 @@ test('real lifecycle migration: same record, validation rollback, scope, concurr
  if actual<>expected then raise exception 'Tracking sorting is incorrect: %',actual;end if;
  end $$;
  alter table public."cmp_Users" add column "User_ID" uuid default gen_random_uuid();
- alter table public."Job_Header" add column "Job_Number" bigint generated by default as identity;
+ alter table public."Job_Header" add column "Job_Number" bigint generated by default as identity,add column "Job_BookingReference" text;
  create table public."Job_Cargo"(id uuid primary key default gen_random_uuid(),"Job_ID" uuid references public."Job_Header"("Job_ID"),description text);
+ create table public."Job_CargoDimensions"(id uuid primary key default gen_random_uuid(),"JobCargoDim_JobCargoID" uuid references public."Job_Cargo"(id),length_cm numeric);
+ create table public."Job_Documents"(id uuid primary key default gen_random_uuid(),"JobDoc_JobID" uuid references public."Job_Header"("Job_ID"),file_path text);
  ${cancellationMigration}
  ${cancellationChecks}
+ ${liveLifecycleDefinitions}
+ ${planningMigration}
+ ${planningChecks}
+ ${planningCancellationMigration}
+ ${cancellationChecks}
+ ${planningCancellationChecks}
+ alter table public."Job_Header" add column "Job_LegalEntityID" uuid;
+ create table public."cmp_LegalEntities"("LegalEntity_ID" uuid primary key,"Company_ID" uuid,"LegalEntity_BaseCurrencyCodeSnapshot" text,"LegalEntity_IsActive" boolean);
+ create table public."sys_Currency"("Currency_ID" uuid primary key default gen_random_uuid(),"Currency_Code" text);
+ insert into public."sys_Currency"("Currency_Code") values('GBP'),('EUR'),('USD');
+ ${financeChargeFunction}
+ ${planningReleaseMigration}
+ ${planningReleaseChecks}
+ create table public."FIN_CurrencySettings"("FINCurSet_CurrencyCode" text,"FINCurSet_Name" text,"FINCurSet_DecimalPlaces" integer default 2,
+ "FINCurSet_IsActive" boolean default true,"FINCurSet_IsPermittedForQuote" boolean default true,"FINCurSet_LegalEntityID" uuid);
+ -- Read-only users can now exercise the public read boundary; prior suites retain
+ -- their original permission fixture. Actor activity/company are checked by SQL.
+ create or replace function booking_api.has_permission(uuid,text) returns boolean language sql as $$
+ select coalesce((select ($2='Bookings.Read' or can_write) from public."cmp_Users" where "Auth_User_ID"=$1),false)$$;
+ ${planningAccessMigration}
+ ${planningAccessChecks}
+ create table public."Org_Master"("Org_id" uuid primary key,"Org_Name" text,"Org_AccCode" text);
+ create table public."Org_Master_Type"("Org_ID" uuid,"OrgType_ID" uuid);
+ create table public."Org_Types"("OrgType_ID" uuid primary key,"OrgType_Name" text);
+ create table public."CRM_AccountProfiles"("CRMAccount_OrgID" uuid,"CRMAccount_CompanyID" uuid,"CRMAccount_IsDeleted" boolean default false,"CRMAccount_MetadataJSON" jsonb default '{}');
+ create table public."CusQuote_Header"("CusQuoteHeader_OrgOfficeID" uuid,"OrgOffice_ID" uuid,"CusQuoteHeader_CustomerID" uuid);
+ ${crmAccessFunction}
+ ${planningPartyMigration}
+ ${planningPartyChecks}
+ -- Exercise the unchanged production charge SELECT, with only unrelated aggregate
+ -- sections omitted. This does not substitute for hosted workspace authorisation.
+ create function booking_api.workspace_before_goods_value_20260905(caller_auth_user_id uuid,requested_reference text)
+ returns jsonb language plpgsql as $$declare job_row public."Job_Header"%rowtype;charges_value jsonb;begin
+ select * into job_row from public."Job_Header" where "Job_ID"=requested_reference::uuid;
+ ${chargeProjection}
+ return charges_value;end$$;
+ ${readbackMigration}
+ do $$declare line record;actual jsonb;begin
+ for line in select * from public."Job_Costing_Lines" loop
+ select item into actual from jsonb_array_elements(booking_api.workspace_before_goods_value_20260905(null,line."Job_ID"::text)) item
+ where item->>'id'=line."JobCostingLine_ID"::text;
+ if actual->>'costAmount' is distinct from line."JobCostingLine_CostAmountCurrency"::text
+ or actual->>'sellLocal' is distinct from line."JobCostingLine_RevenueAmountLocal"::text then raise exception 'Amounts changed on readback';end if;
+ if line."JobCostingLine_SourceTable"='booking_api.planning_charge_sets' and line."JobCostingLine_DomainCode"='freight' then
+ if actual#>>'{planningCurrency,cost}' is distinct from line."JobCostingLine_SourceMetadataJSON"#>>'{planningCharge,costCurrency}'
+ or actual#>>'{planningCurrency,sell}' is distinct from line."JobCostingLine_SourceMetadataJSON"#>>'{planningCharge,sellCurrency}'
+ or actual#>>'{planningCurrency,base}' is distinct from line."JobCostingLine_SourceMetadataJSON"->>'baseCurrency' then raise exception 'Source currencies lost';end if;
+ elsif actual ? 'planningCurrency' then raise exception 'Non-planning charge changed';end if;
+ end loop;
+ if not exists(select 1 from public."Job_Costing_Lines" where "JobCostingLine_SourceMetadataJSON"#>>'{planningCharge,costCurrency}'='EUR') then raise exception 'Foreign-currency coverage missing';end if;
+ end$$;
+ `)
+ run('psql',['-h',dir,'-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1'],`
+ alter table booking_api.events add column event_id uuid default gen_random_uuid(), add column occurred_at timestamptz default now();
+ create or replace function booking_api.workspace_before_goods_value_20260905(caller_auth_user_id uuid,requested_reference text)
+ returns jsonb language sql as $$
+ select coalesce(jsonb_agg(jsonb_build_object('id',event.event_id,
+ 'metadata', event.metadata, 'occurredAt',event.occurred_at)), '[]'::jsonb)
+ from booking_api.events event where event.job_id=requested_reference::uuid $$;
+ ${auditDetailsMigration}
+ do $$declare saved record; actual jsonb; checked integer:=0; begin
+ for saved in select h.*,e.event_id from booking_api.planning_charge_history h
+ join booking_api.events e on e.job_id=h.job_id and e.metadata->>'revision'=h.revision::text
+ where e.event_type='planning_charges_saved' loop
+ select item->'metadata'->'planningHistory' into actual
+ from jsonb_array_elements(booking_api.workspace_before_goods_value_20260905(null,saved.job_id::text)) item
+ where item->>'id'=saved.event_id::text;
+ if actual->'afterRows' is distinct from saved.after_state->'rows'
+ or actual->'beforeRows' is distinct from coalesce(nullif(saved.before_state->'rows','null'::jsonb),'[]'::jsonb)
+ then raise exception 'Audit revision projection mismatch'; end if;
+ checked:=checked+1;
+ end loop;
+ if checked=0 then raise exception 'No saved planning history exercised';end if;
+ end $$;
  `)
  }finally{if(started)spawnSync(join(bin,'pg_ctl'),['-D',data,'-m','immediate','-w','stop']);rmSync(dir,{recursive:true,force:true})}
 })

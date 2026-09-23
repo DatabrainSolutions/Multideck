@@ -56,7 +56,8 @@ begin
   raise exception 'Use the reviewed Provisional cancellation or reopening action.' using errcode='22023';
  end if;
  if exists(select 1 from booking_api.provisional_cancellations where job_id=old."Job_ID") and
-  (new."Job_IsDeleted" or new."Job_Number" is distinct from old."Job_Number") then
+  (new."Job_IsDeleted" or new."Job_Number" is distinct from old."Job_Number"
+   or to_jsonb(new)->'Job_BookingReference' is distinct from to_jsonb(old)->'Job_BookingReference') then
   raise exception 'Retain this Booking and reference for audit.' using errcode='22023';
  end if;
  return new;
@@ -68,24 +69,58 @@ for each row execute function booking_api.guard_cancelled_provisional();
 -- Limit attachment to the operator-owned detail tables, not Customs/tracking.
 create function booking_api.guard_cancelled_provisional_detail() returns trigger
 language plpgsql security definer set search_path='' as $$
-declare previous_job uuid;next_job uuid;job_id uuid;cancelled boolean;
+declare previous_job uuid;next_job uuid;job_id uuid;cancelled boolean;parent_row record;
+ parent_ids uuid[];job_ids uuid[];
 begin
  if tg_op<>'INSERT' then previous_job:=nullif(to_jsonb(old)->>tg_argv[0],'')::uuid;end if;
  if tg_op<>'DELETE' then next_job:=nullif(to_jsonb(new)->>tg_argv[0],'')::uuid;end if;
- for job_id in select distinct id from unnest(array[previous_job,next_job]) id where id is not null order by id loop
+ job_ids:=array[previous_job,next_job];
+ -- Indirect cargo/route detail: resolve and lock both old and new parents so
+ -- moving a child cannot evade the lock on its original cancelled Booking.
+ if tg_nargs=5 then
+  parent_ids:=job_ids;job_ids:='{}'::uuid[];
+  for parent_row in execute format('select %I as job_id from %I.%I where %I=any($1) order by %I for share',
+   tg_argv[4],tg_argv[1],tg_argv[2],tg_argv[3],tg_argv[3]) using parent_ids loop
+   job_ids:=array_append(job_ids,parent_row.job_id);
+  end loop;
+ end if;
+ for job_id in select distinct id from unnest(job_ids) id where id is not null order by id loop
   select "Job_ProvisionalCancelled" into cancelled from public."Job_Header" where "Job_ID"=job_id for update;
   if cancelled then raise exception 'Reopen the cancelled Booking before editing its details.' using errcode='22023';end if;
  end loop;
  if tg_op='DELETE' then return old;end if;return new;
 end $$;
 do $$declare item record;begin
- for item in select c.relname,a.attname from pg_catalog.pg_constraint fk
+ for item in select n.nspname,c.relname,a.attname from pg_catalog.pg_constraint fk
  join pg_catalog.pg_class c on c.oid=fk.conrelid
  join pg_catalog.pg_namespace n on n.oid=c.relnamespace
  join pg_catalog.pg_attribute a on a.attrelid=c.oid and a.attnum=fk.conkey[1]
  where fk.contype='f' and fk.confrelid='public."Job_Header"'::regclass and cardinality(fk.conkey)=1
- and n.nspname='public' and c.relname in ('Job_Cargo','Job_Containers','Job_Routing','Job_Parties','Job_References','Job_Locations') loop
-  execute format('create trigger provisional_cancelled_details before insert or update or delete on public.%I for each row execute function booking_api.guard_cancelled_provisional_detail(%L)',item.relname,item.attname);
+ and ((n.nspname='public' and c.relname in ('Job_Cargo','Job_Containers','Job_Routing','Job_Parties','Job_References','Job_Locations','Job_Documents'))
+  or (n.nspname='booking_api' and c.relname='cargo_equipment_allocations')) loop
+  execute format('create trigger provisional_cancelled_details before insert or update or delete on %I.%I for each row execute function booking_api.guard_cancelled_provisional_detail(%L)',item.nspname,item.relname,item.attname);
+ end loop;
+ for item in
+  select child_ns.nspname,child.relname,child_key.attname,parent_ns.nspname as parent_schema,
+   parent.relname as parent_table,parent_key.attname as parent_key,job_key.attname as job_key
+  from pg_catalog.pg_constraint fk
+  join pg_catalog.pg_class child on child.oid=fk.conrelid
+  join pg_catalog.pg_namespace child_ns on child_ns.oid=child.relnamespace
+  join pg_catalog.pg_attribute child_key on child_key.attrelid=child.oid and child_key.attnum=fk.conkey[1]
+  join pg_catalog.pg_class parent on parent.oid=fk.confrelid
+  join pg_catalog.pg_namespace parent_ns on parent_ns.oid=parent.relnamespace
+  join pg_catalog.pg_attribute parent_key on parent_key.attrelid=parent.oid and parent_key.attnum=fk.confkey[1]
+  join pg_catalog.pg_constraint job_fk on job_fk.conrelid=parent.oid and job_fk.contype='f'
+   and job_fk.confrelid='public."Job_Header"'::regclass and cardinality(job_fk.conkey)=1
+  join pg_catalog.pg_attribute job_key on job_key.attrelid=parent.oid and job_key.attnum=job_fk.conkey[1]
+  where fk.contype='f' and cardinality(fk.conkey)=1 and parent_ns.nspname='public'
+   and parent.relname in ('Job_Cargo','Job_Containers','Job_Routing')
+   and ((child_ns.nspname='public' and child.relname in ('Job_CargoDimensions','Job_CargoDangerousGoods',
+    'Job_ContainerSeals','Job_RouteCargo','Job_RouteContainers','Job_RouteMilestones','Job_RouteParties'))
+    or (child_ns.nspname='booking_api' and child.relname='cargo_security_evidence')) loop
+  execute format('create trigger %I before insert or update or delete on %I.%I for each row execute function booking_api.guard_cancelled_provisional_detail(%L,%L,%L,%L,%L)',
+   'provisional_cancelled_'||item.attname,item.nspname,item.relname,item.attname,
+   item.parent_schema,item.parent_table,item.parent_key,item.job_key);
  end loop;
 end $$;
 revoke all on function booking_api.guard_cancelled_provisional_detail() from public,anon,authenticated,service_role;

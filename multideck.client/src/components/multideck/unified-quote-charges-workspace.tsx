@@ -109,6 +109,7 @@ export interface UnifiedQuoteChargesWorkspaceProps {
   createRow?: (context: CreateQuoteChargeRowContext) => UnifiedQuoteChargeRow
   readOnly?: boolean
   storageKey?: string
+  rowReadOnlyReason?: (rowId: string) => string | undefined
   className?: string
 }
 
@@ -674,6 +675,7 @@ export function UnifiedQuoteChargesWorkspace({
   onSelectedRowIdChange,
   createRow,
   readOnly = false,
+  rowReadOnlyReason,
   storageKey = "unified-quote-charges",
   className,
 }: UnifiedQuoteChargesWorkspaceProps) {
@@ -752,6 +754,7 @@ export function UnifiedQuoteChargesWorkspace({
   }, [onSelectedRowIdChange, selectedRowId])
 
   const updateRow = useCallback((rowId: string, patch: Partial<UnifiedQuoteChargeRow>) => {
+    if (readOnly || rowReadOnlyReason?.(rowId)) return
     onRowsChange(rows.map((row) => {
       if (row.id !== rowId) return row
       const next = resolveRow({ ...resolveRow(row), ...patch })
@@ -762,9 +765,10 @@ export function UnifiedQuoteChargesWorkspace({
         profit: next.profit,
       }
     }))
-  }, [onRowsChange, resolveRow, rows])
+  }, [onRowsChange, resolveRow, rows, readOnly, rowReadOnlyReason])
 
   const addRow = useCallback(() => {
+    if (readOnly) return
     const supplier = parties.find((party) => partyCanBe(party, "supplier"))
     const customer = parties.find((party) => partyCanBe(party, "customer"))
     const candidate = createRow?.({ baseCurrency, currencies, parties }) ?? {
@@ -788,16 +792,16 @@ export function UnifiedQuoteChargesWorkspace({
     const next = resolveRow(candidate)
     onRowsChange([...rows, next])
     selectRow(next.id)
-  }, [baseCurrency, createRow, currencies, onRowsChange, parties, resolveRow, rows, selectRow])
+  }, [baseCurrency, createRow, currencies, onRowsChange, parties, resolveRow, rows, selectRow, readOnly])
 
   const removeSelectedRow = useCallback(() => {
-    if (!activeSelectedRowId) return
+    if (!activeSelectedRowId || readOnly || rowReadOnlyReason?.(activeSelectedRowId)) return
     const selectedIndex = rows.findIndex((row) => row.id === activeSelectedRowId)
     const nextRows = rows.filter((row) => row.id !== activeSelectedRowId)
     onRowsChange([...nextRows])
     const nextSelection = nextRows[Math.min(Math.max(selectedIndex, 0), nextRows.length - 1)]?.id ?? null
     selectRow(nextSelection)
-  }, [activeSelectedRowId, onRowsChange, rows, selectRow])
+  }, [activeSelectedRowId, onRowsChange, rows, selectRow, readOnly, rowReadOnlyReason])
 
   const columns = useMemo<DataTableColumn<ResolvedQuoteChargeRow>[]>(() => [
     {
@@ -1077,7 +1081,7 @@ export function UnifiedQuoteChargesWorkspace({
       <DataTable
         ariaLabel="Unified quote charges"
         columnsButtonLabel="Manage quote charge columns"
-        columns={columns}
+        columns={rowReadOnlyReason ? columns.map(column => ({ ...column, cell: (row: ResolvedQuoteChargeRow) => <fieldset disabled={Boolean(rowReadOnlyReason(row.id))} title={rowReadOnlyReason(row.id)} className="min-w-0 border-0 p-0">{column.cell(row)}</fieldset> })) : columns}
         rows={resolvedRows}
         getRowKey={(row) => row.id}
         storageKey={storageKey}
@@ -1098,7 +1102,7 @@ export function UnifiedQuoteChargesWorkspace({
               <Plus data-icon="inline-start" className="size-3.5" strokeWidth={1.5} />
               {t("Add")}
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={removeSelectedRow} disabled={readOnly || !selectedRow} className="h-8 rounded-[var(--md-radius-md)] text-[10.5px] shadow-[var(--md-shadow-line)]">
+            <Button type="button" variant="ghost" size="sm" onClick={removeSelectedRow} disabled={readOnly || !selectedRow || Boolean(selectedRow && rowReadOnlyReason?.(selectedRow.id))} className="h-8 rounded-[var(--md-radius-md)] text-[10.5px] shadow-[var(--md-shadow-line)]">
               <Trash2 data-icon="inline-start" className="size-3.5" strokeWidth={1.5} />
               {t("Remove")}
             </Button>
@@ -1126,7 +1130,7 @@ export function UnifiedQuoteChargesWorkspace({
               <ChargeCalculator
                 key={`${calculatorRow.id}-${calculatorRow.calculationBasis ?? "new"}`}
                 row={calculatorRow}
-                readOnly={readOnly}
+                readOnly={readOnly || Boolean(rowReadOnlyReason?.(calculatorRow.id))}
                 onApply={(patch) => {
                   updateRow(calculatorRow.id, patch)
                   setCalculatorRowId(null)
@@ -1141,8 +1145,9 @@ export function UnifiedQuoteChargesWorkspace({
           <SectionHeader
             title={t("Selected line details")}
           />
+          {selectedRow && rowReadOnlyReason?.(selectedRow.id) ? <p role="status" className="mt-2 text-[12px] text-[var(--md-text)]">{t(rowReadOnlyReason(selectedRow.id)!)}</p> : null}
           {selectedRow ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <fieldset disabled={Boolean(rowReadOnlyReason?.(selectedRow.id))} className="mt-3 grid min-w-0 gap-2 border-0 p-0 sm:grid-cols-2 lg:grid-cols-4">
               <DetailField label="Charge code">
                 <Input value={selectedRow.code} onChange={(event) => updateRow(selectedRow.id, { code: event.target.value })} disabled={readOnly} aria-label={t("Charge code")} dir="ltr" data-i18n-skip className={cn(textInputClass, "uppercase")} />
               </DetailField>
@@ -1173,7 +1178,7 @@ export function UnifiedQuoteChargesWorkspace({
                   {selectedRow.costRateAvailable && selectedRow.sellRateAvailable ? <span data-i18n-skip>{moneyText(selectedRow.profit, baseCurrencyDefinition, language)}</span> : t("Rates unavailable")}
                 </div>
               </DetailField>
-            </div>
+            </fieldset>
           ) : (
             <div className="mt-3 grid min-h-28 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-4 text-center shadow-[var(--md-shadow-line)]">
               <p className="text-[11px] text-[var(--md-text)]">{t("Select a charge to view its details.")}</p>

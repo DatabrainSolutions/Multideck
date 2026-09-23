@@ -1,4 +1,4 @@
-export type BookingWorkflowAction = "open" | "open-road" | "workspace" | "save" | "provisional-action" | "save-milestone" | "save-dangerous-goods" | "save-security-evidence" | "customs-readiness" | "send-to-customs" | "quote-sync-review" | "apply-quote-sync"
+export type BookingWorkflowAction = "declaration-attachments" | "declaration-attachment-access" | "attachment-access" | "quote-document-access" | "quote-charge-review" | "apply-quote-charge-review" | "operational-charges" | "save-operational-charges" | "opening-options" | "save-ownership" | "open" | "open-road" | "workspace" | "save" | "planning-charges" | "save-planning-charges" | "provisional-action" | "save-milestone" | "save-dangerous-goods" | "save-security-evidence" | "customs-readiness" | "send-to-customs" | "quote-sync-review" | "apply-quote-sync"
 
 export class BookingWorkflowError extends Error {
   constructor(public readonly status: number, public readonly clientMessage: string, public readonly auditMessage = clientMessage) {
@@ -7,9 +7,81 @@ export class BookingWorkflowError extends Error {
 }
 
 export function parseAction(value: unknown): BookingWorkflowAction {
+  if (value === "attachment-access") return value
+  if (value === "declaration-attachments" || value === "declaration-attachment-access") return value
+  if (value === "quote-document-access") return value
+  if (value === "quote-charge-review" || value === "apply-quote-charge-review") return value
+  if (value === "operational-charges" || value === "save-operational-charges") return value
+  if (value === "opening-options") return value
+  if (value === "save-ownership") return value
+  if (value === "planning-charges" || value === "save-planning-charges") return value
   if (value === "provisional-action") return value
   if (value === "open" || value === "open-road" || value === "workspace" || value === "save" || value === "save-milestone" || value === "save-dangerous-goods" || value === "save-security-evidence" || value === "customs-readiness" || value === "send-to-customs" || value === "quote-sync-review" || value === "apply-quote-sync") return value
   throw new BookingWorkflowError(400, "Choose a supported booking action.")
+}
+
+// Call only with the server-authorised Booking workspace, never request data.
+export function acceptedBookingQuoteDocument(workspace: { documents?: unknown }, documentId: string) {
+  const documents = Array.isArray(workspace.documents) ? workspace.documents : []
+  const document = documents.find(item => item?.id === documentId && item.category === "quote" && item.status === "active")
+  if (!document || !document.metadata?.quoteVersionId || !document.sourceRecordId) {
+    throw new BookingWorkflowError(404, "This accepted Quote document is unavailable on this Booking.")
+  }
+  return document as { id: string; sourceRecordId: string; metadata: { quoteVersionId: string } }
+}
+
+export function parseChargeReviewApply(body: Record<string, unknown>) {
+  if (!Array.isArray(body.decisions) || body.decisions.length > 400 || new TextEncoder().encode(JSON.stringify(body.decisions)).length > 131072) throw new BookingWorkflowError(400, "Invalid charge decisions.")
+  const keys = new Set<string>()
+  for (const decision of body.decisions) {
+    if (!decision || typeof decision !== "object" || typeof decision.key !== "string" || !decision.key || decision.key.length > 200
+      || keys.has(decision.key) || !["keep", "add", "replace", "remove", "restore"].includes(decision.action)) throw new BookingWorkflowError(400, "Choose one supported decision per charge.")
+    keys.add(decision.key)
+  }
+  if (typeof body.reason !== "string" || !body.reason.trim() || body.reason.length > 2000) throw new BookingWorkflowError(400, "Enter a reason for the charge decisions.")
+  return { requested_job_id: parseUuid(body.jobId, "Booking"), requested_review_id: parseUuid(body.reviewId, "Quote review"),
+    expected_token: parseQuoteReviewToken(body.token), requested_decisions: body.decisions, requested_reason: body.reason.trim() }
+}
+
+export function parseOperationalChargeSave(body: Record<string, unknown>) {
+  if (typeof body.expectedUpdatedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(body.expectedUpdatedAt) || !Number.isFinite(Date.parse(body.expectedUpdatedAt))) {
+    throw new BookingWorkflowError(409, "Reload Booking charges before saving.")
+  }
+  if (!Array.isArray(body.operations) || body.operations.length > 200 || new TextEncoder().encode(JSON.stringify(body.operations)).length > 524288) {
+    throw new BookingWorkflowError(400, "Choose no more than 200 charge changes within the size limit.")
+  }
+  const ids = new Set<string>()
+  for (const item of body.operations) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new BookingWorkflowError(400, "Invalid charge change.")
+    const id = parseUuid(item.id, "Charge").toLowerCase()
+    if (ids.has(id) || !["add", "update", "remove"].includes(item.action) || typeof item.reason !== "string" || !item.reason.trim() || item.reason.length > 2000) {
+      throw new BookingWorkflowError(400, "Each charge needs one action and a reason.")
+    }
+    ids.add(id)
+  }
+  return { requested_job_id: parseUuid(body.jobId, "Booking"), expected_updated_at: body.expectedUpdatedAt, requested_operations: body.operations }
+}
+
+export function parsePlanningChargeSave(body: Record<string, unknown>) {
+  if (typeof body.expectedRevision !== "number" || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision < 0) {
+    throw new BookingWorkflowError(409, "Reload planning charges before saving.")
+  }
+  if (typeof body.baseCurrency !== "string" || !/^[A-Z]{3}$/.test(body.baseCurrency)) {
+    throw new BookingWorkflowError(400, "Choose a valid planning base currency.")
+  }
+  if (!Array.isArray(body.rows) || body.rows.length > 200 || new TextEncoder().encode(JSON.stringify(body.rows)).length > 262144) {
+    throw new BookingWorkflowError(400, "Choose no more than 200 planning charge rows within the size limit.")
+  }
+  return { requested_job_id: parseUuid(body.jobId, "Booking"), expected_revision: body.expectedRevision,
+    requested_base_currency: body.baseCurrency, requested_rows: body.rows }
+}
+
+export function parseOwnershipSave(body: Record<string, unknown>) {
+  if (typeof body.expectedUpdatedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(body.expectedUpdatedAt) || !Number.isFinite(Date.parse(body.expectedUpdatedAt))) {
+    throw new BookingWorkflowError(409, "Reload the Booking before changing ownership.")
+  }
+  return { requested_job_id: parseUuid(body.jobId, "Booking"), requested_office_id: parseUuid(body.officeId, "Branch"),
+    requested_owner_id: parseUuid(body.ownerId, "Booking owner"), expected_updated_at: body.expectedUpdatedAt }
 }
 
 export function parseProvisionalAction(body: Record<string, unknown>) {
@@ -59,6 +131,14 @@ export function parseOpeningDirection(value: unknown) {
   if (value === undefined || value === null) return null
   if (value === "import" || value === "export" || value === "domestic" || value === "cross_trade") return value
   throw new BookingWorkflowError(400, "Choose a valid Booking direction.")
+}
+
+export function parseOpeningMode(value: unknown) {
+  if (value === undefined) return null // Older clients keep their existing creation flow.
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_ -]{0,39}$/i.test(value.trim())) {
+    throw new BookingWorkflowError(400, "Choose a valid Booking mode.")
+  }
+  return value.trim().toLowerCase()
 }
 
 export function parsePayload(value: unknown) {

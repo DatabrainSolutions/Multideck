@@ -14,8 +14,8 @@ test("booking overview uses the quote-style five-section progress strip", () => 
   assert.match(overview, /md-quote-stage-panel__steps/u)
   assert.match(overview, /--md-quote-stage-progress/u)
   assert.match(overview, /md-quote-stage-metadata/u)
-  assert.match(overview, /grid-rows-\[auto_auto_auto\]/u)
-  assert.match(overview, /\{tabs\}/u)
+  assert.match(overview, /grid-rows-\[auto_auto\]/u)
+  assert.match(overview, /<BookingDexterForecastStatus \/>/u)
   assert.doesNotMatch(overview, /BookingOverviewFact/u)
 })
 
@@ -23,9 +23,10 @@ test("booking tabs, progress and metadata form the left stack beside a full-heig
   const header = source.slice(source.indexOf("function BookingDetailHeader"), source.indexOf("function BookingJobContext"))
   const forecast = source.slice(source.indexOf("function BookingDexterForecastStatus"), source.indexOf("function BookingOverviewSignals"))
 
-  assert.match(header, /<BookingOverviewSignals record=\{record\} tabs=\{bookingTabs\} \/>/u)
-  assert.match(header, /w-max min-w-full/u)
-  assert.match(header, /min-w-\[72px\] flex-1/u)
+  assert.match(header, /\{bookingTabs\}/u)
+  assert.match(header, /activeTab === "Overview" \? <BookingOverviewSignals record=\{record\} \/>/u)
+  assert.match(header, /<TabsList[^\n]*overflow-x-auto/u)
+  assert.match(header, /<TabsTrigger[^\n]*shrink-0/u)
   assert.match(forecast, /relative h-full min-h-0 overflow-hidden/u)
 })
 

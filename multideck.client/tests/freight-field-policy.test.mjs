@@ -2,6 +2,30 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { freightBookingMode, freightFieldPolicy, freightModeKey, freightShipmentAllowed, freightTransportField, freightRouteOperationalFields } from "../src/lib/freight-field-policy.ts"
 
+test("core mode fields remain consistent across directions and Quote/Booking stages", () => {
+  for (const [mode, shipmentType, hblMode, chargeableWeight, containerRequests] of [
+    ['Sea', 'FCL', true, false, true], ['Sea', 'LCL', true, false, false],
+    ['Air', 'AIR', false, true, false], ['Road', 'FTL', false, false, false],
+    ['Rail', 'CONTAINER', false, false, true],
+  ]) {
+    for (const direction of ['Import', 'Export', 'Cross trade', 'Domestic']) {
+      for (const stage of ['draft', 'submitted', 'booking']) {
+        const context = { mode, shipmentType, direction, stage }
+        const before = structuredClone(context)
+        const policy = freightFieldPolicy(context)
+        assert.equal(policy.hblMode, hblMode)
+        assert.equal(policy.chargeableWeight, chargeableWeight)
+        assert.equal(policy.containerRequests, containerRequests)
+        assert.equal(policy.customs, direction !== 'Domestic')
+        assert.equal(policy.uld, mode === 'Air' && stage === 'booking')
+        assert.equal(policy.vehicle, mode === 'Road' && stage === 'booking')
+        assert.equal(policy.wagon, mode === 'Rail' && stage === 'booking')
+        assert.deepEqual(context, before)
+      }
+    }
+  }
+})
+
 test("sea containers follow the service across all commercial directions", () => {
   for (const direction of ["Import", "Export", "Cross trade", "Domestic"]) {
     const policy = freightFieldPolicy({ mode: "OCEAN", shipmentType: "FCL - Full Container Load", direction, stage: "booking" })

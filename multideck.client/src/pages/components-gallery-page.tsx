@@ -3296,7 +3296,8 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "unified-quote-charges-workspace" ? (
         <div className="w-full max-w-[1320px]">
-          <UnifiedQuoteChargesWorkspace rows={previewUnifiedChargeRows} onRowsChange={setPreviewUnifiedChargeRows} storageKey="gallery-unified-quote-charges" />
+          <UnifiedQuoteChargesWorkspace rows={previewUnifiedChargeRows} onRowsChange={setPreviewUnifiedChargeRows} storageKey="gallery-unified-quote-charges"
+            rowReadOnlyReason={rowId => rowId === previewUnifiedChargeRows[0]?.id ? "Example protected line: financial evidence prevents changes." : undefined} />
         </div>
       ) : null}
 

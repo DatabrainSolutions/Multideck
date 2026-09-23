@@ -11,6 +11,11 @@ begin
  values(job,'draft',office,gen_random_uuid(),'road','Leeds','London',gen_random_uuid(),'{"acceptedSnapshot":{"quote":{"charges":[{"description":"Original rate","costAmount":45,"sellAmount":60}]}},"documents":["preserved"]}');
  select "Job_UpdatedAt","Job_SourceSnapshotJSON","Job_Number" into stamp,original,ref from public."Job_Header" where "Job_ID"=job;
  insert into public."Job_Cargo"("Job_ID",description) values(job,'Preserved cargo');
+ insert into public."Job_Documents"("JobDoc_JobID",file_path) values(job,'retained-document.pdf');
+ update public."Job_Header" set "Job_BookingReference"='TEST-RETAINED' where "Job_ID"=job;
+ insert into public."Job_CargoDimensions"("JobCargoDim_JobCargoID",length_cm)
+ select id,120 from public."Job_Cargo" where "Job_ID"=job;
+ select "Job_UpdatedAt" into stamp from public."Job_Header" where "Job_ID"=job;
  result:=public.booking_provisional_state(actor,job);
  if result->>'supported'<>'true' or result->>'planningChargeCount'<>'1' then raise exception 'Missing UI capability/charge count';end if;
  begin perform public.booking_provisional_state(outsider,job);raise exception 'Foreign state read accepted';exception when sqlstate '42501' then null;end;
@@ -25,6 +30,14 @@ begin
  if result->>'cancelled'<>'true' or result->>'canReopen'<>'true' then raise exception 'Missing reopen state';end if;
  begin update public."Job_Cargo" set description='Replaced' where "Job_ID"=job;raise exception 'Cancelled cargo edit accepted';exception when sqlstate '22023' then null;end;
  begin delete from public."Job_Cargo" where "Job_ID"=job;raise exception 'Cancelled cargo deleted';exception when sqlstate '22023' then null;end;
+ begin update public."Job_Documents" set file_path='replacement.pdf' where "JobDoc_JobID"=job;raise exception 'Cancelled document replaced';exception when sqlstate '22023' then null;end;
+ begin delete from public."Job_Documents" where "JobDoc_JobID"=job;raise exception 'Cancelled document deleted';exception when sqlstate '22023' then null;end;
+ begin insert into public."Job_Documents"("JobDoc_JobID",file_path) values(job,'new.pdf');raise exception 'Cancelled upload linked';exception when sqlstate '22023' then null;end;
+ if (select file_path from public."Job_Documents" where "JobDoc_JobID"=job)<>'retained-document.pdf' then raise exception 'Retained document changed';end if;
+ begin update public."Job_CargoDimensions" set length_cm=200;raise exception 'Cancelled dimensions edited';exception when sqlstate '22023' then null;end;
+ begin delete from public."Job_CargoDimensions";raise exception 'Cancelled dimensions deleted';exception when sqlstate '22023' then null;end;
+ begin insert into public."Job_CargoDimensions"("JobCargoDim_JobCargoID",length_cm) select id,200 from public."Job_Cargo" where "Job_ID"=job;raise exception 'Cancelled dimensions added';exception when sqlstate '22023' then null;end;
+ begin update public."Job_CargoDimensions" set "JobCargoDim_JobCargoID"=null;raise exception 'Cancelled dimensions detached';exception when sqlstate '22023' then null;end;
  begin update booking_api.provisional_cancellation_history set reason='Rewritten' where job_id=job;raise exception 'History edited';exception when sqlstate '22023' then null;end;
  begin delete from booking_api.provisional_cancellation_history where job_id=job;raise exception 'History deleted';exception when sqlstate '22023' then null;end;
  if exists(select 1 from public."Job_Header" where "Job_ID"=job and not "Job_IsDeleted" and not "Job_ProvisionalCancelled" and "Job_Status" not in ('draft','provisional')) then raise exception 'Cancelled provisional is a month-end candidate';end if;
@@ -38,6 +51,9 @@ begin
  result:=public.booking_provisional_action(actor,job,'reopen','Customer returned',stamp);
  if result->>'status'<>'draft' or result->>'reviewPricesAndDates'<>'true' then raise exception 'Wrong reopen state';end if;
  update public."Job_Cargo" set description='Reviewed cargo' where "Job_ID"=job;
+ update public."Job_Documents" set file_path='reviewed-document.pdf' where "JobDoc_JobID"=job;
+ update public."Job_CargoDimensions" set length_cm=130;
+ begin update public."Job_Header" set "Job_BookingReference"='REUSED' where "Job_ID"=job;raise exception 'Reopened reference changed';exception when sqlstate '22023' then null;end;
  if (select "Job_SourceSnapshotJSON" from public."Job_Header" where "Job_ID"=job)<>original or (select "Job_Number" from public."Job_Header" where "Job_ID"=job)<>ref then raise exception 'Evidence/reference changed';end if;
  select "Job_UpdatedAt" into stamp from public."Job_Header" where "Job_ID"=job;
  perform public.booking_provisional_action(actor,job,'cancel','No longer needed',stamp,'discard');

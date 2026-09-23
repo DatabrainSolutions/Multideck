@@ -14,11 +14,14 @@ const flush = () => new Promise(resolve => setImmediate(resolve))
 // This is not a rendered browser, managed Auth or database persistence test.
 function fixture(initialMode = "road", storageFailure = false) {
   const states = [], refs = [], requests = [], destinations = [], storage = new Map()
-  let stateIndex = 0, refIndex = 0, effect
+  let stateIndex = 0, refIndex = 0, effects = []
   const context = vm.createContext({
     Promise, Error,
     React: { createElement: (type, props, ...children) => ({ type, props, children }) },
     Button: "button", Surface: "surface", DotGridLoader: "loader",
+    Dialog: "dialog", DialogContent: "dialog-content", DialogDescription: "dialog-description",
+    DialogHeader: "dialog-header", DialogTitle: "dialog-title", Select: "select",
+    SelectContent: "select-content", SelectItem: "select-item", SelectTrigger: "select-trigger", SelectValue: "select-value",
     workspaceStorageKey: key => `tenant:${key}`,
     useLanguage: () => ({ t: value => value }),
     useRef: initial => refs[refIndex++] ??= { current: initial },
@@ -27,17 +30,18 @@ function fixture(initialMode = "road", storageFailure = false) {
       if (!(index in states)) states[index] = initial
       return [states[index], value => { states[index] = typeof value === "function" ? value(states[index]) : value }]
     },
-    useEffect: callback => { effect = callback },
+    useEffect: callback => { effects.push(callback) },
+    getBookingOpeningModes: () => Promise.resolve({ modes: ["road", "air", "sea", "rail"].map(code => ({ code, name: code })) }),
     crypto: { randomUUID: () => "11111111-1111-4111-8111-111111111111" },
     window: { sessionStorage: {
       getItem: key => { if (storageFailure) throw new Error("Storage unavailable"); return storage.get(key) ?? null },
       setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key),
     } },
-    openBookingWorkflow: (key, mode, direction) => new Promise((resolve, reject) => requests.push({ key, mode, direction, resolve, reject })),
+    openBookingWorkflow: (key, mode, direction, selectedMode) => new Promise((resolve, reject) => requests.push({ key, mode, direction, selectedMode, resolve, reject })),
   })
   vm.runInContext(compiled, context)
-  const render = () => { stateIndex = 0; refIndex = 0; return context.BookingOpenPage({ initialMode, navigate: value => destinations.push(value) }) }
-  return { render, commit: () => effect(), requests, destinations, storage, states }
+  const render = () => { stateIndex = 0; refIndex = 0; effects = []; return context.BookingOpenPage({ initialMode, navigate: value => destinations.push(value) }) }
+  return { render, commit: () => effects.map(effect => effect()), requests, destinations, storage, states }
 }
 function findButton(tree, label) {
   if (!tree || typeof tree !== "object") return null
@@ -52,17 +56,25 @@ function findElement(tree, type) {
   return null
 }
 function chooseDirection(f, direction = "domestic") {
-  findElement(f.render(), "select").props.onChange({ target: { value: direction } })
+  f.render(); f.commit();
+  const selects = findElements(f.render(), "select")
+  selects[0].props.onValueChange("road")
+  findElements(f.render(), "select")[1].props.onValueChange(direction)
   findElement(f.render(), "form").props.onSubmit({ preventDefault() {} })
   return f
+}
+
+function findElements(tree, type) {
+  if (!tree || typeof tree !== "object") return []
+  return [...(tree.type === type ? [tree] : []), ...(tree.children ?? []).flatMap(child => findElements(child, type))]
 }
 
 test("opening waits for explicit direction and submission, without allocating a retry key", async () => {
   for (const mode of [null, "road"]) {
     const f = fixture(mode)
     const tree = f.render()
-    assert.equal(findElement(tree, "select").props.required, true)
-    assert.equal(findElement(tree, "select").props.value, "")
+    assert.equal(findElements(tree, "select-trigger").every(control => control.props["aria-required"] === "true"), true)
+    assert.equal(findElements(tree, "select")[1].props.value, "")
     f.commit(); await flush()
     findElement(tree, "form").props.onSubmit({ preventDefault() {} })
     f.render(); f.commit(); await flush()
@@ -83,8 +95,8 @@ test("all four explicit directions reach the opener unchanged", async () => {
 })
 
 test("Strict Mode effect replay makes one Road request and one live navigation", async () => {
-  const f = chooseDirection(fixture())
-  f.render(); f.commit()()
+  const f = chooseDirection(fixture("road"))
+  f.render(); f.commit().forEach(cleanup => cleanup?.())
   f.render(); f.commit()
   await flush()
   assert.equal(f.requests.length, 1)
@@ -97,9 +109,9 @@ test("Strict Mode effect replay makes one Road request and one live navigation",
 })
 
 test("leaving creation suppresses late navigation and retains the retry key", async () => {
-  const f = chooseDirection(fixture())
-  f.render(); const cleanup = f.commit()
-  await flush(); cleanup()
+  const f = chooseDirection(fixture("road"))
+  f.render(); const cleanups = f.commit()
+  await flush(); cleanups.forEach(cleanup => cleanup?.())
   f.requests[0].resolve({ bookingReference: "JD00001" })
   await flush()
   assert.deepEqual(f.destinations, [])
@@ -107,14 +119,14 @@ test("leaving creation suppresses late navigation and retains the retry key", as
 })
 
 test("failed Road opening keeps its idempotency key for explicit retry", async () => {
-  const f = chooseDirection(fixture(), "cross_trade")
+  const f = chooseDirection(fixture("road"), "cross_trade")
   f.render(); f.commit(); await flush()
   f.requests[0].reject(new Error("Denied or unavailable")); await flush()
   assert.equal(f.states[0], "Denied or unavailable")
   assert.deepEqual(f.destinations, [])
   const tree = f.render()
-  assert.ok(findButton(tree, "Return to Road control"))
-  findButton(tree, "Try again").props.onClick()
+  assert.ok(findButton(tree, "Cancel"))
+  findElement(tree, "form").props.onSubmit({ preventDefault() {} })
   f.render(); f.commit(); await flush()
   assert.equal(f.requests.length, 2)
   assert.equal(f.requests[0].key, f.requests[1].key)

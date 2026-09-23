@@ -1,5 +1,9 @@
 import { bookingLifecycle, bookingLifecycleLabel, type BookingLifecycle } from "@/lib/booking-lifecycle"
 import { bookingDraftConflicts, rebaseBookingDraft } from "@/lib/booking-draft"
+import { planningChargeReadback } from "@/lib/booking-charge-readback"
+import { planningAuditChanges } from "@/lib/booking-planning-audit"
+import { bookingOwnerLabel } from "@/lib/booking-owner"
+import { getBookingAttachmentAccess, getBookingQuoteDocumentAccess } from "@/lib/booking-workflow-api"
 import { hasPermission } from "@/lib/auth-user"
 import "@/quotes-transfer.css"
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
@@ -7,6 +11,7 @@ import { createPortal } from "react-dom"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { CargoHandlingEditor } from "@/components/multideck/quote-details/cargo-handling-editor"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { AutoPopulatedInput, matchesAutoPopulation } from "@/components/multideck/auto-populated-field"
 import { readCargoHandling } from "@/lib/cargo-handling"
 import {
@@ -100,6 +105,8 @@ import { BookingCustomerPanel } from "./booking-customer-panel"
 import { BookingRouteMilestones } from "./booking-route-milestones"
 import { BookingDangerousGoodsEditor } from "./booking-dangerous-goods"
 import { BookingSecurityEvidenceEditor } from "./booking-security-evidence"
+import { BookingPlanningChargesWorkspace } from "./booking-planning-charges-workspace"
+import { BookingOperationalChargesWorkspace } from "./booking-operational-charges-workspace"
 import { getQuoteSources, type QuoteOrganisationOption, type QuoteWorkflowSources } from "@/lib/quote-workflow-api"
 import { loadUnlocodeDirectory, unlocodeKind, type UnlocodeDirectoryRecord } from "@/lib/unlocode-directory"
 import {
@@ -109,6 +116,7 @@ import {
   getBookingQuoteSyncReview,
   getBookingWorkflow,
   saveBookingWorkflow,
+  saveBookingOwnership,
   sendBookingToCustoms,
   uploadBookingCustomsDocument,
   type BookingCustomsReadiness,
@@ -369,7 +377,7 @@ function bookingWorkspaceRecord(workspace: BookingWorkflowWorkspace): BookingDet
       currentLocation: booking.currentLocation ?? "",
       status: displayStatus,
       progress: lifecycle === "draft" ? 5 : lifecycle.includes("complete") ? 100 : 20,
-      owner: recordText(editableDetails, "ownerName"),
+      owner: bookingOwnerLabel(workspace),
       tone: statusTone,
       invoice: recordText(editableDetails, "invoiceReference") || (workspace.documents.find((document) => /commercial.?invoice/i.test(document.typeCode ?? document.title))?.fileName ?? ""),
       jobRef: recordText(editableDetails, "jobReference") || booking.jobReference,
@@ -1326,6 +1334,8 @@ function BookingDetailHeader({
   onSaveDetails,
   onLifecycleChange,
   canChangeLifecycle,
+  provisionalActionControl,
+  ownershipControl,
   onSendToCustoms,
   onTabChange,
   record,
@@ -1344,6 +1354,8 @@ function BookingDetailHeader({
   onSaveDetails: () => void
   onLifecycleChange: (status: BookingLifecycle) => void
   canChangeLifecycle: boolean
+  provisionalActionControl?: ReactNode
+  ownershipControl?: ReactNode
   onSendToCustoms: () => void
   onTabChange: (tab: BookingDetailTab) => void
   record: BookingDetailRecord
@@ -1357,6 +1369,8 @@ function BookingDetailHeader({
   const headerStatusTone = record.workspace?.booking.status === "draft" ? "neutral" : record.job?.tone ?? record.booking.tone
   const sourceQuote = asRecord(record.workspace?.sourceQuote)
   const appliedQuoteVersion = Number(recordText(sourceQuote, "appliedVersionNumber"))
+  const domesticCustoms = customsReadiness?.direction === "domestic" && !customsReadiness.eligible
+  const crossTradeCustoms = customsReadiness?.direction === "cross_trade" && !customsReadiness.eligible
 
   useEffect(() => () => {
     if (bookingCopyResetTimerRef.current !== null) window.clearTimeout(bookingCopyResetTimerRef.current)
@@ -1419,6 +1433,7 @@ function BookingDetailHeader({
               />
               <CopyStatusIcon copied={bookingRefCopied} iconClassName="size-3.5" className="shrink-0" />
             </button>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {record.workspace && bookingLifecycle(statusCode) ? (
               <Select value={bookingLifecycle(statusCode)!} disabled={!canChangeLifecycle || !record.workspace.lifecycleSupported || savingDetails} onValueChange={value => onLifecycleChange(value as BookingLifecycle)}>
                 <SelectTrigger aria-label={t("Booking status")} title={!record.workspace.lifecycleSupported ? t("Booking status changes are awaiting a workspace update.") : t("Review and confirm a status change.")} className="h-8 w-[140px] shrink-0 rounded-[var(--md-radius-lg)] text-[11.5px]"><SelectValue /></SelectTrigger>
@@ -1429,6 +1444,9 @@ function BookingDetailHeader({
                 </SelectContent>
               </Select>
             ) : <StatusPill kind="status" tone={headerStatusTone} className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11.5px] font-medium">{t(statusLabel)}</StatusPill>}
+            {provisionalActionControl}
+            {ownershipControl}
+            </div>
             {record.workspace?.booking.sourceQuoteId ? (
               <Button type="button" variant="ghost" onClick={() => navigate(`/quotes/${encodeURIComponent(bookingQuoteReference(record.workspace) || record.workspace!.booking.sourceQuoteId!)}`)} className="h-8 shrink-0 gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-2.5 text-[11px] shadow-[var(--md-shadow-line)]">
                 <span>{t("From quote")}</span>
@@ -1446,25 +1464,29 @@ function BookingDetailHeader({
           </div>
           <BookingRouteSummary record={record} />
           <div className="flex min-w-0 flex-wrap items-center gap-1 lg:shrink-0">
-            {customsReadiness ? (
+            {domesticCustoms ? (
+              <span role="status" className="inline-flex h-8 shrink-0 items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[11px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+                {t("Customs not required")}
+              </span>
+            ) : customsReadiness ? (
               <Button
                 variant="ghost"
-                aria-label={`${t("Review customs readiness")}: ${customsReadiness.percent}% ${t("complete")}`}
+                aria-label={crossTradeCustoms ? t("Customs handover unavailable") : `${t("Review customs readiness")}: ${customsReadiness.percent}% ${t("complete")}`}
                 className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]"
                 onClick={onReviewCustoms}
               >
-                <span
+                {!crossTradeCustoms ? <span
                   aria-hidden="true"
                   className="grid size-5 shrink-0 place-items-center rounded-full"
                   style={{ background: `conic-gradient(var(--md-accent) ${customsReadiness.percent}%, var(--md-line) 0)` }}
                 >
                   <span className="size-3.5 rounded-full bg-[var(--md-surface-tint)]" />
-                </span>
-                <span>{t("Review customs readiness")}</span>
-                <span className="text-[var(--md-accent)]" dir="ltr">{customsReadiness.percent}%</span>
+                </span> : null}
+                <span>{t(crossTradeCustoms ? "Customs handover unavailable" : "Review customs readiness")}</span>
+                {!crossTradeCustoms ? <span className="text-[var(--md-accent)]" dir="ltr">{customsReadiness.percent}%</span> : null}
               </Button>
             ) : null}
-            <Tooltip>
+            {!domesticCustoms && !crossTradeCustoms ? <Tooltip>
               <TooltipTrigger asChild>
                 <span className="inline-flex" tabIndex={!customsReadiness?.ready ? 0 : -1}>
                   <Button
@@ -1486,14 +1508,15 @@ function BookingDetailHeader({
                   {t(customsReadiness?.missing[0]?.label ?? "Complete the Customs readiness checklist first.")}
                 </TooltipContent>
               ) : null}
-            </Tooltip>
+            </Tooltip> : null}
             {activeTab === "Documents" ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     aria-label={t(uploadingDocumentType ? "Uploading document..." : "Attach document")}
                     className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium"
-                    disabled={Boolean(uploadingDocumentType)}
+                    disabled={Boolean(uploadingDocumentType) || Boolean(record.workspace?.provisionalCancellation?.cancelled)}
+                    title={record.workspace?.provisionalCancellation?.cancelled ? t("Reopen this booking before attaching documents.") : undefined}
                   >
                     <Paperclip data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
                     {t(uploadingDocumentType ? "Uploading document..." : "Attach document")}
@@ -2426,7 +2449,9 @@ function BookingOverviewSignals({ record }: { record: BookingDetailRecord }) {
     <div className="grid items-stretch gap-2 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
       <div className="md-quote-stage-stack grid min-h-0 grid-rows-[auto_auto] gap-2">
         <Surface padding="none" className="md-quote-stage-panel flex min-h-0 items-center rounded-[var(--md-radius-xl)] p-1.5">
-          <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Operator-reported booking progress")}>
+          {record.workspace?.provisionalCancellation?.cancelled ? (
+            <p className="px-2 py-1.5 text-[13px] text-[var(--md-text)]">{t("Cancelled — operational progress is paused.")}</p>
+          ) : <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Operator-reported booking progress")}>
             {bookingStages.map((stage) => (
               <div
                 key={stage.id}
@@ -2457,7 +2482,7 @@ function BookingOverviewSignals({ record }: { record: BookingDetailRecord }) {
                 </Tooltip>
               </div>
             ))}
-          </div>
+          </div>}
         </Surface>
 
         <Surface padding="none" className="md-quote-stage-metadata min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] px-3 py-1.5">
@@ -2819,7 +2844,6 @@ function BookingRecordDetails({
   allocationEditor,
   allocationValidationAttempt = 0,
   weightValidation,
-  currentUser,
   editable,
   locationDirectory,
   lookups,
@@ -2989,6 +3013,9 @@ function BookingRecordDetails({
   const editCargo = (index: number, field: keyof BookingWorkflowCargo) => ({ editable: editable && Boolean(cargo), onChange: (value: string) => onCargoChange(index, field, value) })
   const editRoute = (index: number, field: keyof BookingWorkflowRoute) => ({ editable, onChange: (value: string) => onRouteChange(index, field, value) })
   const organisations = lookups?.organisations ?? []
+  const bookingOffice = lookups?.offices.find((office) => office.id === workspace.booking.officeId)
+  // Ownership is the saved Booking office, never the current user's or Quote's live default.
+  const bookingBranch = bookingOffice?.name || bookingOffice?.code || (lookups ? "Not available" : "Loading…")
   const lookupModes = lookups?.modes.length ? lookups.modes : [
     { id: "mode-air", code: "AIR", name: "Air" },
     { id: "mode-sea", code: "SEA", name: "Sea" },
@@ -3010,16 +3037,7 @@ function BookingRecordDetails({
   const shipmentTypeOptions: BookingFieldOption[] = (lookups?.shipmentTypes ?? [])
     .filter((option) => freightShipmentAllowed(modeKey, option.code))
     .map((option) => ({ id: `shipment:${option.code}`, value: option.code, label: `${option.code} - ${option.name}` }))
-  const ownerOptions: BookingFieldOption[] = (lookups?.users ?? []).map((option) => ({
-    id: option.id,
-    value: option.name,
-    label: option.name,
-    description: option.email,
-    keywords: [option.email],
-  }))
-  const quoteOwnerId = recordText(quote, "salesOwnerId")
-  const quoteOwner = lookups?.users.find((option) => option.id === quoteOwnerId)
-  const ownerName = recordText(editableDetails, "ownerName") || quoteOwner?.name || recordText(quote, "salesOwner") || recordText(facts, "salesRep") || currentUser?.name || currentUser?.email || ""
+  const ownerName = bookingOwnerLabel(workspace)
   const currencyOptions = (lookups?.currencies.length ? lookups.currencies : [
     { id: "currency-gbp", code: "GBP", name: "Pound sterling" },
     { id: "currency-eur", code: "EUR", name: "Euro" },
@@ -3140,7 +3158,8 @@ function BookingRecordDetails({
           <div className="md-booking-job-group">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Ownership")}</h4>
             <div className="md-booking-job-fields">
-              <BookingCargoWiseField label="Owner" value={ownerName} options={ownerOptions} searchable placeholder="Search team members" allowCustom={false} {...editDetail("ownerName")} />
+              <BookingCargoWiseField label="Owner" value={ownerName} />
+              <BookingCargoWiseField label="Branch" value={bookingBranch} />
               <BookingCargoWiseField label={calculatedDirection ? "Direction (auto)" : "Direction"} value={calculatedDirection ?? record.booking.direction} options={bookingDirectionOptions} placeholder="Choose direction" allowCustom={false} editable={editable && !calculatedDirection} onChange={(nextDirection) => {
                 onBookingChange("direction", nextDirection)
                 onDetailChange("quoteType", nextDirection)
@@ -3447,6 +3466,7 @@ function BookingRecordDetails({
           <BookingCargoWiseField label="Other handling" value={bookingCargoOtherHandling(knownCargo)} options={bookingOtherHandlingOptions} placeholder="Choose handling" allowCustom={false} {...editCargo(cargoIndex, "knownCargo")} />
           {cargo ? <div className="sm:col-span-2 xl:col-span-4">{renderDangerousGoods?.(cargo, (entry, records, unsaved) => <CargoHandlingEditor booking evidence={records} sourceEvidenceEntry={entry} unsaved={unsaved} onLineChange={(field, value) => onCargoChange(cargoIndex, field, value)} value={cargo.handlingDetailsJson ?? (typeof cargo.cargoData?.handlingDetailsJson === "string" ? cargo.cargoData.handlingDetailsJson : JSON.stringify({ ...(cargo.isHazardous ? { hazardous: { tbc: true, details: {} } } : {}), ...(cargo.isTemperatureControlled ? { temperatureControlled: { tbc: true, details: {} } } : {}) }))} line={cargo} editable={editable} onChange={value => onCargoChange(cargoIndex, "handlingDetailsJson", value)} />)}</div> : null}
           {bookingCargoSafetyConflict(cargo, knownCargo) ? <p className="sm:col-span-2 xl:col-span-4 text-[12px] leading-5 text-[var(--md-text)]">{t("Earlier handling text mentions safety requirements that are not confirmed by this line's flags. Review the source documents before changing them.")} <span data-i18n-skip>{knownCargo}</span></p> : null}
+          {typeof cargo?.cargoData?.cargoCharacteristics === "string" && cargo.cargoData.cargoCharacteristics.trim() ? <details className="sm:col-span-2 xl:col-span-4 text-[12px] text-[var(--md-text)]"><summary className="cursor-pointer">{t("Earlier shipment handling retained")}</summary><p className="pt-2" data-i18n-skip>{cargo.cargoData.cargoCharacteristics}</p></details> : null}
           <div className="sm:col-span-2 xl:col-span-2 2xl:col-span-2">
             <div ref={goodsDescriptionRef}><BookingCargoWiseField label="Goods description" value={goodsDescription} placeholder="Describe the goods" {...editCargo(cargoIndex, "description")} /></div>
           </div>
@@ -3533,6 +3553,39 @@ function bookingDocumentCategory(document: BookingWorkflowWorkspace["documents"]
 
 function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) {
   const { language, t } = useLanguage()
+  const [preview, setPreview] = useState<{ id: string; name: string; url?: string; error?: string; attachment?: boolean; mimeType?: string } | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const documentRequest = useRef(0)
+  useEffect(() => () => { documentRequest.current += 1 }, [])
+  async function openQuotePdf(id: string, name: string, attachment = false) {
+    const request = ++documentRequest.current
+    setPreview({ id, name, attachment })
+    try {
+      const access = attachment ? await getBookingAttachmentAccess(record.booking.id, id) : { ...await getBookingQuoteDocumentAccess(record.booking.id, id), mimeType: "application/pdf" }
+      if (request === documentRequest.current) setPreview({ id, name: access.fileName, url: access.signedUrl, attachment, mimeType: access.mimeType })
+    } catch (cause) {
+      if (request === documentRequest.current) setPreview({ id, name, attachment, error: cause instanceof Error ? cause.message : t("The attachment could not be opened. Please try again.") })
+    }
+  }
+  async function downloadQuotePdf() {
+    if (!preview || downloading) return
+    setDownloading(true)
+    try {
+      // Refresh authorisation for every download instead of reusing an expired URL.
+      const access = preview.attachment ? await getBookingAttachmentAccess(record.booking.id, preview.id) : { ...await getBookingQuoteDocumentAccess(record.booking.id, preview.id), mimeType: "application/pdf" }
+      const response = await fetch(access.signedUrl, { credentials: "omit", signal: AbortSignal.timeout(60_000) })
+      if (!response.ok) throw new Error(t("The PDF could not be downloaded. Please try again."))
+      const blob = await response.blob()
+      if (access.mimeType === "application/pdf" && await blob.slice(0, 5).text() !== "%PDF-") throw new Error(t("The stored file is not a valid PDF."))
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url; link.download = access.fileName
+      document.body.appendChild(link); link.click(); link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("The PDF could not be downloaded. Please try again."))
+    } finally { setDownloading(false) }
+  }
   if (record.workspace) {
     const documents = record.workspace.documents
     const groups: Array<{
@@ -3605,12 +3658,13 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
               {groupDocuments.length ? (
                 <div className="px-4">
                   {groupDocuments.map((document) => {
+                    const retainedOriginal = document.typeCode === "commercial_invoice_original"
                     const details = [
                       document.fileName && document.fileName !== document.title ? document.fileName : "",
                       formatFileSize(document.fileSizeBytes),
-                      document.version != null ? `${t("Version")} ${document.version}` : "",
+                      !retainedOriginal && document.version != null ? `${t("Version")} ${document.version}` : "",
                     ].filter(Boolean)
-                    const status = document.isCurrent === false
+                    const status = retainedOriginal ? "Retained original" : document.isCurrent === false
                       ? "Superseded"
                       : document.status ?? (document.fileName ? "Attached" : "Needs file")
                     const statusTone: StatusTone = document.isCurrent === false
@@ -3639,7 +3693,15 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
                           <p className="text-[9.5px] font-medium uppercase tracking-[0.035em] text-[var(--md-subtle)]">{t("Added")}</p>
                           <p className="mt-0.5 truncate text-[11px] text-[var(--md-ink)]" data-i18n-skip>{formatDate(document.receivedAt || document.documentDate || document.createdAt)}</p>
                         </div>
-                        <StatusPill tone={statusTone}>{t(status)}</StatusPill>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusPill tone={statusTone}>{t(status)}</StatusPill>
+                          {group.category === "quote" ? <Button size="sm" variant="outline"
+                            aria-label={`${t("Open PDF")}: ${document.fileName || document.title}`}
+                            onClick={() => void openQuotePdf(document.id, document.fileName || document.title)}>{t("Open PDF")}</Button> : null}
+                          {group.category === "customs" && (document.typeCode === "commercial_invoice_original" || document.isCurrent !== false && ["commercial_invoice", "packing_list"].includes(document.typeCode ?? "")) && document.fileName ? <Button size="sm" variant="outline"
+                            aria-label={`${t("View")}: ${document.fileName}`}
+                            onClick={() => void openQuotePdf(document.id, document.fileName || document.title, true)}>{t("View")}</Button> : null}
+                        </div>
                       </div>
                     )
                   })}
@@ -3650,6 +3712,22 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
             </section>
           )
         })}
+        <Dialog open={preview !== null} onOpenChange={open => { if (!open) { documentRequest.current += 1; setPreview(null) } }}>
+          <DialogContent className="w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-5xl">
+            <DialogHeader><DialogTitle>{preview?.name}</DialogTitle>
+              <DialogDescription>{t(preview?.attachment ? "Saved Booking attachment." : "Saved accepted Quote PDF. The original document is unchanged.")}</DialogDescription></DialogHeader>
+            {preview?.error ? <div role="alert" className="grid gap-2 text-[13px]">
+              <p>{preview.error}</p><Button variant="outline" onClick={() => void openQuotePdf(preview.id, preview.name, preview.attachment)}>{t("Try again")}</Button>
+            </div> : preview?.url ? (preview.mimeType === "application/pdf" ? <iframe title={`${t("Attachment")}: ${preview.name}`} src={preview.url} className="h-[65vh] w-full rounded-[var(--md-radius-lg)] bg-white" />
+              : preview.mimeType?.startsWith("image/") ? <img src={preview.url} alt={preview.name} className="max-h-[65vh] w-full object-contain" />
+                : <p>{t("Preview is not available for this file type. Download it to open it.")}</p>)
+              : <div className="grid place-items-center py-8"><DotGridLoader label={t("Opening PDF…")} /></div>}
+            <DialogFooter>
+              {preview?.url ? <Button asChild variant="outline"><a href={preview.url} target="_blank" rel="noopener noreferrer">{t("Open in new tab")}</a></Button> : null}
+              <Button disabled={!preview?.url || downloading} onClick={() => void downloadQuotePdf()}>{t(downloading ? "Downloading…" : preview?.attachment ? "Download" : "Download PDF")}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </Surface>
     )
   }
@@ -3692,7 +3770,8 @@ function BookingCustomsSourceEditor({
 }) {
   const { t } = useLanguage()
   const booking = workspace.booking
-  const route = workspace.routes[0] ?? {}
+  const mainRouteIndex = Math.max(workspace.routes.findIndex((leg) => leg.isMainCarriage), 0)
+  const route = workspace.routes[mainRouteIndex] ?? {}
   const container = workspace.containers[0] ?? {}
   const exporter = workspace.parties.find((party) => ["exporter", "shipper", "consignor"].includes(party.role.toLowerCase()))
   const importer = workspace.parties.find((party) => ["importer", "consignee"].includes(party.role.toLowerCase()))
@@ -3700,8 +3779,8 @@ function BookingCustomsSourceEditor({
   const [form, setForm] = useState(() => ({
     direction: String(booking.direction ?? "unknown"),
     mode: String(booking.mode ?? ""),
-    origin: String(booking.origin ?? ""),
-    destination: String(booking.destination ?? ""),
+    origin: String(route.originUnlocode || route.origin || booking.origin || ""),
+    destination: String(route.destinationUnlocode || route.destination || booking.destination || ""),
     incoterm: String(booking.incoterm ?? ""),
     incotermLocation: String(booking.incotermLocation ?? ""),
     freightChargeAmount: booking.freightChargeAmount == null ? "" : String(booking.freightChargeAmount),
@@ -3730,6 +3809,43 @@ function BookingCustomsSourceEditor({
   }))
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState<"commercial_invoice" | "packing_list" | null>(null)
+  const [attachmentPreview, setAttachmentPreview] = useState<{ id: string; name: string; url?: string; mimeType?: string; error?: string } | null>(null)
+  const [downloadingAttachment, setDownloadingAttachment] = useState<string | null>(null)
+  const attachmentRequest = useRef(0)
+  useEffect(() => () => { attachmentRequest.current += 1 }, [])
+  const attachments = workspace.documents.filter(document => document.isCurrent !== false
+    && ["commercial_invoice", "packing_list"].includes(document.typeCode ?? ""))
+
+  async function openAttachment(id: string, name: string) {
+    const request = ++attachmentRequest.current
+    setAttachmentPreview({ id, name })
+    try {
+      const access = await getBookingAttachmentAccess(booking.bookingReference, id)
+      if (request === attachmentRequest.current) setAttachmentPreview({ id, name: access.fileName, url: access.signedUrl, mimeType: access.mimeType })
+    } catch (cause) {
+      if (request === attachmentRequest.current) setAttachmentPreview({ id, name, error: cause instanceof Error ? cause.message : t("The attachment could not be opened. Please try again.") })
+    }
+  }
+
+  async function downloadAttachment(id: string) {
+    if (downloadingAttachment) return
+    setDownloadingAttachment(id)
+    try {
+      const access = await getBookingAttachmentAccess(booking.bookingReference, id)
+      const response = await fetch(access.signedUrl, { credentials: "omit", signal: AbortSignal.timeout(60_000) })
+      if (!response.ok) throw new Error(t("The attachment could not be downloaded. Please try again."))
+      const blob = await response.blob()
+      if (!blob.size) throw new Error(t("The stored attachment is empty."))
+      if (access.mimeType === "application/pdf" && await blob.slice(0, 5).text() !== "%PDF-") throw new Error(t("The stored file is not a valid PDF."))
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url; link.download = access.fileName
+      document.body.appendChild(link); link.click(); link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("The attachment could not be downloaded. Please try again."))
+    } finally { setDownloadingAttachment(null) }
+  }
 
   function field(key: keyof typeof form, label: string, options?: string[]) {
     return (
@@ -3764,6 +3880,17 @@ function BookingCustomsSourceEditor({
     try {
       const otherParties = workspace.parties.filter((party) => !["exporter", "shipper", "consignor", "importer", "consignee"].includes(party.role.toLowerCase()))
       const mode = form.mode.toLowerCase()
+      const updatedRoute = {
+        ...route,
+        mode: form.mode,
+        origin: form.origin,
+        destination: form.destination,
+        flightNumber: mode === "air" ? form.transportReference : route.flightNumber ?? null,
+        voyageNumber: mode === "sea" ? form.transportReference : route.voyageNumber ?? null,
+        trailerNumber: mode === "road" ? form.transportReference : route.trailerNumber ?? null,
+        railService: mode === "rail" ? form.transportReference : route.railService ?? null,
+        masterTransportReference: mode === "rail" || mode === "sea" ? form.transportReference : route.masterTransportReference ?? null,
+      }
       const saved = await saveBookingWorkflow(booking.jobId, {
         customerId: booking.customerId ?? null,
         carrierId: booking.carrierId ?? null,
@@ -3771,9 +3898,9 @@ function BookingCustomsSourceEditor({
         status: booking.status,
         direction: form.direction,
         mode: form.mode,
-        origin: form.origin,
+        origin: workspace.routes.length > 1 ? booking.origin : form.origin,
         originUnlocode: booking.originUnlocode ?? null,
-        destination: form.destination,
+        destination: workspace.routes.length > 1 ? booking.destination : form.destination,
         destinationUnlocode: booking.destinationUnlocode ?? null,
         readyDate: booking.readyDate ?? null,
         requiredDeliveryDate: booking.requiredDeliveryDate ?? null,
@@ -3787,25 +3914,20 @@ function BookingCustomsSourceEditor({
         freightChargeCurrency: form.freightChargeCurrency,
         collectionAddress: booking.collectionAddress ?? null,
         deliveryAddress: booking.deliveryAddress ?? null,
-        route: {
-          ...route,
-          mode: form.mode,
-          origin: form.origin,
-          destination: form.destination,
-          flightNumber: mode === "air" ? form.transportReference : route.flightNumber ?? null,
-          trailerNumber: mode === "road" ? form.transportReference : route.trailerNumber ?? null,
-          railService: mode === "rail" ? form.transportReference : route.railService ?? null,
-          masterTransportReference: mode === "rail" || mode === "sea" ? form.transportReference : route.masterTransportReference ?? null,
-        },
+        ...(workspace.routes.length
+          ? { routes: workspace.routes.map((leg, index) => index === mainRouteIndex ? updatedRoute : leg) }
+          : { route: updatedRoute }),
         parties: [
           ...otherParties,
           { ...exporter, role: "consignor", sequence: 10, name: form.exporterName, address: form.exporterAddress, countryCode: form.exporterCountry.toUpperCase(), identifierType: "eori", identifierValue: form.exporterIdentifier, isPrimary: true },
           { ...importer, role: "consignee", sequence: 20, name: form.importerName, address: form.importerAddress, countryCode: form.importerCountry.toUpperCase(), identifierType: form.direction === "import" ? "eori" : importer?.identifierType ?? "eori", identifierValue: form.importerIdentifier, isPrimary: true },
         ],
-        cargo: [
-          { ...cargo, lineNumber: 1, description: form.goodsDescription, pieces: form.packageQuantity || null, packageQuantity: form.packageQuantity || null, packageType: form.packageType, grossWeightKg: form.grossWeightKg || null, netWeightKg: form.netWeightKg || null, hsCode: form.hsCode },
-          ...workspace.cargo.slice(1),
-        ],
+        cargo: workspace.cargo.length || [form.goodsDescription, form.packageQuantity, form.packageType, form.grossWeightKg, form.netWeightKg, form.hsCode].some((value) => value.trim())
+          ? [
+              { ...cargo, lineNumber: 1, description: form.goodsDescription, pieces: form.packageQuantity || null, packageQuantity: form.packageQuantity || null, packageType: form.packageType, grossWeightKg: form.grossWeightKg || null, netWeightKg: form.netWeightKg || null, hsCode: form.hsCode },
+              ...workspace.cargo.slice(1),
+            ]
+          : [],
         containers: mode === "sea"
           ? [{ ...container, number: form.containerNumber, status: container.status ?? "planned" }, ...workspace.containers.slice(1)]
           : workspace.containers,
@@ -3852,12 +3974,18 @@ function BookingCustomsSourceEditor({
     if (issue.key === "exporter_name") return field("exporterName", "Consignor / shipper name")
     if (issue.key === "exporter_address") return field("exporterAddress", "Consignor / shipper full address")
     if (issue.key === "exporter_eori") return field("exporterIdentifier", "Exporter EORI")
+    if (issue.key === "exporter_country") return field("exporterCountry", "Consignor / shipper country code")
     if (issue.key === "importer_name") return field("importerName", "Importer name")
     if (issue.key === "importer_address") return field("importerAddress", "Importer full address")
     if (issue.key === "importer_identifier") return field("importerIdentifier", "Importer EORI or VAT number")
+    if (issue.key === "importer_country") return field("importerCountry", "Importer / consignee country code")
     if (issue.key === "goods_description") return field("goodsDescription", "Goods description")
     if (issue.key === "packages") return <div className="grid gap-3 sm:grid-cols-2">{field("packageQuantity", "Pieces / packages")}{field("packageType", "Package type")}</div>
     if (issue.key === "gross_weight") return field("grossWeightKg", "Gross weight (kg)")
+    if (issue.key === "commodity_code" || issue.key === "net_weight") {
+      if (workspace.cargo.length > 1) return <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Review every cargo line in Booking Details. Each line needs a commodity code and net weight before Customs handover.")}</p>
+      return issue.key === "commodity_code" ? field("hsCode", "Commodity code") : field("netWeightKg", "Net weight (kg)")
+    }
     if (issue.key === "commercial_invoice") return (
       <Button asChild variant="outline" className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[12px]">
         <label>{t(uploading === "commercial_invoice" ? "Attaching invoice..." : "Attach commercial invoice")}<input className="sr-only" type="file" aria-label={t("Attach commercial invoice")} accept=".pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx" disabled={Boolean(uploading)} onChange={(event) => { void attachDocument("commercial_invoice", event.target.files?.[0]); event.currentTarget.value = "" }} /></label>
@@ -3867,6 +3995,13 @@ function BookingCustomsSourceEditor({
   }
 
   if (view === "review") {
+    if (readiness && !readiness.eligible && (readiness.direction === "domestic" || readiness.direction === "cross_trade")) {
+      return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
+        <Button type="button" variant="ghost" className="-ms-2 mb-4 h-8 rounded-[var(--md-radius-md)] px-2 text-[12px]" onClick={() => onViewChange("source")}>{t("Back to Customs source data")}</Button>
+        <h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t(readiness.direction === "domestic" ? "Customs not required" : "Customs handover unavailable")}</h2>
+        <p className="mt-2 text-[13px] text-[var(--md-text)]">{t(readiness.direction === "domestic" ? "This Domestic booking does not need a UK Customs declaration." : "Cross-trade Customs handover is not available yet.")}</p>
+      </Surface>
+    }
     return (
       <CustomsReadinessReview
         compactHeader
@@ -3878,6 +4013,9 @@ function BookingCustomsSourceEditor({
         onBack={() => onViewChange("source")}
         percent={readinessPercent}
         renderFix={(issue, close) => {
+          if (workspace.cargo.length > 1 && (issue.key === "commodity_code" || issue.key === "net_weight")) {
+            return <>{fixFields(issue)}<div className="mt-3 flex justify-end"><Button type="button" size="sm" onClick={close}>{t("Close")}</Button></div></>
+          }
           if (issue.key === "customs_department" || issue.key === "customs_operator") {
             return <><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Set the Customs team for this booking office.")}</p><div className="mt-3 flex justify-end"><Button type="button" size="sm" onClick={() => { close(); navigate("/admin/users") }}>{t("Open team settings")}</Button></div></>
           }
@@ -3927,6 +4065,38 @@ function BookingCustomsSourceEditor({
           {field("netWeightKg", "Net weight (kg)")}
           {field("hsCode", "Commodity code")}
         </div>
+        <section aria-label={t("Attached Customs documents")} className="grid min-w-0 gap-2">
+          {attachments.length ? attachments.map(document => (
+            <div key={document.id} className="flex min-w-0 flex-wrap items-center gap-3 py-2 shadow-[var(--md-stroke-top)]">
+              <Paperclip className="size-4 shrink-0 text-[var(--md-subtle)]" aria-hidden="true" />
+              <div className="min-w-0 flex-1 basis-48">
+                <p className="text-[12px] font-medium text-[var(--md-ink)]">{t(document.typeCode === "commercial_invoice" ? "Commercial invoice" : "Packing list")}</p>
+                <p className="break-all text-[12px] text-[var(--md-text)]" data-i18n-skip>{document.fileName || document.title}</p>
+              </div>
+              <StatusPill tone={document.fileName ? "green" : "amber"}>{t(document.fileName ? "Attached" : "Needs file")}</StatusPill>
+              {document.fileName ? <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" aria-label={`${t("View")}: ${document.fileName}`} onClick={() => void openAttachment(document.id, document.fileName!)}>{t("View")}</Button>
+                <Button size="sm" variant="outline" disabled={Boolean(downloadingAttachment)} aria-label={`${t("Download")}: ${document.fileName}`} onClick={() => void downloadAttachment(document.id)}>{t(downloadingAttachment === document.id ? "Downloading…" : "Download")}</Button>
+              </div> : null}
+            </div>
+          )) : <p className="text-[12px] text-[var(--md-subtle)]">{t("No invoice or packing list attached.")}</p>}
+        </section>
+        <Dialog open={attachmentPreview !== null} onOpenChange={open => { if (!open) { attachmentRequest.current += 1; setAttachmentPreview(null) } }}>
+          <DialogContent className="w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-5xl">
+            <DialogHeader><DialogTitle className="break-all" data-i18n-skip>{attachmentPreview?.name}</DialogTitle>
+              <DialogDescription>{t("Saved Booking attachment.")}</DialogDescription></DialogHeader>
+            {attachmentPreview?.error ? <div role="alert" className="grid gap-2 text-[13px]">
+              <p>{attachmentPreview.error}</p><Button variant="outline" onClick={() => void openAttachment(attachmentPreview.id, attachmentPreview.name)}>{t("Try again")}</Button>
+            </div> : attachmentPreview?.url ? (
+              attachmentPreview.mimeType === "application/pdf" ? <iframe title={`${t("Attachment")}: ${attachmentPreview.name}`} src={attachmentPreview.url} className="h-[65vh] w-full rounded-[var(--md-radius-lg)] bg-white" />
+                : attachmentPreview.mimeType?.startsWith("image/") ? <img src={attachmentPreview.url} alt={attachmentPreview.name} className="max-h-[65vh] w-full object-contain" />
+                  : <p className="text-[13px]">{t("Preview is not available for this file type. Download it to open it.")}</p>
+            ) : <div className="grid place-items-center py-8"><DotGridLoader label={t("Opening attachment…")} /></div>}
+            <DialogFooter>
+              <Button disabled={!attachmentPreview?.url || Boolean(downloadingAttachment)} onClick={() => attachmentPreview && void downloadAttachment(attachmentPreview.id)}>{t(downloadingAttachment ? "Downloading…" : "Download")}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--md-border)] pt-4">
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] shadow-[var(--md-shadow-line)]">
@@ -3967,6 +4137,11 @@ function BookingCustomsWorkspace({
 
   return (
     <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
+      {readiness && !readiness.eligible && (readiness.direction === "domestic" || readiness.direction === "cross_trade") && view === "source" ? (
+        <p role="status" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+          {t(readiness.direction === "domestic" ? "This Domestic booking does not need a UK Customs declaration." : "Cross-trade Customs handover is not available yet.")}
+        </p>
+      ) : null}
       {record.workspace ? <BookingCustomsSourceEditor customsError={customsError} key={record.workspace.booking.updatedAt} navigate={navigate} onSaved={onWorkspaceSaved} onViewChange={onViewChange} readiness={readiness} view={view} workspace={record.workspace} /> : null}
 
       {view === "source" ? <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
@@ -4008,6 +4183,8 @@ function BookingFinanceWorkspace({ record }: { record: BookingDetailRecord }) {
     const description = typeof charge.description === "string" && charge.description.trim()
       ? charge.description.trim()
       : `${t("Charge")} ${index + 1}`
+    const planningDetail = planningChargeReadback(charge, t)
+    if (planningDetail !== null) return [`${index + 1}. ${description}`, planningDetail] as const
     const currency = typeof record.workspace?.booking.freightChargeCurrency === "string"
       ? record.workspace.booking.freightChargeCurrency.trim().toUpperCase()
       : ""
@@ -4049,6 +4226,16 @@ function BookingFinanceWorkspace({ record }: { record: BookingDetailRecord }) {
   )
 }
 
+function formatBookingAuditValue(value: unknown, path = ""): string {
+  if (value === null || value === undefined) return `${path}Not recorded`
+  if (Array.isArray(value)) return value.length ? value.map((item, index) => formatBookingAuditValue(item, `${path}${index + 1}. `)).join("\n") : `${path}None recorded`
+  if (typeof value === "object") {
+    const entries = Object.entries(value)
+    return entries.length ? entries.map(([key, item]) => formatBookingAuditValue(item, `${path}${key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ")}: `)).join("\n") : `${path}None recorded`
+  }
+  return `${path}${typeof value === "boolean" ? value ? "Yes" : "No" : String(value)}`
+}
+
 function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
   const { language, t } = useLanguage()
   const events = record.workspace?.events ?? []
@@ -4067,10 +4254,42 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
               <time className="text-[12px] text-[var(--md-text)]" dateTime={event.occurredAt}>{eventTime(event)}</time>
               <span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)]" aria-hidden="true" />
               <div className="min-w-0">
-                <p className="text-[13px] font-medium leading-5 text-[var(--md-ink)]">{event.summary}</p>
-                <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{event.actor || t("System")} · {t(event.type.replace(/_/g, " "))}</p>
-                {["route_mode_changed", "route_references_updated"].includes(event.type) ? <details className="mt-2 min-w-0">
-                  <summary className="cursor-pointer py-1 text-[12px] text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Previous and current references")}</summary>
+                <details className="group min-w-0">
+                  <summary className="cursor-pointer list-none rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--md-accent)]">
+                    <span className="flex items-start justify-between gap-3 text-[13px] font-medium leading-5 text-[var(--md-ink)]">{event.summary}<ChevronDown aria-hidden="true" className="mt-0.5 size-4 shrink-0 group-open:rotate-180" /></span>
+                    <span className="mt-0.5 block text-[12px] text-[var(--md-text)]">{event.actor || t("System")} · {t(event.type.replace(/_/g, " "))}</span>
+                  </summary>
+                  {["planning_charges_saved", "operational_charge_saved", "operational_charge_removed", "quote_charge_decisions"].includes(event.type) ? <div className="mt-3 grid gap-4 text-[12px]">
+                    {recordText(asRecord(event.metadata), "reason") ? <p data-i18n-skip>{recordText(asRecord(event.metadata), "reason")}</p> : null}
+                    {planningAuditChanges(event.metadata, language)?.map(line => <div key={line.id} className="min-w-0">
+                      <p className="break-words font-medium [overflow-wrap:anywhere]"><span>{t(line.action)} · </span><span data-i18n-skip>{line.label}</span></p>
+                      <dl className="mt-2 grid gap-2">{line.changes.map(change => <div key={change.label} className="grid gap-1 sm:grid-cols-[140px_minmax(0,1fr)]">
+                        <dt className="text-[var(--md-text)]">{t(change.label)}</dt>
+                        <dd className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" data-i18n-skip>{change.before !== null && change.after !== null ? `${change.before} → ${change.after}` : change.after ?? change.before}</dd>
+                      </div>)}</dl>
+                    </div>) ?? <p>{t("Detailed charge history is not available in this response.")}</p>}
+                    {planningAuditChanges(event.metadata, language)?.length === 0 ? <p>{t("No charge-line field changes recorded.")}</p> : null}
+                  </div> : null}
+                {!["planning_charges_saved", "operational_charge_saved", "operational_charge_removed", "quote_charge_decisions", "provisional_cancelled", "provisional_reopened", "route_mode_changed", "route_references_updated", "route_cutoffs_updated"].includes(event.type) ? <dl className="mt-3 grid gap-2 text-[12px]">
+                  {Object.entries(asRecord(event.metadata)).length ? Object.entries(asRecord(event.metadata)).map(([key, value]) => <div key={key} className="min-w-0">
+                    <dt className="text-[var(--md-text)]">{t(key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ").replace(/^./, letter => letter.toUpperCase()))}</dt>
+                    <dd className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" data-i18n-skip>{formatBookingAuditValue(value)}</dd>
+                  </div>) : <div><dt className="sr-only">{t("Details")}</dt><dd>{t("No additional details were recorded for this entry.")}</dd></div>}
+                </dl> : null}
+                {["provisional_cancelled", "provisional_reopened"].includes(event.type) ? (
+                  <dl className="mt-2 grid gap-2 text-[12px]">
+                    <div>
+                      <dt className="text-[var(--md-subtle)]">{t("Reason")}</dt>
+                      <dd className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" data-i18n-skip>{recordText(asRecord(event.metadata), "reason") || t("Not recorded")}</dd>
+                    </div>
+                    {["keep", "discard"].includes(recordText(asRecord(event.metadata), "chargeDecision")) ? <div>
+                      <dt className="text-[var(--md-subtle)]">{t("Planning charges")}</dt>
+                      <dd>{t(recordText(asRecord(event.metadata), "chargeDecision") === "keep" ? "Kept as inactive planning information" : "Discarded from working charges; retained in audit history")}</dd>
+                    </div> : null}
+                  </dl>
+                ) : null}
+                {["route_mode_changed", "route_references_updated"].includes(event.type) ? <div className="mt-2 min-w-0">
+                  <p className="text-[12px] text-[var(--md-text)]">{t("Previous and current references")}</p>
                   <div className="mt-2 grid min-w-0 gap-3 sm:grid-cols-2">
                     {(["beforeReferences", "afterReferences"] as const).map((key) => {
                       const metadata = asRecord(event.metadata)
@@ -4088,9 +4307,9 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
                       </div>
                     })}
                   </div>
-                </details> : null}
-                {event.type === "route_cutoffs_updated" ? <details className="mt-2 min-w-0">
-                  <summary className="cursor-pointer py-1 text-xs text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2">{t("Previous and current cut-offs")}</summary>
+                </div> : null}
+                {event.type === "route_cutoffs_updated" ? <div className="mt-2 min-w-0">
+                  <p className="text-xs text-[var(--md-text)]">{t("Previous and current cut-offs")}</p>
                   <div className="mt-2 grid min-w-0 gap-3 sm:grid-cols-2">
                     {(["before", "after"] as const).map((key) => <div key={key} className="min-w-0 text-xs">
                       <p className="font-medium">{t(key === "before" ? "Previous" : "Current")}</p>
@@ -4102,7 +4321,8 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
                       </dl>
                     </div>)}
                   </div>
-                </details> : null}
+                </div> : null}
+                </details>
               </div>
             </div>
           ))}
@@ -4426,6 +4646,7 @@ function BookingQuoteSyncReviewPanel({
 }
 
 function BookingDetailTabPage({
+  planningCharges,
   onAssignCustomer,
   renderDangerousGoods,
   renderSecurityEvidence,
@@ -4463,6 +4684,7 @@ function BookingDetailTabPage({
   record,
   workspace,
 }: {
+  planningCharges?: ReactNode
   onAssignCustomer: () => void
   renderDangerousGoods?: (cargo: BookingWorkflowCargo, renderHandling?: (entry: ReactNode, records: ReactNode, unsaved: boolean) => ReactNode) => ReactNode
   renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
@@ -4503,7 +4725,7 @@ function BookingDetailTabPage({
   if (activeTab === "Details") return <BookingRecordDetails weightValidation={weightValidation} renderDangerousGoods={renderDangerousGoods} renderSecurityEvidence={renderSecurityEvidence} renderMilestones={renderMilestones} allocationEditor={allocationEditor} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace customsError={customsError} navigate={navigate} onWorkspaceSaved={onWorkspaceSaved} onViewChange={onCustomsViewChange} readiness={customsReadiness} record={record} view={customsView} />
-  if (activeTab === "Finance") return <BookingFinanceWorkspace record={record} />
+  if (activeTab === "Finance") return planningCharges ?? <BookingFinanceWorkspace record={record} />
   if (activeTab === "Notes") return <LifecycleNotes subjectType="booking" subjectId={record.workspace?.booking.jobId ?? null} />
   if (activeTab === "Audit") return <BookingActivityWorkspace record={record} />
   return <BookingDecisionOverview record={record} onAssignCustomer={editable ? onAssignCustomer : undefined} />
@@ -4663,9 +4885,18 @@ export function BookingDetailWorkspace({
   const [draftBooking, setDraftBooking] = useState<LiveBooking | null>(null)
   const [draftWorkspace, setDraftWorkspace] = useState<BookingWorkflowWorkspace | null>(null)
   const [bookingLookups, setBookingLookups] = useState<QuoteWorkflowSources | null>(null)
+  const [ownershipForm, setOwnershipForm] = useState<{ officeId: string; ownerId: string; updatedAt: string } | null>(null)
+  const [ownershipBusy, setOwnershipBusy] = useState(false)
+  const [ownershipSaved, setOwnershipSaved] = useState(false)
+  const [ownershipError, setOwnershipError] = useState<string | null>(null)
+  const ownershipRequestRef = useRef(false)
+  const ownershipTriggerRef = useRef<HTMLButtonElement>(null)
   const [locationDirectory, setLocationDirectory] = useState<readonly UnlocodeDirectoryRecord[]>([])
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-found" | "error">("loading")
   const [savingDetails, setSavingDetails] = useState(false)
+  const [planningPending, setPlanningPending] = useState(false)
+  const planningPendingRef = useRef(false)
+  planningPendingRef.current = planningPending
   const [saveError, setSaveError] = useState<string | null>(null)
   const [allocationValidationAttempt, setAllocationValidationAttempt] = useState(0)
   const [weightValidation, setWeightValidation] = useState<{ attempt: number; index: number | null; field?: "description" }>()
@@ -4689,7 +4920,7 @@ export function BookingDetailWorkspace({
   const [pendingNavigation, setPendingNavigation] = useState(false)
   const [pendingLifecycle, setPendingLifecycle] = useState<BookingLifecycle | null>(null)
   const [provisionalAction, setProvisionalAction] = useState<"cancel" | "reopen" | null>(null)
-  const [provisionalReason, setProvisionalReason] = useState("")
+  const provisionalReasonRef = useRef<HTMLTextAreaElement>(null)
   const [provisionalDecision, setProvisionalDecision] = useState<"keep" | "discard" | "">("")
   const [provisionalError, setProvisionalError] = useState<string | null>(null)
   const [provisionalBusy, setProvisionalBusy] = useState(false)
@@ -4704,8 +4935,8 @@ export function BookingDetailWorkspace({
   const detailsDirty = Boolean(record && ((draftBooking && JSON.stringify(draftBooking) !== JSON.stringify(record.booking)) || (draftWorkspace && JSON.stringify(draftWorkspace) !== JSON.stringify(record.workspace))))
   const navigationDirtyRef = useRef(detailsDirty || savingDetails)
   navigationDirtyRef.current = detailsDirty || savingDetails
-  const canEditBooking = hasPermission(currentUser, "Bookings.Write") && !record?.workspace?.provisionalCancellation?.cancelled && !provisionalBusy && !provisionalSaved
-  navigationDirtyRef.current = detailsDirty || savingDetails || provisionalBusy || provisionalSaved
+  const canEditBooking = hasPermission(currentUser, "Bookings.Write") && !record?.workspace?.provisionalCancellation?.cancelled && !provisionalBusy && !provisionalSaved && !ownershipForm
+  navigationDirtyRef.current = detailsDirty || savingDetails || provisionalBusy || provisionalSaved || planningPending || Boolean(ownershipForm)
   const draftFingerprint = JSON.stringify([draftBooking, draftWorkspace])
 
   useEffect(() => {
@@ -4715,17 +4946,21 @@ export function BookingDetailWorkspace({
   }, [loadState, record, detailsDirty, draftFingerprint, savingDetails, applyingQuoteSync, canEditBooking, pendingNavigation])
 
   useEffect(() => {
-    if (detailsDirty || savingDetails || provisionalBusy || provisionalSaved || !pendingNavigationRef.current) return
+    if (detailsDirty || savingDetails || provisionalBusy || provisionalSaved || planningPending || !pendingNavigationRef.current) return
     const proceed = pendingNavigationRef.current
     pendingNavigationRef.current = null
     setPendingNavigation(false)
     proceed()
-  }, [detailsDirty, savingDetails, provisionalBusy, provisionalSaved])
+  }, [detailsDirty, savingDetails, provisionalBusy, provisionalSaved, planningPending])
 
   useEffect(() => {
     function beforeNavigate(event: Event) {
       if (!navigationDirtyRef.current) return
       event.preventDefault()
+      if (planningPendingRef.current) {
+        toast.error(t("Save your planning charges or discard unsaved edits using Reload charges before leaving."))
+        return
+      }
       pendingNavigationRef.current = (event as CustomEvent<{ proceed: () => void }>).detail.proceed
       setPendingNavigation(true)
     }
@@ -4746,6 +4981,10 @@ export function BookingDetailWorkspace({
 
 
   function changeActiveTab(nextTab: BookingDetailTab) {
+    if (planningPending && nextTab !== activeTab) {
+      toast.error(t("Save your planning charges or discard unsaved edits using Reload charges before switching tabs."))
+      return
+    }
     setCustomsView("source")
     setActiveTab(nextTab)
   }
@@ -4824,11 +5063,11 @@ export function BookingDetailWorkspace({
   }, [bookingId])
 
   useEffect(() => {
-    if (activeTab !== "Details" || (bookingLookups && locationDirectory.length)) return
+    if (bookingLookups && (activeTab !== "Details" || locationDirectory.length)) return
     let cancelled = false
     void Promise.all([
       bookingLookups ? Promise.resolve(bookingLookups) : getQuoteSources(),
-      locationDirectory.length ? Promise.resolve(locationDirectory) : loadUnlocodeDirectory(),
+      activeTab !== "Details" || locationDirectory.length ? Promise.resolve(locationDirectory) : loadUnlocodeDirectory(),
     ]).then(([sources, locations]) => {
       if (cancelled) return
       setBookingLookups(sources)
@@ -5230,7 +5469,7 @@ export function BookingDetailWorkspace({
   }
 
   async function applyQuoteSyncFields(fields: string[], confirmModeChange = false) {
-    if (!quoteSyncReview || !loadedRecord.workspace || applyingQuoteSync || detailsDirty || fields.length === 0) return
+    if (!quoteSyncReview || !loadedRecord.workspace || planningPending || applyingQuoteSync || detailsDirty || fields.length === 0) return
     setApplyingQuoteSync(true)
     setQuoteSyncError(null)
     try {
@@ -5291,17 +5530,9 @@ export function BookingDetailWorkspace({
     const shipper = workspace.parties.find((party) => party.role.toLowerCase() === "shipper")
     const consignee = workspace.parties.find((party) => party.role.toLowerCase() === "consignee")
     const editableDetails = asRecord(workspace.booking.editableDetails)
-    const sourceQuote = bookingQuoteHandoff(workspace).quote
-    const sourceOwnerId = recordText(sourceQuote, "salesOwnerId")
-    const sourceOwnerName = bookingLookups?.users.find((user) => user.id === sourceOwnerId)?.name
-      || recordText(sourceQuote, "salesOwner")
-      || currentUser?.name
-      || currentUser?.email
-      || ""
     const effectiveEditableDetails = {
       ...editableDetails,
       quoteType: recordText(editableDetails, "quoteType") || draftBooking.direction,
-      ownerName: recordText(editableDetails, "ownerName") || sourceOwnerName,
     }
     const incotermsText = Object.prototype.hasOwnProperty.call(editableDetails, "incoterms") ? recordText(editableDetails, "incoterms").trim() : ""
     const incotermParts = incotermsText ? incotermsText.split(/\s+/) : []
@@ -5392,7 +5623,13 @@ export function BookingDetailWorkspace({
   }
 
   async function sendToCustoms() {
-    if (!loadedRecord.workspace || !customsReadiness?.ready || sendingToCustoms || detailsDirty || savingDetails) return
+    if (sendingToCustoms) return
+    if (!loadedRecord.workspace || !customsReadiness?.ready || planningPending || detailsDirty || savingDetails) {
+      toast.warning(t(planningPending ? "Save or discard charge changes before sending to Customs."
+        : detailsDirty || savingDetails ? "Wait for Booking changes to save before sending to Customs."
+          : "Complete the Customs readiness checklist first."))
+      return
+    }
     customsHandoffKeyRef.current ??= crypto.randomUUID()
     setSendingToCustoms(true)
     try {
@@ -5417,11 +5654,11 @@ export function BookingDetailWorkspace({
   }
 
   function requestDocumentAttachment(documentType: "commercial_invoice" | "packing_list") {
-    if (uploadingDocumentType) return
+    if (uploadingDocumentType || loadedRecord.workspace?.provisionalCancellation?.cancelled) return
     setPendingDocumentType(documentType)
     window.setTimeout(() => {
       const input = bookingDocumentInputRef.current
-      if (!input) {
+      if (!input || input.disabled) {
         setPendingDocumentType(null)
         return
       }
@@ -5432,7 +5669,7 @@ export function BookingDetailWorkspace({
 
   async function uploadSelectedBookingDocument(file: File | undefined) {
     const documentType = pendingDocumentType
-    if (!file || !documentType || !loadedRecord.workspace) {
+    if (!file || !documentType || !loadedRecord.workspace || loadedRecord.workspace.provisionalCancellation?.cancelled) {
       setPendingDocumentType(null)
       return
     }
@@ -5451,14 +5688,14 @@ export function BookingDetailWorkspace({
 
   async function submitProvisionalAction() {
     const workspace = loadedRecord.workspace
-    if (!workspace?.provisionalCancellation?.supported || !provisionalAction || provisionalRequestRef.current || detailsDirty || savingDetails || applyingQuoteSync || !hasPermission(currentUser, "Bookings.Write")) return
+    if (!workspace?.provisionalCancellation?.supported || !provisionalAction || provisionalRequestRef.current || planningPending || detailsDirty || savingDetails || applyingQuoteSync || !hasPermission(currentUser, "Bookings.Write")) return
     provisionalRequestRef.current = true
     setProvisionalBusy(true)
     setProvisionalError(null)
     let saved = provisionalSaved
     try {
       if (!saved) {
-        await changeProvisionalBooking(workspace.booking.jobId, provisionalAction, provisionalReason, workspace.booking.updatedAt, provisionalDecision || undefined)
+        await changeProvisionalBooking(workspace.booking.jobId, provisionalAction, provisionalReasonRef.current?.value ?? "", workspace.booking.updatedAt, provisionalDecision || undefined)
         saved = true
         setProvisionalSaved(true)
       }
@@ -5495,7 +5732,8 @@ export function BookingDetailWorkspace({
             <form className="space-y-4" onSubmit={event => { event.preventDefault(); void submitProvisionalAction() }}>
               <div className="space-y-2">
                 <label htmlFor="provisional-reason" className="text-[13px] font-medium">{t("Reason (required)")}</label>
-                <Textarea id="provisional-reason" required maxLength={2000} value={provisionalReason} disabled={provisionalBusy || provisionalSaved} onChange={event => setProvisionalReason(event.target.value)} />
+                {/* Keep keystrokes out of the large workspace render/draft-comparison path. */}
+                <Textarea ref={provisionalReasonRef} id="provisional-reason" required maxLength={2000} defaultValue="" disabled={provisionalBusy || provisionalSaved} />
               </div>
               {provisionalAction === "cancel" && (loadedRecord.workspace?.provisionalCancellation?.planningChargeCount ?? 0) > 0 ? (
                 <fieldset className="space-y-2" disabled={provisionalBusy || provisionalSaved}>
@@ -5520,6 +5758,27 @@ export function BookingDetailWorkspace({
           {latestSavedReview && draftBooking ? <div className="overflow-x-auto"><table className="w-full text-left text-[12px]"><thead><tr><th className="p-2">{t("Field")}</th><th className="p-2">{t("Saved")}</th><th className="p-2">{t("Your edit")}</th></tr></thead><tbody>{bookingDraftConflicts({ booking: loadedRecord.booking, workspace: loadedRecord.workspace }, { booking: bookingWorkspaceRecord(latestSavedReview).booking, workspace: latestSavedReview }, { booking: draftBooking, workspace: draftWorkspace }).map(item => <tr key={item.field}><td className="p-2">{item.field}</td><td className="break-words p-2" data-i18n-skip>{item.saved}</td><td className="break-words p-2" data-i18n-skip>{item.draft}</td></tr>)}</tbody></table></div> : null}
           <DialogFooter><Button variant="ghost" onClick={() => setLatestSavedReview(null)}>{t("Cancel")}</Button><Button disabled={savingDetails} onClick={() => { if (!latestSavedReview || !draftBooking || !draftWorkspace) return; const fresh = bookingWorkspaceRecord(latestSavedReview); setDraftBooking(rebaseBookingDraft(fresh.booking, loadedRecord.booking, draftBooking)); setDraftWorkspace(rebaseBookingDraft(latestSavedReview, loadedRecord.workspace!, draftWorkspace)); setRecord(fresh); setLatestSavedReview(null); failedSaveFingerprintRef.current = null; setSaveError(null) }}>{t("Keep my edits and retry")}</Button></DialogFooter></DialogContent>
         </Dialog>
+        <Dialog open={ownershipForm !== null} onOpenChange={(open) => { if (!open && !ownershipBusy && !ownershipSaved) setOwnershipForm(null) }}>
+          <DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); ownershipTriggerRef.current?.focus() }}>
+            <DialogHeader><DialogTitle>{t("Booking ownership")}</DialogTitle><DialogDescription>{t("The owner is responsible for this Booking. Every saved change is audited against the signed-in person who makes it.")}</DialogDescription></DialogHeader>
+            {!loadedRecord.workspace?.ownership?.supported ? <p role="status" className="text-[13px] text-[var(--md-text)]">{t("Ownership editing is awaiting the approved backend update. Nothing has changed.")}</p> : <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-[12px]">{t("Branch")}<Select value={ownershipForm?.officeId ?? ""} disabled={ownershipBusy || ownershipSaved || !loadedRecord.workspace.ownership.editable} onValueChange={(officeId) => setOwnershipForm(form => form && ({ ...form, officeId }))}><SelectTrigger aria-label={t("Branch")}><SelectValue /></SelectTrigger><SelectContent>{loadedRecord.workspace.ownership.offices.map(office => <SelectItem key={office.id} value={office.id}>{office.name}</SelectItem>)}</SelectContent></Select></label>
+              <label className="grid gap-1.5 text-[12px]">{t("Booking owner")}<Select value={ownershipForm?.ownerId ?? ""} disabled={ownershipBusy || ownershipSaved || !loadedRecord.workspace.ownership.editable} onValueChange={(ownerId) => setOwnershipForm(form => form && ({ ...form, ownerId }))}><SelectTrigger aria-label={t("Booking owner")}><SelectValue placeholder={t("Choose owner")} /></SelectTrigger><SelectContent>{loadedRecord.workspace.ownership.users.map(user => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}</SelectContent></Select></label>
+            </div>}
+            {ownershipError ? <p role="alert" className="text-[12px] text-[var(--md-red)]">{ownershipError}</p> : null}
+            <DialogFooter><Button variant="ghost" disabled={ownershipBusy || ownershipSaved} onClick={() => setOwnershipForm(null)}>{t("Cancel")}</Button><Button disabled={ownershipBusy || !loadedRecord.workspace?.ownership?.editable || !ownershipForm?.ownerId || !ownershipForm.officeId} onClick={async () => {
+              if (!ownershipForm || !loadedRecord.workspace || ownershipRequestRef.current || detailsDirty || planningPending) return
+              ownershipRequestRef.current = true; setOwnershipBusy(true); setOwnershipError(null)
+              let saved = ownershipSaved
+              try {
+                if (!saved) { await saveBookingOwnership(loadedRecord.workspace.booking.jobId, ownershipForm.officeId, ownershipForm.ownerId, ownershipForm.updatedAt); saved = true; setOwnershipSaved(true) }
+                await applySavedWorkspace(await getBookingWorkflow(loadedRecord.id))
+                setOwnershipForm(null); setOwnershipSaved(false)
+              } catch (error) { setOwnershipError(saved ? t("Ownership was saved, but the screen could not refresh. Retry refresh; the change will not be repeated.") : error instanceof Error ? error.message : t("Ownership could not be saved.")) }
+              finally { ownershipRequestRef.current = false; setOwnershipBusy(false) }
+            }}>{t(ownershipBusy ? "Saving…" : ownershipSaved ? "Retry refresh" : "Save ownership")}</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
         <BookingDetailHeader
           activeTab={activeTab}
           navigate={navigate}
@@ -5531,10 +5790,25 @@ export function BookingDetailWorkspace({
           onAttachDocument={requestDocumentAttachment}
           onDiscardDetails={discardDetails}
           onReviewCustoms={() => {
+            if (planningPending) { changeActiveTab("Customs"); return }
             setCustomsView("review")
             setActiveTab("Customs")
           }}
-          canChangeLifecycle={canEditBooking}
+          canChangeLifecycle={canEditBooking && !planningPending}
+          ownershipControl={<Button ref={ownershipTriggerRef} variant="ghost" size="sm" className="h-8 min-w-0 max-w-full gap-2 rounded-[var(--md-radius-lg)] px-2 text-[11.5px]" disabled={detailsDirty || savingDetails || planningPending || applyingQuoteSync || provisionalBusy} aria-label={`${t("Booking branch and owner")}: ${loadedRecord.workspace?.ownership?.branch || bookingLookups?.offices.find(o => o.id === loadedRecord.workspace?.booking.officeId)?.name || t("Branch")}, ${loadedRecord.workspace ? bookingOwnerLabel(loadedRecord.workspace) : t("Unassigned")}`} onClick={() => {
+            const workspace = loadedRecord.workspace
+            if (!workspace) return
+            setOwnershipForm({ officeId: workspace.ownership?.officeId ?? workspace.booking.officeId, ownerId: workspace.ownership?.ownerId ?? workspace.booking.operationsOwnerId ?? "", updatedAt: workspace.booking.updatedAt })
+            setOwnershipSaved(false); setOwnershipError(null)
+          }}><Building2 className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{loadedRecord.workspace?.ownership?.branch || bookingLookups?.offices.find(o => o.id === loadedRecord.workspace?.booking.officeId)?.name || t("Branch")}</span><span aria-hidden="true">·</span><span className="truncate">{loadedRecord.workspace ? bookingOwnerLabel(loadedRecord.workspace) : t("Unassigned")}</span><ChevronDown className="size-3 shrink-0" aria-hidden="true" /></Button>}
+          provisionalActionControl={loadedRecord.workspace?.provisionalCancellation?.supported &&
+            (bookingLifecycle(loadedRecord.workspace.booking.status) === "draft" || loadedRecord.workspace.provisionalCancellation.cancelled) &&
+            !loadedRecord.workspace.provisionalCancellation.requiresFinanceReview ? (
+              <Button ref={provisionalTriggerRef} variant="outline" size="sm" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11.5px]" disabled={!hasPermission(currentUser, "Bookings.Write") || planningPending || detailsDirty || savingDetails || applyingQuoteSync || provisionalBusy || (loadedRecord.workspace.provisionalCancellation.cancelled && !loadedRecord.workspace.provisionalCancellation.canReopen)}
+                onClick={() => { if (provisionalReasonRef.current) provisionalReasonRef.current.value = ""; setProvisionalAction(loadedRecord.workspace!.provisionalCancellation!.cancelled ? "reopen" : "cancel"); setProvisionalDecision(""); setProvisionalSaved(false); setProvisionalError(null) }}>
+                {t(loadedRecord.workspace.provisionalCancellation.cancelled ? "Reopen as Provisional" : "Cancel provisional booking")}
+              </Button>
+            ) : null}
           onLifecycleChange={setPendingLifecycle}
           onSaveDetails={() => { failedSaveFingerprintRef.current = null; void saveDetails() }}
           onSendToCustoms={() => void sendToCustoms()}
@@ -5542,15 +5816,10 @@ export function BookingDetailWorkspace({
           record={{ ...visibleRecord, workspace: draftWorkspace ?? visibleRecord.workspace }}
           sendingToCustoms={sendingToCustoms}
         />
-        {loadedRecord.workspace?.provisionalCancellation?.supported && (bookingLifecycle(loadedRecord.workspace.booking.status) === "draft" || loadedRecord.workspace.provisionalCancellation.cancelled) ? (
+        {loadedRecord.workspace?.provisionalCancellation?.supported && (bookingLifecycle(loadedRecord.workspace.booking.status) === "draft" || loadedRecord.workspace.provisionalCancellation.cancelled) && (!loadedRecord.workspace.provisionalCancellation.reviewPricesAndDates || loadedRecord.workspace.provisionalCancellation.cancelled || loadedRecord.workspace.provisionalCancellation.requiresFinanceReview) ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-3 py-2 text-[13px] shadow-[var(--md-shadow-line)]">
-            <span>{t(loadedRecord.workspace.provisionalCancellation.cancelled ? "Cancelled — retained for audit, excluded from financial figures." : loadedRecord.workspace.provisionalCancellation.reviewPricesAndDates ? "Reopened — review prices and dates before moving to In progress." : "Provisional — excluded from financial figures.")}</span>
-            {loadedRecord.workspace.provisionalCancellation.requiresFinanceReview ? <span className="text-[var(--md-amber)]">{t("Existing financial records require Finance review before cancellation or reopening.")}</span> : (
-              <Button ref={provisionalTriggerRef} variant="outline" size="sm" disabled={!hasPermission(currentUser, "Bookings.Write") || detailsDirty || savingDetails || applyingQuoteSync || provisionalBusy || (loadedRecord.workspace.provisionalCancellation.cancelled && !loadedRecord.workspace.provisionalCancellation.canReopen)}
-                onClick={() => { setProvisionalAction(loadedRecord.workspace!.provisionalCancellation!.cancelled ? "reopen" : "cancel"); setProvisionalReason(""); setProvisionalDecision(""); setProvisionalSaved(false); setProvisionalError(null) }}>
-                {t(loadedRecord.workspace.provisionalCancellation.cancelled ? "Reopen as Provisional" : "Cancel provisional booking")}
-              </Button>
-            )}
+            <span>{t(loadedRecord.workspace.provisionalCancellation.cancelled ? "Cancelled — retained for audit, excluded from financial figures." : "Provisional — excluded from financial figures.")}</span>
+            {loadedRecord.workspace.provisionalCancellation.requiresFinanceReview ? <span className="text-[var(--md-amber)]">{t("Existing financial records require Finance review before cancellation or reopening.")}</span> : null}
           </div>
         ) : null}
         {saveError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-status-red-bg)] px-3 py-2 text-[12px] text-[var(--md-status-red-ink)]">
@@ -5560,7 +5829,7 @@ export function BookingDetailWorkspace({
           <BookingQuoteSyncReviewPanel
             busy={applyingQuoteSync}
             refreshing={quoteSyncCheckState === "loading"}
-            detailsDirty={detailsDirty}
+            detailsDirty={detailsDirty || planningPending}
             expanded={activeTab === "Details"}
             error={quoteSyncError}
             onApply={(fields, confirmModeChange) => void applyQuoteSyncFields(fields, confirmModeChange)}
@@ -5649,6 +5918,19 @@ export function BookingDetailWorkspace({
               }}
             /> : undefined}
             activeTab={activeTab}
+            planningCharges={loadedRecord.workspace?.provisionalCancellation?.planningEditorSupported &&
+              (bookingLifecycle(loadedRecord.workspace.booking.status) === "draft" || loadedRecord.workspace.provisionalCancellation.cancelled) ?
+              <BookingPlanningChargesWorkspace key={`${loadedRecord.workspace.booking.jobId}:${loadedRecord.workspace.booking.status}`}
+                jobId={loadedRecord.workspace.booking.jobId} reference={loadedRecord.workspace.booking.bookingReference}
+                blocked={detailsDirty || savingDetails || applyingQuoteSync || provisionalBusy}
+                onPendingChange={setPlanningPending} onSaved={applySavedWorkspace} /> : loadedRecord.workspace?.provisionalCancellation?.operationalEditorSupported ?
+              <BookingOperationalChargesWorkspace key={`${loadedRecord.workspace.booking.jobId}:${loadedRecord.workspace.booking.status}`}
+                jobId={loadedRecord.workspace.booking.jobId} reference={loadedRecord.workspace.booking.bookingReference}
+                blocked={detailsDirty || savingDetails || applyingQuoteSync || provisionalBusy}
+                onPendingChange={setPlanningPending} onSaved={async workspace => {
+                  await applySavedWorkspace(workspace)
+                  await refreshQuoteSyncReview(workspace.booking.jobId)
+                }} fallback={<BookingFinanceWorkspace record={loadedRecord} />} /> : undefined}
             bookingLookups={bookingLookups}
             currentUser={currentUser}
             locationDirectory={locationDirectory}
@@ -5684,6 +5966,7 @@ export function BookingDetailWorkspace({
           type="file"
           accept=".pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx"
           aria-label={t("Attach document")}
+          disabled={Boolean(uploadingDocumentType) || Boolean(loadedRecord.workspace?.provisionalCancellation?.cancelled)}
           onChange={(event) => { void uploadSelectedBookingDocument(event.target.files?.[0]); event.currentTarget.value = "" }}
         />
       </div>
