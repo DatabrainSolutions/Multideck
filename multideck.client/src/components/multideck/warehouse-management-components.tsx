@@ -1,3 +1,5 @@
+import { SpreadsheetImportReview } from "./spreadsheet-import-review"
+import { InlineNotice } from "./inline-notice"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
@@ -5,7 +7,7 @@ import { workspaceStorageKey } from "@/lib/workspace-environment"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
-import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, Download, FileSpreadsheet, Loader2, MapPin, Package, Pencil, Plus, RefreshCw, Trash2, Upload, Warehouse } from "@/components/icons/hugeicons"
+import { AlertCircle, ArrowLeft, ChevronDown, Download, FileSpreadsheet, Loader2, MapPin, Package, Pencil, Plus, RefreshCw, Trash2, Upload, Warehouse } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -23,7 +25,7 @@ import { DataTable, type DataTableColumn } from "@/components/multideck/data-tab
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { WizardDialog, WizardSaveNowButton, type WizardStep } from "@/components/multideck/wizard-dialog"
 import { itemDetailPath } from "@/components/multideck/warehouse-item-detail"
-import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch, registerButtonClass, registerControlClass } from "@/components/multideck/register-toolbar"
+import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch, registerControlClass } from "@/components/multideck/register-toolbar"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { cn } from "@/lib/utils"
 import { mdMotion, staggerRamp } from "@/lib/motion"
@@ -35,6 +37,8 @@ import {
   createWarehouseItem,
   createWarehouseLocation,
   downloadWarehouseItemsTemplate,
+  downloadWarehouseLocationsTemplate,
+  importWarehouseLocations,
   importWarehouseItems,
   deleteWarehouseFacility,
   deleteWarehouseItem,
@@ -1230,6 +1234,10 @@ function ImportItemsDialog({
   const [file, setFile] = useState<File | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [importing, setImporting] = useState(false)
+  const busyRef = useRef(false)
+  const [error, setError] = useState<string | null>(null)
+  const [reviewed, setReviewed] = useState(false)
+  const [completed, setCompleted] = useState(false)
   const [result, setResult] = useState<ImportItemsResult | null>(null)
   const { t } = useLanguage()
 
@@ -1242,6 +1250,9 @@ function ImportItemsDialog({
     setFacilityId(reference?.facilities[0]?.id ?? "")
     setFile(null)
     setResult(null)
+    setError(null)
+    setReviewed(false)
+    setCompleted(false)
   }, [open, reference])
 
   useEffect(() => {
@@ -1254,8 +1265,6 @@ function ImportItemsDialog({
           if (!active) return
           setCustomerRows(page.rows)
           setCustomerError(null)
-          setSelectedCustomer((current) => current ?? page.rows[0] ?? null)
-          setCustomerOrgId((current) => current || page.rows[0]?.id || "")
         })
         .catch((error) => { if (active) { setCustomerRows([]); setCustomerError(error instanceof Error ? error.message : String(error)) } })
         .finally(() => { if (active) setCustomerLoading(false) })
@@ -1275,50 +1284,62 @@ function ImportItemsDialog({
     }
   }
 
-  async function handleImport() {
-    if (!file || !customerOrgId || !facilityId) return
-    setImporting(true)
+  function resetReview() {
     setResult(null)
+    setReviewed(false)
+    setCompleted(false)
+    setError(null)
+  }
+
+  async function handleImport() {
+    if (!file || !customerOrgId || !facilityId || busyRef.current) return
+    if (!file.name.toLowerCase().endsWith(".xlsx") || file.size === 0 || file.size > 10 * 1024 * 1024) {
+      setError(t("Choose an .xlsx file no larger than 10 MB."))
+      return
+    }
+    busyRef.current = true
+    setImporting(true)
+    setError(null)
     try {
-      const response = await importWarehouseItems({ customerOrgId, facilityId, file })
+      const preview = !reviewed
+      const response = await importWarehouseItems({ customerOrgId, facilityId, file, preview })
       setResult(response)
-      if (response.created > 0) {
-        toast.success(`Imported ${response.created} item(s)`)
-        onImported()
-      }
-      if (response.failed > 0) {
-        toast.error(`${response.failed} item(s) could not be imported`)
-      }
-      if (response.created === 0 && response.failed === 0) {
-        toast.error("No items were found in the spreadsheet")
-      }
+      setReviewed(preview && response.failed === 0 && response.results.length > 0)
+      setCompleted(response.preview === false)
+      if (!response.results.length) setError(t("No rows were found. Fill in the template and upload it again."))
+      if (!preview && response.created > 0) onImported()
     } catch (error) {
-      const message = error instanceof WarehouseApiError ? error.message : String(error)
-      toast.error("Items could not be imported", { description: message })
+      setReviewed(false)
+      setError(error instanceof Error ? error.message : String(error))
+      // A connection loss can happen after the server saved. Review again so
+      // duplicate checks reconcile the file before another creation attempt.
+      setResult(null)
+      if (reviewed) onImported()
     } finally {
+      busyRef.current = false
       setImporting(false)
     }
   }
 
-  const failedResults = result?.results.filter((row) => !row.success) ?? []
-  const canImport = Boolean(file && customerOrgId && facilityId && !importing)
+  const canImport = Boolean(file && customerOrgId && facilityId && !importing && !completed && !result?.failed)
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[680px]">
+    <Dialog open={open} onOpenChange={(value) => { if (!busyRef.current) onOpenChange(value) }}>
+      <DialogContent showCloseButton={!importing} className="max-h-[90dvh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[680px]">
         <DialogHeader className={warehouseDialogHeaderClass}>
           <DialogTitle className="text-[16px] font-medium">Import items</DialogTitle>
           <DialogDescription className="text-[13px] text-[var(--md-text)]">
-            Bulk-create items from a spreadsheet. Every imported item is created for the customer and facility you choose here.
+            Choose a customer and facility once. Fill in SKU and Description for each item, then review before creating.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3.5 px-6 py-4">
+        <div className="grid min-h-0 gap-4 overflow-y-auto px-6 py-4">
+          <fieldset disabled={importing} className="grid min-w-0 gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <WarehouseFormField label="Customer" required>
               <div className="grid gap-1.5">
                 <Input aria-label={t("Search customers by code or name")} value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} className={fieldControlClass} placeholder={t("Search customers by code or name")} />
-                <Select value={customerOrgId} onValueChange={(value) => { setCustomerOrgId(value); setSelectedCustomer(customerRows.find((customer) => customer.id === value) ?? selectedCustomer) }}>
+                <Select value={customerOrgId} onValueChange={(value) => { resetReview(); setCustomerOrgId(value); setSelectedCustomer(customerRows.find((customer) => customer.id === value) ?? selectedCustomer) }}>
                   <SelectTrigger className={fieldControlClass}><SelectValue placeholder={customerLoading ? t("Loading customers") : "Choose a customer"} /></SelectTrigger>
                   <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
                     {[...(selectedCustomer && !customerRows.some((customer) => customer.id === selectedCustomer.id) ? [selectedCustomer] : []), ...customerRows].map((customer) => (
@@ -1330,7 +1351,7 @@ function ImportItemsDialog({
               </div>
             </WarehouseFormField>
             <WarehouseFormField label="Facility" required>
-              <Select value={facilityId} onValueChange={setFacilityId}>
+              <Select value={facilityId} onValueChange={(value) => { resetReview(); setFacilityId(value) }}>
                 <SelectTrigger className={fieldControlClass}><SelectValue placeholder="Choose a facility" /></SelectTrigger>
                 <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
                   {reference?.facilities.map((facility) => (
@@ -1344,7 +1365,7 @@ function ImportItemsDialog({
           <div className="flex items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-2.5 shadow-[var(--md-shadow-line)]">
             <span className="min-w-0">
               <span className="block text-[12.5px] font-medium text-[var(--md-ink)]">Step 1 - Download the template</span>
-              <span className="mt-0.5 block text-[11px] leading-4 text-[var(--md-subtle)]">An .xlsx with every item field and two example rows.</span>
+              <span className="mt-0.5 block text-[11px] leading-4 text-[var(--md-subtle)]">Only SKU and Description are required. Optional columns cover units, dimensions, customs and handling. Instructions and examples are on separate sheets.</span>
             </span>
             <Button type="button" variant="ghost" onClick={handleDownloadTemplate} disabled={downloading} className="h-9 shrink-0 rounded-[var(--md-radius-md)] bg-white/60 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80">
               {downloading ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Download data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
@@ -1354,57 +1375,40 @@ function ImportItemsDialog({
 
           <div className="grid gap-2">
             <span className="text-[12.5px] font-medium text-[var(--md-ink)]">Step 2 - Upload the filled-in file</span>
-            <label className="flex cursor-pointer items-center gap-3 rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-3 shadow-[var(--md-shadow-line)] transition-colors hover:bg-white/68">
+            <label className="flex cursor-pointer items-center gap-3 focus-within:ring-2 focus-within:ring-[var(--md-accent)] rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-3 shadow-[var(--md-shadow-line)] transition-colors hover:bg-white/68">
               <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
                 <FileSpreadsheet className="size-4" strokeWidth={1.4} aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{file ? file.name : "Choose .xlsx file"}</span>
-                <span className="mt-0.5 block text-[11px] text-[var(--md-subtle)]">Each row needs at least SKU, Base UOM, and Description.</span>
+                <span className="mt-0.5 block text-[11px] text-[var(--md-subtle)]">Excel .xlsx · up to 2,000 rows / 10 MB. Blank Base UOM defaults to EA.</span>
               </span>
               <input
                 type="file"
                 accept=".xlsx"
-                className="hidden"
+                aria-label={t("Upload items spreadsheet")} className="sr-only"
                 onChange={(event) => {
-                  setResult(null)
+                  resetReview()
                   setFile(event.target.files?.[0] ?? null)
                 }}
               />
             </label>
           </div>
 
-          {result ? (
-            <div className="grid gap-2 rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-3 shadow-[var(--md-shadow-line)]">
-              <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--md-ink)]">
-                <CheckCircle2 className="size-4 text-[var(--md-green)]" strokeWidth={1.5} aria-hidden="true" />
-                {result.created} created
-                {result.failed > 0 ? <span className="text-[var(--md-red)]">- {result.failed} failed</span> : null}
-              </div>
-              {failedResults.length ? (
-                <ul className="grid gap-1">
-                  {failedResults.slice(0, 4).map((row) => (
-                    <li key={`${row.row}-${row.sku ?? "row"}`} className="text-[11.5px] text-[var(--md-text)]">
-                      <span className="text-[var(--md-subtle)]">Row {row.row}</span>
-                      {row.sku ? <span data-i18n-skip dir="ltr"> ({row.sku})</span> : null}: {row.error}
-                    </li>
-                  ))}
-                  {failedResults.length > 4 ? (
-                    <li className="text-[11.5px] text-[var(--md-subtle)]">and {failedResults.length - 4} more...</li>
-                  ) : null}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
+          </fieldset>
+          {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+          {importing ? <div role="status" className="flex items-center gap-2 text-[13px]"><DotGridLoader decorative />{t(reviewed ? "Creating items. Keep this window open…" : "Checking your spreadsheet…")}</div> : null}
+          {result ? <SpreadsheetImportReview rows={result.results} completed={completed} /> : null}
+
         </div>
 
         <DialogFooter className={cn(warehouseDialogFooterClass, "flex-row items-center justify-end gap-2")}>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
+          <Button type="button" variant="ghost" disabled={importing} onClick={() => onOpenChange(false)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
             {result ? "Close" : "Cancel"}
           </Button>
           <Button type="button" onClick={handleImport} disabled={!canImport} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-50">
             {importing ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Upload data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
-            Import items
+            {t(reviewed ? `Create ${result?.results.length ?? 0} items` : "Review file")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1516,9 +1520,9 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
     setDialogOpen(true)
   }
 
-  function openImport() {
-    setImportOpen(true)
-  }
+  useEffect(() => subscribeTopBarAction(topBarActionEvents.importWarehouseItems, () => {
+    if (canManage && canCreate) setImportOpen(true)
+  }), [canManage, canCreate])
 
   function openItem(item: WarehouseItem) {
     writeWarehouseItemsReturnState({
@@ -1702,7 +1706,6 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
             toolbarTabs={toolbarTabs}
             toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search items" placeholder="SKU, description, customer" />}
             toolbarFilters={toolbarFilters}
-            toolbarOptions={canManage ? <button type="button" onClick={openImport} disabled={!canCreate} className={cn(registerButtonClass, "disabled:pointer-events-none disabled:opacity-45")}><Upload className="size-3.5" strokeWidth={1.4} aria-hidden="true" /><span className="hidden sm:inline">{t("Import")}</span></button> : null}
             serverSorting={{ value: sort, onChange: setSort }}
             pagination={{ offset, limit: warehouseRegisterPageSize, total, loading, onOffsetChange: setOffset, onLimitChange: setWarehouseRegisterPageSize, error: Boolean(loadError) }}
           />
@@ -2080,6 +2083,107 @@ function LocationDialog({
   )
 }
 
+function ImportLocationsDialog({ open, onOpenChange, facilityId, facilityName, reference, onImported }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  facilityId: string
+  facilityName: string
+  reference: WarehouseLocationReference | null
+  onImported: () => void
+}) {
+  const { t } = useLanguage()
+  const [defaultTypeCode, setDefaultTypeCode] = useState("")
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const busyRef = useRef(false)
+  const [result, setResult] = useState<ImportItemsResult | null>(null)
+  const [reviewed, setReviewed] = useState(false)
+  const [completed, setCompleted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function resetReview() {
+    setResult(null)
+    setReviewed(false)
+    setCompleted(false)
+    setError(null)
+  }
+  useEffect(() => {
+    if (!open) return
+    setDefaultTypeCode(reference?.types.find((type) => type.code === "bin")?.code ?? reference?.types[0]?.code ?? "")
+    setFile(null)
+    resetReview()
+  }, [open, facilityId, reference])
+
+  async function download() {
+    setDownloading(true)
+    setError(null)
+    try { await downloadWarehouseLocationsTemplate(facilityId) }
+    catch (error) { setError(error instanceof Error ? error.message : String(error)) }
+    finally { setDownloading(false) }
+  }
+  async function submit() {
+    if (!file || !defaultTypeCode || busyRef.current) return
+    if (!file.name.toLowerCase().endsWith(".xlsx") || file.size === 0 || file.size > 10 * 1024 * 1024) {
+      setError(t("Choose an .xlsx file no larger than 10 MB."))
+      return
+    }
+    busyRef.current = true
+    setBusy(true)
+    setError(null)
+    try {
+      const preview = !reviewed
+      const response = await importWarehouseLocations({ facilityId, defaultTypeCode, file, preview })
+      setResult(response)
+      setReviewed(preview && response.failed === 0 && response.results.length > 0)
+      setCompleted(response.preview === false)
+      if (!response.results.length) setError(t("No rows were found. Fill in the template and upload it again."))
+      if (!preview && response.created > 0) onImported()
+    } catch (error) {
+      setReviewed(false)
+      setResult(null)
+      setError(error instanceof Error ? error.message : String(error))
+      if (reviewed) onImported()
+    } finally { busyRef.current = false; setBusy(false) }
+  }
+
+  return <Dialog open={open} onOpenChange={(value) => { if (!busyRef.current) onOpenChange(value) }}>
+    <DialogContent showCloseButton={!busy} className="max-h-[90dvh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] sm:max-w-[680px]">
+      <DialogHeader className={warehouseDialogHeaderClass}>
+        <DialogTitle>{t("Import locations")}</DialogTitle>
+        <DialogDescription>{t("Add locations to")} <span data-i18n-skip>{facilityName}</span>. {t("Only a location code is required per row. Choose the default type once, then review before creating.")}</DialogDescription>
+      </DialogHeader>
+      <div className="grid min-h-0 gap-4 overflow-y-auto px-6 py-4">
+        <fieldset disabled={busy} className="grid min-w-0 gap-4">
+          <WarehouseFormField label={t("Default location type")} required hint={t("Used when Type is blank in the spreadsheet. Override it on individual rows if needed.")}>
+            <Select value={defaultTypeCode} onValueChange={(value) => { resetReview(); setDefaultTypeCode(value) }}>
+              <SelectTrigger aria-label={t("Default location type")} className={fieldControlClass}><SelectValue placeholder={t("Choose a location type")} /></SelectTrigger>
+              <SelectContent>{reference?.types.map((type) => <SelectItem key={type.code} value={type.code}>{type.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </WarehouseFormField>
+          {!reference ? <InlineNotice tone="warning">{t("Location types could not be loaded. Close this window and try again.")}</InlineNotice> : null}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1"><p className="text-[13px] font-medium">{t("1. Download the template")}</p><p className="mt-1 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Optional columns cover type, zone, barcode, position, capacity, temperature and storage rules. Instructions, examples and valid codes are included.")}</p></div>
+            <Button variant="outline" disabled={downloading || !reference} onClick={() => void download()}><Download className="size-4" />{t(downloading ? "Preparing…" : "Template")}</Button>
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="warehouse-location-import-file" className="text-[13px] font-medium">{t("2. Upload the filled-in file")}</label>
+            <Input id="warehouse-location-import-file" type="file" accept=".xlsx" aria-label={t("Upload locations spreadsheet")} className="h-auto min-h-10 py-2" onChange={(event) => { resetReview(); setFile(event.target.files?.[0] ?? null) }} />
+            <p className="text-[12px] text-[var(--md-subtle)]">{t("Excel .xlsx · up to 2,000 rows / 10 MB. Existing locations are never overwritten.")}</p>
+          </div>
+        </fieldset>
+        {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+        {busy ? <div role="status" className="flex items-center gap-2 text-[13px]"><DotGridLoader decorative />{t(reviewed ? "Creating locations. Keep this window open…" : "Checking your spreadsheet…")}</div> : null}
+        {result ? <SpreadsheetImportReview rows={result.results} completed={completed} /> : null}
+      </div>
+      <DialogFooter className={warehouseDialogFooterClass}>
+        <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>{t(result ? "Close" : "Cancel")}</Button>
+        <Button disabled={busy || !file || !defaultTypeCode || completed || Boolean(result?.failed)} onClick={() => void submit()}><Upload className="size-4" />{t(reviewed ? `Create ${result?.results.length ?? 0} locations` : "Review file")}</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+}
+
 export function WarehouseLocationsView() {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -2096,6 +2200,7 @@ export function WarehouseLocationsView() {
   const [search, setSearch] = useState("")
   const [activeFilter, setActiveFilter] = useState<(typeof locationFilters)[number]>(locationFilters[0])
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState<WarehouseLocation | null>(null)
 
   useEffect(() => {
@@ -2118,6 +2223,7 @@ export function WarehouseLocationsView() {
   useEffect(() => {
     if (!selectedFacilityId) return
     let active = true
+    setReference(null)
     getWarehouseLocationReference(selectedFacilityId)
       .then((data) => { if (active) setReference(data) })
       .catch(() => { /* reference is optional for viewing */ })
@@ -2175,6 +2281,10 @@ export function WarehouseLocationsView() {
     }
     return subscribeTopBarAction(topBarActionEvents.createWarehouseLocation, openFromTopBar)
   }, [selectedFacilityId])
+
+  useEffect(() => subscribeTopBarAction(topBarActionEvents.importWarehouseLocations, () => {
+    if (selectedFacilityId) setImportOpen(true)
+  }), [selectedFacilityId])
 
   function openEdit(location: WarehouseLocation) {
     setEditing(location)
@@ -2319,6 +2429,7 @@ export function WarehouseLocationsView() {
         </motion.div>
       )}
 
+      <ImportLocationsDialog open={importOpen} onOpenChange={setImportOpen} facilityId={selectedFacilityId} facilityName={facilityOptions.find((facility) => facility.id === selectedFacilityId)?.name ?? ""} reference={reference} onImported={() => void refresh()} />
       <LocationDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}

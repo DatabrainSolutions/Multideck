@@ -2,6 +2,9 @@ import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trai
 import dexterActivityTrailSource from "@/components/multideck/dexter-activity-trail.tsx?raw"
 import type { DexterActivity } from "../../../shared/dexter-activity"
 import { DealLossDialog, DealNextActionPanel, type DealNextActionPanelProps } from "@/components/multideck/crm-deal-actions"
+import { SpreadsheetImportReview } from "@/components/multideck/spreadsheet-import-review"
+import { WarehouseRateEditor, WarehousePricingFlow } from "@/components/multideck/warehouse-rate-editor"
+import { type WarehouseRate, type PricingStage } from "@/lib/warehouse-pricing"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { BellToggle } from "@/components/multideck/bell-toggle"
 import { SpringCheck } from "@/components/multideck/spring-check"
@@ -385,7 +388,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["signature-builder", "signature-block-glyph", "signature-template-picker", "signature-thumbnail", "email-signature-control", "contact-email-action", "contact-preferences-popover", "public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary"],
+    ids: ["signature-builder", "signature-block-glyph", "signature-template-picker", "signature-thumbnail", "email-signature-control", "contact-email-action", "contact-preferences-popover", "public-brand-identity", "calendar-view", "meeting-colour-picker", "calendar-day-ribbon", "availability-picker", "verification-code-input", "meeting-attendee-status", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "suggested-update-review", "audit-timeline", "lifecycle-notes", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-detail-controls", "quote-cargo-editor", "cargo-allocation-editor", "booking-route-milestones", "booking-dangerous-goods", "booking-security-evidence", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "finance-document-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "customs-readiness-review", "booking-ask-panel", "side-panels", "screening-outcome-pill", "screening-list-freshness", "screening-match-row", "screening-match-list", "screening-result-summary", "spreadsheet-import-review"],
   },
   {
     label: "CRM",
@@ -411,6 +414,11 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
     label: "Feedback",
     helper: "Status and notifications",
     ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast"],
+  },
+  {
+    label: "Warehouse",
+    helper: "Pricing and charge configuration",
+    ids: ["warehouse-pricing-flow", "warehouse-rate-editor"],
   },
   {
     label: "Settings",
@@ -1899,6 +1907,12 @@ const previewBookingQuestions: BookingQuestion[] = [
   { id: "q-lane", label: "Which lane are you shipping?", type: "select", required: true, options: ["Sea freight", "Air freight", "Road"] },
 ]
 
+function WarehousePricingPartsPreview({ flow = false }: { flow?: boolean }) {
+  const [stage, setStage] = useState<PricingStage>("storage")
+  const [rate, setRate] = useState<WarehouseRate>({ id: "preview-storage", code: "PALLET_STORAGE", name: "Standard pallet storage", stage: "storage", basis: "pallet", period: "night", amount: 2.5, currency: "GBP", minimum: 0, freePeriods: 1, from: "2026-09-22", to: "" })
+  return flow ? <WarehousePricingFlow value={stage} onChange={setStage} counts={{ receipt: 1, storage: 2, dispatch: 1, transaction: 0 }} /> : <WarehouseRateEditor rate={rate} onChange={setRate} />
+}
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -2646,6 +2660,8 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "warehouse-pricing-flow" ? <WarehousePricingPartsPreview flow /> : null}
+      {id === "warehouse-rate-editor" ? <WarehousePricingPartsPreview /> : null}
       {id === "inline-notice" ? (
         <div className="flex w-full max-w-[620px] flex-col items-start gap-4">
           <InlineNotice tone="warning" title="Reviews delayed">Reviews are currently delayed. Please check again shortly.</InlineNotice>
@@ -3429,6 +3445,10 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "spreadsheet-import-review" ? <SpreadsheetImportReview rows={[
+        { row: 2, sku: "BOX-001", success: true, error: null, values: { Description: "Packing carton", "Base UOM": "EA", "Gross weight KG": 0.4 } },
+        { row: 4, sku: "BOX-002", success: false, error: "Gross weight cannot be less than net weight.", values: { Description: "Insulated carton", "Net weight KG": 2, "Gross weight KG": 1 } },
+      ]} /> : null}
       {id === "warehouse-form-field" ? (
         <div className="grid w-full max-w-[520px] gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
           <WarehouseFormField label="Facility code" htmlFor="gallery-facility-code" required hint="A short unique code, e.g. FXT-DC1.">

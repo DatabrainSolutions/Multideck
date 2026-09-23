@@ -371,17 +371,22 @@ export function deleteWarehouseItem(id: string) {
 export type ImportItemsResult = {
   created: number
   failed: number
-  results: { row: number; sku: string | null; success: boolean; error: string | null }[]
+  preview?: boolean
+  results: import("@/components/multideck/spreadsheet-import-review").SpreadsheetReviewRow[]
 }
 
 /** Downloads the server-generated .xlsx import template in the browser. */
 export async function downloadWarehouseItemsTemplate() {
+  return downloadWarehouseImportTemplate("/items/import/template", "multideck-items-template.xlsx")
+}
+
+async function downloadWarehouseImportTemplate(path: string, fileName: string) {
   const session = await getSupabaseSession()
   if (!session?.access_token) {
     throw new WarehouseApiError("Sign in again to download the template.")
   }
 
-  const response = await fetch(warehouseEdgeUrl("/items/import/template"), {
+  const response = await fetch(warehouseEdgeUrl(path), {
     headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey },
   })
 
@@ -393,7 +398,7 @@ export async function downloadWarehouseItemsTemplate() {
   const url = URL.createObjectURL(blob)
   const link = document.createElement("a")
   link.href = url
-  link.download = "multideck-items-template.xlsx"
+  link.download = fileName
   document.body.appendChild(link)
   link.click()
   link.remove()
@@ -401,18 +406,31 @@ export async function downloadWarehouseItemsTemplate() {
 }
 
 /** Uploads a filled-in spreadsheet; the API parses, validates, and creates the items. */
-export async function importWarehouseItems(input: { customerOrgId: string; facilityId: string; file: File }): Promise<ImportItemsResult> {
+export async function importWarehouseItems(input: { customerOrgId: string; facilityId: string; file: File; preview?: boolean }): Promise<ImportItemsResult> {
+  const form = new FormData()
+  form.set("customerOrgId", input.customerOrgId)
+  form.set("facilityId", input.facilityId)
+  form.set("file", input.file)
+  return uploadWarehouseImport("/items/import", form, input.preview ?? false)
+}
+
+async function uploadWarehouseImport(path: string, form: FormData, preview: boolean): Promise<ImportItemsResult> {
+  // Old import servers treated every upload as a write. Check support before
+  // sending the file, so a mixed-version deployment cannot save a preview.
+  try {
+    const capabilities = await requestWarehouse<{ version: number; preview: boolean }>(`${path}/capabilities`, "GET")
+    if (capabilities.version !== 1 || capabilities.preview !== true) throw new Error("Unsupported import version")
+  } catch {
+    throw new WarehouseApiError("Spreadsheet review is not available in this workspace yet. Ask your administrator to update the warehouse service, then try again.")
+  }
   const session = await getSupabaseSession()
   if (!session?.access_token) {
     throw new WarehouseApiError("Sign in again to import items.")
   }
 
-  const form = new FormData()
-  form.set("customerOrgId", input.customerOrgId)
-  form.set("facilityId", input.facilityId)
-  form.set("file", input.file)
+  form.set("preview", String(preview))
 
-  const response = await fetch(warehouseEdgeUrl("/items/import"), {
+  const response = await fetch(warehouseEdgeUrl(path), {
     method: "POST",
     headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey },
     body: form,
@@ -430,8 +448,19 @@ export async function importWarehouseItems(input: { customerOrgId: string; facil
   }
 
   const result = await response.json() as ImportItemsResult
-  invalidateWarehouseResources(warehouseReadScope(session.user.id))
+  if (!preview) invalidateWarehouseResources(warehouseReadScope(session.user.id))
   return result
+}
+
+export function downloadWarehouseLocationsTemplate(facilityId: string) {
+  return downloadWarehouseImportTemplate(`/facilities/${facilityId}/locations/import/template`, "multideck-locations-template.xlsx")
+}
+
+export function importWarehouseLocations(input: { facilityId: string; defaultTypeCode: string; file: File; preview?: boolean }): Promise<ImportItemsResult> {
+  const form = new FormData()
+  form.set("file", input.file)
+  form.set("defaultTypeCode", input.defaultTypeCode)
+  return uploadWarehouseImport(`/facilities/${input.facilityId}/locations/import`, form, input.preview ?? false)
 }
 
 export type WarehouseLocation = {

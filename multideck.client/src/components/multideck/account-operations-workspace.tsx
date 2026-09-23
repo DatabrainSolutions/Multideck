@@ -34,6 +34,7 @@ import {
 } from "@/lib/customer-api";
 
 export type AccountDetailTab =
+  | "warehouse"
   | "overview"
   | "notes"
   | "details"
@@ -207,6 +208,7 @@ export function AccountDetailTabs({
     },
     ...roleTabs,
     ...(financial ? [{ id: "financial", label: t("Financial") }] : []),
+    { id: "warehouse", label: t("Warehouse") },
     { id: "customs", label: t("Customs") },
     {
       id: "documents",

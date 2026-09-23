@@ -84,6 +84,7 @@ export const warehouseSetupNavigation: SidebarDestination = {
   label: "Warehouse",
   icon: Forklift,
   children: [
+    { label: "Default pricing", icon: ReceiptText, route: "/warehouse/pricing" },
     { label: "Facilities", icon: Building2, route: "/warehouse/facilities" },
     { label: "Locations", icon: MapPin, route: "/warehouse/locations" },
     { label: "Items", icon: Package, route: "/warehouse/items" },

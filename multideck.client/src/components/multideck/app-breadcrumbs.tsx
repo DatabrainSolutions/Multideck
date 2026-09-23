@@ -348,6 +348,15 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     ]
   }
 
+  if (route === "/warehouse/pricing") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Admin" },
+      { label: "Warehouse" },
+      { label: "Default pricing" },
+    ]
+  }
+
   if (route.startsWith("/warehouse/")) {
     const child = route.split("/")[2]
     return [
