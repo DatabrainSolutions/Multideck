@@ -1,63 +1,19 @@
-# Tasks and background agents
+# To Do handoff to Dexter
 
-Tasks retains the daily list, quick add, priorities, record references and completion checkbox. **Hand to Dexter** queues a private cloud assignment. One saved conversation, name and icon belong to that assignment; a follow-up reuses them.
+**Hand to Dexter** opens an owner-private, ordinary Dexter conversation for an open To Do task and sends its title and saved links as the first message. The app navigates to that conversation immediately. Repeating the action opens the same conversation and does not resend the first message. Follow-ups happen in the chat. A task remains open until its owner completes it; Dexter chat does not imply that a provider action was delivered or a proposed change was approved.
 
-## Operator experience
+The task list has no named task agents, agent status view, or sidebar worker rows. Deleting a task retains its ordinary conversation in Dexter history. Existing background assignment conversations and results are retained for history, but the migration disables the worker settings, cancels outstanding runs and assignments, pauses linked watches, unschedules the worker wake-up, and removes authenticated handoff/control access. Historical worker code and schema remain so old records can be read safely; no new To Do handoff uses them.
 
-- Up to three agents work per operator; further work queues. Waiting for a date, an event or review does not hold a working slot.
-- The sidebar above Submit a ticket shows at most three queued/working agents or unseen results. Scheduled and event-waiting agents stay in Tasks until execution starts. View all opens Tasks → With Dexter.
-- A brief/check/comparison completes when its actual latest result enters the visible conversation. Loading or prefetching it is not acknowledgement.
-- A reply task completes only after the connected provider confirms the matching draft was sent. Merely saving a provider draft does not complete a reply task.
-- A record-change task completes when every proposal in its latest result has succeeded. Approval is still required for each operational change.
-- Missing-context and failed agents remain red in the sidebar until their actual error is viewed, then disappear while the task stays open. Viewing an unsent reply also hides its sidebar row without completing the send task. A later result resurfaces the same agent.
-- Stop invalidates active work and pauses a linked event watch. A retry or follow-up explicitly reopens the task. Worker claims re-check the run after acquiring the assignment lock, so a simultaneous schedule change cannot revive an old run. Change time shows the saved run time in the browser's local timezone and replaces the previous pending run. Do now replaces a scheduled run with immediate execution, retaining the same agent and conversation without rediscovering its original deadline. Execution explicitly overrides the original run time; relative research dates remain anchored to the originating instruction, including after retries. Retrying due work keeps its execution phase. Deleting the task stops its work and closes its conversation; an assigned conversation cannot be removed separately while its task remains.
+The owner-scoped handoff RPC checks the current tenant, owner, undeleted/open status, and linked conversation. It serialises repeat clicks on the task row and returns the same chat. Normal Dexter read, action approval, and audit boundaries apply inside the conversation. A newly created conversation is not populated until the client sends the task prompt; if that send fails, the operator can retry it in the open chat.
 
-## Useful examples
+## Watching for you
 
-| Task | Dexter's work | Completion |
-| --- | --- | --- |
-| Reply to Sam on Tuesday about the revised quote | Find the exact correspondent, thread and quote; save a one-off Tuesday run; re-read the current thread and prepare a reply then. | Matching provider-confirmed send after approval. |
-| Meeting next Tuesday | Find the calendar meeting and linked customer context. Schedule a brief if the target is clear; preserve findings and identify ambiguity if several meetings fit. | Brief viewed. |
-| Get the invoice and add it to the CMS | Search authorised correspondence and inspect the attachment. Match the invoice and supported destination before proposing a save. “CMS” alone never grants or invents an integration. | All supported proposed saves confirmed. |
-| Compare rates for this shipment | Read the linked route, cargo and current rate evidence; return a comparison with assumptions and sources. | Comparison viewed. |
-| Check this booking when its status changes | Compile a supported owner-scoped deterministic watch; the first matching saved event queues a fresh investigation. | Result viewed, or any required action confirmed. |
-| Speak to mum | Explain that personal context is unavailable without guessing a relative from business data. | Remains open for the operator. |
-
-## Runtime and permissions
-
-`AI_DexterTaskAssignments` is owner-readable and browser read-only. `AI_DexterTaskRuns` and settings are service-only. No browser refresh/access token is stored or minted for background work. Every tool round and owner RPC checks a current, unexpired service lease, active user/company and open task. The RPC bridge allows only named existing permission-checked capabilities; it cannot run arbitrary SQL or arbitrary actions.
-
-The worker uses Luna with high reasoning, a 130-second work budget, bounded tool rounds/calls and a 6,000-token response ceiling. Luna with low reasoning selects a name once; a small fallback name pool prevents a naming outage from blocking work. Attachments from authorised email are bounded to 12 MB per background run to contain memory use with parallel agents. Prepared work always uses Approve mode.
-
-A three-minute lease handles process loss. Explicit connection failures release the slot and retry after a 30-second backoff. Three attempts is the limit. Saved results are recovered by run ID; a crash after creating proposals recovers those proposals for review without regenerating them. A single shared client store uses realtime, coalesced refreshes, focus/reconnect recovery and a 30-second visible-page fallback.
-
-One tenant-local `pg_cron` job wakes `dexter-task-worker` each minute through `pg_net`. The endpoint checks a dedicated Vault secret. `multideck_task_configure` is service-only; UI hand-off is enabled only after deployment/configuration. Scheduled/event runs are one-off; there are no recurring model checks. Linked watch notifications are suppressed in favour of the resulting task notification.
-
-## Dexter parity and intentional limits
-
-Calendar and external-event reads accept `YYYY-MM-DD@Area/City` and exact event IDs; local-day boundaries handle daylight-saving changes and retain private-event visibility rules.
-
-Chat reads agent evidence through the existing owner-scoped `todo` domain. Existing task create/edit/complete actions retain approval and audit. Watching for you additionally supports `agentStatus` and `agentName`, using real saved changes and the existing owner rules.
-
-Creating or controlling background agents through model-generated actions is intentionally unsupported in this version: it would permit recursive delegation. Chat explains this and directs the operator to the task controls. Background follow-ups support text and selected record references; direct file uploads into a background follow-up are not exposed. Authorised email attachment discovery works in the cloud. This is an App feature, not a new dependency on the transitional .NET server or a shared tenant database.
+Watches are separate saved, owner-scoped event rules. Creation uses a model to translate a request, then validates the capability, field, operator, threshold, and exact record before saving. Ambiguous targets ask for clarification. Ordinary evaluation reacts to saved changes without recurring model calls. A `changed` rule can notify on each distinct transition of the watched field; a no-op does not notify. Threshold rules retain edge-triggered behaviour. Tenant and record permissions are checked by the watch read and evaluator paths.
 
 ## Verification
 
-- `node --test supabase/tests/dexter-background-tasks-postgres.test.mjs`: owner isolation, denied worker grants, three slots, unique active icons, stale leases, revocation, idempotent hand-off, saved-result requirement, completion-on-view, draft/send distinction, future scheduling, cancellation, one-shot events, all-proposal completion, bounded retry and conversation deletion.
-- `npx deno test --node-modules-dir=auto supabase/tests/dexter-background-outcome.test.ts`: invalid outcome, pending-change, timestamp and event evidence checks.
-- `npx deno test --node-modules-dir=auto supabase/tests/dexter-conversation-artifacts.test.ts`: saved draft approval recovery, current action status and foreign owner/company denial.
-- Client build and worker Deno check.
-- Chrome on localhost:3000: real cloud hand-off, saved result, same-agent follow-up, completion persistence, personal blocker, invoice/email attachment discovery, calendar scheduling, local-time rescheduling, delivered calendar brief, complete unsent native email draft, preserved input on offline failure, and narrow-screen/reduced-motion layout.
-- A rolled-back check against the connected tenant exercises the actual task domain, watch creation, match/non-match, duplicate suppression, pause/resume and foreign-owner denial. No business message is sent by these checks. Temporary QA tasks are removed after verification.
-
-The broader existing Dexter/Home contract selection has six failures also reproduced against the unchanged branch HEAD (51/57 pass); these are separate from the task lifecycle tests. Service-only tables deliberately have no browser RLS policy. Public owner RPCs deliberately use permission-checked security-definer functions; Supabase reports these patterns as advisory notices.
-
-### Scheduling verification — 11 September 2026
-
-Chrome on localhost:3000 against the connected development backend: the saved 15 September run was changed to 11 September 00:58 BST, retained after reload, and absent from the sidebar while waiting. The old run was cancelled. The cloud worker claimed the replacement at 00:58:03 BST and saved its result at 00:58:51 on attempt one. Without opening the conversation, the sidebar changed from Working to Ready to review; opening the result completed the task and removed its row. The scheduler checks once per minute, so this is minute-level scheduling, not a promise of execution at an exact second; busy worker slots can delay a due task.
-
-The PostgreSQL regression runs two real concurrent sessions to reproduce a schedule change against an already selected worker candidate. It fails with a deadlock before the fix and passes with the new lock order and state re-check. Other assertions cover no early start with free slots, exactly one due execution, old-run replacement, stale-version rejection, cancellation, Do now preserving execution phase, and completion on review.
-
-The first live Do now check exposed a model instruction conflict: it attempted to retain the original future execution time. After adding explicit execution precedence and the original request-date anchor, the repeat cancelled the future run, executed once, and returned the requested two-sentence calendar summary at 01:04:58 BST. The response remained Ready to review until actually visible, then completed and cleared the sidebar. No queued/running runs remained for the test assignment. Backend versions verified active: agent-dexter 234 and dexter-task-worker 9; frontend changes verified on localhost, not claimed deployed.
-
-Successful `deliver_result` runs now tick the linked task immediately after saving their result. The unread response stays in the sidebar until viewed. Failed, missing-context, scheduled, waiting and approval-dependent tasks remain open. This reuses the existing owner-scoped task update and completion events; no new chat or watch capability is introduced.
+- `npm run test:dexter`: Dexter contracts, watch rule selection, malformed requests, and 1,000 reordered candidate sets with similar record names.
+- `node --test supabase/tests/dexter-background-tasks-postgres.test.mjs`: owner isolation, repeat-click idempotency, historical chat reuse, retired queue controls, and no worker run for the new handoff.
+- `node --test supabase/tests/dexter-address-watch-postgres.test.mjs`: watch creation/evaluation, consecutive field transitions, no-op changes, and access boundaries.
+- `node supabase/tests/run-data-access-regression.mjs`: PostgreSQL access regression across the current schema and changed To Do JSON contract.
+- Client build and Chrome review on localhost:3000. A visible page/build is local evidence; sending a real task to a connected Dexter backend requires deploying the client, Edge function, and migrations to the intended tenant and checking that journey there.

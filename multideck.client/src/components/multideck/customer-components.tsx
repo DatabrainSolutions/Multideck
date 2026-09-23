@@ -591,7 +591,7 @@ export function LaneMixPanel() {
       </div>
       <div className="px-5 pb-5">
         {marlowLaneMix.map((lane) => (
-          <div key={lane.lane} className="grid grid-cols-[220px_1fr_32px] items-center gap-4 border-t border-[rgba(11,20,19,0.06)] py-3">
+          <div key={lane.lane} className="grid grid-cols-[minmax(0,1fr)_minmax(64px,0.8fr)_32px] items-center gap-3 border-t border-[rgba(11,20,19,0.06)] py-3">
             <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{lane.lane}</p>
             <div className="h-2 rounded-full bg-[rgba(90,103,100,0.12)]">
               <div className="h-full rounded-full bg-[var(--md-accent)]" style={{ width: `${(lane.value / max) * 100}%` }} />

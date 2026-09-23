@@ -16,9 +16,9 @@ test("Notifications uses one intentional settings column", () => {
 
 test("Notifications preserves the real preference load and save actions", () => {
   assert.match(notifications, /loadNotificationEmailPreferences\(\)/)
-  assert.match(notifications, /saveNotificationEmailPreferences\(preferences\)/)
+  assert.match(notifications, /saveNotificationEmailPreferences\(next\)/)
   assert.match(notifications, /sendNotificationTestEmail\(language\)/)
-  assert.match(notifications, /Save notifications/)
+  assert.doesNotMatch(notifications, /Save notifications/)
   assert.match(notifications, /Digest delivery time/)
   assert.match(notifications, /Digest timezone/)
 })

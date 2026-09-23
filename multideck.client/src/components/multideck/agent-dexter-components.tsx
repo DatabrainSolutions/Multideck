@@ -1624,7 +1624,7 @@ export function DexterPromptComposer({
           <div className={cn("-mx-2 mt-3 flex flex-wrap items-center gap-1 sm:mx-0 sm:gap-2", voicePanel && "hidden")}>
             <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
             <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            {!taskAgentName ? <Button
+            <Button
               type="button"
               variant="ghost"
               size="icon"
@@ -1635,10 +1635,10 @@ export function DexterPromptComposer({
               onClick={onOpenAttachments}
             >
               <Plus className="size-4" strokeWidth={1.4} />
-            </Button> : null}
-            {!taskAgentName ? <PillFrame>
+            </Button>
+            <PillFrame>
               <DexterModelMenu models={models} selectedId={selectedModelId} onSelect={onSelectModel} />
-            </PillFrame> : null}
+            </PillFrame>
             <Context
               usedTokens={contextUsedTokens}
               maxTokens={contextMaxTokens}

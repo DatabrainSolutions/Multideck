@@ -25,8 +25,8 @@ test("request ownership, cancellation, timeout and explicit recovery remain boun
   assert.match(pageSource, /onRetryError=\{failedPrompt/u)
   assert.match(pageSource, /onDismissError=\{\(\) => \{/u)
   assert.match(apiSource, /const DEXTER_STREAM_TIMEOUT_MS = 120_000/u)
-  assert.match(apiSource, /response\.status === 401[\s\S]*supabase\.auth\.refreshSession\(\)/u)
-  assert.match(apiSource, /Your message is safe – retry when you are ready\./u)
+  assert.match(apiSource, /response\.status === 401[\s\S]*refreshWorkspaceSession\(\)/u)
+  assert.match(apiSource, /Dexter could not reach the workspace service\. Check your connection and retry\./u)
   assert.match(apiSource, /error instanceof TypeError/u)
 })
 
@@ -35,7 +35,7 @@ test("the thread follows the latest message and the composer reserves only its m
   assert.match(pageSource, /style=\{\{ paddingBottom: composerInset \+ 24 \}\}/u)
   assert.match(pageSource, /pb-\[max\(var\(--md-page-stack-gap\),env\(safe-area-inset-bottom\)\)\]/u)
   assert.match(pageSource, /h-\[100dvh\] min-h-0/u)
-  assert.match(composerSource, /className="ms-auto flex shrink-0 items-center gap-2"[\s\S]*<DexterAccessModeToggle[\s\S]*<DexterActionPill/u)
+  assert.match(composerSource, /className="ms-auto flex shrink-0 items-center gap-1 sm:gap-2"[\s\S]*<DexterActionPill/u)
 })
 
 test("the access selector changes width with its visible label without exposing both labels", () => {

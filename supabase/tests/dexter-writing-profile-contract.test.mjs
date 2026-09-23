@@ -91,7 +91,7 @@ test("Dexter injects style tooling only for explicit email writing and treats it
   assert.match(dexter, /hasSelectedEmail && !recordChange/)
   assert.match(dexter, /const writingTools = emailWriting \? emailWritingTools\(\) : \[\]/)
   assert.match(dexter, /const emailWritingInstruction = emailWriting\s+\?/)
-  assert.match(dexter, /tool_choice: requiresEmailDraftTool && !preparedEmailDraft && steeringInputs\.length === 0 \? "required" : tools\.length > 0 \? "auto" : "none"/)
+  assert.match(dexter, /tool_choice: backgroundTask \|\| \(requiresEmailDraftTool && !preparedEmailDraft && steeringInputs\.length === 0\) \? "required" : tools\.length > 0 \? "auto" : "none"/)
   assert.match(dexter, /name: EMAIL_STYLE_TOOL/)
   assert.match(dexter, /guidance: enabled \? cleanString\(data\.profileText, 2_400\) : ""/)
   assert.match(dexter, /Current thread facts, workspace evidence and this operator request always take precedence/)

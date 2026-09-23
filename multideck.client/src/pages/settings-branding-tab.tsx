@@ -849,7 +849,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
             </div>
           </div>
         </div>
-        <input ref={logoInputRef} type="file" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" className="sr-only" aria-label={t("Choose company logo")} onChange={(event) => { chooseLogo(event.target.files?.[0] ?? null); event.currentTarget.value = "" }} />
+        <input ref={logoInputRef} type="file" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" className="hidden" aria-label={t("Choose company logo")} onChange={(event) => { chooseLogo(event.target.files?.[0] ?? null); event.currentTarget.value = "" }} />
       </section>
 
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
@@ -868,7 +868,7 @@ export function AdminBrandingContent({ currentUser }: { currentUser?: AuthUserSu
           </SettingsFieldRow>
         </SettingsPanel>
 
-        <MeetingEmailTemplateSettings disabled={!canManage} />
+        <MeetingEmailTemplateSettings disabled={!canManage} branding={saved} />
 
         {error || validationError ? (
           <div aria-live="polite" className="min-h-5 text-[12px] leading-5 text-[var(--md-red)]">

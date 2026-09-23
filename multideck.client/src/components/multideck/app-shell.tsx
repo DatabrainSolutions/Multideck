@@ -269,15 +269,15 @@ export function AppShell({
   }, [route])
 
   const shell = (
-    <div className="h-screen w-full max-w-full overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
-      <div className="flex h-screen w-full min-h-0 min-w-0 overflow-hidden">
+    <div className="md-app-shell h-dvh w-full max-w-full overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
+      <div className="flex h-full w-full min-h-0 min-w-0 overflow-hidden">
         <AppSidebar
           route={route}
           navigate={navigate}
           currentUser={currentUser}
           collapsed={sidebarCollapsed}
           onCollapsedChange={setSidebarCollapsed}
-          className="hidden h-screen min-h-0 lg:flex"
+          className="hidden h-full min-h-0 lg:flex"
         />
         {isFullHeightRoute || isSignatureRoute ? (
           <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
@@ -288,7 +288,7 @@ export function AppShell({
                 size="icon"
                 aria-label={t("Open navigation")}
                 title={t("Open navigation")}
-                className="fixed start-4 top-4 z-40 size-10 rounded-full bg-[var(--md-glass-strong)] text-[var(--md-ink)] shadow-[var(--md-shadow-soft)] backdrop-blur-xl hover:bg-[var(--md-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] lg:hidden"
+                className="fixed start-[max(1rem,env(safe-area-inset-left))] top-[max(1rem,env(safe-area-inset-top))] z-40 size-11 rounded-full bg-[var(--md-glass-strong)] text-[var(--md-ink)] shadow-[var(--md-shadow-soft)] backdrop-blur-xl hover:bg-[var(--md-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] lg:hidden"
               >
                 <Menu className="size-[18px]" strokeWidth={1.3} />
               </Button>

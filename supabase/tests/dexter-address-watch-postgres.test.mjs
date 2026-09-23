@@ -22,6 +22,7 @@ const patchStart = cargo.indexOf('do $$\ndeclare definition text; previous text'
 const cargoPatch = cargo.slice(patchStart, cargo.indexOf('end $$;', patchStart) + 7)
 const migration = read('20260909205603_dexter_deal_watch_evaluation')
 const addresses = read('20260909222531_dexter_address_watch_events')
+const repeat = read('20260922191000_dexter_watch_change_repeat')
 test('address event adapter covers postcode, no-op audit updates, deletion, repeated changes and access boundaries', {skip: !available}, () => {
   const dir=mkdtempSync(join(tmpdir(),'dexter-deal-watch-')); const data=join(dir,'data');let started=false
   const run=(cmd,args,input)=>{const r=spawnSync(join(bin,cmd),args,{input,encoding:'utf8',timeout:30000});assert.equal(r.status,0,`${r.stderr}\n${r.stdout}`);return r.stdout}
@@ -49,6 +50,7 @@ test('address event adapter covers postcode, no-op audit updates, deletion, repe
       create function public.multideck_crm_accessible_account_ids(uuid) returns table(account_id uuid) language sql as $$select id from accounts where company=$1 and visible$$;
       ${addresses}
       ${read('20260909222710_dexter_address_county_watch')}
+      ${repeat}
       create trigger evaluate after insert on public."AI_DexterWatchSignals" for each row execute function public._multideck_dexter_evaluate_watch_signal();
       create function signal(c uuid,d uuid,old_stage text,new_stage text) returns void language sql as $$insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON")values(c,'deals','CRM_Opportunities',d,jsonb_build_object('stage',old_stage),jsonb_build_object('stage',new_stage))$$;
       create function check_events(expected integer) returns void language plpgsql as $$begin
@@ -60,7 +62,7 @@ test('address event adapter covers postcode, no-op audit updates, deletion, repe
         insert into public."cmp_Users" values(u,c,'active',true,u),(other_u,other_c,'active',true,other_u);
         insert into accounts values(d,c,true);
         insert into public."Org_Addresses" values(a,d,'B4 6QE',now(),'West Midlands');
-        insert into public."sys_AIDexterWatchCapabilities"("AIDexterWatchCapability_Code","AIDexterWatchCapability_Name","AIDexterWatchCapability_Description") values('customers','Companies','Companies');
+        insert into public."sys_AIDexterWatchCapabilities"("AIDexterWatchCapability_Code","AIDexterWatchCapability_Name","AIDexterWatchCapability_Description") values('customers','Companies','Companies'),('quotes','Quotes','Quotes');
         insert into public."AI_DexterWatches"("AIDexterWatch_CompanyID","AIDexterWatch_OwnerUserID","AIDexterWatch_CapabilityCode","AIDexterWatch_Title","AIDexterWatch_Summary","AIDexterWatch_Request","AIDexterWatch_TargetID","AIDexterWatch_RuleJSON")values(c,u,'customers','QA','QA','QA',d,'{"field":"addresses","operator":"changed"}') returning "AIDexterWatch_ID" into w;
         update public."Org_Addresses" set "OrgAdd_PostZipCode"='B4 6QF';perform check_events(1);
         update public."Org_Addresses" set "OrgAdd_PostZipCode"='B4 6QG';perform check_events(2);
@@ -82,6 +84,14 @@ test('address event adapter covers postcode, no-op audit updates, deletion, repe
         update accounts set visible=true;
         update public."Org_Addresses" set "OrgAdd_CountyState"='Warwickshire';perform check_events(4);
         delete from public."Org_Addresses";perform check_events(5);
+        insert into public."AI_DexterWatches"("AIDexterWatch_CompanyID","AIDexterWatch_OwnerUserID","AIDexterWatch_CapabilityCode","AIDexterWatch_Title","AIDexterWatch_Summary","AIDexterWatch_Request","AIDexterWatch_TargetID","AIDexterWatch_RuleJSON")
+          values(c,u,'quotes','Quote status','Quote status','Quote status',d,'{"field":"status","operator":"changed"}');
+        insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON")
+          values(c,'quotes','Quote',d,'{"status":"open"}','{"status":"sent"}');perform check_events(6);
+        insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON")
+          values(c,'quotes','Quote',d,'{"status":"sent"}','{"status":"accepted"}');perform check_events(7);
+        insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON")
+          values(c,'quotes','Quote',d,'{"status":"accepted"}','{"status":"accepted"}');perform check_events(7);
         if exists(select 1 from public."AI_DexterWatchEvents" where "AIDexterWatchEvent_Body" like '%OrgAdd%') then raise exception 'Raw JSON leaked into notification';end if;
         if not exists(select 1 from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_OldJSON"#>>'{addresses,OrgAdd_PostZipCode}'='B4 6QE') then raise exception 'Missing address evidence';end if;
       end $$;

@@ -74,6 +74,55 @@ export type ApiDeal = {
   wonAt?: string | null
   isCustomer?: boolean
   customerOrgId?: string | null
+  isLost?: boolean
+  lostAt?: string | null
+  nextAction?: DealNextAction | null
+  actionHistory?: DealNextAction[]
+  loss?: DealLoss | null
+  outcomeHistory?: DealOutcome[]
+}
+
+export type DealActionType = "call" | "email" | "meeting" | "quote" | "follow_up" | "other"
+export type DealNextAction = {
+  id: string
+  title: string
+  type: DealActionType
+  ownerId: string
+  ownerName: string | null
+  dueAt: string
+  status: "open" | "completed" | "cancelled" | "superseded"
+  completedAt: string | null
+  completionNote: string | null
+  taskId: string | null
+  taskScheduledDate?: string | null
+  createdAt: string
+}
+export type SetDealNextActionInput = Pick<DealNextAction, "title" | "type" | "ownerId" | "dueAt"> & { taskDate?: string }
+export type DealLossReasonCode = "price" | "timing" | "competitor" | "service_fit" | "no_response" | "cancelled" | "other"
+export type LoseDealInput = {
+  reasonCode: DealLossReasonCode
+  details: string | null
+  competitor: string | null
+  revisitDate: string | null
+  pipelineStageId?: string
+}
+export type DealLoss = Omit<LoseDealInput, "reasonCode"> & { reasonCode: DealLossReasonCode | null; reasonName: string | null; lostAt: string | null }
+export type DealOutcome = {
+  id: string
+  event: "lost" | "won" | "reopened"
+  occurredAt: string
+  actorId: string | null
+  reasonCode?: DealLossReasonCode | null
+  details?: string | null
+  competitor?: string | null
+  revisitDate?: string | null
+  reason?: string | null
+}
+export type DealPeople = {
+  currentUserId?: string
+  owners: Array<{ id: string; name: string; canOwnAction?: boolean }>
+  contacts: Array<{ id: string; name: string; email: string | null; phone?: string | null }>
+  canEdit: boolean
 }
 
 export class DealApiError extends CrmSupabaseError {}
@@ -345,4 +394,38 @@ export async function markDealWon(dealId: string, pipelineStageId: string, reaso
   const session = await getSupabaseSession()
   if (session) invalidateCrmResources(session.user.id, ["accounts:", "deals:", `deal-detail:${dealId}`])
   return deal
+}
+
+export function getDealPeople(dealId: string) {
+  return callCrmRpc<DealPeople>(
+    "multideck_crm_deal_people", { p_deal_id: dealId },
+    "People for this deal could not be loaded.", "Sign in again to view CRM deals.",
+  )
+}
+
+async function mutateDealWorkflow(functionName: string, dealId: string, args: Record<string, unknown>, fallback: string) {
+  const deal = await callCrmMutation<ApiDeal>(functionName, { p_deal_id: dealId, ...args }, fallback, "Sign in again to manage CRM deals.")
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["deals:", `deal-detail:${dealId}`, "sales-insights:"])
+  return deal
+}
+
+export function setDealNextAction(dealId: string, expectedVersion: number, input: SetDealNextActionInput) {
+  return mutateDealWorkflow("multideck_crm_set_deal_next_action", dealId,
+    { p_expected_version: expectedVersion, p_input: input }, "This next action could not be saved.")
+}
+
+export function completeDealNextAction(dealId: string, expectedVersion: number, actionId: string, note?: string) {
+  return mutateDealWorkflow("multideck_crm_complete_deal_next_action", dealId,
+    { p_expected_version: expectedVersion, p_action_id: actionId, p_note: note?.trim() || null }, "This next action could not be completed.")
+}
+
+export function loseDeal(dealId: string, expectedVersion: number, input: LoseDealInput) {
+  return mutateDealWorkflow("multideck_crm_lose_deal", dealId,
+    { p_expected_version: expectedVersion, p_input: input }, "This deal could not be marked lost.")
+}
+
+export function reopenDeal(dealId: string, expectedVersion: number, pipelineStageId: string, reason: string) {
+  return mutateDealWorkflow("multideck_crm_reopen_deal", dealId,
+    { p_expected_version: expectedVersion, p_pipeline_stage_id: pipelineStageId, p_reason: reason.trim() }, "This deal could not be reopened.")
 }

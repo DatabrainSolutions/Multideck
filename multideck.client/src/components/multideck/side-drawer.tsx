@@ -1,36 +1,11 @@
-import { useEffect, useRef, type ReactNode } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Dialog as DialogPrimitive } from "radix-ui"
 import { AnimatePresence, motion, useReducedMotion, type Transition } from "motion/react"
 import { X, type LucideIcon } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
-
-/** Drawers can overlap while one is animating out, so the lock is counted rather than toggled. */
-let scrollLockCount = 0
-
-function lockPageScroll() {
-  if (typeof document === "undefined") return () => undefined
-
-  const { body } = document
-  if (scrollLockCount === 0) {
-    const scrollbar = window.innerWidth - document.documentElement.clientWidth
-    body.dataset.mdScrollLockOverflow = body.style.overflow
-    body.dataset.mdScrollLockPad = body.style.paddingInlineEnd
-    body.style.overflow = "hidden"
-    if (scrollbar > 0) body.style.paddingInlineEnd = `${scrollbar}px`
-  }
-  scrollLockCount += 1
-
-  return () => {
-    scrollLockCount = Math.max(0, scrollLockCount - 1)
-    if (scrollLockCount > 0) return
-    body.style.overflow = body.dataset.mdScrollLockOverflow ?? ""
-    body.style.paddingInlineEnd = body.dataset.mdScrollLockPad ?? ""
-    delete body.dataset.mdScrollLockOverflow
-    delete body.dataset.mdScrollLockPad
-  }
-}
 
 /**
  * The inset slide-in panel used for CRM detail and settings surfaces. It owns the backdrop,
@@ -72,6 +47,8 @@ export function SideDrawer({
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const reduce = Boolean(shouldReduceMotion)
+  const [compact, setCompact] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches)
+  const isModal = modal || compact
   const panelRef = useRef<HTMLElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
 
@@ -81,14 +58,14 @@ export function SideDrawer({
     if (open) return undefined
 
     const active = document.activeElement
-    if (active instanceof HTMLElement && active !== document.body) restoreFocusRef.current = active
+    if (active instanceof HTMLElement && active !== document.body && !panelRef.current?.contains(active)) restoreFocusRef.current = active
 
     function rememberFocus(event: FocusEvent) {
-      if (event.target instanceof HTMLElement && !panelRef.current?.contains(event.target)) restoreFocusRef.current = event.target
+      if (event.target instanceof HTMLElement && event.target !== document.body && !panelRef.current?.contains(event.target)) restoreFocusRef.current = event.target
     }
 
     function rememberPointer(event: PointerEvent) {
-      if (!(event.target instanceof HTMLElement)) return
+      if (!(event.target instanceof Element)) return
       const trigger = event.target.closest<HTMLElement>("button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])")
       if (trigger) restoreFocusRef.current = trigger
     }
@@ -102,104 +79,100 @@ export function SideDrawer({
   }, [open])
 
   useEffect(() => {
-    if (!open) return undefined
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose()
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose, open])
-
-  useEffect(() => {
-    if (!open || !modal) return undefined
-    return lockPageScroll()
-  }, [modal, open])
-
-  // Send focus into the panel on open and hand it back to the trigger on close, so keyboard
-  // and screen-reader users are not dropped at the top of the page behind the drawer.
-  useEffect(() => {
-    if (!open) return undefined
-
-    if (!restoreFocusRef.current) {
-      const active = document.activeElement
-      if (active instanceof HTMLElement && !panelRef.current?.contains(active)) restoreFocusRef.current = active
-    }
-    panelRef.current?.focus({ preventScroll: true })
-
-    const restoreTarget = restoreFocusTo ?? restoreFocusRef.current
-    return () => {
-      requestAnimationFrame(() => {
-        if (restoreTarget?.isConnected) restoreTarget.focus({ preventScroll: true })
-      })
-      restoreFocusRef.current = null
-    }
-  }, [open, restoreFocusTo])
+    const media = window.matchMedia("(max-width: 639px)")
+    const sync = () => setCompact(media.matches)
+    media.addEventListener("change", sync)
+    return () => media.removeEventListener("change", sync)
+  }, [])
 
   // The panel leans in from whichever edge it is docked to, which flips under right-to-left.
   const offset = direction === "rtl" ? -slideDistance : slideDistance
 
   return (
-    <AnimatePresence initial={false}>
-      {open ? (
-        <div className={cn("fixed inset-0 z-50 flex justify-end p-3 sm:p-[var(--md-page-stack-gap)]", !modal && "pointer-events-none")} dir={direction}>
-          {modal ? (
-            <motion.button
-              type="button"
-              aria-label={`${t("Close")} ${title}`}
-              className="absolute inset-0 cursor-default bg-[rgba(11,20,19,0.14)] backdrop-blur-[6px]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={reduceMotion(reduce, mdMotion.fast)}
-              onClick={onClose}
-            />
-          ) : null}
-          <motion.aside
-            ref={panelRef}
-            role={modal ? "dialog" : "region"}
-            aria-modal={modal ? "true" : undefined}
-            aria-label={title}
-            tabIndex={-1}
-            className="pointer-events-auto relative z-10 flex h-full w-full flex-col overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-3 shadow-[var(--md-shadow-lift)] focus:outline-none"
-            style={{ maxWidth: width }}
-            initial={{ x: offset, opacity: 0, filter: "blur(8px)" }}
-            animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
-            exit={{ x: offset * 0.7, opacity: 0, filter: "blur(8px)" }}
-            transition={reduceMotion(reduce, motionTransition)}
-          >
-            <div className="mb-3 flex items-center justify-between gap-3 px-1">
-              <div className="flex min-w-0 items-center gap-3">
-                {Icon ? (
-                  <span className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-white/60 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
-                    <Icon className="size-4" strokeWidth={1.2} />
-                  </span>
-                ) : null}
-                <div className="min-w-0">
-                  <p className="text-[12px] font-medium uppercase tracking-normal text-[var(--md-subtle)]">{eyebrow}</p>
-                  <p className="mt-1 truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto">{title}</p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {headerActions}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`${t("Close")} ${title}`}
-                  className="size-9 shrink-0 rounded-[var(--md-radius-md)] bg-white/55 shadow-[var(--md-shadow-line)] hover:bg-white/80"
-                  onClick={onClose}
+    <DialogPrimitive.Root open={open} onOpenChange={(next) => { if (!next) onClose() }} modal={isModal}>
+      <DialogPrimitive.Portal forceMount>
+        <AnimatePresence initial={false}>
+          {open ? (
+            <div className={cn("md-side-drawer fixed inset-x-0 top-0 z-50 flex h-dvh justify-end sm:p-[var(--md-page-stack-gap)]", !isModal && "pointer-events-none")} dir={direction}>
+              {isModal ? (
+                <DialogPrimitive.Overlay forceMount asChild>
+                  <motion.div
+                    className="absolute inset-0 cursor-default bg-[rgba(11,20,19,0.14)] backdrop-blur-[6px]"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={reduceMotion(reduce, mdMotion.fast)}
+                  />
+                </DialogPrimitive.Overlay>
+              ) : null}
+              <DialogPrimitive.Content
+                forceMount
+                asChild
+                aria-modal={isModal || undefined}
+                aria-describedby={undefined}
+                onOpenAutoFocus={(event) => {
+                  event.preventDefault()
+                  const active = document.activeElement
+                  if (!restoreFocusRef.current && active instanceof HTMLElement && active !== document.body && !panelRef.current?.contains(active)) {
+                    restoreFocusRef.current = active
+                  }
+                  panelRef.current?.focus({ preventScroll: true })
+                }}
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault()
+                  const target = restoreFocusTo ?? restoreFocusRef.current
+                  if (target?.isConnected) target.focus({ preventScroll: true })
+                  restoreFocusRef.current = null
+                }}
+                onInteractOutside={(event) => {
+                  // Desktop non-modal drawers support selecting another register row.
+                  if (!isModal) event.preventDefault()
+                }}
+              >
+                <motion.aside
+                  ref={panelRef}
+                  tabIndex={-1}
+                  className="md-side-drawer-panel pointer-events-auto relative z-10 flex h-full min-w-0 w-full flex-col overflow-hidden bg-[var(--md-bg)] p-3 shadow-[var(--md-shadow-lift)] focus:outline-none sm:max-w-(--md-drawer-width) sm:rounded-[var(--md-radius-2xl)]"
+                  style={{ "--md-drawer-width": `${width}px` } as CSSProperties}
+                  initial={{ x: offset, opacity: 0, filter: "blur(8px)" }}
+                  animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
+                  exit={{ x: offset * 0.7, opacity: 0, filter: "blur(8px)" }}
+                  transition={reduceMotion(reduce, motionTransition)}
                 >
-                  <X data-icon="inline-start" strokeWidth={1.2} />
-                </Button>
-              </div>
+                  <div className="mb-3 flex items-center justify-between gap-3 px-1">
+                    <div className="flex min-w-0 items-center gap-3">
+                      {Icon ? (
+                        <span className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-white/60 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+                          <Icon className="size-4" strokeWidth={1.2} />
+                        </span>
+                      ) : null}
+                      <div className="min-w-0">
+                        <p className="text-[12px] font-medium uppercase tracking-normal text-[var(--md-subtle)]">{eyebrow}</p>
+                        <DialogPrimitive.Title asChild><p className="mt-1 truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto">{title}</p></DialogPrimitive.Title>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {headerActions}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`${t("Close")} ${title}`}
+                        className="size-9 shrink-0 rounded-[var(--md-radius-md)] bg-white/55 shadow-[var(--md-shadow-line)] hover:bg-white/80"
+                        onClick={onClose}
+                      >
+                        <X data-icon="inline-start" strokeWidth={1.2} />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className={cn("md-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain", bodyClassName)}>{children}</div>
+                </motion.aside>
+              </DialogPrimitive.Content>
             </div>
-            <div className={cn("md-scrollbar min-h-0 flex-1 overflow-y-auto", bodyClassName)}>{children}</div>
-          </motion.aside>
-        </div>
-      ) : null}
-    </AnimatePresence>
+          ) : null}
+        </AnimatePresence>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }
 
@@ -250,7 +223,7 @@ export function RecordDrawer({
         <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3.5 shadow-[var(--md-shadow-line)]">{summary}</div>
         {children}
       </div>
-      <div className="sticky bottom-0 mt-3 flex items-center justify-end gap-2 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] p-2 shadow-[var(--md-shadow-line)] backdrop-blur-xl">
+      <div className="sticky bottom-0 mt-3 flex flex-wrap items-center justify-end gap-2 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] p-2 shadow-[var(--md-shadow-line)] backdrop-blur-xl">
         <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] text-[12.5px]" onClick={onClose}>{t(closeLabel)}</Button>
         {actions}
       </div>

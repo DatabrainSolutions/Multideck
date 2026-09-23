@@ -265,6 +265,19 @@ import {
   WhatsappIcon as WhatsappIconData,
   WorkflowSquare01Icon as WorkflowSquare01IconData,
   ZapIcon as ZapIconData,
+  AlignVerticalJustifyCenterIcon as AlignVerticalJustifyCenterIconData,
+  AlignVerticalJustifyStartIcon as AlignVerticalJustifyStartIconData,
+  NewTwitterIcon as NewTwitterIconData,
+  Redo02Icon as Redo02IconData,
+  TextAlignCenterIcon as TextAlignCenterIconData,
+  TextAlignLeftIcon as TextAlignLeftIconData,
+  TextAlignRightIcon as TextAlignRightIconData,
+  TextAllCapsIcon as TextAllCapsIconData,
+  TextBoldIcon as TextBoldIconData,
+  TextItalicIcon as TextItalicIconData,
+  TiktokIcon as TiktokIconData,
+  Undo02Icon as Undo02IconData,
+  YoutubeIcon as YoutubeIconData,
 } from "@hugeicons/core-free-icons"
 
 export type MultideckIconProps = Omit<HugeiconsIconProps, "icon" | "altIcon"> & {
@@ -335,6 +348,19 @@ export const Home03 = createMultideckIcon(Home03IconData, "Home03")
 export const InstagramBrand = createMultideckIcon(InstagramIconData, "InstagramBrand")
 export const LinkedinBrand = createMultideckIcon(Linkedin02IconData, "LinkedinBrand")
 export const WhatsappBrand = createMultideckIcon(WhatsappIconData, "WhatsappBrand")
+export const XBrand = createMultideckIcon(NewTwitterIconData, "XBrand")
+export const YoutubeBrand = createMultideckIcon(YoutubeIconData, "YoutubeBrand")
+export const TiktokBrand = createMultideckIcon(TiktokIconData, "TiktokBrand")
+export const TextAlignLeft = createMultideckIcon(TextAlignLeftIconData, "TextAlignLeft")
+export const TextAlignCenter = createMultideckIcon(TextAlignCenterIconData, "TextAlignCenter")
+export const TextAlignRight = createMultideckIcon(TextAlignRightIconData, "TextAlignRight")
+export const TextBold = createMultideckIcon(TextBoldIconData, "TextBold")
+export const TextItalic = createMultideckIcon(TextItalicIconData, "TextItalic")
+export const TextAllCaps = createMultideckIcon(TextAllCapsIconData, "TextAllCaps")
+export const Undo = createMultideckIcon(Undo02IconData, "Undo")
+export const Redo = createMultideckIcon(Redo02IconData, "Redo")
+export const AlignTop = createMultideckIcon(AlignVerticalJustifyStartIconData, "AlignTop")
+export const AlignMiddle = createMultideckIcon(AlignVerticalJustifyCenterIconData, "AlignMiddle")
 
 export const Activity = createMultideckIcon(ActivityIconData, "Activity")
 export const AudioWaveform = createMultideckIcon(AudioWaveformIconData, "AudioWaveform")

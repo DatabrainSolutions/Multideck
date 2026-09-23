@@ -5,6 +5,8 @@ import {
   renderSignature,
   signatureCompanyText,
   signatureAssetIds,
+  signatureNeedsPersonPhoto,
+  signaturePersonPhotoKey,
   type SignatureDocument,
   type SignatureSelection,
   type SignatureTemplate,
@@ -151,7 +153,7 @@ async function context(admin: Db, actor: Actor) {
       ),
       data(
         admin.from("cmp_Users").select(
-          "User_ID,User_Firstname,User_Lastname,User_Email,User_JobTitle,User_AccessStatus",
+          "User_ID,User_Firstname,User_Lastname,User_Email,User_JobTitle,User_AccessStatus,User_ProfilePhotoBucket,User_ProfilePhotoPath,User_ProfilePhotoMimeType,User_ProfilePhotoSizeBytes,User_ProfilePhotoUpdatedAt",
         ).eq("Company_ID", actor.companyId),
       ),
       data(
@@ -195,6 +197,14 @@ async function context(admin: Db, actor: Actor) {
       profileValues, overrides: profile?.overrides || {}, profileRevision: profile?.revision || 0,
       ...profileValues, ...(profile?.overrides || {}),
       allowCustomisation: profile?.allow_customisation ?? null,
+      photo: u.User_ProfilePhotoBucket === "profile-photos" && u.User_ProfilePhotoPath
+        ? {
+          path: u.User_ProfilePhotoPath as string,
+          mimeType: u.User_ProfilePhotoMimeType as string,
+          sizeBytes: Number(u.User_ProfilePhotoSizeBytes) || 0,
+          updatedAt: u.User_ProfilePhotoUpdatedAt as string,
+        }
+        : null,
       departmentIds: (links ?? []).filter((l: Row) =>
         l.User_ID === u.User_ID &&
         (depts ?? []).some((d: Row) =>
@@ -242,12 +252,72 @@ function values(
     companyDetails: signatureCompanyText(ctx.policy.company_details, ctx.company, ctx.policy.website),
   };
 }
+/** Signature headshots use the person's profile photo, within the same limit as uploaded signature images. */
+const signaturePhotoMaxBytes = 2 * 1024 * 1024;
+function signaturePhoto(person: Row | null | undefined) {
+  const photo = person?.photo;
+  return photo && photo.sizeBytes <= signaturePhotoMaxBytes ? photo : null;
+}
+/** People as the browser sees them: photo storage paths stay server-side. */
+function publicPerson(person: Row, photoUrl?: string) {
+  const { photo, ...rest } = person;
+  return {
+    ...rest,
+    photoStatus: !photo ? "missing" : signaturePhoto(person) ? "ready" : "too_large",
+    ...(photoUrl ? { photoUrl } : {}),
+  };
+}
+/** A new profile photo changes what is sent, so it must be reviewed again like any other detail. */
+function signatureFingerprint(
+  template: SignatureTemplate,
+  document: SignatureDocument,
+  profile: SignatureValues,
+  person: Row,
+) {
+  const photo = signatureNeedsPersonPhoto(document) ? signaturePhoto(person) : null;
+  return sha256Hex(JSON.stringify([
+    template.id,
+    template.publishedRevision,
+    profile,
+    ...(photo ? [photo.path, photo.updatedAt] : []),
+  ]));
+}
+async function addPersonPhoto(
+  admin: Db,
+  document: SignatureDocument,
+  person: Row | null | undefined,
+  preview: boolean,
+  urls: Record<string, string>,
+  attachments: OutboundAttachment[],
+) {
+  const photo = signaturePhoto(person);
+  if (!photo || !signatureNeedsPersonPhoto(document)) return;
+  // A missing photo file falls back to the block's uploaded image, identically in review and send.
+  if (preview) {
+    const signed = await admin.storage.from("profile-photos").createSignedUrl(photo.path, 600);
+    if (signed.data?.signedUrl) urls[signaturePersonPhotoKey] = signed.data.signedUrl;
+    return;
+  }
+  const file = await admin.storage.from("profile-photos").download(photo.path);
+  if (!file.data) return;
+  const contentId = `signature-photo-${person!.id}@multideck`;
+  const extension = photo.mimeType === "image/png" ? "png" : photo.mimeType === "image/webp" ? "webp" : "jpg";
+  urls[signaturePersonPhotoKey] = `cid:${contentId}`;
+  attachments.push({
+    fileName: `headshot.${extension}`,
+    mimeType: photo.mimeType,
+    bytes: new Uint8Array(await file.data.arrayBuffer()),
+    contentId,
+    isInline: true,
+  });
+}
 async function assetMap(
   admin: Db,
   actor: Actor,
   document: SignatureDocument,
   owner: string | null,
   preview: boolean,
+  person?: Row | null,
 ) {
   const ids = signatureAssetIds(document);
   if (ids.length > 8) {
@@ -259,6 +329,7 @@ async function assetMap(
   }
   const urls: Record<string, string> = {};
   const attachments: OutboundAttachment[] = [];
+  await addPersonPhoto(admin, document, person, preview, urls, attachments);
   if (!ids.length) return { urls, attachments };
   const rows = await data(
     admin.from("email_signature_assets").select("*").eq(
@@ -310,6 +381,15 @@ async function assetMap(
   }
   return { urls, attachments };
 }
+/** Signed profile photo links let the builder show each person's own headshot. */
+async function peopleWithPhotos(admin: Db, people: Row[]) {
+  const paths = people.map((p) => signaturePhoto(p)?.path).filter(Boolean) as string[];
+  const signed = paths.length
+    ? (await admin.storage.from("profile-photos").createSignedUrls(paths, 600)).data ?? []
+    : [];
+  const urls = new Map<string, string>(signed.flatMap((s) => s.signedUrl && s.path ? [[s.path, s.signedUrl]] : []));
+  return people.map((p) => publicPerson(p, urls.get(signaturePhoto(p)?.path ?? "")));
+}
 export async function signatureChoices(
   admin: Db,
   actor: Actor,
@@ -326,15 +406,13 @@ export async function signatureChoices(
   const profile = values(ctx, ctx.me, mailbox.CommMailbox_Address);
   const choices = await Promise.all(eligible.map(async (t) => {
     const doc = t.publishedDocument!;
-    const { urls } = await assetMap(admin, actor, doc, t.ownerUserId, true);
+    const { urls } = await assetMap(admin, actor, doc, t.ownerUserId, true, ctx.me);
     const rendered = renderSignature(doc, profile, urls);
     return {
       id: t.id,
       name: t.name,
       revision: t.publishedRevision!,
-      fingerprint: await sha256Hex(
-        JSON.stringify([t.id, t.publishedRevision, profile]),
-      ),
+      fingerprint: await signatureFingerprint(t, doc, profile, ctx.me),
       ...rendered,
       personal: !!t.ownerUserId,
     };
@@ -394,8 +472,11 @@ export async function resolveSignature(
     );
   }
   const profile = values(ctx, ctx.me, mailbox.CommMailbox_Address);
-  const fingerprint = await sha256Hex(
-    JSON.stringify([template.id, template.publishedRevision, profile]),
+  const fingerprint = await signatureFingerprint(
+    template,
+    template.publishedDocument!,
+    profile,
+    ctx.me,
   );
   if (
     selection?.revision !== template.publishedRevision ||
@@ -413,6 +494,7 @@ export async function resolveSignature(
     template.publishedDocument!,
     template.ownerUserId,
     false,
+    ctx.me,
   );
   return {
     ...renderSignature(template.publishedDocument!, profile, assets.urls),
@@ -431,7 +513,7 @@ export async function signatureRoute(
   const ctx = await context(admin, actor);
   if (path[1] === "team" && method === "GET") {
     if (!ctx.manager) throw new InboxHttpError(403,"Signature manager required.","permission_denied");
-    return { people: ctx.people, departments: ctx.depts, templates: ctx.templates.filter(t=>!t.ownerUserId), policy: ctx.policy };
+    return { people: ctx.people.map((p: Row) => publicPerson(p)), departments: ctx.depts, templates: ctx.templates.filter(t=>!t.ownerUserId), policy: ctx.policy };
   }
   if (path[1] === "team" && method === "PATCH") {
     if (!ctx.manager) throw new InboxHttpError(403,"Signature manager required.","permission_denied");
@@ -442,7 +524,8 @@ export async function signatureRoute(
     if (field === "website" && value && !/^https:\/\/[^\s<>]+$/i.test(value)) throw new InboxHttpError(400,"Use a website beginning with https://.","invalid_website");
     await data(admin.rpc("email_signature_team_patch",{p_actor:actor.userId,p_user:body.userId,p_field:field,p_value:value,p_expected:body.expectedRevision}));
     const updated=await context(admin,actor);
-    return updated.people.find((p:Row)=>p.id===body.userId);
+    const person = updated.people.find((p:Row)=>p.id===body.userId);
+    return person ? publicPerson(person) : person;
   }
   if (path.length === 1 && method === "GET") {
     const eligible = eligibleSignatures(
@@ -494,7 +577,7 @@ export async function signatureRoute(
       userId: actor.userId,
       company: ctx.company,
       policy: ctx.policy,
-      people: ctx.manager ? ctx.people : [ctx.me],
+      people: await peopleWithPhotos(admin, ctx.manager ? ctx.people : [ctx.me]),
       departments: ctx.manager
         ? (ctx.depts ?? []).map((d: Row) => ({
           id: d.Department_ID,
@@ -564,7 +647,7 @@ export async function signatureRoute(
       }
     }
     const owner = body.personal ? actor.userId : null;
-    const assets = await assetMap(admin, actor, doc, owner, true);
+    const assets = await assetMap(admin, actor, doc, owner, true, person);
     return renderSignature(doc, values(ctx, person), assets.urls);
   }
   if (path[1] === "assets" && method === "POST") {

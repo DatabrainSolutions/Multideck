@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { ContactEmailAction } from "@/components/multideck/contact-email-action"
 import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
 import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react"
@@ -109,6 +110,9 @@ export type CrmDeal = {
   owner: string
   status: string
   isOverdue?: boolean
+  isClosed?: boolean
+  actionSummary?: string
+  actionOverdue?: boolean
   summary: string
   nextStep: string
   tone: StatusTone
@@ -480,8 +484,9 @@ function DealCardBody({
           )
         })}
       </dl>
-      <div className="flex justify-end">
-        <span className="grid size-7 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-colors group-hover:text-[var(--md-accent)]">
+      <div className="flex items-center justify-between gap-3">
+        {deal.actionSummary ? <p className={cn("min-w-0 flex-1 text-start text-[11.5px] leading-5", deal.actionOverdue ? "text-[var(--md-amber)]" : "text-[var(--md-text)]")} data-i18n-skip dir="auto">{deal.actionOverdue ? `${t("Overdue")} · ` : ""}{deal.actionSummary}</p> : null}
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-colors group-hover:text-[var(--md-accent)]">
           <ArrowRight data-icon="inline-end" className="size-4" strokeWidth={1.2} />
         </span>
       </div>
@@ -498,6 +503,7 @@ export function CrmPipelineBoard({
   onPipelineChange,
   onOpenSettings,
   onMoveDeal,
+  canMoveDeal = true,
   stagePaging,
 }: {
   pipelines?: readonly CrmPipelineBoardData[]
@@ -512,6 +518,7 @@ export function CrmPipelineBoard({
   onPipelineChange?: (pipeline: CrmPipelineBoardData) => void
   onOpenSettings?: () => void
   onMoveDeal?: (dealId: string, pipelineId: string, stageId: string) => Promise<void> | void
+  canMoveDeal?: boolean
   stagePaging?: Readonly<Record<string, { total: number; loading?: boolean; onLoadMore?: () => void }>>
 }) {
   const { t } = useLanguage()
@@ -525,7 +532,9 @@ export function CrmPipelineBoard({
     columns: kanbanColumns,
     getId: (deal) => deal.id,
     onCommit: ({ cardId, columns }) => {
-      setBoardStages((currentStages) => currentStages.map((stage) => ({
+      // Server-backed boards move only after the mutation is confirmed. A drop
+      // into Won/Lost may open a review dialog before it is allowed to move.
+      if (!onMoveDeal) setBoardStages((currentStages) => currentStages.map((stage) => ({
         ...stage,
         deals: columns.find((column) => column.id === stage.id)?.tasks ?? stage.deals,
       })))
@@ -667,8 +676,8 @@ export function CrmPipelineBoard({
                     isDragging={kanban.activeCardId === deal.id}
                     isClickSuppressed={kanban.isClickSuppressed}
                     onSelect={onSelectDeal}
-                    onPointerDown={(event) => kanban.handlePointerDown(event, deal.id)}
-                    onKeyDown={(event) => kanban.handleKeyDown(event, deal.id)}
+                    onPointerDown={canMoveDeal && !deal.isClosed ? (event) => kanban.handlePointerDown(event, deal.id) : undefined}
+                    onKeyDown={canMoveDeal && !deal.isClosed ? (event) => kanban.handleKeyDown(event, deal.id) : undefined}
                     visibleFields={visibleDealCardFields}
                   />
                 ))}
@@ -1060,7 +1069,7 @@ export function CrmLeadQualificationTable({
         register: registerExport ? { ...registerExport, dateLabel: "Lead created date", dateValue: (lead) => lead.createdAt } : undefined,
       }}
       serverSorting={serverSorting}
-      emptyState={emptyState ?? <p className="text-[13px] text-[var(--md-text)]">{emptyMessage}</p>}
+      emptyState={emptyState ?? <div className="py-4 text-center"><EmptyStateIllustration variant="contacts" className="mb-3" /><p className="text-[13px] text-[var(--md-text)]">{emptyMessage}</p></div>}
     />
   )
 }

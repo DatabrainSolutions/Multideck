@@ -22,7 +22,7 @@ test("each Dexter role has a distinct freight-specialist operating brief", () =>
   assert.match(edgeFunction, /SPECIALIST_INSTRUCTIONS\[specialist\] \?\? SPECIALIST_INSTRUCTIONS\.auto/)
   assert.match(edgeFunction, /# Active specialist/)
   assert.equal(
-    edgeFunction.match(/instructions: buildInstructions\(specialist, domains, actions, accessMode, locale, emailProviders\)/g)?.length,
+    edgeFunction.match(/instructions: buildInstructions\(specialist, domains, actions, accessMode, locale, emailProviders, training\)/g)?.length,
     2,
   )
 })

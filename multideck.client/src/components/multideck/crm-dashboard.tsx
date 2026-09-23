@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowRight, Inbox, MapPin, Moon, Workflow } from "@/components/icons/hugeicons"
 import L from "leaflet"
@@ -17,6 +17,7 @@ import type {
   CrmFollowUpReason,
 } from "@/lib/lead-api"
 import type { StatusTone } from "@/data/operational-data"
+import { areaTown, coordinateForArea, crmInitials, type AreaCoordinate } from "@/lib/crm-dashboard"
 import { CountUpValue } from "./rolling-digits"
 import { StatusPill, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
@@ -24,33 +25,45 @@ import { Surface } from "./surface"
 /* ── Shared panel shell ──────────────────────────────────────────────────── */
 
 /**
- * Every panel on this dashboard is the same object: a title, an optional link,
- * and a body that grows. One shell is what lets five panels of very different
- * content still read as one grid.
+ * Every panel on this dashboard is the same object: a title, an optional quiet
+ * measure beside it, an optional link, and a body that grows. One shell is what
+ * lets panels of very different content still read as one grid – the sales
+ * analysis panels are built from it too.
  */
-function Panel({
+export function CrmPanel({
   title,
+  meta,
   action,
   children,
   className,
+  footer,
 }: {
   title: string
+  /** What the panel is measured over, or how many it holds. Never a sentence. */
+  meta?: ReactNode
   action?: ReactNode
   children: ReactNode
   className?: string
+  footer?: ReactNode
 }) {
   return (
     <Surface padding="none" className={cn("md-crm-panel", className)}>
       <div className="md-crm-panel-head">
-        <h2 className="md-crm-panel-title">{title}</h2>
-        {action}
+        <div className="md-crm-panel-heading">
+          <h2 className="md-crm-panel-title">{title}</h2>
+          {meta ? <p className="md-crm-panel-meta">{meta}</p> : null}
+        </div>
+        {action ? <div className="md-crm-panel-actions">{action}</div> : null}
       </div>
       {children}
+      {footer ? <div className="md-crm-panel-foot">{footer}</div> : null}
     </Surface>
   )
 }
 
-function PanelLink({ label, onClick }: { label: string; onClick: () => void }) {
+const Panel = CrmPanel
+
+export function CrmPanelLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <Button type="button" variant="ghost" size="sm" className="md-crm-panel-link" onClick={onClick}>
       {label}
@@ -59,7 +72,9 @@ function PanelLink({ label, onClick }: { label: string; onClick: () => void }) {
   )
 }
 
-function EmptyState({ icon: Icon, title, body }: { icon: typeof Inbox; title: string; body: string }) {
+const PanelLink = CrmPanelLink
+
+export function CrmEmptyState({ icon: Icon, title, body }: { icon: typeof Inbox; title: string; body: string }) {
   return (
     <div className="md-crm-empty">
       <span className="md-crm-empty-glyph" aria-hidden="true"><Icon className="size-4" strokeWidth={1.4} /></span>
@@ -69,12 +84,14 @@ function EmptyState({ icon: Icon, title, body }: { icon: typeof Inbox; title: st
   )
 }
 
+const EmptyState = CrmEmptyState
+
 /**
  * The dashboard's one row shape: a glyph, a two-line body, and a right-hand
- * stack. Three panels use it, which is why a queue entry, a quiet lead and a
- * logged activity scan at the same rhythm.
+ * stack. Every list on the dashboard uses it, which is why a queue entry, a
+ * quiet lead and a deal waiting on a next step scan at the same rhythm.
  */
-function Row({
+export function CrmRow({
   index,
   accent,
   glyph,
@@ -86,7 +103,10 @@ function Row({
   sideInteractive,
   onOpen,
   ariaLabel,
+  ref,
 }: {
+  /** Forwarded so a list can hand an exiting row to a popLayout presence. */
+  ref?: Ref<HTMLDivElement>
   index: number
   accent?: string
   glyph?: ReactNode
@@ -107,6 +127,7 @@ function Row({
 
   return (
     <motion.div
+      ref={ref}
       layout="position"
       className="md-crm-row"
       data-openable={onOpen ? "true" : undefined}
@@ -131,9 +152,11 @@ function Row({
   )
 }
 
+const Row = CrmRow
+
 /** Grown with a transform rather than a width, so a sweep of bars never asks the
  *  panel for a layout pass. */
-function Meter({ share, index, className }: { share: number; index: number; className?: string }) {
+export function CrmMeter({ share, index, className }: { share: number; index: number; className?: string }) {
   const shouldReduceMotion = useReducedMotion()
 
   return (
@@ -147,6 +170,8 @@ function Meter({ share, index, className }: { share: number; index: number; clas
     </span>
   )
 }
+
+const Meter = CrmMeter
 
 /* ── Opportunity value ───────────────────────────────────────────────────── */
 
@@ -353,11 +378,6 @@ const bucketLabel: Record<CrmQueueBucket, string> = {
 
 const bucketOrder: CrmQueueBucket[] = ["reply_due", "awaiting_reply", "scheduled", "never_contacted"]
 
-function initialsOf(source: string) {
-  const words = source.replace(/@.*$/, "").split(/[\s._-]+/).filter(Boolean)
-  const letters = words.length > 1 ? `${words[0][0]}${words[1][0]}` : source.slice(0, 2)
-  return letters.toLocaleUpperCase()
-}
 
 function QueueFilterChips({
   counts,
@@ -435,7 +455,7 @@ const QueueRow = memo(function QueueRow({
       accent={toneToVar(tone)}
       ariaLabel={`${name} – ${opportunity.subject}`}
       onOpen={openable ? () => onOpen(opportunity) : undefined}
-      glyph={<span className="md-crm-avatar" aria-hidden="true">{initialsOf(name)}</span>}
+      glyph={<span className="md-crm-avatar" aria-hidden="true">{crmInitials(name)}</span>}
       title={
         <>
           {name}
@@ -547,69 +567,6 @@ export function CrmFollowUpQueue({
 
 /* ── Leads by area ───────────────────────────────────────────────────────── */
 
-/** The first segment of a stored address label is the town; the rest is county,
- *  postcode and country, which is noise on a compact map label. */
-function areaTown(label: string) {
-  return label.split(" · ")[0] || label
-}
-
-type AreaCoordinate = readonly [number, number]
-
-/**
- * Dashboard area records currently carry a human address label rather than a
- * geocode. Resolve the towns we support locally so the dashboard remains fast,
- * deterministic and does not send customer addresses to a third-party
- * geocoding service. Unknown places stay explicit in the footer.
- */
-const areaCoordinates: Record<string, AreaCoordinate> = {
-  aberdeen: [57.1497, -2.0943],
-  belfast: [54.5973, -5.9301],
-  birmingham: [52.4862, -1.8904],
-  bradford: [53.795, -1.7594],
-  brighton: [50.8225, -0.1372],
-  bristol: [51.4545, -2.5879],
-  cambridge: [52.2053, 0.1218],
-  cardiff: [51.4816, -3.1791],
-  coventry: [52.4068, -1.5197],
-  derby: [52.9225, -1.4746],
-  dundee: [56.462, -2.9707],
-  edinburgh: [55.9533, -3.1883],
-  exeter: [50.7184, -3.5339],
-  glasgow: [55.8642, -4.2518],
-  gloucester: [51.8642, -2.2382],
-  hull: [53.7676, -0.3274],
-  leeds: [53.8008, -1.5491],
-  leicester: [52.6369, -1.1398],
-  liverpool: [53.4084, -2.9916],
-  london: [51.5072, -0.1276],
-  manchester: [53.4808, -2.2426],
-  middlesbrough: [54.5742, -1.235],
-  newcastle: [54.9783, -1.6178],
-  northampton: [52.2405, -0.9027],
-  norwich: [52.6309, 1.2974],
-  nottingham: [52.9548, -1.1581],
-  oxford: [51.752, -1.2577],
-  peterborough: [52.5695, -0.2405],
-  plymouth: [50.3755, -4.1427],
-  portsmouth: [50.8198, -1.088],
-  preston: [53.7632, -2.7031],
-  reading: [51.4543, -0.9781],
-  sheffield: [53.3811, -1.4701],
-  southampton: [50.9097, -1.4044],
-  stoke: [53.0027, -2.1794],
-  sunderland: [54.9069, -1.3838],
-  swansea: [51.6214, -3.9436],
-  york: [53.959, -1.0815],
-}
-
-function coordinateForArea(label: string): AreaCoordinate | null {
-  const town = areaTown(label).trim().toLocaleLowerCase()
-  const exact = areaCoordinates[town]
-  if (exact) return exact
-
-  const match = Object.entries(areaCoordinates).find(([name]) => town.includes(name) || name.includes(town))
-  return match?.[1] ?? null
-}
 
 function FitAreaBounds({ points }: { points: AreaCoordinate[] }) {
   const map = useMap()
@@ -741,50 +698,133 @@ export function CrmAreaHeatmap({
   )
 }
 
-/* ── Recent activity ─────────────────────────────────────────────────────── */
+/* ── Activity ────────────────────────────────────────────────────────────── */
 
+type FeedEntry = CrmDashboardData["activity"][number] & { repeats: number; day: string }
+
+const dayMs = 86_400_000
+
+function localDayKey(value: Date) {
+  return `${value.getFullYear()}-${value.getMonth()}-${value.getDate()}`
+}
+
+/**
+ * What has been logged against your records inside the dashboard period,
+ * grouped by day. Consecutive identical entries on one record collapse into a
+ * single line with a count: six "details updated" rows in a row are one event
+ * worth knowing about, not six.
+ */
 export function CrmActivityFeed({
   activity,
-  formatDateTime,
-  onOpen,
-  limit = 6,
+  periodDays,
+  onOpenRecord,
+  limit = 7,
 }: {
   activity: CrmDashboardData["activity"]
-  formatDateTime: (value: string) => string
-  onOpen?: () => void
+  periodDays: number
+  onOpenRecord?: (item: CrmDashboardData["activity"][number]) => void
   limit?: number
 }) {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const visible = activity.slice(0, limit)
+
+  const groups = useMemo(() => {
+    const now = new Date()
+    const since = now.getTime() - periodDays * dayMs
+    const entries: FeedEntry[] = []
+    for (const item of activity) {
+      const at = new Date(item.at)
+      if (Number.isNaN(at.getTime()) || at.getTime() < since) continue
+      const day = localDayKey(at)
+      const previous = entries[entries.length - 1]
+      if (previous && previous.day === day && previous.subject === item.subject && previous.leadId === item.leadId && previous.dealId === item.dealId) {
+        previous.repeats += 1
+        continue
+      }
+      entries.push({ ...item, repeats: 1, day })
+    }
+    const today = localDayKey(now)
+    const yesterday = localDayKey(new Date(now.getTime() - dayMs))
+    const dayLabel = new Intl.DateTimeFormat(language, { weekday: "short", day: "numeric", month: "short" })
+    const grouped: Array<{ day: string; label: string; items: FeedEntry[] }> = []
+    for (const entry of entries.slice(0, limit)) {
+      let group = grouped[grouped.length - 1]
+      if (!group || group.day !== entry.day) {
+        const label = entry.day === today ? t("Today") : entry.day === yesterday ? t("Yesterday") : dayLabel.format(new Date(entry.at))
+        group = { day: entry.day, label, items: [] }
+        grouped.push(group)
+      }
+      group.items.push(entry)
+    }
+    return { grouped, total: entries.length }
+  }, [activity, language, limit, periodDays, t])
+
+  const time = useMemo(() => new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit" }), [language])
+  let order = 0
 
   return (
     <Panel
-      title={t("Recent activity")}
-      action={activity.length && onOpen ? <PanelLink label={t("All activity")} onClick={onOpen} /> : undefined}
+      title={t("Activity")}
+      meta={periodDays === 365 ? t("Last 12 months") : `${t("Last")} ${periodDays} ${t("days")}`}
     >
-      {visible.length ? (
+      {groups.grouped.length ? (
         <div className="md-crm-feed">
-          <span className="md-crm-feed-spine" aria-hidden="true" />
-          {visible.map((item, index) => (
+          <AnimatePresence initial={false} mode="popLayout">
+          {groups.grouped.map((group) => (
             <motion.div
-              key={item.id}
-              className="md-crm-feed-row"
-              initial={shouldReduceMotion ? false : { opacity: 0, x: -6 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.03) }}
+              key={group.day}
+              layout="position"
+              className="md-crm-feed-day"
+              exit={shouldReduceMotion ? undefined : { opacity: 0, transition: mdMotion.exit }}
+              transition={shouldReduceMotion ? { duration: 0 } : mdMotion.enter}
             >
-              <span className="md-crm-feed-node" aria-hidden="true" />
-              <p className="md-crm-feed-subject" dir="auto">{item.subject}</p>
-              <p className="md-crm-feed-when">{formatDateTime(item.at)}</p>
+              <p className="md-crm-feed-day-label">{group.label}</p>
+              <div className="md-crm-feed-items">
+                {group.items.map((item) => {
+                  const index = order++
+                  const openable = Boolean(onOpenRecord && (item.leadId || item.dealId))
+                  const body = (
+                    <>
+                      <span className="md-crm-feed-node" aria-hidden="true" />
+                      <span className="md-crm-feed-body">
+                        <span className="md-crm-feed-subject" dir="auto">
+                          {item.subject}
+                          {item.repeats > 1 ? <span className="md-crm-feed-repeats" data-i18n-skip dir="ltr">×{item.repeats}</span> : null}
+                        </span>
+                        {item.summary ? <span className="md-crm-feed-summary" dir="auto">{item.summary}</span> : null}
+                      </span>
+                      <span className="md-crm-feed-when" data-i18n-skip dir="ltr">{time.format(new Date(item.at))}</span>
+                    </>
+                  )
+                  return (
+                    <motion.div
+                      key={item.id}
+                      className="md-crm-feed-row"
+                      initial={shouldReduceMotion ? false : { opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.03) }}
+                    >
+                      {openable ? (
+                        <button type="button" className="md-crm-feed-target" onClick={() => onOpenRecord?.(item)}>{body}</button>
+                      ) : (
+                        <div className="md-crm-feed-target">{body}</div>
+                      )}
+                    </motion.div>
+                  )
+                })}
+              </div>
             </motion.div>
           ))}
+          </AnimatePresence>
+          {groups.total > limit ? (
+            <p className="md-crm-feed-more"><span data-i18n-skip dir="ltr">{groups.total - limit}</span> {t("earlier in this period")}</p>
+          ) : null}
         </div>
       ) : (
         <EmptyState
           icon={Inbox}
-          title={t("No assigned CRM activity yet.")}
-          body={t("Calls, emails and notes you log against your records will appear here.")}
+          title={t("Nothing logged in this period.")}
+          body={t("Calls, emails and notes logged against your records will appear here.")}
         />
       )}
     </Panel>
@@ -794,13 +834,15 @@ export function CrmActivityFeed({
 /* ── Leads gone quiet ────────────────────────────────────────────────────── */
 
 /**
- * Open leads with no contact inside the inactivity window, ranked by how much
- * is sitting on them. The bar makes the money comparable at a glance, which is
- * the whole point of the panel: what am I quietly losing.
+ * Open leads with no contact inside the inactivity window. Ranked by what is
+ * sitting on them, then by how long they have been silent, so the lead you are
+ * quietly losing the most on is always first. A value bar is only drawn when at
+ * least one lead carries a value – a column of empty bars says nothing.
  */
 export function CrmQuietLeads({
   leads,
   inactivityDays,
+  openLeads,
   formatValue,
   formatDate,
   onOpenLead,
@@ -809,6 +851,8 @@ export function CrmQuietLeads({
 }: {
   leads: CrmDashboardFollowUp[]
   inactivityDays: number
+  /** All open leads, so the panel can say what share has gone quiet. */
+  openLeads?: number
   formatValue: (value: number, currency: string) => string
   formatDate: (value: string) => string
   onOpenLead: (leadId: string) => void
@@ -817,18 +861,36 @@ export function CrmQuietLeads({
 }) {
   const { t } = useLanguage()
   const ranked = useMemo(
-    () => [...leads].sort((a, b) => (b.opportunityValue ?? 0) - (a.opportunityValue ?? 0)).slice(0, limit),
+    () => [...leads].sort((a, b) =>
+      (b.opportunityValue ?? 0) - (a.opportunityValue ?? 0)
+      || Number(b.neverContacted) - Number(a.neverContacted)
+      || (b.contactAgeDays ?? 0) - (a.contactAgeDays ?? 0)
+      || a.companyName.localeCompare(b.companyName),
+    ).slice(0, limit),
     [leads, limit],
   )
+  const hasValues = ranked.some((lead) => (lead.opportunityValue ?? 0) > 0)
   const peak = Math.max(...ranked.map((lead) => lead.opportunityValue ?? 0), 1)
+  const hidden = Math.max(leads.length - ranked.length, 0)
+  const neverContacted = leads.filter((lead) => lead.neverContacted).length
+  // The closing line gives a short list a floor, so the space above it reads as
+  // room rather than as something that failed to load.
+  const summary = leads.length ? [
+    openLeads ? `${leads.length} ${t("of")} ${openLeads} ${openLeads === 1 ? t("open lead") : t("open leads")}` : null,
+    neverContacted ? `${neverContacted} ${t("never contacted")}` : null,
+    hidden ? `${hidden} ${t("not shown")}` : null,
+  ].filter(Boolean).join(" · ") : ""
 
   return (
     <Panel
-      title={`${t("Leads gone quiet")} · ${inactivityDays}${t("d")}`}
+      title={t("Gone quiet")}
+      meta={`${t("No contact in")} ${inactivityDays} ${t("days")}`}
       action={leads.length && onViewAll ? <PanelLink label={t("Leads")} onClick={onViewAll} /> : undefined}
+      footer={summary || undefined}
     >
       {ranked.length ? (
-        <div className="md-crm-list md-crm-list-bars">
+        <div className="md-crm-list" data-valued={hasValues ? "true" : undefined}>
+          <AnimatePresence initial={false} mode="popLayout">
           {ranked.map((lead, index) => (
             <Row
               key={lead.id}
@@ -836,7 +898,7 @@ export function CrmQuietLeads({
               accent={toneToVar(lead.neverContacted ? "red" : "amber")}
               ariaLabel={lead.companyName}
               onOpen={() => onOpenLead(lead.id)}
-              glyph={<span className="md-crm-avatar" aria-hidden="true">{initialsOf(lead.companyName)}</span>}
+              glyph={<span className="md-crm-avatar" aria-hidden="true">{crmInitials(lead.companyName)}</span>}
               title={
                 <>
                   {lead.companyName}
@@ -844,30 +906,35 @@ export function CrmQuietLeads({
                 </>
               }
               sub={[lead.stage, lead.laneContext].filter(Boolean).join(" · ")}
-              meter={<Meter share={(lead.opportunityValue ?? 0) / peak} index={index} />}
+              meter={hasValues ? <Meter share={(lead.opportunityValue ?? 0) / peak} index={index} /> : undefined}
               side={
                 <>
-                  <span className="md-crm-row-value" data-i18n-skip dir="ltr">
-                    {lead.opportunityValue ? formatValue(lead.opportunityValue, lead.currencyCode) : "–"}
-                  </span>
-                  <span className="md-crm-row-age">
+                  {hasValues ? (
+                    <span className="md-crm-row-value" data-i18n-skip dir="ltr">
+                      {lead.opportunityValue ? formatValue(lead.opportunityValue, lead.currencyCode) : t("No value")}
+                    </span>
+                  ) : null}
+                  <span className="md-crm-row-age" data-tone={lead.neverContacted ? "red" : undefined}>
                     {lead.neverContacted
-                      ? t("never contacted")
-                      : lead.lastContactAt
-                        ? `${t("quiet since")} ${formatDate(lead.lastContactAt)}`
-                        : t("no contact recorded")}
+                      ? t("Never contacted")
+                      : lead.contactAgeDays != null
+                        ? <><span data-i18n-skip dir="ltr">{lead.contactAgeDays}</span>&nbsp;{t("days quiet")}</>
+                        : lead.lastContactAt
+                          ? `${t("Quiet since")} ${formatDate(lead.lastContactAt)}`
+                          : t("No contact recorded")}
                     <ArrowRight className="md-crm-row-arrow size-3" strokeWidth={1.6} aria-hidden="true" />
                   </span>
                 </>
               }
             />
           ))}
+          </AnimatePresence>
         </div>
       ) : (
         <EmptyState
           icon={Moon}
           title={t("Every open lead has been contacted recently.")}
-          body={t("Leads drop into this list once they pass the inactivity threshold without a conversation.")}
+          body={t("Leads land here once they pass the inactivity window without a conversation.")}
         />
       )}
     </Panel>
@@ -917,10 +984,13 @@ export function CrmDashboardSkeleton() {
 export function CrmBand({
   index,
   className,
+  count,
   children,
 }: {
   index: number
   className?: string
+  /** How many panels the band holds, for bands whose column split depends on it. */
+  count?: number
   children: ReactNode
 }) {
   const shouldReduceMotion = useReducedMotion()
@@ -928,6 +998,7 @@ export function CrmBand({
   return (
     <motion.div
       className={className}
+      data-count={count}
       initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.042) }}

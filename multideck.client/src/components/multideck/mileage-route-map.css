@@ -1,0 +1,47 @@
+.mileage-route-map {
+  background: var(--md-surface-soft);
+  font-family: var(--font-sans);
+}
+
+/* Quiet the real map imagery only; route geometry and controls keep full contrast. */
+.mileage-route-map .leaflet-tile-pane {
+  filter: grayscale(1) contrast(.55) brightness(1.28);
+}
+
+.dark .mileage-route-map .leaflet-tile-pane {
+  filter: grayscale(1) invert(1) contrast(.65) brightness(.65);
+}
+
+.mileage-route-map .leaflet-control-zoom {
+  border: 0;
+  box-shadow: var(--md-shadow-soft);
+  overflow: hidden;
+}
+
+.mileage-route-map .leaflet-control-zoom a,
+.mileage-route-map .leaflet-control-attribution,
+.mileage-route-map .leaflet-tooltip {
+  background: var(--md-surface);
+  color: var(--md-ink);
+  border-color: var(--md-line);
+  font-family: var(--font-sans);
+}
+
+.mileage-route-map .leaflet-control-zoom a:hover {
+  background: var(--md-hover);
+}
+
+.mileage-route-map .leaflet-control-zoom a:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: -3px;
+}
+
+.mileage-route-map .leaflet-control-attribution a {
+  color: var(--md-ink);
+  text-decoration: underline;
+}
+
+.mileage-route-map .leaflet-tooltip-top::before { border-top-color: var(--md-surface); }
+.mileage-route-map .leaflet-tooltip-bottom::before { border-bottom-color: var(--md-surface); }
+.mileage-route-map .leaflet-tooltip-left::before { border-left-color: var(--md-surface); }
+.mileage-route-map .leaflet-tooltip-right::before { border-right-color: var(--md-surface); }

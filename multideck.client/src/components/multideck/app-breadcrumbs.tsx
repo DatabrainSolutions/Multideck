@@ -35,6 +35,10 @@ const staticLeafLabels: Record<string, string> = {
   "/calendar/booking-links": "Booking links",
   "/components": "Components",
   "/crm": "CRM",
+  "/crm/trips": "Trips & mileage",
+  "/crm/trips/new": "New trip",
+  "/crm/trips/settings": "Mileage settings",
+  "/finance/mileage": "Mileage payments",
   "/crm/phone-calls": "Phone calls",
   "/crm/accounts": "Companies",
   "/crm/contacts": "Contacts",
@@ -88,6 +92,7 @@ const staticLeafLabels: Record<string, string> = {
 }
 
 const crmChildLabels: Record<string, string> = {
+  insights: "Insights",
   accounts: "Companies",
   contacts: "Contacts",
   deals: "Deals",
@@ -322,12 +327,33 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     ]
   }
 
+  if (route === "/crm/trips" || route.startsWith("/crm/trips/") || route === "/finance/mileage" || route.startsWith("/finance/mileage/")) {
+    const isFinance = route.startsWith("/finance/")
+    const root = isFinance ? "/finance/mileage" : "/crm/trips"
+    const suffix = route.slice(root.length + 1)
+    return [
+      { label: "Home", route: "/" },
+      { label: isFinance ? "Finance" : "Sales & CRM", ...(isFinance ? {} : { route: "/crm" }) },
+      { label: isFinance ? "Mileage payments" : "Trips & mileage", ...(suffix ? { route: root } : {}) },
+      ...(suffix ? [{ label: suffix === "new" ? "New trip" : suffix === "settings" ? "Settings" : "Trip details" }] : []),
+    ]
+  }
+
   if (route.startsWith("/crm/")) {
     const child = route.split("/")[2]
     return [
       { label: "Home", route: "/" },
       { label: "CRM", route: "/crm" },
       { label: crmChildLabels[child] ?? referenceLabel(child) },
+    ]
+  }
+
+  if (route === "/warehouse/pricing") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Admin" },
+      { label: "Warehouse" },
+      { label: "Default pricing" },
     ]
   }
 

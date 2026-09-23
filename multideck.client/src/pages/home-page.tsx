@@ -425,15 +425,13 @@ export function HomePage({
                 <HomeDeckRow index={index}>
                   <div className="flex items-center gap-1">
                     <TodoCompletionControl
-                      className="size-7"
+                      className="min-w-0 flex-1"
                       checked={completingTaskId === task.id}
                       busy={completingTaskId === task.id}
                       label={`${t("Mark done")}: ${task.title}`}
+                      title={task.title}
                       onChange={() => void completeTask(task)}
                     />
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] leading-4 text-[var(--md-ink)]" dir="auto">
-                      {task.title}
-                    </span>
                     {task.priority === "urgent" || task.priority === "high" ? (
                       <span className="shrink-0 text-[11px] leading-4 text-[var(--md-amber)]">
                         {t(task.priority === "urgent" ? "Urgent" : "High")}
@@ -586,13 +584,13 @@ export function HomePage({
   ]
 
   return (
-    <div className="relative flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[var(--md-bg)]">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--md-bg)]">
       <div
         className={cn(
           "relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-[var(--md-page-stack-gap)] md-scrollbar",
           docked
             ? "pb-[max(var(--md-page-stack-gap),env(safe-area-inset-bottom))] pt-[var(--md-gap-lg)]"
-            : "py-[clamp(28px,5vw,48px)]",
+            : "pb-[max(2rem,env(safe-area-inset-bottom))] pt-20 lg:py-[clamp(28px,5vw,48px)]",
         )}
       >
         {/* Auto margins rather than `justify-center`: a centred flex column
@@ -617,7 +615,7 @@ export function HomePage({
             {docked ? null : (
               <motion.div
                 key="home-deck"
-                className="mt-[var(--md-gap-xl)] grid grid-cols-2 gap-3 border-t border-[var(--md-line)] pt-[var(--md-gap-xl)] lg:grid-cols-4"
+                className="mt-[var(--md-gap-xl)] grid grid-cols-1 gap-3 border-t border-[var(--md-line)] pt-[var(--md-gap-xl)] sm:grid-cols-2 xl:grid-cols-4"
                 variants={shouldReduceMotion ? undefined : deckVariants}
                 initial="hidden"
                 animate="visible"
@@ -626,7 +624,7 @@ export function HomePage({
                 {deck.map(({ id, module }) => (
                   <motion.div
                     key={id}
-                    className="aspect-[3/4] min-w-0"
+                    className="min-w-0 sm:aspect-[3/4]"
                     variants={shouldReduceMotion ? undefined : deckModuleVariants}
                     style={{ willChange: "transform, opacity" }}
                   >

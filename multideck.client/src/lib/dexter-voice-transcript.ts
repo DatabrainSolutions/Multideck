@@ -4,7 +4,7 @@ import { voiceTranscriptTurns, type VoiceFragment } from "../../../supabase/func
 export type VoiceTranscriptSession = { id: string; created_at: string; transcript: VoiceFragment[] }
 const normalise = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
 
-/** Captions own the spoken turns. Saved requests only supply action metadata;
+/** Captions own turn order. Saved answers own rich content and action metadata;
  * they must never collapse several exchanges into one bubble. */
 export function mergeVoiceTranscript(messages: DexterMessage[], sessions: VoiceTranscriptSession[]): DexterMessage[] {
   const replaced = new Set<string>()
@@ -51,10 +51,12 @@ export function mergeVoiceTranscript(messages: DexterMessage[], sessions: VoiceT
       let responseIndex = -1
       for (let index=userIndex+1; index<turns.length && turns[index].role !== "user"; index++) responseIndex=index
       if (responseIndex < 0) continue
-      // Preserve tables, sources and approval cards on the latest spoken answer;
-      // earlier acknowledgements remain independent bubbles with stable keys.
+      // Spoken captions are a summary, not the written result. Keep the complete
+      // backend Markdown so citations, email links and other evidence survive.
+      // Earlier acknowledgements remain independent bubbles with stable keys.
       replaced.add(response.id)
-      rows[responseIndex] = {...response, ...rows[responseIndex], id:response.id}
+      rows[responseIndex] = {...response, ...rows[responseIndex], id:response.id,
+        content:response.content.trim() ? response.content : rows[responseIndex].content}
     }
     spoken.push(...rows)
   }

@@ -1,3 +1,5 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
+import { InlineNotice } from '@/components/multideck/inline-notice'
 import "./customs-declaration-editor.css"
 import { customsToday, fetchHmrcMonthlyRates, selectHmrcExchangeRate, validCustomsConversionDate } from "../../../supabase/functions/_shared/customs-hmrc-exchange-rates.mts"
 import { DutyCalculationContext, DutyCalculationPanel } from "./customs-duty-calculation-panel"
@@ -552,14 +554,13 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
           </div>
         ) : availableTotal > 0 && total === 0 ? (
           <div className="mx-auto max-w-[440px] py-8 text-center">
+            <EmptyStateIllustration variant="search" className="mb-3" />
             <h3 className="text-[15px] font-medium text-[var(--md-ink)]">{t("No declarations match these filters")}</h3>
             <p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Change or clear a filter to see more declarations.")}</p>
           </div>
         ) : (
           <div className="mx-auto grid max-w-[440px] place-items-center py-8 text-center">
-            <div className="mx-auto grid size-11 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
-              <FileCheck2 className="size-5" strokeWidth={1.4} />
-            </div>
+            <EmptyStateIllustration variant="documents" />
             <h3 className="mt-4 text-[16px] font-medium text-[var(--md-ink)]">
               {t(!jobRelated ? (kind === "export" ? "Ready for the first standalone export" : "Ready for the first standalone import") : "No bookings have been sent to this Customs team yet")}
             </h3>
@@ -1824,16 +1825,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
         </div>
       </header>
 
-      {autosaveStatus === "error" || retryingSave ? <div className="customs-feedback" role={retryingSave ? "status" : "alert"} aria-busy={retryingSave}>
-        <CircleAlert className="size-4" aria-hidden="true" />
-        <div><p className="font-medium">{t(retryingSave ? "Retrying save" : "Your latest changes have not been saved")}</p><p>{t("Your entries are still here. Keep this page open and retry when your connection is available.")}</p></div>
-        <Button type="button" variant="outline" disabled={retryingSave || creatingInitialDraft || savingDraft} onClick={() => void retryDraftSave()}>{retryingSave ? <DotGridLoader className="size-4" /> : <RefreshCw className="size-4" />}{t("Retry save")}</Button>
-      </div> : null}
-      {providerStateError || providerSaveFailed ? <div className="customs-feedback" data-tone="warning" role="status">
-        <CircleAlert className="size-4" aria-hidden="true" />
-        <div><p className="font-medium">{t(providerStateError ? "Customs status could not be checked" : "Saved in Multideck — customs draft needs attention")}</p><p>{t(providerStateError ? "You can keep editing. Retry to check the customs status before submitting." : "Your saved work is intact. Review the customs details before trying again.")}</p></div>
-        <Button type="button" variant="outline" disabled={Boolean(iCustomsBusy)} onClick={() => providerStateError ? setProviderStateAttempt(attempt => attempt + 1) : revealReviewIssues()}>{t(providerStateError ? iCustomsBusy === "loading" ? "Checking status…" : "Retry status check" : "Open Review")}</Button>
-      </div> : null}
+      {autosaveStatus === "error" || retryingSave ? <InlineNotice tone="error" role={retryingSave ? "status" : "alert"} aria-busy={retryingSave} title={t(retryingSave ? "Retrying save" : "Your latest changes have not been saved")} action={<Button type="button" variant="outline" disabled={retryingSave || creatingInitialDraft || savingDraft} onClick={() => void retryDraftSave()}>{retryingSave ? <DotGridLoader className="size-4" /> : <RefreshCw className="size-4" />}{t("Retry save")}</Button>}>{t("Your entries are still here. Keep this page open and retry when your connection is available.")}</InlineNotice> : null}
+      {providerStateError || providerSaveFailed ? <InlineNotice tone="warning" role="status" title={t(providerStateError ? "Customs status could not be checked" : "Saved in Multideck — customs draft needs attention")} action={<Button type="button" variant="outline" disabled={Boolean(iCustomsBusy)} onClick={() => providerStateError ? setProviderStateAttempt(attempt => attempt + 1) : revealReviewIssues()}>{t(providerStateError ? iCustomsBusy === "loading" ? "Checking status…" : "Retry status check" : "Open Review")}</Button>}>{t(providerStateError ? "You can keep editing. Retry to check the customs status before submitting." : "Your saved work is intact. Review the customs details before trying again.")}</InlineNotice> : null}
 
       {viewMode === "tabs" ? <LayoutGroup id={`customs-${kind}-sections`}>
         <nav data-customs-section-nav className="relative isolate max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
@@ -1879,7 +1872,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
       />}
 
       {referenceData.loading ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><p className="text-[11px] text-[var(--md-text)]">{t("Loading Customs reference data")}</p></Surface> : null}
-      {referenceData.error ? <div className="customs-feedback" role="alert"><CircleAlert className="size-4" aria-hidden="true" /><div><p className="font-medium">{t("Customs options could not be loaded")}</p><p>{t("Selection fields are temporarily unavailable. Your entries are unchanged; retry to load the options.")}</p></div><Button type="button" variant="outline" onClick={referenceData.retry}><RefreshCw className="size-4" />{t("Retry options")}</Button></div> : null}
+      {referenceData.error ? <InlineNotice tone="error" role="alert" title={t("Customs options could not be loaded")} action={<Button type="button" variant="outline" onClick={referenceData.retry}><RefreshCw className="size-4" />{t("Retry options")}</Button>}>{t("Selection fields are temporarily unavailable. Your entries are unchanged; retry to load the options.")}</InlineNotice> : null}
 
       {viewMode === "form" && formTab === "general" ? <GeneralFormView customsState={iCustomsState} draft={draft} update={update} updateMany={updateMany} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
       {viewMode === "form" && formTab === "invoices" ? <InvoiceHeadersSection draft={draft} onConversionDateChange={date => update("customsConversionDate", date)} onChange={(headers) => update("invoiceHeaders", headers)} onImport={() => { setInvoiceImportTarget("header"); setInvoiceImportOpen(true) }} t={t} /> : null}
@@ -2090,7 +2083,7 @@ function ImportDeclarationSection({ draft, update, showDataElements, issues, hig
       </FieldShell>
     {preferences?.offices.length ? <><SelectField label={t("Customs office")} showDataElements={false} value={officeId} options={[["", t("Company EORI")], ...preferences.offices.map((office) => [office.id, office.name] as const)]} onChange={(value) => update("customsOfficeId", value)} labelOnly /></> : null}
       </FieldGrid>
-    {preferencesError ? <div className="customs-feedback mt-3" role="alert"><CircleAlert className="size-4" aria-hidden="true" /><div><p className="font-medium">{t("Customs setup could not be loaded")}</p><p>{t("Badge codes and EORI defaults are temporarily unavailable. Your entered details are unchanged.")}</p></div><Button type="button" variant="outline" size="sm" disabled={preferencesLoading} onClick={() => setPreferencesAttempt(value => value + 1)}>{t("Retry setup")}</Button></div> : null}
+    {preferencesError ? <InlineNotice tone="error" className="mt-3" role="alert" title={t("Customs setup could not be loaded")} action={<Button type="button" variant="outline" size="sm" disabled={preferencesLoading} onClick={() => setPreferencesAttempt(value => value + 1)}>{t("Retry setup")}</Button>}>{t("Badge codes and EORI defaults are temporarily unavailable. Your entered details are unchanged.")}</InlineNotice> : null}
     <p id="customs-ducr-help" className={cn("mt-2 text-[11px] text-[var(--md-subtle)]", !eori && !draft.ducr && "sr-only")}>{t(draft.ducr ? "DUCR is retained for the declaration audit trail. Check it before submitting." : !draft.jobReference ? "Add the job reference to generate the DUCR from your registered EORI." : !eori ? "Configure the registered company or office EORI in Admin → System Preferences → Customs preferences." : !proposedDucr ? "The EORI or job reference cannot form a valid DUCR. Check Customs preferences and the job reference." : "DUCR uses the allocation year, registered EORI and job reference.")}</p>
     </section>
     <section aria-labelledby="customs-declaration-location-heading">

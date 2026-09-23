@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync, statSync } from "node:fs"
 import test from "node:test"
 
-const template = readFileSync(new URL("../functions/_shared/email-template.ts", import.meta.url), "utf8")
+const template = readFileSync(new URL("../functions/_shared/email-template.ts", import.meta.url), "utf8") + readFileSync(new URL("../../shared/branded-email.ts", import.meta.url), "utf8")
 const sender = readFileSync(new URL("../functions/_shared/email-sender.ts", import.meta.url), "utf8")
 const authSender = readFileSync(new URL("../functions/send-auth-email/index.ts", import.meta.url), "utf8")
 const recoveryLink = readFileSync(new URL("../functions/send-auth-email/recovery-link.ts", import.meta.url), "utf8")

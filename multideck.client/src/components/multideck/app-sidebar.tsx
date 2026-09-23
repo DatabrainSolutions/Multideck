@@ -1,4 +1,4 @@
-import { SidebarTaskAgents } from "@/components/multideck/task-agent-components"
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
@@ -11,6 +11,7 @@ import { SidebarItemMenu } from "@/components/multideck/sidebar-item-menu"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -40,6 +41,7 @@ import { useOptionalInboxWorkspace, type InboxNavigationView } from "@/lib/inbox
 import { defaultCoverPhotoUrl } from "@/lib/default-cover-photo"
 import type { MailboxFolder } from "@/lib/inbox-api"
 import { workspaceNotificationDestination } from "@/lib/notification-destination"
+import { notificationPreviewText } from "@/lib/notification-preview"
 import { toast } from "sonner"
 import { useWorkspaceNotifications } from "@/lib/use-workspace-notifications"
 import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
@@ -120,6 +122,10 @@ function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const { notifications, unreadCount, total, loading, loaded, error, pending, hasMore, loadMore, refresh, updateNotificationStatus, dismissNotification, markAllRead, clearNotifications } = useWorkspaceNotifications()
+  const notificationPreviews = useMemo(() => notifications.map((notification) => ({
+    ...notification,
+    preview: notificationPreviewText(notification.body),
+  })), [notifications])
 
   function openNotificationSettings() {
     setOpen(false)
@@ -185,9 +191,9 @@ function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
         >
           {error ? <div role="alert" className="px-4 py-3 text-[12px] text-[var(--md-text)]">{t(error)} <button type="button" disabled={loading} onClick={() => void refresh()} className="underline">{t("Retry")}</button></div> : null}
           {!loaded && !error ? <p role="status" className="px-4 py-5 text-[13px] text-[var(--md-text)]">{t("Loading notifications…")}</p> : null}
-          {loaded && !error && notifications.length === 0 ? <p className="px-4 py-5 text-[13px] text-[var(--md-text)]">{t("No notifications yet")}</p> : null}
+          {loaded && !error && notifications.length === 0 ? <div className="px-4 py-5 text-center"><EmptyStateIllustration variant="activity" compact className="mb-2" /><p className="text-[13px] text-[var(--md-text)]">{t("No notifications yet")}</p></div> : null}
           <AnimatePresence initial={false} mode="popLayout">
-          {notifications.map((notification) => (
+          {notificationPreviews.map((notification) => (
             <motion.div
               key={notification.id}
               layout
@@ -202,12 +208,12 @@ function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
               <motion.button
                 type="button"
                 disabled={pending}
-                title={notification.body}
+                title={notification.preview}
                 className="group grid min-w-0 flex-1 grid-cols-[6px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3 text-start transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]"
                 onClick={() => {
                   const url = workspaceNotificationDestination(notification, window.location.origin)
                   if (!url) {
-                    toast.info(notification.title, { description: notification.body, duration: 10_000 })
+                    toast.info(notification.title, { description: notification.preview, duration: 10_000 })
                     if (notification.status === "unread") void updateNotificationStatus(notification.id, "read")
                     return
                   }
@@ -220,11 +226,11 @@ function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
               >
                 <span aria-hidden="true" className={cn("mt-[7px] size-1.5 rounded-full transition-opacity duration-150", notification.status === "unread" ? "bg-[var(--md-accent)] opacity-100" : "opacity-0")} />
                 <span className="min-w-0">
-                  <span className="block text-[13px] font-medium text-[var(--md-ink)]">{notification.title}</span>
+                  <span className="line-clamp-2 break-words text-[13px] font-medium text-[var(--md-ink)]">{notification.title}</span>
                   <span className="sr-only">{notification.status === "unread" ? t("Unread") : t("Read")}</span>
-                  <span className="mt-0.5 block line-clamp-2 text-[12px] leading-5 text-[var(--md-text)]">{notification.body}</span>
+                  <span className="mt-0.5 line-clamp-2 break-words text-[12px] leading-5 text-[var(--md-text)]">{notification.preview}</span>
                 </span>
-                <span className="pt-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{notificationTime(notification.createdAt)}</span>
+                <span className="whitespace-nowrap pt-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{notificationTime(notification.createdAt)}</span>
               </motion.button>
                 </ContextMenuPrimitive.Trigger>
                 <ContextMenuPrimitive.Portal>
@@ -298,6 +304,7 @@ export function SidebarNavItem({
   onIntent,
   accent = "default",
   collapsed = false,
+  iconOnly = false,
   expanded,
   affordance,
   trailing,
@@ -311,6 +318,7 @@ export function SidebarNavItem({
   onIntent?: () => void
   accent?: "default" | "dexter"
   collapsed?: boolean
+  iconOnly?: boolean
   expanded?: boolean
   affordance?: SidebarNavAffordance
   trailing?: ReactNode
@@ -332,22 +340,25 @@ export function SidebarNavItem({
     "bg-transparent text-[var(--md-text)]"
   const trailingSlot = trailing ?? (affordance ? <SidebarNavArrow affordance={affordance} /> : null)
 
-  return (
+  const hideLabel = collapsed || iconOnly
+
+  const button = (
     <button
       type="button"
       data-sidebar-row=""
       aria-current={isActive ? "page" : undefined}
       aria-disabled={isDisabled || undefined}
       aria-expanded={expanded}
-      aria-label={collapsed ? t(item.label) : undefined}
-      title={t(item.label)}
+      aria-label={hideLabel ? t(item.label) : undefined}
+      title={iconOnly ? undefined : t(item.label)}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
         "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-lg)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
         nested && "h-9 text-[13px]",
         "bg-transparent hover:bg-transparent hover:text-[var(--md-ink)] aria-expanded:bg-transparent dark:hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
         isDexterItem && "md-sidebar-dexter-item !text-white hover:!text-white focus-visible:!text-white",
-        collapsed && "justify-center px-0",
+        hideLabel && "justify-center px-0",
+        iconOnly && "h-11",
         isActive && "text-[var(--md-selected-text)]",
         accent === "dexter" && isActive && "!text-white",
         isDisabled && "cursor-default opacity-55 hover:text-[var(--md-text)]",
@@ -418,18 +429,18 @@ export function SidebarNavItem({
       >
         <span
           aria-hidden="true"
-          className="grid size-full place-items-center"
+          className={cn("grid size-full place-items-center", iconOnly && "transition-transform duration-200 ease-out group-hover:-translate-y-0.5 group-hover:scale-110 group-focus-visible:-translate-y-0.5 group-active:scale-95 motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-none")}
         >
-          <Icon data-icon={collapsed ? undefined : "inline-start"} strokeWidth={1.2} />
+          <Icon data-icon={hideLabel ? undefined : "inline-start"} strokeWidth={1.2} />
         </span>
       </span>
-      <span className={cn("min-w-0 flex-1 truncate text-start", isDexterItem && "z-10", collapsed ? "sr-only !absolute" : "relative")}>{t(item.label)}</span>
+      <span className={cn("min-w-0 flex-1 truncate text-start", isDexterItem && "z-10", hideLabel ? "sr-only !absolute" : "relative")}>{t(item.label)}</span>
       {item.value ? (
         <span
           className={cn(
             "relative rounded-full px-2 py-0.5 text-[11px] font-medium shadow-[inset_0_0_0_1px_rgba(255,255,255,0.38)]",
             valueTone,
-            collapsed && "absolute end-1 top-1 min-w-2 px-0 text-[0px] leading-none",
+            hideLabel && "absolute end-1 top-1 min-w-2 px-0 text-[0px] leading-none",
           )}
         >
           {t(item.value)}
@@ -437,11 +448,18 @@ export function SidebarNavItem({
       ) : null}
       {/* One fixed 20px slot holds either the pin or the arrow, so the glyph column
           never drifts with the label's length or type size. */}
-      {trailingSlot && !collapsed ? (
+      {trailingSlot && !hideLabel ? (
         <span className="relative ms-auto grid size-5 shrink-0 place-items-center text-[var(--md-subtle)]">{trailingSlot}</span>
       ) : null}
     </button>
   )
+
+  return iconOnly ? (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side={collapsed ? "right" : "bottom"} sideOffset={6}>{t(item.label)}</TooltipContent>
+    </Tooltip>
+  ) : button
 }
 
 function SidebarSection({
@@ -1112,6 +1130,7 @@ export function AppSidebar({
   const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
   const canManageSignatures = hasPermission(currentUser, "Email.Signatures.Manage")
   const canOpenAdmin = isTenantAdministrator(currentUser)
+  const canPayMileage = canOpenAdmin || hasPermission(currentUser, "Finance.ReviewAndPost")
 
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
@@ -1120,6 +1139,7 @@ export function AppSidebar({
         if (area.id === "documents-service") {
           return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
         }
+        if (area.id === "finance") return { ...area, destinations: area.destinations.filter(destination => destination.id !== "finance-mileage" || canPayMileage) }
         if (area.id !== "sales-crm") return area
         return {
           ...area,
@@ -1131,7 +1151,7 @@ export function AppSidebar({
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, canManageSignatures])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, canManageSignatures, canPayMileage])
   const favouriteCandidates = useMemo(() => sidebarFavouriteCandidates(availableAreas), [availableAreas])
   const { scope: favouritesScope, save: saveFavourites } = useSidebarLayoutScope(favouritesScopeId)
   const favouriteIds = useMemo(
@@ -1490,6 +1510,7 @@ export function AppSidebar({
         onIntent={() => { if (typeof window !== "undefined") void import("@/pages/home-page") }}
         onClick={() => navigate("/")}
         collapsed={collapsed}
+        iconOnly
       />
     </SidebarSectionItem>
   )
@@ -1505,6 +1526,7 @@ export function AppSidebar({
         }}
         onClick={() => navigate("/inbox")}
         collapsed={collapsed}
+        iconOnly
       />
     </SidebarSectionItem>
   )
@@ -1517,6 +1539,7 @@ export function AppSidebar({
         onIntent={() => { if (typeof window !== "undefined") void import("@/pages/to-do-page") }}
         onClick={() => navigate("/to-do")}
         collapsed={collapsed}
+        iconOnly
       />
     </SidebarSectionItem>
   )
@@ -1529,6 +1552,7 @@ export function AppSidebar({
         onIntent={() => { if (typeof window !== "undefined") void import("@/pages/calendar-page") }}
         onClick={() => navigate("/calendar")}
         collapsed={collapsed}
+        iconOnly
       />
     </SidebarSectionItem>
   )
@@ -1646,7 +1670,17 @@ export function AppSidebar({
         </div>
       ) : null}
 
-      <div className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1">
+      {!isCustomer ? (
+        <nav
+          aria-label={t("Pinned shortcuts")}
+          data-sidebar-shortcuts
+          className={cn("relative z-10 mt-[var(--md-page-stack-gap)] grid shrink-0 gap-1 pb-4", collapsed ? "grid-cols-1" : "grid-cols-4")}
+        >
+          {homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{calendarSidebarItem}
+        </nav>
+      ) : null}
+
+      <div className={cn("relative z-10 min-h-0 flex-1", isCustomer && "mt-[var(--md-page-stack-gap)]")}>
         <div
           ref={sidebarScrollRef}
           className="md-sidebar-scroll-region h-full overflow-y-auto overflow-x-hidden"
@@ -1655,7 +1689,9 @@ export function AppSidebar({
         >
           <div>
         {isSettingsRoute || isCustomer || isAgentRoute || isInboxRoute ? null : (
-          <SidebarSection>{homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{calendarSidebarItem}{favouriteSidebarItems}{dexterSidebarItem}</SidebarSection>
+          <SidebarSection>
+            {favouriteSidebarItems}{dexterSidebarItem}
+          </SidebarSection>
         )}
 
         <AnimatePresence mode="popLayout" initial={false}>
@@ -1671,8 +1707,6 @@ export function AppSidebar({
               transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
               <SidebarSection>
-                {homeSidebarItem}
-                {calendarSidebarItem}
                 <SidebarSectionItem>
                   <SidebarNavItem
                     item={{ label: "Back", icon: ArrowLeft }}
@@ -2175,7 +2209,6 @@ export function AppSidebar({
       </div>
 
       <div className="relative z-10 mt-[var(--md-page-stack-gap)] shrink-0">
-        <SidebarTaskAgents collapsed={collapsed} onNavigate={(path) => { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')); onRequestClose?.() }} />
         {supportTicketFeatureEnabled ? <><Separator className="sidebar-support-divider mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
         <button
           type="button"

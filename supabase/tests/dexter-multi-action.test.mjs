@@ -52,6 +52,7 @@ function harness(responses, options = {}) {
   const prepared = [], events = [], requests = []
   const dependencies = {
     createDeferredWork, pendingApprovalReview,
+    createDexterActivityTracker: () => ({activities: [], run: async (_name, _args, _providers, work) => work()}),
     requestDeadline: () => () => 95000,
     activeRunWorker: async () => ({announce:()=>{},poll:async()=>{},event:()=>{},flush:async()=>{},finish:async()=>{}}),
     continueProviderHistory, recordProviderEvent, redactModelSecrets: value => value,
@@ -74,7 +75,7 @@ function harness(responses, options = {}) {
     securePreparedEmailAction: async ({ draft }) => ({ draft, completed: false, pendingAction: { id: 'send-1' } }),
     ...options.dependencies,
   }
-  const source = stripTypeScriptTypes(edge.slice(edge.indexOf('async function runStreamedAgent('), edge.indexOf('\nDeno.serve')))
+  const source = stripTypeScriptTypes(edge.slice(edge.indexOf('async function runStreamedAgent('), edge.indexOf('\nexport const handleDexterRequest')))
   const run = new Function(...Object.keys(dependencies), `${source}; return runStreamedAgent`)(...Object.values(dependencies))
   const input = { route: { model: 'test', effort: 'medium' }, actor: { companyId: 'company', userId: 'user' }, lane: 'fast', locale: 'en-GB', accessMode: 'approve', history: [], prompt: 'Update A and B', uploadedModelInputs: [], security: { authorisedRecipientAddresses: [] }, tools: [], actions: [{ code: 'update_lead', name: 'Update lead', description: 'Update lead' }], domainCodes: [], emailProviders: [], emailState: null }
   return { run: () => run({...input, ...options.input}, event => events.push(event)), prepared, events, requests }
@@ -243,4 +244,16 @@ test('dependent work retains only real pending approvals and survives a partial 
   assert.equal(createDeferredWork({label:'Other',request:'Change B',after_action_ids:['foreign-action']},result.pendingActions,'approve'),null)
   assert.equal(createDeferredWork({label:'Other',request:'Change B',after_action_ids:['prepared-1']},result.pendingActions,'full'),null)
   assert.equal(createDeferredWork({label:'Other',request:'Change B',after_action_ids:['prepared-1']},[{id:'prepared-1',status:'superseded'}],'approve'),null)
+})
+
+test('failure to persist a later approval retains the earlier exact approval and reports the unfinished step', async () => {
+  let attempts = 0
+  const h = harness([response([call('call-a','a'), call('call-b','b')])], {
+    dependencies: {prepareServerAction: async () => { if (++attempts === 2) throw new Error('database_unavailable'); return {id:'saved-approval'} }},
+  })
+  const result = await h.run()
+  assert.equal(attempts, 2)
+  assert.deepEqual(result.pendingActions.map(action=>action.id), ['saved-approval'])
+  assert.match(result.answer, /could not prepare the next change/)
+  assert.equal(h.events.some(event=>event.type==='error'),false)
 })

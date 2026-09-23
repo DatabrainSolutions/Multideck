@@ -1,3 +1,4 @@
+import { meetingEmailPresentation } from "../../../shared/meeting-email-presentation.ts"
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   authenticate,
@@ -1052,10 +1053,9 @@ async function sendEmailTemplateTest(request: Request, admin: SupabaseClient, ac
   const rendered = renderBrandedEmail({
     subject: copy.subject,
     preview: copy.body.split(/\n+/)[0] || copy.subject,
-    eyebrow: "Meeting email preview",
-    title: template.name,
+    ...meetingEmailPresentation[template.kind],
     body: copy.body.split(/\n\n+/).filter(Boolean),
-    buttonLabel: "Open Multideck",
+    buttonLabel: kind === "cancelled" ? "View meeting" : kind === "group_reschedule_request" ? "Review request" : "Manage meeting",
     buttonUrl: String(variables.manage_url),
     code: kind === "booking_verification" ? String(variables.verification_code) : undefined,
     brand,

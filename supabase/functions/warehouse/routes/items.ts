@@ -21,6 +21,9 @@ import {
   uuid,
 } from "../shared/mod.ts";
 
+import { buildImportWorkbook, loadImportWorkbook, parseImportSheet, validateImportFile } from "../shared/spreadsheet-import.ts";
+import { itemImportColumns, prepareItemImportInput } from "../shared/item-import.ts";
+
 function mapItem(row, orgNames, facilityNames, uoms = [], assignments = []) {
   return {
     id: row.WMSItem_ID,
@@ -301,36 +304,18 @@ export async function handleItems(request, path, url, admin, actor) {
         }))
     };
   }
+  if (request.method === "GET" && path[1] === "import" && path[2] === "capabilities") {
+    requireCapability(actor, "warehouse_items:manage");
+    return { version: 1, preview: true };
+  }
   if (request.method === "GET" && path[1] === "import" && path[2] === "template") {
     requireCapability(actor, "warehouse_items:read");
     const { default: ExcelJS } = await import("npm:exceljs@4.4.0");
-    const book = new ExcelJS.Workbook();
-    const sheet = book.addWorksheet("Items");
-    sheet.addRow([
-      "SKU",
-      "Description",
-      "Base UOM",
-      "HS Code",
-      "Country of origin",
-      "Net weight KG",
-      "Gross weight KG",
-      "Requires lot",
-      "Requires expiry"
+    const book = buildImportWorkbook(ExcelJS, "Items", itemImportColumns, [
+      "Choose the customer and warehouse in Multideck once for the entire upload. All items are created active and assigned to that warehouse.",
+      "Only new SKUs can be imported. Duplicate SKUs are compared without regard to letter case. Packaging units and additional warehouse assignments can be added after import.",
+      "The Examples sheet is guidance only and is never imported. Leave optional values blank to use their documented defaults.",
     ]);
-    sheet.addRow([
-      "ITEM-001",
-      "Example item",
-      "EA",
-      "",
-      "GB",
-      "",
-      "",
-      "No",
-      "No"
-    ]);
-    sheet.getRow(1).font = {
-      bold: true
-    };
     const bytes = await book.xlsx.writeBuffer();
     return new Response(bytes, {
       headers: {
@@ -454,37 +439,22 @@ export async function handleItems(request, path, url, admin, actor) {
 async function importItems(request, admin, actor) {
   requireCapability(actor, "warehouse_items:manage");
   const form = await request.formData(), customerOrgId = uuid(form.get("customerOrgId"), "customer"), facilityId = uuid(form.get("facilityId"), "facility");
+  const preview = form.get("preview") === "true";
   requireCustomerScope(actor, customerOrgId, facilityId);
   const facilityIds = await companyFacilityIds(admin, actor);
   const [organisation, facility] = await Promise.all([
     oneOrNull(admin.from("Org_Master").select("Org_id").eq("Org_id", customerOrgId).limit(1).maybeSingle()),
-    facilityIds.includes(facilityId) ? oneOrNull(admin.from("WMS_Facilities").select("WMSFacility_ID").eq("WMSFacility_ID", facilityId).eq("WMSFacility_IsDeleted", false).limit(1).maybeSingle()) : Promise.resolve(null),
+    facilityIds.includes(facilityId) ? oneOrNull(admin.from("WMS_Facilities").select("WMSFacility_ID").eq("WMSFacility_ID", facilityId).eq("WMSFacility_IsActive", true).eq("WMSFacility_IsDeleted", false).limit(1).maybeSingle()) : Promise.resolve(null),
   ]);
   if (!organisation || !facility || (!actor.companyId && !actor.organisationIds.has(customerOrgId))) {
-    throw new HttpError(400, "Choose a customer and facility available in your workspace.");
+    throw new HttpError(400, "Choose a customer and active facility available in your workspace.");
   }
   const file = form.get("file");
-  if (!(file instanceof File) || file.size === 0 || file.size > 10 * 1024 * 1024) throw new HttpError(400, "Upload an Excel workbook no larger than 10 MB.");
+  validateImportFile(file);
   const { default: ExcelJS } = await import("npm:exceljs@4.4.0");
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(await file.arrayBuffer());
-  const sheet = workbook.worksheets[0];
-  if (!sheet) {
-    throw new HttpError(400, "The workbook does not contain an items sheet.");
-  }
-  const headers = new Map();
-  sheet.getRow(1).eachCell((cell, column)=>headers.set(String(cell.value ?? "").trim(), column));
-  const rows = [];
-  sheet.eachRow((row, rowNumber)=>{
-    if (rowNumber === 1) return;
-    const record = {};
-    for (const [header, column] of headers){
-      record[header] = row.getCell(column).value;
-    }
-    if (Object.values(record).some((value)=>value !== null && String(value).trim())) rows.push(record);
-  });
-  if (rows.length > 2_000) throw new HttpError(400, "Import up to 2,000 item rows at a time.");
-  const requestedSkus = [...new Set(rows.map((row)=>clean(row.SKU ?? row.sku, 120)?.toLowerCase()).filter(Boolean))];
+  const sheet = await loadImportWorkbook(file, ExcelJS, "Items");
+  const rows = parseImportSheet(sheet, itemImportColumns);
+  const requestedSkus = [...new Set(rows.map((row)=>row.values.sku?.toLowerCase()).filter(Boolean))];
   const { data: existingSkus, error: existingError } = await admin.rpc("warehouse_edge_existing_item_skus", {
     p_customer_org_id: customerOrgId,
     p_skus: requestedSkus,
@@ -495,56 +465,41 @@ async function importItems(request, admin, actor) {
     }
     throw new HttpError(500, existingError.message);
   }
-  const existing = new Set((existingSkus ?? []).map((sku)=>String(sku).toLowerCase())), results = [], inserts = [];
-  rows.forEach((row, index)=>{
-    const sku = clean(row.SKU ?? row.sku, 120), description = clean(row.Description ?? row.description, 240);
-    if (!sku || !description) {
-      results.push({
-        row: index + 2,
-        sku,
-        success: false,
-        error: !sku ? "SKU is required." : "Description is required."
-      });
-      return;
-    }
-    if (existing.has(sku.toLowerCase())) {
-      results.push({
-        row: index + 2,
-        sku,
-        success: false,
-        error: `SKU '${sku}' already exists for this customer.`
-      });
-      return;
-    }
-    existing.add(sku.toLowerCase());
-    inserts.push({
-      WMSItem_ID: id(),
-      WMSItem_CustomerOrgID: customerOrgId,
-      WMSItem_DefaultFacilityID: facilityId,
-      WMSItem_SKU: sku,
-      WMSItem_Description: description,
-      WMSItem_BaseUOMCode: clean(row["Base UOM"] ?? row.baseUomCode, 20)?.toUpperCase() ?? "EA",
-      WMSItem_HSCode: clean(row["HS Code"] ?? row.hsCode, 30),
-      WMSItem_CountryOfOriginCode: clean(row["Country of origin"] ?? row.countryOfOriginCode, 2)?.toUpperCase() ?? null,
-      WMSItem_ComplianceJSON: {},
-      WMSItem_IsActive: true,
-      WMSItem_IsDeleted: false,
-      WMSItem_CreatedBy: actor.userId
-    });
-    results.push({
-      row: index + 2,
-      sku,
-      success: true,
-      error: null
-    });
-  });
-  if (inserts.length) {
-    const { error } = await admin.from("WMS_Items").insert(inserts);
-    if (error) throw new HttpError(500, error.message);
+  const existing = new Set((existingSkus ?? []).map((sku)=>String(sku).toLowerCase()));
+  const counts = new Map();
+  for (const row of rows) {
+    const key = row.values.sku?.toLowerCase();
+    if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return {
-    created: inserts.length,
-    failed: results.length - inserts.length,
-    results
-  };
+  const results = [], inserts = [];
+  for (const row of rows) {
+    const sku = row.values.sku ?? null;
+    try {
+      if (row.error) throw new HttpError(400, row.error);
+      if (existing.has(sku.toLowerCase())) throw new HttpError(400, `SKU '${sku}' already exists for this customer.`);
+      if (counts.get(sku.toLowerCase()) > 1) throw new HttpError(400, `SKU '${sku}' appears more than once in this workbook.`);
+      const values = prepareItemImportInput(row.values);
+      const payload = itemPayload(values, actor, true);
+      inserts.push({
+        ...payload,
+        WMSItem_ID: id(),
+        WMSItem_CustomerOrgID: customerOrgId,
+        WMSItem_DefaultFacilityID: facilityId,
+        WMSItem_IsDeleted: false,
+      });
+      results.push({ row: row.row, sku, success: true, error: null, values });
+    } catch (error) {
+      results.push({ row: row.row, sku, success: false, error: error.message, values: row.values });
+    }
+  }
+  const failed = results.filter((result)=>!result.success).length;
+  if (preview || failed) return { created: 0, failed, total: rows.length, preview: true, results };
+  // A single insert is atomic. Existing database triggers create the default warehouse
+  // assignment, audit trail and Dexter watch events in the same transaction.
+  const { error } = await admin.from("WMS_Items").insert(inserts);
+  if (error) {
+    if (error.code === "23505") throw new HttpError(409, "An SKU was created while you reviewed this workbook. No items were imported. Review the workbook again.");
+    throw new HttpError(500, "No items were imported. Check the workbook and try again.");
+  }
+  return { created: inserts.length, failed: 0, total: rows.length, preview: false, results };
 }

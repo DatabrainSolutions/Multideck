@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, "../..")
 const read = (path) => readFileSync(resolve(root, path), "utf8")
 
 const inventory = read("supabase/functions/warehouse/routes/inventory.ts")
+const spreadsheet = read("supabase/functions/warehouse/shared/spreadsheet-import.ts")
 const items = read("supabase/functions/warehouse/routes/items.ts")
 const locations = read("supabase/functions/warehouse/routes/locations.ts")
 const warehouseClient = read("multideck.client/src/lib/warehouse.ts")
@@ -25,7 +26,9 @@ test("item details, mutations and imports inspect only exact or uploaded records
   assert.match(items, /\.eq\("WMSItem_ID", itemId\)[\s\S]*?\.limit\(1\)/)
   assert.doesNotMatch(items, /itemReferenceContext|itemContext/)
   assert.doesNotMatch(items, /admin\.from\("Org_Master"\)\.select\("Org_id,Org_Name"\)(?!\.eq)/)
-  assert.match(items, /rows\.length > 2_000/)
+  assert.match(items, /parseImportSheet\(sheet, itemImportColumns\)/)
+  assert.match(spreadsheet, /MAX_IMPORT_ROWS = 2_000/)
+  assert.match(spreadsheet, /rows\.length >= maxRows/)
   assert.match(items, /rpc\("warehouse_edge_existing_item_skus"/)
   assert.doesNotMatch(items, /context\.items/)
 

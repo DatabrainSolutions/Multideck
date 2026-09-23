@@ -1,3 +1,5 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
+import { InlineNotice } from "@/components/multideck/inline-notice"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 
@@ -1313,13 +1315,6 @@ function CreateDocumentWorkspace({
             </div>
           </div>
           <div className="md-document-editor__canvas">
-            <motion.span
-              aria-hidden="true"
-              className="md-document-editor__document-edge"
-              initial={false}
-              animate={{ opacity: studioReady ? 1 : 0.2, scaleY: studioReady ? 1 : 0.36 }}
-              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.panel)}
-            />
             {studioError ? (
               <div role="alert" className="absolute inset-x-3 top-3 z-20 flex items-start gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-3 text-[11px] text-[var(--md-red)] shadow-[var(--md-shadow-soft)]">
                 <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
@@ -1777,19 +1772,12 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
       </header>
 
       {error ? (
-        <Surface tone="soft" className="flex items-center justify-between gap-4 border-s-2 border-[var(--md-red)]">
-          <div className="flex min-w-0 gap-3">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" aria-hidden="true" />
-            <div>
-              <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Documents are temporarily unavailable")}</p>
-              <p className="mt-1 text-[11px] text-[var(--md-text)]">{error}</p>
-            </div>
-          </div>
+        <InlineNotice tone="error" title={t("Documents are temporarily unavailable")} action={
           <Button type="button" variant="ghost" onClick={() => void loadWorkspace()} disabled={loading}>
             <RefreshCw className={cn("size-3.5", loading && "animate-spin")} aria-hidden="true" />
             {t("Try again")}
           </Button>
-        </Surface>
+        }>{error}</InlineNotice>
       ) : null}
 
       <section className="md-section-stack">
@@ -1855,7 +1843,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           </div>
         ) : (
           <Surface tone="soft" className="py-10 text-center">
-            <FileText className="mx-auto size-5 text-[var(--md-subtle)]" aria-hidden="true" />
+            <EmptyStateIllustration variant="documents" />
             <p className="mt-3 text-[12px] font-medium text-[var(--md-ink)]">{t("No templates yet")}</p>
             <p className="mt-1 text-[11px] text-[var(--md-text)]">{t("Add the first template to make document creation available.")}</p>
           </Surface>
@@ -1867,7 +1855,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Recent documents")}</h2>
           <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Every file is private and downloaded through a short-lived secure link.")}</p>
         </div>
-        {documentPageError ? <Surface role="alert" tone="soft" className="mb-3 flex items-center justify-between gap-3 border-s-2 border-[var(--md-red)]"><p className="text-[11px] text-[var(--md-text)]">{documentPageError}</p><Button type="button" variant="ghost" onClick={() => { lastDocumentPageKeyRef.current = null; setDocumentSort((current) => current ? { ...current } : { id: "created", direction: "desc" }) }}>{t("Try again")}</Button></Surface> : null}
+        {documentPageError ? <InlineNotice tone="error" className="mb-3" action={<Button type="button" variant="ghost" onClick={() => { lastDocumentPageKeyRef.current = null; setDocumentSort((current) => current ? { ...current } : { id: "created", direction: "desc" }) }}>{t("Try again")}</Button>}>{documentPageError}</InlineNotice> : null}
         <DataTable
           ariaLabel="Recent documents"
           exportConfig={{ fileName: "generated-documents", register: {
@@ -1890,7 +1878,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           serverSorting={{ value: documentSort, onChange: (next) => setDocumentSort(next ?? { id: "created", direction: "desc" }) }}
           pagination={{ offset: documentOffset, limit: documentPageSize, total: generatedDocumentTotal, loading: documentPageLoading, onOffsetChange: setDocumentOffset, onLimitChange: setDocumentPageSize, error: Boolean(documentPageError) }}
           toolbarSearch={<label className="relative min-w-0 sm:w-[240px]"><span className="sr-only">{t("Search documents")}</span><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" /><Input value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className="h-8 ps-9 text-base sm:text-[12px]" placeholder={t("Document, job or customer…")} /></label>}
-          emptyState={<p className="text-[11px] text-[var(--md-subtle)]">{documentPageLoading ? t("Loading documents…") : debouncedDocumentQuery ? t("No documents match this search.") : t("No documents have been generated yet.")}</p>}
+          emptyState={<div className="py-4 text-center">{!documentPageLoading && !documentPageError ? <EmptyStateIllustration variant={debouncedDocumentQuery ? "search" : "documents"} className="mb-3" /> : null}<p className="text-[11px] text-[var(--md-subtle)]">{documentPageLoading ? t("Loading documents…") : debouncedDocumentQuery ? t("No documents match this search.") : t("No documents have been generated yet.")}</p></div>}
         />
       </section>
 

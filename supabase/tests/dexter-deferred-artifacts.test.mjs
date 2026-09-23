@@ -6,7 +6,9 @@ const read = name => readFileSync(new URL(`../functions/agent-dexter/${name}.ts`
 const code = stripTypeScriptTypes(read('deferred-work'))
 const {createDeferredWork,resolveDeferredWork} = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)
 const source=stripTypeScriptTypes(read('conversation-artifacts')).replace(/^import .*$/gm,'').replace('export async function','async function')
-const hydrate = new Function('createDeferredWork',`${source};return hydrateConversationArtifacts`)(createDeferredWork)
+const activityCode = stripTypeScriptTypes(readFileSync(new URL('../../shared/dexter-activity.ts', import.meta.url), 'utf8'))
+const {parseDexterActivities} = await import(`data:text/javascript;base64,${Buffer.from(activityCode).toString('base64')}`)
+const hydrate = new Function('createDeferredWork', 'parseDexterActivities', `${source};return hydrateConversationArtifacts`)(createDeferredWork, parseDexterActivities)
 function fixture(owned=true,dependencies=['a']) {
  const filters=[]
  const action={id:'a',title:'First',description:'',changes:[]}

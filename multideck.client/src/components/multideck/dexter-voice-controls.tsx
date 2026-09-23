@@ -83,7 +83,7 @@ export function DexterVoiceSettings() {
     finally { if (mounted.current) setSaving(false) }
   }
   return <div className="p-5">
-    <p className="mb-4 max-w-[65ch] text-[13px] leading-5 text-[var(--md-text)]">{t("Choose how Dexter sounds. Use the sound wave in an empty prompt to start a conversation. Voice and previews share five minutes each day.")}</p>
+    <p className="mb-4 max-w-[65ch] text-[13px] leading-5 text-[var(--md-text)]">{t("Start a conversation from the sound wave in an empty prompt. Voice and previews share five minutes each day.")}</p>
     {loading ? <p role="status" className="text-[13px] text-[var(--md-subtle)]">{t("Loading your voice…")}</p> :
       <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2" role="group" aria-label={t("Dexter voice")}>
         {voiceOptions.map(voice => <div key={voice.id} className={cn("md-voice-choice", selected === voice.id && "md-voice-choice--selected")}>

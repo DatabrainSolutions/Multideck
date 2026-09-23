@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import {
   Bot,
   Calculator,
@@ -117,6 +118,7 @@ export function AuditTimeline({
         </div>
       ) : events.length === 0 ? (
         <div role="status" className="mx-5 mb-5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-6 text-center">
+          <EmptyStateIllustration variant="activity" compact className="mb-3" />
           <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(emptyMessage)}</p>
         </div>
       ) : (

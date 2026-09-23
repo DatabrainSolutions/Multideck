@@ -2,20 +2,57 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import test from "node:test"
+import ts from "typescript"
 
 const root = resolve(import.meta.dirname, "../..")
 const read = (path) => readFileSync(resolve(root, path), "utf8")
 const page = read("multideck.client/src/pages/agent-dexter-page.tsx")
 const components = read("multideck.client/src/components/multideck/agent-dexter-components.tsx")
 
-test("Full access waits for one server-issued mode response at a time", () => {
-  assert.match(page, /accessModeRequestInFlightRef\.current/)
-  assert.match(page, /accessModeRequestVersionRef\.current !== requestVersion/)
-  assert.match(page, /conversationIntentRef\.current\.version !== conversationVersion/)
-  assert.match(page, /setIsAccessModeChanging\(true\)/)
-  assert.match(page, /isSending=\{isWorking\}/)
-  assert.match(components, /disabled=\{isSending \|\| isAccessModeChanging\}/)
-  assert.match(components, /aria-busy=\{Boolean\(pendingMode\)\}/)
+// Exercise legacy mode requests against a controlled server response. The live
+// composer no longer offers Full access; the server remains authoritative.
+const handler = page.slice(page.indexOf('  async function handleAccessModeChange('), page.indexOf('  async function handleHistorySelect('))
+const code = ts.transpileModule(handler, {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText
+function modeHarness() {
+  let resolve, reject
+  const state = {requests: 0, AccessMode: 'approve', FullAccessGrantId: null}
+  const context = {accessMode:'approve', fullAccessGrantId:null, isWorking:false,
+    accessModeRequestInFlightRef:{current:false}, accessModeRequestVersionRef:{current:0},
+    conversationIntentRef:{current:{version:1}}, activeConversation:{id:'chat'}, dexterClientSessionIdRef:{current:'session'},
+    t:value=>value, setDexterAccessMode:()=>{state.requests++;return new Promise((yes,no)=>{resolve=yes;reject=no})}}
+  for (const name of new Set(handler.match(/\bset[A-Z]\w+/g))) if (!(name in context)) context[name]=value=>{state[name.slice(3)]=value}
+  const change=new Function(...Object.keys(context),`${code};return handleAccessModeChange`)(...Object.values(context))
+  return {state,context,change,resolve:value=>resolve(value),reject:error=>reject(error)}
+}
+test('legacy mode requests serialize and retain the server-issued approval requirement', async () => {
+  const h=modeHarness(), pending=h.change('full')
+  await h.change('full')
+  assert.equal(h.state.requests,1)
+  assert.equal(h.state.IsAccessModeChanging,true)
+  h.resolve({mode:'approve',grantId:null});await pending
+  assert.equal(h.state.AccessMode,'approve')
+  assert.equal(h.state.FullAccessGrantId,null)
+  assert.equal(h.state.IsAccessModeChanging,false)
+})
+test('failed mode requests preserve the prior mode and explain the failure', async () => {
+  const h=modeHarness(), pending=h.change('full')
+  h.reject(new Error('Service unavailable'));await pending
+  assert.equal(h.state.AccessMode,'approve')
+  assert.equal(h.state.FullAccessGrantId,null)
+  assert.equal(h.state.PendingAccessMode,null)
+  assert.equal(h.state.Error,'Service unavailable')
+})
+test('late mode responses cannot change a newly selected conversation', async () => {
+  const h=modeHarness(), pending=h.change('full')
+  h.context.conversationIntentRef.current.version++
+  h.resolve({mode:'full',grantId:'old-grant'});await pending
+  assert.equal(h.state.AccessMode,'approve')
+  assert.equal(h.state.FullAccessGrantId,null)
+})
+test('the composer offers no Full access bypass and preserves send guards', () => {
+  assert.doesNotMatch(components, /<DexterAccessModeToggle/)
+  assert.match(page, /isSending=\{isWorking \|\| recoveryNeedsCheck\}/)
+  assert.match(components, /disabled=\{showVoiceAction \? !canStartVoice : !canSend\}/)
 })
 
 test("conversation changes invalidate pending mode responses and restore Approve", () => {
@@ -24,24 +61,6 @@ test("conversation changes invalidate pending mode responses and restore Approve
   assert.ok((page.match(/setAccessMode\("approve"\)/g) ?? []).length >= 2)
   assert.ok((page.match(/setFullAccessGrantId\(null\)/g) ?? []).length >= 2)
   assert.ok((page.match(/setPendingAccessMode\(null\)/g) ?? []).length >= 3)
-})
-
-test("the access switch shows the requested mode immediately while the server confirms it", () => {
-  assert.match(page, /const \[pendingAccessMode, setPendingAccessMode\] = useState<DexterAccessMode \| null>\(null\)/)
-  assert.match(page, /setPendingAccessMode\(mode\)/)
-  assert.match(page, /setAccessMode\(previousMode\)/)
-  assert.match(page, /setFullAccessGrantId\(previousGrantId\)/)
-  assert.match(components, /const displayMode = pendingMode \?\? mode/)
-  assert.match(components, /pendingMode=\{pendingAccessMode\}/)
-})
-
-test("the access switch sizes itself to only the active translated label", () => {
-  assert.match(components, /layout="size"/)
-  assert.match(components, /w-fit shrink-0/)
-  assert.match(components, /shrink-0 whitespace-nowrap leading-5/)
-  assert.match(components, /transition-\[background-color,color,box-shadow\] duration-200 disabled:cursor-progress/)
-  assert.match(components, /<div className="ms-auto flex shrink-0 items-center gap-2">\s*<DexterAccessModeToggle/)
-  assert.doesNotMatch(components, /approveLabelRef|fullAccessLabelRef|labelWidths/)
 })
 
 test("recording captions are not shipped as Dexter product UI", () => {

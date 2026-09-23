@@ -1,21 +1,24 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   Archive,
   ArrowLeft,
+  ArrowRight,
   Check,
   Copy,
   Eye,
   History,
+  Laptop,
   PenLine,
   Plus,
   RefreshCw,
   Settings2,
+  Smartphone,
   Users,
-  X,
 } from "@/components/icons/hugeicons";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -23,34 +26,46 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader";
 import { SignatureBuilder } from "@/components/multideck/signature-builder";
-import { SignatureBlockGlyph } from "@/components/multideck/signature-block-glyph";
+import { SignatureTemplatePicker } from "@/components/multideck/signature-template-picker";
+import { SignatureThumbnail } from "@/components/multideck/signature-thumbnail";
+import { SegmentedControl } from "@/components/multideck/workflow-components";
 import { useLanguage } from "@/i18n/language-provider";
+import { mdEase, mdEaseIn, mdEaseOut, staggerRamp } from "@/lib/motion";
 import {
   eligibleSignatures,
   getSignatureVersions,
   getSignatureWorkspace,
-  newSignatureDocument,
   renderSignature,
+  signatureBrandImageFile,
   signatureCompanyText,
+  signatureDefaultAccent,
+  signatureNeedsPersonPhoto,
+  signaturePersonPhotoKey,
   saveSignatureTemplate,
   type SignatureDocument,
   type SignatureTemplate,
   type SignatureValues,
   type SignatureWorkspace,
-  updateSignaturePolicy,
-  updateSignatureProfile,
   uploadSignatureImage,
   validateSignatureDocument,
 } from "@/lib/email-signatures";
+import {
+  fillSignatureBrandLogo,
+  signatureNeedsBrandLogo,
+  signaturePreviewDocument,
+  signatureStarter,
+} from "@/lib/signature-templates";
 import {
   getTenantBranding,
   type TenantBranding,
 } from "@/lib/tenant-branding-api";
 import { getSupabaseSession } from "@/lib/supabase";
-import { signatureBrandImageFile } from "@/lib/email-signatures";
 import "@/styles/email-signatures.css";
+
+type LibraryFilter = "all" | "live" | "draft" | "personal";
 
 function Preview(
   { html, narrow = false, title = "Signature preview" }: {
@@ -64,17 +79,29 @@ function Preview(
       title={title}
       sandbox=""
       referrerPolicy="no-referrer"
-      className="block h-[300px] max-w-full rounded-lg border-0 bg-white shadow-[0_0_0_1px_#0000000a]"
-      style={{ width: narrow ? 320 : 620 }}
+      className="block h-[300px] max-w-full rounded-lg border-0 bg-white shadow-[0_0_0_1px_#0000000a] transition-[width] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none"
+      style={{ width: narrow ? 340 : 640 }}
       srcDoc={`<!doctype html><html><head><meta name="color-scheme" content="light"><style>body{margin:24px;font-family:Arial,Helvetica,sans-serif;color:#253c39}table{max-width:100%}img{max-width:100%}a{pointer-events:none}</style></head><body>${html}</body></html>`}
     />
   );
 }
+
+function relativeEdit(value: string) {
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return "";
+  const minutes = Math.round((time - Date.now()) / 60000);
+  const format = new Intl.RelativeTimeFormat("en-GB", { numeric: "auto" });
+  if (Math.abs(minutes) < 60) return format.format(minutes, "minute");
+  if (Math.abs(minutes) < 60 * 24) return format.format(Math.round(minutes / 60), "hour");
+  if (Math.abs(minutes) < 60 * 24 * 30) return format.format(Math.round(minutes / 1440), "day");
+  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
 export function EmailSignaturesPage(
-  { personal = false, navigate }: { personal?: boolean; navigate?: (path:string)=>void },
+  { personal = false, navigate }: { personal?: boolean; navigate?: (path: string) => void },
 ) {
   const { t } = useLanguage();
-  const reduced = useReducedMotion();
+  const reduced = Boolean(useReducedMotion());
   const [brand, setBrand] = useState<TenantBranding | null>(null);
   useEffect(() => {
     let active = true;
@@ -100,8 +127,8 @@ export function EmailSignaturesPage(
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState("");
   const [review, setReview] = useState(false);
-  const [newDialog, setNewDialog] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [picker, setPicker] = useState(false);
+  const [filter, setFilter] = useState<LibraryFilter>("all");
   const [versions, setVersions] = useState<
     Awaited<ReturnType<typeof getSignatureVersions>> | null
   >(null);
@@ -257,33 +284,83 @@ export function EmailSignaturesPage(
       } catch { /* Ignore unusable recovery entries. */ }
     }
   }
-  function create(
-    layout: "side" | "stacked" | "banner",
-    source?: SignatureTemplate,
-  ) {
+  function create(document: SignatureDocument, options: { name?: string; source?: SignatureTemplate } = {}) {
     if (!workspace) return;
     const own = personal || !workspace.manager;
     const template: SignatureTemplate = {
       id: crypto.randomUUID(),
-      name: source ? `${source.name} ${t("copy")}` : t("Untitled signature"),
-      document: structuredClone(
-        source?.publishedDocument || source?.document ||
-          newSignatureDocument(layout),
-      ),
+      name: options.source ? `${options.source.name} ${t("copy")}` : options.name ?? t("Untitled signature"),
+      document: structuredClone(document),
       revision: 0,
       publishedRevision: null,
       publishedDocument: null,
       assignments: [],
       publishedAssignments: [],
       ownerUserId: own ? workspace.userId : null,
-      sourceTemplateId: own ? source?.id || null : null,
+      sourceTemplateId: own ? options.source?.id || null : null,
       archived: false,
       updatedAt: new Date().toISOString(),
     };
     openTemplate(template);
     setDirty(true);
-    setNewDialog(false);
+    setPicker(false);
+    if (!options.source && brandLogoUrl && signatureNeedsBrandLogo(template.document)) {
+      void signatureBrandImageFile(brandLogoUrl)
+        .then((file) => uploadSignatureImage(file, own))
+        .then((asset) => {
+          setWorkspace((w) => w ? { ...w, assetUrls: { ...w.assetUrls, [asset.id]: asset.url } } : w);
+          const latest = selectedRef.current;
+          if (latest?.id !== template.id) return;
+          editsRevision.current++;
+          setSelected((s) => s && s.id === template.id ? { ...s, document: fillSignatureBrandLogo(s.document, asset.id) } : s);
+          setDirty(true);
+        })
+        .catch(() => { /* The logo slot stays ready for a manual upload. */ });
+    }
   }
+  function duplicate(source: SignatureTemplate) {
+    create(source.publishedDocument || source.document, { source });
+  }
+  const brandLogoUrl = brand?.configured ? brand.logoUrl : null;
+  const accent = brand?.configured && /^#[0-9a-f]{6}$/i.test(brand.primaryColor) ? brand.primaryColor.toLowerCase() : signatureDefaultAccent;
+  const person = workspace
+    ? workspace.people.find((p) => p.id === personId) || workspace.people.find((p) => p.id === workspace.userId)
+    : undefined;
+  const values: SignatureValues | null = useMemo(() => workspace && person
+    ? {
+      companyDetails: signatureCompanyText(workspace.policy.company_details, workspace.company, workspace.policy.website),
+      name: person.name,
+      jobTitle: person.jobTitle,
+      email: person.email,
+      phone: person.phone,
+      mobile: person.mobile,
+      company: person.company ?? workspace.company,
+      website: person.website ?? workspace.policy.website,
+      address: person.address || "",
+    }
+    : null, [workspace, person]);
+  /** Headshot blocks show whoever the signature is previewed as, never one fixed photo. */
+  const assets = useMemo(() => workspace && person?.photoUrl
+    ? { ...workspace.assetUrls, [signaturePersonPhotoKey]: person.photoUrl }
+    : workspace?.assetUrls ?? {}, [workspace, person]);
+  const library = useMemo(() => {
+    if (!workspace || !values) return [];
+    const available = personal
+      ? workspace.templates.filter((x) => !x.archived && (x.ownerUserId === workspace.userId || x.publishedRevision))
+      : workspace.templates.filter((x) => !x.archived && !x.ownerUserId);
+    return available
+      .map((template) => {
+        const document = template.publishedDocument && !template.ownerUserId && personal ? template.publishedDocument : template.document;
+        const preview = signaturePreviewDocument(document, values, assets, brandLogoUrl);
+        return {
+          template,
+          width: document.width,
+          html: renderSignature(preview.document, values, preview.assets).html,
+          status: template.ownerUserId ? "personal" as const : template.publishedRevision ? "live" as const : "draft" as const,
+        };
+      })
+      .sort((a, b) => b.template.updatedAt.localeCompare(a.template.updatedAt));
+  }, [workspace, values, assets, personal, brandLogoUrl]);
   if (loading && !workspace) {
     return (
       <div className="grid min-h-[400px] place-items-center">
@@ -291,7 +368,7 @@ export function EmailSignaturesPage(
       </div>
     );
   }
-  if (!workspace) {
+  if (!workspace || !person || !values) {
     return (
       <div className="md-page max-w-3xl">
         <h1 className="text-[20px]">{t("Email signatures")}</h1>
@@ -305,28 +382,20 @@ export function EmailSignaturesPage(
       </div>
     );
   }
-  const person = workspace.people.find((p) => p.id === personId) ||
-    workspace.people.find((p) => p.id === workspace.userId)!;
-  const values: SignatureValues = {
-    companyDetails: signatureCompanyText(workspace.policy.company_details, workspace.company, workspace.policy.website),
-    name: person.name,
-    jobTitle: person.jobTitle,
-    email: person.email,
-    phone: person.phone,
-    mobile: person.mobile,
-    company: person.company ?? workspace.company,
-    website: person.website ?? workspace.policy.website,
-    address: person.address || "",
-  };
   const own = selected?.ownerUserId === workspace.userId;
   const editable = selected
     ? own ? workspace.allowCustomisation : workspace.manager && !personal
     : false;
-  const available = personal
-    ? workspace.templates.filter((x) =>
-      x.ownerUserId === workspace.userId || x.publishedRevision
-    )
-    : workspace.templates.filter((x) => !x.ownerUserId);
+  const canCreate = workspace.allowCustomisation || workspace.manager && !personal;
+  const counts: Record<LibraryFilter, number> = {
+    all: library.length,
+    live: library.filter((item) => item.status === "live").length,
+    draft: library.filter((item) => item.status === "draft").length,
+    personal: library.filter((item) => item.status === "personal").length,
+  };
+  const filters = (["all", "live", "draft", "personal"] as const).filter((option) => option === "all" || counts[option] > 0);
+  const activeFilter = filters.includes(filter) ? filter : "all";
+  const shown = library.filter((item) => activeFilter === "all" || item.status === activeFilter);
   const affected = selected && !selected.ownerUserId
     ? workspace.people.filter((p) =>
       eligibleSignatures(
@@ -342,23 +411,9 @@ export function EmailSignaturesPage(
     )
     : [];
   const rendered = selected
-    ? renderSignature(selected.document, values, workspace.assetUrls)
+    ? renderSignature(selected.document, values, assets)
     : null;
-  async function changePolicy(
-    userId: string | undefined,
-    allowCustomisation: boolean | null,
-  ) {
-    try {
-      await updateSignaturePolicy({
-        userId,
-        allowCustomisation,
-        website: workspace!.policy.website,
-      });
-      await load();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
+  const usesPersonPhoto = selected ? signatureNeedsPersonPhoto(selected.document) : false;
   async function archive(template: SignatureTemplate) {
     try {
       await saveSignatureTemplate({ ...template, archived: true });
@@ -367,6 +422,12 @@ export function EmailSignaturesPage(
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+  function audience(template: SignatureTemplate) {
+    if (template.ownerUserId) return t("Only you");
+    if (template.publishedAssignments.some((a) => a.kind === "everyone")) return t("Everyone");
+    if (!template.publishedAssignments.length) return t("Not assigned");
+    return `${template.publishedAssignments.length} ${t(template.publishedAssignments.length === 1 ? "assignment" : "assignments")}`;
   }
   return (
     <div
@@ -385,18 +446,17 @@ export function EmailSignaturesPage(
                 aria-label={t("Back to signatures")}
                 disabled={saving}
                 onClick={() => {
-                  if (dirty) {
-                    void save().then((saved) => {
-                      if (saved) {
-                        setSelected(null);
-                        setDirty(false);
-                        setError("");
-                      }
-                    });
-                  } else {
+                  const leave = () => {
                     setSelected(null);
                     setDirty(false);
                     setError("");
+                  };
+                  if (dirty) {
+                    void save().then((saved) => {
+                      if (saved) leave();
+                    });
+                  } else {
+                    leave();
                   }
                 }}
               >
@@ -439,12 +499,12 @@ export function EmailSignaturesPage(
                       onClick={() => setReview(true)}
                     >
                       {t("Review and apply")}
-                      <ArrowRightIcon />
+                      <ArrowRight className="size-4" />
                     </Button>
                   )
                   : workspace.allowCustomisation
                   ? (
-                    <Button onClick={() => create("side", selected)}>
+                    <Button onClick={() => duplicate(selected)}>
                       <Copy className="size-4" />
                       {t("Make personal copy")}
                     </Button>
@@ -466,9 +526,9 @@ export function EmailSignaturesPage(
                     </Button>
                   )
                   : null}
-                {workspace.allowCustomisation || workspace.manager && !personal
+                {canCreate
                   ? (
-                    <Button onClick={() => setNewDialog(true)}>
+                    <Button onClick={() => setPicker(true)}>
                       <Plus className="size-4" />
                       {t("New signature")}
                     </Button>
@@ -482,7 +542,7 @@ export function EmailSignaturesPage(
         ? (
           <div
             role="alert"
-            className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-[var(--md-red-a08)] px-4 py-3 text-[12px] text-[var(--md-red)]"
+            className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] px-4 py-3 text-[12px] text-[var(--md-red)]"
           >
             {error}
             {selected && editable
@@ -503,153 +563,148 @@ export function EmailSignaturesPage(
       {!selected
         ? (
           <>
-            <p className="mb-6 max-w-xl text-[13px] leading-relaxed text-[var(--md-subtle)]">
-              {t(
-                personal
-                  ? "Your signature, ready wherever you write an email in Multideck."
-                  : "Design once. Personal details fill automatically for everyone you assign.",
-              )}
-            </p>
-            {!available.length
+            <div className="sig-library-toolbar">
+              <p className="max-w-xl text-[13px] leading-relaxed text-[var(--md-subtle)]">
+                {t(
+                  personal
+                    ? "Your signature, ready wherever you write an email in Multideck."
+                    : "Design once. Personal details fill automatically for everyone you assign.",
+                )}
+              </p>
+              {library.length && filters.length > 1
+                ? (
+                  <SegmentedControl
+                    ariaLabel={t("Show signatures")}
+                    options={filters}
+                    value={activeFilter}
+                    onChange={setFilter}
+                    className="[&>button]:h-7 [&>button]:text-[12px]"
+                    renderOption={(option) => (
+                      <>
+                        {t(option === "all" ? "All" : option === "live" ? "Live" : option === "draft" ? "Drafts" : "Personal")}
+                        <span className="text-[11px] tabular-nums opacity-55">{counts[option]}</span>
+                      </>
+                    )}
+                  />
+                )
+                : null}
+            </div>
+            {!library.length
               ? (
-                <div className="flex min-h-[350px] flex-col items-center justify-center rounded-xl bg-[var(--md-surface)] p-8 text-center shadow-[var(--md-premium-stroke)]">
-                  <SignatureBlockGlyph kind="identity" />
-                  <h2 className="mt-4 text-[16px] font-medium">
+                <motion.div
+                  className="sig-empty"
+                  initial={{ opacity: 0, y: reduced ? 0 : 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: reduced ? 0 : .42, ease: mdEaseOut }}
+                >
+                  <div className="sig-empty-art" aria-hidden="true">
+                    {[0, 1, 2].map((i) => <span key={i}><i /><i style={{ width: "80%" }} /><i style={{ width: "54%" }} /></span>)}
+                  </div>
+                  <h2 className="text-[16px] font-medium">
                     {t("A considered sign-off for every email")}
                   </h2>
                   <p className="mb-5 mt-2 max-w-sm text-[12px] leading-relaxed text-[var(--md-subtle)]">
-                    {t(
-                      "Start with a layout, add your details and images, then choose who uses it.",
-                    )}
+                    {t("Pick one of twenty templates or start from scratch, add your details and images, then choose who uses it.")}
                   </p>
-                  {workspace.allowCustomisation || workspace.manager
+                  {canCreate
                     ? (
-                      <Button onClick={() => setNewDialog(true)}>
+                      <Button onClick={() => setPicker(true)}>
                         <Plus className="size-4" />
                         {t("Create a signature")}
                       </Button>
                     )
                     : (
-                      <p>
-                        {t(
-                          "Your manager can assign your company signature here.",
-                        )}
+                      <p className="text-[12px] text-[var(--md-subtle)]">
+                        {t("Your manager can assign your company signature here.")}
                       </p>
                     )}
-                </div>
+                </motion.div>
               )
               : (
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  {available.map((template) => {
-                    const output = renderSignature(
-                      template.document,
-                      values,
-                      workspace.assetUrls,
-                    );
-                    return (
-                      <motion.article
-                        layout
-                        key={template.id}
-                        transition={{
-                          duration: reduced ? 0 : .22,
-                          ease: "easeOut",
-                        }}
-                        className="overflow-hidden rounded-xl bg-[var(--md-surface)] shadow-[var(--md-premium-stroke)]"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => openTemplate(template)}
-                          className="block w-full p-4 text-left"
-                          aria-label={`${t("Open signature")} ${template.name}`}
+                <motion.div layout={!reduced} className="sig-library-grid">
+                  <AnimatePresence mode="popLayout" initial={true}>
+                    {shown.map(({ template, html, width, status }, index) => {
+                      const canArchive = !template.ownerUserId && workspace.manager && !personal || template.ownerUserId === workspace.userId && workspace.allowCustomisation;
+                      return (
+                        <motion.article
+                          layout={!reduced}
+                          key={template.id}
+                          className="sig-card"
+                          initial={{ opacity: 0, y: reduced ? 0 : 14, scale: reduced ? 1 : .985 }}
+                          animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: reduced ? 0 : .46, ease: mdEaseOut, delay: reduced ? 0 : staggerRamp(index, .04) } }}
+                          exit={{ opacity: 0, scale: reduced ? 1 : .97, transition: { duration: reduced ? 0 : .16, ease: mdEaseIn } }}
+                          transition={{ layout: { duration: reduced ? 0 : .36, ease: mdEase } }}
                         >
-                          <div
-                            className="sig-library-preview pointer-events-none h-[170px] overflow-hidden rounded-md bg-white"
-                            aria-hidden="true"
+                          <button
+                            type="button"
+                            onClick={() => openTemplate(template)}
+                            className="sig-card-open"
+                            aria-label={`${t("Open signature")} ${template.name}`}
                           >
-                            <div
-                              className="sig-library-preview-content origin-top-left scale-[.65] p-6"
-                              style={{ width: "153%" }}
-                            >
-                              <div
-                                dangerouslySetInnerHTML={{
-                                  __html: output.html,
-                                }}
-                              />
+                            <div className="sig-card-stage" style={{ height: 204 }}>
+                              <div className="sig-card-mail">
+                                <div className="sig-card-mail-lines" aria-hidden="true">
+                                  <span style={{ width: "36%" }} />
+                                  <span style={{ width: "84%" }} />
+                                </div>
+                                <SignatureThumbnail html={html} width={width} padding={18} />
+                              </div>
                             </div>
-                          </div>
-                          <div className="mt-4 flex items-center justify-between gap-2">
-                            <span className="truncate text-[13px] font-medium">
-                              {template.name}
-                            </span>
-                            <span className="text-[10px] text-[var(--md-subtle)]">
-                              {t(
-                                template.ownerUserId
-                                  ? "Personal"
-                                  : template.publishedRevision
-                                  ? "Live"
-                                  : "Draft",
-                              )}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[11px] text-[var(--md-subtle)]">
-                            {template.publishedAssignments.some((a) =>
-                                a.kind === "everyone"
+                            <div className="sig-card-meta">
+                              <div className="sig-card-title">
+                                <span className="truncate">{template.name}</span>
+                                <span className={`sig-status is-${status}`}>
+                                  {t(status === "personal" ? "Personal" : status === "live" ? "Live" : "Draft")}
+                                </span>
+                              </div>
+                              <div className="sig-card-sub">
+                                <span>{audience(template)}</span>
+                                {relativeEdit(template.updatedAt) ? <span>{t("Edited")} {relativeEdit(template.updatedAt)}</span> : null}
+                              </div>
+                            </div>
+                          </button>
+                          <div className="sig-card-actions">
+                            {!(personal && !workspace.allowCustomisation)
+                              ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button type="button" aria-label={`${t(personal ? "Personal copy" : "Duplicate")} ${template.name}`} onClick={() => duplicate(template)}>
+                                      <Copy className="size-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{t(personal ? "Make a personal copy" : "Duplicate")}</TooltipContent>
+                                </Tooltip>
                               )
-                              ? t("Everyone")
-                              : template.ownerUserId
-                              ? t("Only you")
-                              : `${template.publishedAssignments.length} ${
-                                t(
-                                  template.publishedAssignments.length === 1
-                                    ? "assignment"
-                                    : "assignments",
-                                )
-                              }`}
-                          </p>
-                        </button>
-                        <div className="flex items-center justify-between px-3 pb-3">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => create("side", template)}
-                            disabled={personal && !workspace.allowCustomisation}
-                          >
-                            <Copy className="size-3.5" />
-                            {t(personal ? "Personal copy" : "Duplicate")}
-                          </Button>
-                          {(!template.ownerUserId && workspace.manager &&
-                              !personal) ||
-                              template.ownerUserId === workspace.userId &&
-                                workspace.allowCustomisation
-                            ? (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`${
-                                  t(
-                                    template.ownerUserId
-                                      ? "Reset to assigned signature"
-                                      : "Archive",
-                                  )
-                                } ${template.name}`}
-                                title={template.publishedAssignments.length
-                                  ? t(
-                                    "Remove and apply assignments before archiving",
-                                  )
-                                  : t("Archive")}
-                                disabled={template.publishedAssignments.length >
-                                  0}
-                                onClick={() => void archive(template)}
-                              >
-                                <Archive className="size-3.5" />
-                              </Button>
-                            )
-                            : null}
-                        </div>
-                      </motion.article>
-                    );
-                  })}
-                </div>
+                              : null}
+                            {canArchive
+                              ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span>
+                                      <button
+                                        type="button"
+                                        aria-label={`${t(template.ownerUserId ? "Reset to assigned signature" : "Archive")} ${template.name}`}
+                                        disabled={template.publishedAssignments.length > 0}
+                                        onClick={() => void archive(template)}
+                                      >
+                                        <Archive className="size-3.5" />
+                                      </button>
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {template.publishedAssignments.length
+                                      ? t("Remove and apply assignments before archiving")
+                                      : t(template.ownerUserId ? "Reset to assigned signature" : "Archive")}
+                                  </TooltipContent>
+                                </Tooltip>
+                              )
+                              : null}
+                          </div>
+                        </motion.article>
+                      );
+                    })}
+                  </AnimatePresence>
+                </motion.div>
               )}
           </>
         )
@@ -674,12 +729,19 @@ export function EmailSignaturesPage(
                     role="tab"
                     aria-selected={step === stage}
                     onClick={() => setStep(stage as typeof step)}
-                    className={`flex min-h-9 items-center gap-2 rounded-md px-3 text-[12px] ${
-                      step === stage
-                        ? "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-premium-stroke)]"
-                        : "text-[var(--md-subtle)]"
+                    className={`relative isolate flex min-h-9 items-center gap-2 rounded-md px-3 text-[12px] transition-colors duration-200 ${
+                      step === stage ? "text-[var(--md-ink)]" : "text-[var(--md-subtle)] hover:text-[var(--md-ink)]"
                     }`}
                   >
+                    {step === stage
+                      ? (
+                        <motion.span
+                          layoutId="sig-stage-tab"
+                          className="absolute inset-0 -z-10 rounded-[inherit] bg-[var(--md-surface)] shadow-[var(--md-premium-stroke)]"
+                          transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 480, damping: 40 }}
+                        />
+                      )
+                      : null}
                     {stage === "design"
                       ? <PenLine className="size-3.5" />
                       : stage === "preview"
@@ -700,22 +762,23 @@ export function EmailSignaturesPage(
                   {t("Preview as")}
                   <Select
                     value={person.id}
-                    onValueChange={(value) => setPersonId((value === "__empty" ? "" : value))}
->
-<SelectTrigger aria-label={t("Preview as")} className="w-full min-w-0 text-[12px]"><SelectValue /></SelectTrigger>
-<SelectContent>
-                    {workspace.people.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                        {p.id === workspace.userId ? ` (${t("You")})` : ""}
-                        {workspace.people.some((other) =>
-                            other.id !== p.id && other.name === p.name
-                          )
-                          ? ` · ${p.email}`
-                          : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent></Select>
+                    onValueChange={(value) => setPersonId(value)}
+                  >
+                    <SelectTrigger aria-label={t("Preview as")} className="w-full min-w-0 text-[12px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {workspace.people.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                          {p.id === workspace.userId ? ` (${t("You")})` : ""}
+                          {workspace.people.some((other) =>
+                              other.id !== p.id && other.name === p.name
+                            )
+                            ? ` · ${p.email}`
+                            : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </label>
                 {editable
                   ? (
@@ -755,12 +818,14 @@ export function EmailSignaturesPage(
                     document={selected.document}
                     onChange={(document) => edit({ document })}
                     values={values}
-                    assets={workspace.assetUrls}
+                    assets={assets}
                     readOnly={!editable}
-                    brandLogo={brand?.configured && brand.logoUrl
+                    allowTemplates={editable}
+                    brandColours={brand?.configured ? [brand.primaryColor, brand.secondaryColor] : []}
+                    brandLogo={brandLogoUrl
                       ? {
-                        url: brand.logoUrl,
-                        load: () => signatureBrandImageFile(brand.logoUrl!),
+                        url: brandLogoUrl,
+                        load: () => signatureBrandImageFile(brandLogoUrl),
                       }
                       : undefined}
                     onUpload={async (file) => {
@@ -787,18 +852,27 @@ export function EmailSignaturesPage(
               : null}
             {step === "preview"
               ? (
-                <div className="rounded-xl bg-[var(--md-surface)] p-6 shadow-[var(--md-premium-stroke)]">
-                  <div className="mb-6 flex items-center justify-between">
+                <motion.div
+                  className="rounded-xl bg-[var(--md-surface)] p-6 shadow-[var(--md-premium-stroke)]"
+                  initial={{ opacity: 0, y: reduced ? 0 : 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: reduced ? 0 : .32, ease: mdEaseOut }}
+                >
+                  <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                     <p className="text-[12px] text-[var(--md-subtle)]">
                       {t("How your signature will appear in an email")}
                     </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setNarrow((v) => !v)}
-                    >
-                      {t(narrow ? "Show wide view" : "Show narrow view")}
-                    </Button>
+                    <SegmentedControl
+                      ariaLabel={t("Preview width")}
+                      options={["wide", "narrow"] as const}
+                      value={narrow ? "narrow" : "wide"}
+                      onChange={(value) => setNarrow(value === "narrow")}
+                      className="[&>button]:h-7 [&>button]:text-[12px]"
+                      renderOption={(value) => {
+                        const Icon = value === "wide" ? Laptop : Smartphone;
+                        return <><Icon className="size-3.5" />{t(value === "wide" ? "Desktop" : "Mobile")}</>;
+                      }}
+                    />
                   </div>
                   <div className="flex justify-center">
                     <Preview html={rendered!.html} narrow={narrow} />
@@ -808,12 +882,17 @@ export function EmailSignaturesPage(
                       "Email clients can vary. Test a real email before rolling out a new design.",
                     )}
                   </p>
-                </div>
+                </motion.div>
               )
               : null}
             {step === "assign"
               ? (
-                <div className="grid gap-6 rounded-xl bg-[var(--md-surface)] p-6 shadow-[var(--md-premium-stroke)] lg:grid-cols-[1fr_1fr]">
+                <motion.div
+                  className="grid gap-6 rounded-xl bg-[var(--md-surface)] p-6 shadow-[var(--md-premium-stroke)] lg:grid-cols-[1fr_1fr]"
+                  initial={{ opacity: 0, y: reduced ? 0 : 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: reduced ? 0 : .32, ease: mdEaseOut }}
+                >
                   <div>
                     <h2 className="text-[15px] font-medium">
                       {t("Who should use this signature?")}
@@ -844,16 +923,15 @@ export function EmailSignaturesPage(
                     ].map((a) => (
                       <label
                         key={`${a.kind}:${a.id}`}
-                        className="flex min-h-10 items-center gap-3 py-2 text-[12px]"
+                        className="flex min-h-10 cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-[12px] transition-colors hover:bg-[var(--md-hover)]"
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={selected.assignments.some((x) =>
                             x.kind === a.kind && x.id === a.id
                           )}
-                          onChange={(e) =>
+                          onCheckedChange={(checked) =>
                             edit({
-                              assignments: e.target.checked
+                              assignments: checked === true
                                 ? [...selected.assignments, {
                                   kind: a.kind,
                                   id: a.id,
@@ -889,22 +967,41 @@ export function EmailSignaturesPage(
                     ))}
                   </div>
                   <div>
-                    <div className="sig-panel-label">
+                    <div className="mb-3 text-[12px] font-medium">
                       {affected.length} {t(
                         affected.length === 1
                           ? "person included"
                           : "people included",
                       )}
                     </div>
-                    {affected.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between py-2 text-[12px]"
-                      >
-                        <span>{p.name}</span>
-                        <Check className="size-3.5 text-[var(--md-accent)]" />
-                      </div>
-                    ))}
+                    <AnimatePresence initial={false}>
+                      {affected.map((p) => (
+                        <motion.div
+                          key={p.id}
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: reduced ? 0 : .24, ease: mdEaseOut }}
+                          className="overflow-hidden"
+                        >
+                          <div className="flex items-center gap-2.5 py-2 text-[12px]">
+                            {usesPersonPhoto
+                              ? p.photoUrl
+                                ? <img src={p.photoUrl} alt="" className="size-6 shrink-0 rounded-full object-cover" />
+                                : <span aria-hidden className="size-6 shrink-0 rounded-full bg-[var(--md-hover)]" />
+                              : null}
+                            <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                            {usesPersonPhoto && !p.photoUrl
+                              ? (
+                                <span className="shrink-0 text-[11px] text-[var(--md-subtle)]">
+                                  {t(p.photoStatus === "too_large" ? "Photo over 2 MB" : "No profile photo")}
+                                </span>
+                              )
+                              : <Check className="size-3.5 text-[var(--md-accent)]" />}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
                     {!affected.length
                       ? (
                         <p className="sig-hint">
@@ -915,46 +1012,19 @@ export function EmailSignaturesPage(
                       )
                       : null}
                   </div>
-                </div>
+                </motion.div>
               )
               : null}
           </>
         )}
-      <Dialog open={newDialog} onOpenChange={setNewDialog}>
-        <DialogContent className="max-w-[680px]">
-          <DialogTitle>{t("Start with a layout")}</DialogTitle>
-          <DialogDescription>
-            {t(
-              "Every layout is editable. Add your logo, details and banner in the builder.",
-            )}
-          </DialogDescription>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {(["side", "stacked", "banner"] as const).map((layout) => (
-              <button
-                key={layout}
-                className="rounded-lg bg-[var(--md-surface-soft)] p-5 text-left shadow-[var(--md-premium-stroke-soft)]"
-                onClick={() => create(layout)}
-              >
-                <SignatureBlockGlyph
-                  kind={layout === "banner" ? "image" : "identity"}
-                />
-                <div className="mt-3 text-[13px] font-medium">
-                  {t(
-                    layout === "side"
-                      ? "Logo beside details"
-                      : layout === "stacked"
-                      ? "Clean and stacked"
-                      : "With a banner",
-                  )}
-                </div>
-                <p className="mt-2 text-[11px] text-[var(--md-subtle)]">
-                  {t("Make it yours")}
-                </p>
-              </button>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <SignatureTemplatePicker
+        open={picker}
+        onOpenChange={setPicker}
+        accent={accent}
+        values={values}
+        brandLogoUrl={brandLogoUrl}
+        onChoose={(document, templateId) => create(document, { name: templateId ? signatureStarter(templateId)?.name : undefined })}
+      />
       <Dialog open={review} onOpenChange={setReview}>
         <DialogContent className="max-w-[720px]">
           <DialogTitle>{t("Apply this signature")}</DialogTitle>
@@ -1028,126 +1098,6 @@ export function EmailSignaturesPage(
           ))}
         </DialogContent>
       </Dialog>
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-h-[85dvh] max-w-[700px] overflow-y-auto">
-          <DialogTitle>{t("Signature customisation")}</DialogTitle>
-          <DialogDescription>
-            {t(
-              "Decide who can make a personal copy. Everyone can still turn their signature off for an individual email.",
-            )}
-          </DialogDescription>
-          {error
-            ? (
-              <p role="alert" className="text-[12px] text-[var(--md-red)]">
-                {error}
-              </p>
-            )
-            : null}
-          {workspace.manager && !personal
-            ? (
-              <>
-                <label className="flex items-center justify-between text-[13px]">
-                  {t("Allow customisation by default")}
-                  <input
-                    type="checkbox"
-                    checked={workspace.policy.allow_customisation}
-                    onChange={(e) =>
-                      void changePolicy(undefined, e.target.checked)}
-                  />
-                </label>
-                <label className="sig-field">
-                  {t("Company website")}
-                  <Input
-                    value={workspace.policy.website}
-                    onChange={(e) =>
-                      setWorkspace((w) =>
-                        w
-                          ? {
-                            ...w,
-                            policy: { ...w.policy, website: e.target.value },
-                          }
-                          : w
-                      )}
-                    onBlur={() =>
-                      void changePolicy(
-                        undefined,
-                        workspace.policy.allow_customisation,
-                      )}
-                    placeholder="https://"
-                  />
-                </label>
-              </>
-            )
-            : null}
-          {workspace.people.filter((p) =>
-            !personal || p.id === workspace.userId
-          ).map((p) => (
-            <div
-              key={p.id}
-              className="grid gap-2 border-t border-[var(--md-line)] py-3 sm:grid-cols-[1fr_150px]"
-            >
-              <span className="text-[12px]">{p.name}</span>
-              {workspace.manager && !personal
-                ? (
-                  <Select
-                    value={p.allowCustomisation === null
-                      ? "default"
-                      : String(p.allowCustomisation)}
-                    onValueChange={(value) =>
-                      void changePolicy(
-                        p.id,
-                        (value === "__empty" ? "" : value) === "default"
-                          ? null
-                          : (value === "__empty" ? "" : value) === "true",
-                      )}
->
-<SelectTrigger aria-label={t("Personal customisation")} className="w-full min-w-0 text-[12px]"><SelectValue /></SelectTrigger>
-<SelectContent>
-                    <SelectItem value="default">{t("Company default")}</SelectItem>
-                    <SelectItem value="true">{t("Allow personal copy")}</SelectItem>
-                    <SelectItem value="false">
-                      {t("Company signatures only")}
-                    </SelectItem>
-                  </SelectContent></Select>
-                )
-                : null}
-              <label className="sig-field !mt-0">
-                {t("Work phone")}
-                <Input
-                  defaultValue={p.phone}
-                  onBlur={(e) => {
-                    if (e.target.value !== p.phone) {
-                      void updateSignatureProfile({
-                        userId: p.id,
-                        phone: e.target.value,
-                        mobile: p.mobile,
-                      }).then(load).catch((e) => setError(e.message));
-                    }
-                  }}
-                />
-              </label>
-              <label className="sig-field !mt-0">
-                {t("Mobile")}
-                <Input
-                  defaultValue={p.mobile}
-                  onBlur={(e) => {
-                    if (e.target.value !== p.mobile) {
-                      void updateSignatureProfile({
-                        userId: p.id,
-                        phone: p.phone,
-                        mobile: e.target.value,
-                      }).then(load).catch((e) => setError(e.message));
-                    }
-                  }}
-                />
-              </label>
-            </div>
-          ))}
-        </DialogContent>
-      </Dialog>
     </div>
   );
-}
-function ArrowRightIcon() {
-  return <span aria-hidden="true">→</span>;
 }

@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
@@ -751,13 +752,14 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
     <DotGridLoaderPanel label="Loading warehouse orders" minHeight={0} />
   ) : hasFilters ? (
     <div className="mx-auto max-w-[380px]">
+      <EmptyStateIllustration variant="search" className="mb-3" />
       <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Nothing matches these filters")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(scope === "Open" ? "Widen the search, or switch to All to include finished orders." : "Widen the search or switch warehouse to see more.")}</p>
       <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={clearFilters}>{t("Clear filters")}</Button>
     </div>
   ) : (
     <div className="mx-auto max-w-[380px]">
-      <Boxes className="mx-auto size-5 text-[var(--md-accent)]" strokeWidth={1.35} />
+      <EmptyStateIllustration variant="cargo" />
       <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t(scope === "Open" ? "Nothing open right now" : "No orders yet")}</p>
       <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
         {t(typeFilter === "inbound" ? "Book a delivery in to receive it against a location and batch."
