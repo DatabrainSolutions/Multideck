@@ -26,6 +26,13 @@ No tenant data, external customers or provider mappings were modified. The new m
 
 The audited backfill is not implemented in this change. Do not infer a company's ownership merely from an organisation's name, create a duplicate ERPNext account, or quietly reactivate archived profiles. A repair must verify source ownership, retain the existing organisation and provider IDs, record actor/reason/before-and-after evidence atomically, and repeat the preflight and role-aware access checks.
 
+## 23 September dev candidate check
+
+- Draft PR #24 targets `dev`. Its GitHub `Data access regression` job passed against PostgreSQL; the earlier local fixture run could not initialise because of host shared-memory exhaustion.
+- Vercel preview deployment `9Sy62Fn5dZQAdPdvFRUfwCmQ4pKA` built successfully after adding `MULTIDECK_SURFACE=app`, `VITE_MULTIDECK_TENANT_SLUG=dev` and `VITE_SUPABASE_PROJECT_REF=aqtwypsuijxlnvtxpuxe` for `finance-dev-candidate` only. The preview login correctly says the temporary hostname is not authorised. No authenticated browser or ERPNext end-to-end result is claimed.
+- A second read-only check found all four missing profiles still absent. The approved financial documents and active provider mappings identify legal entity `a8e98266-f5f4-4620-b45a-e3d991a38209` (company `a0ee9891-f144-48ff-980f-5eea3526a3fc`); the active mappings explicitly identify customer parties. The provider IDs contain demo names only, so they do not supply authoritative billing addresses.
+- Demo Organisation 004 has one active, populated address but no customer role or CRM relationship status. Organisations 005, 023 and 061 have customer roles and no address rows. The live deferred accounting-address constraint rejects creation of their customer profiles until a real address with line 1, town/city and valid country is recorded. Verify those details with an authoritative source and repair the records together with an atomic audit trail before applying the profile guard migration or merging this PR.
+
 ## Dexter exception
 
 These are internal integrity constraints, not a new user-facing repair capability. Existing accounting status reads and event-driven watches remain unchanged. Profile-integrity reads, approved repair actions and repair-specific watches are explicitly unsupported; the runtime prompt now explains this limitation and directs operators to administrator review. No generic data write or ownership inference is exposed to Dexter. The full access suite exercised existing Dexter actor, approval, deal-watch and address-watch boundaries; a repair lifecycle test cannot be claimed because no repair action exists.
