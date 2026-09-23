@@ -1471,6 +1471,10 @@ const previewOrganisationReference: CustomerReference = {
   ],
   owners: [],
   relationshipStatuses: [],
+  countries: [
+    { code: "GB", name: "United Kingdom" },
+    { code: "NL", name: "Netherlands" },
+  ],
   currencies: [{ code: "GBP", name: "Pound sterling" }],
   legalEntities: [],
   paymentTerms: [],
@@ -1534,6 +1538,8 @@ const previewOrganisationSeed: ApiCustomerDetail = {
     { id: 4, code: "pickup", name: "Pickup" },
     { id: 5, code: "delivery", name: "Delivery" },
     { id: 6, code: "billing", name: "Billing" },
+    { id: 7, code: "accounts_receivable", name: "Accounts receivable" },
+    { id: 8, code: "operations", name: "Operations" },
   ],
   addresses: [{
     id: "gallery-address-main",
@@ -4443,7 +4449,7 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "organisation-foundation-panel" ? (
         <div className="w-full max-w-[1120px]">
-          <OrganisationFoundationPanel account={previewOrganisation} reference={previewOrganisationReference} onChange={setPreviewOrganisation} />
+          <OrganisationFoundationPanel account={previewOrganisation} reference={previewOrganisationReference} view="addresses" onChange={setPreviewOrganisation} />
         </div>
       ) : null}
 

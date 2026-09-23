@@ -1,15 +1,16 @@
+import { deliverFinanceExport } from "../_shared/finance-export-attempt.ts"
+import { reviewPartyIdentities } from "../_shared/accounting-party-review.ts"
+import { adoptReviewedPartyIdentity, assertAccountingPartyScope, PartySyncBlocked } from "../_shared/accounting-party-sync.ts"
 import {
-  AccountingProviderPartialError,
   accountingProvider,
   accountingProviders,
-  exportFinanceRecord,
   preflightFinanceRecord,
   type AccountingProviderCode,
   type CanonicalFinanceExport,
 } from "../_shared/accounting-providers.ts"
 import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { erpNextCreate, erpNextList, erpNextOrigin, erpNextRequest } from "../_shared/erpnext.ts"
-import { hyperExtConfigured, hyperExtRequest, hyperExtStatus } from "../_shared/hyperext.ts"
+import { hyperExtConfigured, hyperExtRequest, hyperExtStatus, parseHyperExtNominals } from "../_shared/hyperext.ts"
 import { registerPagination } from "../_shared/register-pagination.ts"
 
 type LineInput = { description: string; quantity?: number; unitAmount?: number; taxRatePercent?: number; taxCode?: string | null; chargeCode?: string | null; jobCostingLineId?: string | null; lineType?: "service" | "ancillary" }
@@ -145,7 +146,7 @@ async function erpNextCatalog(admin: any, current: any, connectionId: string) {
     erpNextList("Customer", ["name", "customer_name", "disabled"]),
     erpNextList("Supplier", ["name", "supplier_name", "disabled"]),
     erpNextList("Item", ["name", "item_code", "item_name", "item_group", "stock_uom", "is_stock_item", "disabled"]),
-    erpNextList("Account", ["name", "account_name", "root_type", "account_type", "account_currency", "company", "is_group", "disabled"], [["company", "=", externalCompany]]),
+    erpNextAccountList(externalCompany),
     erpNextList("Item Tax Template", ["name", "title", "company"], [["company", "=", externalCompany]]),
   ])
   const active = (record: any) => record.disabled !== true && record.disabled !== 1 && record.disabled !== "1"
@@ -162,6 +163,67 @@ async function erpNextCatalog(admin: any, current: any, connectionId: string) {
   }
 }
 
+async function erpNextAccountList(company: string) {
+  const accounts: Record<string, unknown>[] = []
+  const pageSize = 200
+  for (let offset = 0; offset < 10000; offset += pageSize) {
+    const query = new URLSearchParams({
+      fields: JSON.stringify(["name", "account_number", "account_name", "root_type", "account_type", "account_currency", "company", "is_group", "disabled"]),
+      filters: JSON.stringify([["company", "=", company]]),
+      limit_start: String(offset),
+      limit_page_length: String(pageSize),
+    })
+    const payload = await erpNextRequest<{ data?: Record<string, unknown>[] }>(`/api/resource/Account?${query}`)
+    if (!Array.isArray(payload.data)) throw new HttpError(502, "ERPNext did not return its account list.")
+    accounts.push(...payload.data)
+    if (payload.data.length < pageSize) return accounts
+  }
+  throw new HttpError(409, "ERPNext has more than 10,000 accounts. Narrow the connected company before mapping.")
+}
+
+async function sage50NominalCatalog(admin: any, current: any, connectionId: string) {
+  if (!isUuid(connectionId)) throw new HttpError(404, "Accounting connection not found.")
+  const ids = await entityIds(admin, current)
+  const { data: connection, error } = ids.length
+    ? await admin.from("ACCI_Connections")
+      .select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_LegalEntityID,ACCIC_StatusCode,ACCIC_ExternalTenantName")
+      .eq("ACCIC_ID", connectionId)
+      .in("ACCIC_LegalEntityID", ids)
+      .maybeSingle()
+    : { data: null, error: null }
+  if (error) throw new HttpError(500, error.message)
+  if (!connection) throw new HttpError(404, "Accounting connection not found.")
+  if (connection.ACCIC_ProviderCode !== "sage_50" || connection.ACCIC_StatusCode !== "active") {
+    throw new HttpError(409, "Activate the Sage 50 connection before loading nominal accounts.")
+  }
+  const expectedCompany = clean(connection.ACCIC_ExternalTenantName, 180)
+  if (!expectedCompany) throw new HttpError(409, "Set the exact Sage 50 company on this connection before mapping accounts.")
+  const status = await hyperExtStatus()
+  if (!status.sdoStatusOk || !status.odbcStatusOk) throw new HttpError(409, "HyperExt is reachable, but Sage Data Objects or ODBC is not ready.")
+  if (!status.companyName || status.companyName !== expectedCompany) {
+    throw new HttpError(409, "HyperExt is connected to a different Sage 50 company. Correct the connection before mapping accounts.")
+  }
+  const accounts = parseHyperExtNominals(await hyperExtRequest("/api/nominal/"))
+  return { connectionId: connection.ACCIC_ID, accounts }
+}
+
+async function allNominalAccounts(admin: any, ids: string[]) {
+  const data: Record<string, unknown>[] = []
+  const pageSize = 500
+  for (let offset = 0; offset < 20000; offset += pageSize) {
+    const page = await admin.from("FIN_NominalAccounts")
+      .select("FINNom_ID,FINNom_Code,FINNom_Name,FINNom_AccountTypeCode,FINNom_ReportCategoryCode,FINNom_LegalEntityID,FINNom_ExternalMappingHint,FINNom_IsControlAccount,FINNom_ControlTypeCode,FINNom_AllowManualPosting,FINNom_IsActive,FINNom_UpdatedAt")
+      .in("FINNom_LegalEntityID", ids)
+      .order("FINNom_Code")
+      .order("FINNom_ID")
+      .range(offset, offset + pageSize - 1)
+    if (page.error) return { data: [], error: page.error }
+    data.push(...(page.data ?? []))
+    if ((page.data ?? []).length < pageSize) return { data, error: null }
+  }
+  throw new HttpError(409, "The nominal chart exceeds 20,000 accounts. Contact support before mapping it.")
+}
+
 async function upsertErpNextPartyMapping(admin: any, current: any, input: PartyMappingInput) {
   if (!isUuid(input.connectionId)) throw new HttpError(404, "Accounting connection not found.")
   if (!isUuid(input.orgId)) throw new HttpError(404, "Organisation not found.")
@@ -174,7 +236,7 @@ async function upsertErpNextPartyMapping(admin: any, current: any, input: PartyM
   const [connectionResult, organisationResult, profileResult] = await Promise.all([
     ids.length
       ? admin.from("ACCI_Connections")
-        .select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_StatusCode,ACCIC_LegalEntityID,ACCIC_ExternalTenantName")
+        .select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_StatusCode,ACCIC_LegalEntityID,ACCIC_ExternalTenantName,ACCIC_SettingsJSON")
         .eq("ACCIC_ID", input.connectionId)
         .in("ACCIC_LegalEntityID", ids)
         .maybeSingle()
@@ -189,6 +251,7 @@ async function upsertErpNextPartyMapping(admin: any, current: any, input: PartyM
   const organisation = organisationResult.data
   if (!connection) throw new HttpError(404, "Accounting connection not found.")
   if (!organisation) throw new HttpError(404, "Organisation not found.")
+  await assertAccountingPartyScope(admin, connection, organisation.Org_id, partyType)
   if (connection.ACCIC_ProviderCode !== "erpnext" || connection.ACCIC_StatusCode !== "active") {
     throw new HttpError(409, "Activate the ERPNext connection before reviewing party mappings.")
   }
@@ -221,6 +284,9 @@ async function upsertErpNextPartyMapping(admin: any, current: any, input: PartyM
     throw new HttpError(409, "This organisation already has a combined customer/supplier mapping. Review and retire it before adding a directional mapping.")
   }
 
+  if (connection.ACCIC_SettingsJSON?.partySync?.enabled === true) {
+    await adoptReviewedPartyIdentity(admin, connection.ACCIC_ID, organisation.Org_id, partyType, providerPartyId)
+  }
   const providerName = clean(providerRecord[partyType === "customer" ? "customer_name" : "supplier_name"], 240) || providerPartyId
   const existing = (localMappings.data ?? []).find((mapping: any) => mapping.ACCIPM_PartyType === partyType)
   const changed = !existing || existing.ACCIPM_ProviderPartyID !== providerPartyId || existing.ACCIPM_ProviderPartyName !== providerName || existing.ACCIPM_IsActive !== true
@@ -255,6 +321,10 @@ async function upsertErpNextPartyMapping(admin: any, current: any, input: PartyM
     })
     if (eventError) throw new HttpError(500, "The party mapping was saved, but its provider audit event could not be retained. Retry to reconcile it.")
   }
+  if (connection.ACCIC_SettingsJSON?.partySync?.enabled === true) {
+    const { error: enqueueError } = await admin.rpc("multideck_accounting_enqueue_parties", { p_org: organisation.Org_id })
+    if (enqueueError) throw new HttpError(500, "The reviewed mapping was saved but its account check could not be queued. Run Check all accounts before exporting.")
+  }
   return { changed, mapping }
 }
 
@@ -263,7 +333,7 @@ async function providerCustomerConnection(admin: any, current: any, connectionId
   const ids = await entityIds(admin, current)
   const { data, error } = ids.length
     ? await admin.from("ACCI_Connections")
-      .select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_StatusCode,ACCIC_LegalEntityID,ACCIC_ExternalTenantName,ACCIC_ExternalBaseCurrencyCode,ACCIC_Environment")
+      .select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_StatusCode,ACCIC_LegalEntityID,ACCIC_ExternalTenantName,ACCIC_ExternalBaseCurrencyCode,ACCIC_Environment,ACCIC_SettingsJSON")
       .eq("ACCIC_ID", connectionId)
       .in("ACCIC_LegalEntityID", ids)
       .maybeSingle()
@@ -439,6 +509,8 @@ async function saveSagePartyMapping(admin: any, connection: any, organisation: a
 
 async function createProviderCustomer(admin: any, current: any, input: ProviderCustomerInput) {
   const connection = await providerCustomerConnection(admin, current, input.connectionId)
+  if (connection.ACCIC_SettingsJSON?.partySync?.enabled === true) throw new HttpError(409, "Automatic account creation is enabled. Use Account checks to track creation or review an existing mapping.")
+  await assertAccountingPartyScope(admin, connection, input.orgId, "customer")
   const source = await providerPartyOrganisation(admin, input.orgId)
   const { data: existingMapping, error: mappingError } = await admin.from("ACCI_PartyMappings").select("*").eq("ACCIPM_ConnectionID", connection.ACCIC_ID).eq("ACCIPM_OrgID", source.organisation.id).in("ACCIPM_PartyType", ["customer", "both"]).eq("ACCIPM_IsActive", true).limit(1).maybeSingle()
   if (mappingError) throw new HttpError(500, mappingError.message)
@@ -603,9 +675,8 @@ async function syncErpNextPartyAccount(admin: any, current: any, connection: any
 
   const duplicates = await erpNextList(doctype, ["name", nameField, "disabled"], [[nameField, "=", source.organisation.name]])
   const duplicate = duplicates.find((item: any) => item.disabled !== true && item.disabled !== 1 && item.disabled !== "1")
-  if (duplicate?.name) {
-    await upsertErpNextPartyMapping(admin, current, { connectionId: connection.ACCIC_ID, orgId: organisation.Org_id, partyType, providerPartyId: duplicate.name })
-    return { action: "linked" as const, providerPartyId: duplicate.name, message: `Linked the existing ERPNext ${partyType}.` }
+  if (duplicate) {
+    throw new HttpError(409, `ERPNext already has a ${partyType} with this name. Review and link the exact account; a name match is not proof of identity.`)
   }
 
   if (!defaults.group || (partyType === "customer" && !defaults.territory)) {
@@ -723,6 +794,7 @@ async function syncProviderParties(admin: any, current: any, input: ProviderPart
   const partyType = clean(input.partyType, 20) as ProviderPartyType
   if (partyType !== "customer" && partyType !== "supplier") throw new HttpError(400, "Choose customers or suppliers to sync.")
   const connection = await providerCustomerConnection(admin, current, input.connectionId)
+  if (connection.ACCIC_SettingsJSON?.partySync?.enabled === true) throw new HttpError(409, "Automatic account sync is enabled. Use Check all accounts to queue a verified recheck.")
   const organisations = await providerPartyAccounts(admin, current, partyType)
   const organisationIds = organisations.map((item: any) => item.Org_id)
   const { data: mappings, error: mappingError } = organisationIds.length
@@ -734,6 +806,9 @@ async function syncProviderParties(admin: any, current: any, input: ProviderPart
       .eq("ACCIPM_IsActive", true)
     : { data: [], error: null }
   if (mappingError) throw new HttpError(500, mappingError.message)
+  const mappingCounts = new Map<string, number>()
+  for (const mapping of mappings ?? []) mappingCounts.set(mapping.ACCIPM_OrgID, (mappingCounts.get(mapping.ACCIPM_OrgID) ?? 0) + 1)
+  if ([...mappingCounts.values()].some((count) => count > 1) || (mappings ?? []).some((mapping: any) => mapping.ACCIPM_PartyType === "both")) throw new HttpError(409, "Review conflicting or combined customer/supplier mappings before syncing accounts.")
   const mappingsByOrganisation = new Map((mappings ?? []).map((mapping: any) => [mapping.ACCIPM_OrgID, mapping]))
   const startedAt = new Date().toISOString()
   let defaults = { group: "", territory: null as string | null }
@@ -833,7 +908,7 @@ async function verifyErpNextExternalReference(admin: any, current: any, external
   if (!reference) throw new HttpError(404, "Provider reference not found.")
   const { data: connection, error: connectionError } = ids.length
     ? await admin.from("ACCI_Connections")
-      .select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_StatusCode,ACCIC_LegalEntityID,ACCIC_ExternalTenantName")
+      .select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_StatusCode,ACCIC_LegalEntityID,ACCIC_ExternalTenantName,ACCIC_SettingsJSON")
       .eq("ACCIC_ID", reference.ACCIER_ConnectionID)
       .in("ACCIC_LegalEntityID", ids)
       .maybeSingle()
@@ -1090,7 +1165,7 @@ async function administrationWorkspace(admin: any, ids: string[], connectionIds:
     ids.length ? admin.from("FIN_LocalisationSettings").select("FINLocSet_ID,FINLocSet_LegalEntityID,FINLocSet_PackID,FINLocSet_TaxRegistrationNo,FINLocSet_ReportingBasisCode,FINLocSet_SettingsJSON,FINLocSet_EffectiveFrom,FINLocSet_IsActive,FINLocSet_UpdatedAt,FINLocPack:FINLocSet_PackID(FINLocPack_Code,FINLocPack_Name,FINLocPack_CountryCode,FINLocPack_AccountingStandardCode,FINLocPack_ComplianceStatusCode)").in("FINLocSet_LegalEntityID", ids).eq("FINLocSet_IsActive", true) : empty,
     ids.length ? admin.from("FIN_CurrencySettings").select("FINCurSet_ID,FINCurSet_LegalEntityID,FINCurSet_CurrencyCode,FINCurSet_Name,FINCurSet_DecimalPlaces,FINCurSet_RoundingMethodCode,FINCurSet_ToleranceAmount,FINCurSet_IsPermittedForQuote,FINCurSet_IsPermittedForInvoice,FINCurSet_IsBaseCurrency,FINCurSet_IsActive").in("FINCurSet_LegalEntityID", ids).order("FINCurSet_CurrencyCode") : empty,
     ids.length ? admin.from("FIN_BankAccounts").select("FINBank_ID,FINBank_Code,FINBank_Name,FINBank_LegalEntityID,FINBank_CurrencyCode,FINBank_InstitutionName,FINBank_AccountHolderName,FINBank_AccountNumberMasked,FINBank_IBANMasked,FINBank_SortCodeMasked,FINBank_BICMasked,FINBank_CountryCode,FINBank_NominalAccountID,FINBank_IsDefault,FINBank_AllowReceipts,FINBank_AllowPayments,FINBank_IsActive,FINBank_UpdatedAt").in("FINBank_LegalEntityID", ids).order("FINBank_Name") : empty,
-    ids.length ? admin.from("FIN_NominalAccounts").select("FINNom_ID,FINNom_Code,FINNom_Name,FINNom_AccountTypeCode,FINNom_ReportCategoryCode,FINNom_LegalEntityID,FINNom_ExternalMappingHint,FINNom_IsControlAccount,FINNom_ControlTypeCode,FINNom_AllowManualPosting,FINNom_IsActive,FINNom_UpdatedAt").in("FINNom_LegalEntityID", ids).order("FINNom_Code") : empty,
+    ids.length ? allNominalAccounts(admin, ids) : empty,
     ids.length ? admin.from("FIN_TaxJurisdictions").select("FINTaxJur_ID,FINTaxJur_Code,FINTaxJur_Name,FINTaxJur_CountryCode,FINTaxJur_AuthorityName,FINTaxJur_LegalEntityID,FINTaxJur_RegistrationNo,FINTaxJur_EffectiveFrom,FINTaxJur_EffectiveTo,FINTaxJur_SettingsJSON,FINTaxJur_IsActive").in("FINTaxJur_LegalEntityID", ids).order("FINTaxJur_Code") : empty,
     ids.length ? admin.from("FIN_TaxCodes").select("FINTax_ID,FINTax_Code,FINTax_Name,FINTax_CountryCode,FINTax_RatePercent,FINTax_TaxTypeCode,FINTax_ProviderMappingHint,FINTax_IsRecoverable,FINTax_IsActive,FINTax_EffectiveFrom,FINTax_EffectiveTo,FINTax_LegalEntityID,FINTax_JurisdictionID,FINTax_TreatmentCategoryCode,FINTax_TransactionTypeCode,FINTax_OutputNominalID,FINTax_InputNominalID,FINTax_SettingsJSON,FINTax_ApprovedAt").in("FINTax_LegalEntityID", ids).order("FINTax_Code") : empty,
     ids.length ? admin.from("FIN_NumberSequences").select("FINSeq_ID,FINSeq_Code,FINSeq_Name,FINSeq_LegalEntityID,FINSeq_DocumentTypeCode,FINSeq_Prefix,FINSeq_Suffix,FINSeq_NextNumber,FINSeq_PaddingLength,FINSeq_ResetPeriodCode,FINSeq_IsActive").in("FINSeq_LegalEntityID", ids).order("FINSeq_Code") : empty,
@@ -1239,6 +1314,14 @@ async function documentWorkspace(admin: any, current: any, selectedLedger: Ledge
       FinanceDraftCurrencyStatus: approvedCurrency ? "approved" : pendingCurrency ? "pending_configuration" : "missing",
     }
   })
+  // Controlled charge catalogue is shared within this physically isolated tenant.
+  // Only authorised finance draft callers reach this reference-data branch.
+  const { data: chargeCodes, error: chargeError } = await admin.from("RATE_ChargeCodes")
+    .select("RATECharge_ID,RATECharge_Code,RATECharge_Name,RATECharge_Description,RATECharge_DefaultApplicabilityCode,RATECharge_DefaultTaxCode")
+    .eq("RATECharge_IsActive", true).in("RATECharge_DefaultApplicabilityCode", ["both", "pass_through", selectedLedger === "receivables" ? "sell" : "buy"])
+    .order("RATECharge_SortOrder").order("RATECharge_Code")
+  if (chargeError) throw new HttpError(500, "The controlled finance charge codes could not be loaded.")
+  result.chargeCodes = chargeCodes ?? []
   result.parties = parties.data ?? []
   result.jobs = jobs.data ?? []
   const draftJobIds = (jobs.data ?? []).map((job: any) => job.Job_ID)
@@ -1573,16 +1656,6 @@ async function transitionCash(admin: any, current: any, id: string, transition: 
   return data
 }
 
-async function saveExternalRef(admin: any, connection: any, localTable: string, localId: string, localNumber: string, typeCode: string, externalObjectType: string, externalId: string, externalNumber: string | null, externalUrl: string | null, payload: Record<string, unknown>, syncStatus = "synced") {
-  const { data, error } = await admin.from("ACCI_ExternalRefs").upsert({
-    ACCIER_ConnectionID: connection.ACCIC_ID, ACCIER_DocumentTypeCode: typeCode, ACCIER_LocalTable: localTable, ACCIER_LocalID: localId, ACCIER_LocalNumber: localNumber,
-    ACCIER_ExternalObjectType: externalObjectType, ACCIER_ExternalID: externalId, ACCIER_ExternalNumber: externalNumber, ACCIER_ExternalURL: externalUrl,
-    ACCIER_SyncStatusCode: syncStatus, ACCIER_LastSyncedAt: syncStatus === "synced" ? new Date().toISOString() : null, ACCIER_LastPayloadJSON: payload,
-  }, { onConflict: "ACCIER_ConnectionID,ACCIER_DocumentTypeCode,ACCIER_LocalTable,ACCIER_LocalID" }).select("ACCIER_ID").single()
-  if (error || !data) throw new HttpError(500, error?.message ?? "Provider reference could not be retained.")
-  return data.ACCIER_ID
-}
-
 async function assertPartyFinancePostingAllowed(admin: any, partyId: string, typeCode: string) {
   const [organisationResult, profileResult] = await Promise.all([
     admin.from("Org_Master").select("Org_id,Org_CRMRelationshipStatusCode").eq("Org_id", partyId).maybeSingle(),
@@ -1621,6 +1694,7 @@ async function canonicalExport(admin: any, current: any, queue: any, allowAwaiti
   const { data: connection, error: connectionError } = await admin.from("ACCI_Connections").select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_LegalEntityID,ACCIC_ExternalTenantName,ACCIC_ExternalBaseCurrencyCode,ACCIC_SettingsJSON").eq("ACCIC_LegalEntityID", legalEntityId).eq("ACCIC_StatusCode", "active").order("ACCIC_UpdatedAt", { ascending: false }).limit(1).maybeSingle()
   if (connectionError) throw new HttpError(500, connectionError.message)
   if (!connection) throw new HttpError(409, "Approve an accounting-provider connection for this legal entity before exporting.")
+  if (connection.ACCIC_ProviderCode === "erpnext" && connection.ACCIC_SettingsJSON?.partySync?.siteOrigin !== erpNextOrigin()) throw new HttpError(409, "Review and save this ERPNext site in Account checks before exporting finance records.")
   const connectionCurrency = currency(connection.ACCIC_ExternalBaseCurrencyCode)
   if (!connectionCurrency) throw new HttpError(409, "The active accounting connection has no valid base currency. Re-approve it in Finance Setup, then retry.")
   if (connectionCurrency !== baseCurrencyCode) throw new HttpError(409, `The accounting connection uses ${connectionCurrency}, but this legal entity uses ${baseCurrencyCode}. Correct Finance Setup, then retry.`)
@@ -1637,6 +1711,13 @@ async function canonicalExport(admin: any, current: any, queue: any, allowAwaiti
   if (partyError) throw new HttpError(500, partyError.message)
   const partyProviderIds = [...new Set<string>((partyMappings ?? []).map((mapping: any) => clean(mapping.ACCIPM_ProviderPartyID, 240)).filter(Boolean))]
   if (partyProviderIds.length > 1) throw new HttpError(409, `This ${partyRole} has conflicting active provider mappings. Keep one reviewed mapping, then retry.`)
+  if (connection.ACCIC_SettingsJSON?.partySync?.enabled === true) {
+    const { data: partySync, error: partySyncError } = await admin.from("ACCI_PartySyncQueue")
+      .select("status,provider_id,verified_at").eq("connection_id", connection.ACCIC_ID).eq("org_id", partyId).eq("party_type", partyRole).maybeSingle()
+    if (partySyncError) throw new HttpError(500, "The account verification state could not be checked.")
+    if (partySync?.status !== "synced" || !partySync.verified_at || partySync.provider_id !== partyProviderIds[0]) throw new HttpError(409, "Complete the customer or supplier account check before exporting this finance record. Review Account checks in the accounts register.")
+  }
+
   const { data: existingRef, error: refError } = await admin.from("ACCI_ExternalRefs").select("ACCIER_ExternalObjectType,ACCIER_ExternalID,ACCIER_SyncStatusCode").eq("ACCIER_ConnectionID", connection.ACCIC_ID).eq("ACCIER_DocumentTypeCode", typeCode).eq("ACCIER_LocalTable", localTable).eq("ACCIER_LocalID", queue.FINIntQ_LocalID).maybeSingle()
   if (refError) throw new HttpError(500, refError.message)
   if (existingRef?.ACCIER_SyncStatusCode === "synced") throw new HttpError(409, "This finance record is already synced to the accounting provider. Reconcile the existing reference instead of posting it again.")
@@ -1695,7 +1776,7 @@ async function canonicalExport(admin: any, current: any, queue: any, allowAwaiti
       const matchingTaxMappings = (taxMappings.data ?? []).filter((candidate: any) => candidate.ACCITM_LocalTaxCode === line.FINDocLine_TaxCodeSnapshot)
       const taxTargets = [...new Set(matchingTaxMappings.map((mapping: any) => clean(mapping.ACCITM_ProviderTaxCode, 80)).filter(Boolean))]
       if (taxTargets.length > 1) throw new HttpError(409, `Finance line ${index + 1} has conflicting active tax mappings. Keep one reviewed mapping, then retry.`)
-      return { description: clean(line.FINDocLine_Description, 1000), quantity, unitAmount, taxRatePercent, providerTaxCode: taxTargets[0] ?? null, providerItemCode: clean(mapping?.ACCICM_ProviderItemID, 240) || clean(mapping?.ACCICM_ProviderItemCode, 120) || null, providerAccountCode: clean(mapping?.ACCICM_ProviderAccountID, 240) || null }
+      return { description: clean(line.FINDocLine_Description, 1000), quantity, unitAmount, taxRatePercent, netAmount: Math.abs(netAmount), taxAmount: Math.abs(taxAmount), providerTaxCode: taxTargets[0] ?? null, providerItemCode: clean(mapping?.ACCICM_ProviderItemID, 240) || clean(mapping?.ACCICM_ProviderItemCode, 120) || null, providerAccountCode: clean(mapping?.ACCICM_ProviderAccountID, 240) || null }
     })
     if (!sameAmount(lineNetTotal, Number(record.FINDoc_NetAmount)) || !sameAmount(lineTaxTotal, Number(record.FINDoc_TaxAmount)) || !sameAmount(lineGrossTotal, signedAmount)) {
       throw new HttpError(409, "The approved document header no longer agrees with its lines. Correct the Multideck draft, then retry.")
@@ -1774,77 +1855,8 @@ async function processQueue(admin: any, current: any, id: string, approvalAlread
   if (!queue || !["FIN_Documents", "FIN_CashTransactions"].includes(queue.FINIntQ_LocalTable)) throw new HttpError(404, "Finance export item not found.")
   if (queue.FINIntQ_LocalTable === "FIN_Documents") await scopedDocument(admin, current, queue.FINIntQ_LocalID)
   else await scopedCash(admin, current, queue.FINIntQ_LocalID)
-  if (queue.FINIntQ_StatusCode === "processing") {
-    const staleBefore = new Date(Date.now() - 15 * 60 * 1000).toISOString()
-    let release = admin.from("FIN_IntegrationQueue").update({ FINIntQ_StatusCode: "failed", FINIntQ_LastError: "The previous provider delivery stopped before completion and is ready to retry." }).eq("FINIntQ_ID", id).eq("FINIntQ_StatusCode", "processing")
-    release = queue.FINIntQ_LastAttemptAt ? release.lt("FINIntQ_LastAttemptAt", staleBefore) : release.is("FINIntQ_LastAttemptAt", null)
-    const { data: released, error: releaseError } = await release.select("FINIntQ_ID").maybeSingle()
-    if (releaseError) throw new HttpError(500, releaseError.message)
-    if (!released) throw new HttpError(409, "This finance export is already processing.")
-  }
-  const claimedAt = new Date().toISOString()
-  const { data: claimed, error: claimError } = await admin.from("FIN_IntegrationQueue").update({ FINIntQ_StatusCode: "processing", FINIntQ_LastAttemptAt: claimedAt, FINIntQ_LastError: null }).eq("FINIntQ_ID", id).in("FINIntQ_StatusCode", ["queued", "blocked", "failed"]).select("FINIntQ_ID").maybeSingle()
-  if (claimError) throw new HttpError(500, claimError.message)
-  if (!claimed) throw new HttpError(409, "This finance export is already processing or has completed.")
-  let resolved: { input: CanonicalFinanceExport; connection: any }
-  try {
-    resolved = await canonicalExport(admin, current, queue)
-  } catch (error) {
-    const status = error instanceof HttpError && error.status === 409 ? "blocked" : "failed"
-    const message = clean(error instanceof Error ? error.message : "Finance export preparation failed.", 500)
-    await Promise.all([
-      admin.from("FIN_IntegrationQueue").update({ FINIntQ_StatusCode: status, FINIntQ_LastError: message }).eq("FINIntQ_ID", id),
-      queue.FINIntQ_LocalTable === "FIN_Documents"
-        ? admin.from("FIN_Documents").update({ FINDoc_ExportStatusCode: status, FINDoc_UpdatedAt: new Date().toISOString(), FINDoc_UpdatedBy: current.User_ID }).eq("FINDoc_ID", queue.FINIntQ_LocalID)
-        : admin.from("FIN_CashTransactions").update({ FINCash_ExportStatusCode: status, FINCash_UpdatedAt: new Date().toISOString(), FINCash_UpdatedBy: current.User_ID }).eq("FINCash_ID", queue.FINIntQ_LocalID),
-    ])
-    throw error
-  }
-  const { input, connection } = resolved
-  const { data: batch, error: batchError } = await admin.from("ACCI_ExportBatches").insert({ ACCIEB_ConnectionID: connection.ACCIC_ID, ACCIEB_StatusCode: "processing", ACCIEB_LegalEntityID: connection.ACCIC_LegalEntityID, ACCIEB_DocumentCount: 1, ACCIEB_GrossTotalLocal: input.localAmount, ACCIEB_ApprovedAt: new Date().toISOString(), ACCIEB_ApprovedBy: current.User_ID, ACCIEB_ExportStartedAt: new Date().toISOString(), ACCIEB_CreatedBy: current.User_ID }).select("ACCIEB_ID").single()
-  if (batchError || !batch) {
-    await admin.from("FIN_IntegrationQueue").update({ FINIntQ_StatusCode: "failed", FINIntQ_LastError: clean(batchError?.message, 500) || "Finance export batch could not be created." }).eq("FINIntQ_ID", id)
-    throw new HttpError(500, batchError?.message ?? "Finance export batch could not be created.")
-  }
-  const { data: item, error: itemError } = await admin.from("ACCI_ExportItems").insert({ ACCIEI_BatchID: batch.ACCIEB_ID, ACCIEI_DocumentTypeCode: input.typeCode, ACCIEI_LocalTable: input.localTable, ACCIEI_LocalID: input.localId, ACCIEI_LocalNumber: input.localNumber, ACCIEI_StatusCode: "processing", ACCIEI_AttemptCount: Number(queue.FINIntQ_AttemptCount ?? 0) + 1, ACCIEI_LastAttemptAt: new Date().toISOString() }).select("ACCIEI_ID").single()
-  if (itemError || !item) {
-    await Promise.all([
-      admin.from("ACCI_ExportBatches").update({ ACCIEB_StatusCode: "failed", ACCIEB_ExportCompletedAt: new Date().toISOString() }).eq("ACCIEB_ID", batch.ACCIEB_ID),
-      admin.from("FIN_IntegrationQueue").update({ FINIntQ_StatusCode: "failed", FINIntQ_LastError: clean(itemError?.message, 500) || "Finance export item could not be created." }).eq("FINIntQ_ID", id),
-    ])
-    throw new HttpError(500, itemError?.message ?? "Finance export item could not be created.")
-  }
-  await admin.from("FIN_IntegrationQueue").update({ FINIntQ_ExportBatchID: batch.ACCIEB_ID, FINIntQ_AttemptCount: Number(queue.FINIntQ_AttemptCount ?? 0) + 1, FINIntQ_LastAttemptAt: claimedAt }).eq("FINIntQ_ID", id)
-  try {
-    const exported = await exportFinanceRecord(input)
-    const externalRefId = await saveExternalRef(admin, connection, input.localTable, input.localId, input.localNumber, input.typeCode, exported.externalObjectType, exported.externalId, exported.externalNumber, exported.externalUrl, exported.responsePayload)
-    await Promise.all([
-      admin.from("ACCI_ExportItems").update({ ACCIEI_StatusCode: "synced", ACCIEI_ExternalRefID: externalRefId, ACCIEI_RequestPayloadJSON: exported.requestPayload, ACCIEI_ResponsePayloadJSON: exported.responsePayload }).eq("ACCIEI_ID", item.ACCIEI_ID),
-      admin.from("ACCI_ExportBatches").update({ ACCIEB_StatusCode: "synced", ACCIEB_ExportCompletedAt: new Date().toISOString() }).eq("ACCIEB_ID", batch.ACCIEB_ID),
-      admin.from("FIN_IntegrationQueue").update({ FINIntQ_StatusCode: "synced", FINIntQ_LastError: null }).eq("FINIntQ_ID", id),
-      admin.from("ACCI_ReconciliationIssues").update({ ACCIRI_StatusCode: "synced", ACCIRI_ResolutionText: "Provider delivery completed successfully on retry.", ACCIRI_ResolvedAt: new Date().toISOString(), ACCIRI_ResolvedBy: current.User_ID }).eq("ACCIRI_LocalTable", input.localTable).eq("ACCIRI_LocalID", input.localId).in("ACCIRI_StatusCode", ["queued", "processing", "blocked", "failed"]),
-      input.localTable === "FIN_Documents"
-        ? admin.from("FIN_Documents").update({ FINDoc_StatusCode: "submitted", FINDoc_ExportStatusCode: "synced", FINDoc_UpdatedAt: new Date().toISOString(), FINDoc_UpdatedBy: current.User_ID }).eq("FINDoc_ID", input.localId)
-        : admin.from("FIN_CashTransactions").update({ FINCash_StatusCode: "submitted", FINCash_ExportStatusCode: "synced", FINCash_UpdatedAt: new Date().toISOString(), FINCash_UpdatedBy: current.User_ID }).eq("FINCash_ID", input.localId),
-    ])
-    return { id, status: "synced", provider: input.providerCode, externalObjectType: exported.externalObjectType, externalId: exported.externalId, externalNumber: exported.externalNumber, externalUrl: exported.externalUrl }
-  } catch (error) {
-    const blocked = error instanceof HttpError && error.status === 409
-    const status = blocked ? "blocked" : "failed"
-    const message = clean(error instanceof Error ? error.message : "Accounting provider export failed.", 500)
-    let partialExternalRefId: string | null = null
-    if (error instanceof AccountingProviderPartialError) {
-      partialExternalRefId = await saveExternalRef(admin, connection, input.localTable, input.localId, input.localNumber, input.typeCode, error.externalObjectType, error.externalId, error.externalId, null, { state: "provider_draft_created", message }, "failed")
-    }
-    await Promise.all([
-      admin.from("ACCI_ExportItems").update({ ACCIEI_StatusCode: status, ACCIEI_ExternalRefID: partialExternalRefId, ACCIEI_LastErrorCode: blocked ? "mapping_required" : "provider_error", ACCIEI_LastErrorMessage: message }).eq("ACCIEI_ID", item.ACCIEI_ID),
-      admin.from("ACCI_ExportBatches").update({ ACCIEB_StatusCode: status, ACCIEB_ExportCompletedAt: new Date().toISOString() }).eq("ACCIEB_ID", batch.ACCIEB_ID),
-      admin.from("FIN_IntegrationQueue").update({ FINIntQ_StatusCode: status, FINIntQ_LastError: message }).eq("FINIntQ_ID", id),
-      admin.from("ACCI_ReconciliationIssues").insert({ ACCIRI_ConnectionID: connection.ACCIC_ID, ACCIRI_LocalTable: input.localTable, ACCIRI_LocalID: input.localId, ACCIRI_IssueType: blocked ? "mapping_required" : "provider_export_failed", ACCIRI_Severity: blocked ? "warning" : "error", ACCIRI_StatusCode: "queued", ACCIRI_Title: blocked ? "Finance export needs a mapping" : "Finance export failed", ACCIRI_DetailText: message }),
-      input.localTable === "FIN_Documents" ? admin.from("FIN_Documents").update({ FINDoc_ExportStatusCode: status, FINDoc_UpdatedAt: new Date().toISOString(), FINDoc_UpdatedBy: current.User_ID }).eq("FINDoc_ID", input.localId) : admin.from("FIN_CashTransactions").update({ FINCash_ExportStatusCode: status, FINCash_UpdatedAt: new Date().toISOString(), FINCash_UpdatedBy: current.User_ID }).eq("FINCash_ID", input.localId),
-    ])
-    throw error
-  }
+  const { input, connection } = await canonicalExport(admin, current, queue)
+  return await deliverFinanceExport(admin, current.User_ID, id, connection.ACCIC_ID, input)
 }
 
 async function optionalReason(request: Request) {
@@ -1864,6 +1876,39 @@ Deno.serve(async (request) => {
     const { admin, user } = await authenticate(request)
     const current = await currentInternalUser(admin, user)
     const parts = routeParts(request, "finance-subledger")
+    if (parts[0] === "account-sync" && parts[1]) {
+      await requirePermission(admin, current.User_ID, "Finance.Integration.Manage")
+      const connection = await providerCustomerConnection(admin, current, parts[1])
+      if (parts.length === 3 && parts[2] === "identity-review" && ["GET", "POST"].includes(request.method)) {
+        return json(request, await reviewPartyIdentities(admin, connection.ACCIC_ID, current.User_ID,
+          request.method === "POST" ? await body<Record<string, unknown>>(request) : undefined))
+      }
+      if (request.method === "GET" && parts.length === 2) {
+        const { data, error } = await admin.rpc("multideck_accounting_party_health", { p_connection: connection.ACCIC_ID })
+        rpcFailure(error, "The account sync health check could not be read.")
+        const incoming = await admin.rpc("multideck_erpnext_inbound_health", { p_connection: connection.ACCIC_ID })
+        rpcFailure(incoming.error, "Incoming change checks could not be read.")
+        return json(request, { ...data, incoming: incoming.data, settings: connection.ACCIC_SettingsJSON?.partySync ?? { enabled: false } })
+      }
+      if (request.method === "POST" && parts[2] === "check") {
+        const { data, error } = await admin.rpc("multideck_accounting_recheck_parties", { p_connection: connection.ACCIC_ID })
+        rpcFailure(error, "The account check could not be queued.")
+        return json(request, { queued: data, scope: "party_master", message: "Account checks queued. This is not ledger reconciliation." }, 202)
+      }
+      if (request.method === "PUT" && parts[2] === "settings") {
+        const input = await body<Record<string, unknown>>(request)
+        const settings = {
+          enabled: input.enabled === true,
+          siteOrigin: connection.ACCIC_ProviderCode === "erpnext" ? erpNextOrigin() : null,
+          customerGroup: clean(input.customerGroup, 140), supplierGroup: clean(input.supplierGroup, 140), territory: clean(input.territory, 140),
+        }
+        if (settings.enabled && connection.ACCIC_ProviderCode !== "erpnext") throw new HttpError(409, "This provider does not yet support automatic verified account sync.")
+        if (settings.enabled && (!settings.customerGroup || !settings.supplierGroup || !settings.territory)) throw new HttpError(400, "Choose the ERPNext customer group, supplier group and territory.")
+        const { error } = await admin.rpc("multideck_accounting_party_settings", { p_connection: connection.ACCIC_ID, p_settings: settings, p_actor: current.User_ID })
+        rpcFailure(error, "Automatic account sync settings could not be saved.")
+        return json(request, { settings })
+      }
+    }
     if (request.method === "GET" && parts[0] === "setup") { await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage"); return json(request, await listSetup(admin, current)) }
     if (request.method === "GET" && parts[0] === "report-options") {
       await requirePermission(admin, current.User_ID, "Finance.Reporting.View")
@@ -1981,6 +2026,10 @@ Deno.serve(async (request) => {
       await requirePermission(admin, current.User_ID, "Finance.Integration.Manage")
       return json(request, await erpNextCatalog(admin, current, new URL(request.url).searchParams.get("connectionId") ?? ""))
     }
+    if (request.method === "GET" && parts[0] === "sage-50" && parts[1] === "nominals") {
+      await requirePermission(admin, current.User_ID, "Finance.Integration.Manage")
+      return json(request, await sage50NominalCatalog(admin, current, new URL(request.url).searchParams.get("connectionId") ?? ""))
+    }
     if (request.method === "PUT" && parts[0] === "erpnext" && parts[1] === "party-mappings" && parts.length === 2) {
       await requirePermission(admin, current.User_ID, "Finance.Integration.Manage")
       return json(request, await upsertErpNextPartyMapping(admin, current, await body<PartyMappingInput>(request)))
@@ -1998,5 +2047,8 @@ Deno.serve(async (request) => {
       return json(request, await refreshErpNextConnectionEnvironment(admin, current, new URL(request.url).searchParams.get("connectionId") ?? ""))
     }
     throw new HttpError(404, "Finance endpoint not found.")
-  } catch (error) { return failure(request, error) }
+  } catch (error) {
+    if (error instanceof PartySyncBlocked) return failure(request, new HttpError(409, error.message))
+    return failure(request, error)
+  }
 })

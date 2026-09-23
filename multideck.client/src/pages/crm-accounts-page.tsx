@@ -1,4 +1,5 @@
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
+import { getAccountingIdentityReview, confirmAccountingIdentityReview, type AccountingIdentityReview, getAccountingPartyHealth, recheckAccountingParties, saveAccountingPartySettings, type AccountingPartyHealth, type AccountingPartySettings } from "@/lib/finance-subledger-api"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
@@ -24,6 +25,7 @@ import { engagementTemperatureTone, fallbackEngagementSignal } from "@/lib/crm-e
 import { countActiveFilterConditions, createEmptyFilterQuery, filterQueryIsEmpty, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import { getProviderPartySyncOverview, syncProviderParties, type ProviderPartySyncOverview, type ProviderPartySyncResponse, type ProviderPartyType } from "@/lib/finance-subledger-api"
+import { isCustomerClassification, isLegacyKeyCustomerRole, selectCustomerClassification } from "@/lib/organisation-roles"
 
 const emptyAccount = (): CreateCustomerInput => ({
   name: "", orgTypeIds: [], addressLine1: null, townCity: null, postZipCode: null, countryCode: null,
@@ -74,6 +76,13 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   const [financialSummary, setFinancialSummary] = useState(emptyFinancialSummary)
   const [sort, setSort] = useState<RegisterSort | null>({ id: "account", direction: "asc" })
   const [syncOpen, setSyncOpen] = useState(false)
+  const [partyHealth, setPartyHealth] = useState<AccountingPartyHealth | null>(null)
+  const [partyHealthError, setPartyHealthError] = useState<string | null>(null)
+  const [partyBusy, setPartyBusy] = useState(false)
+  const [identityReview, setIdentityReview] = useState<AccountingIdentityReview | null>(null)
+  const [partyRefresh, setPartyRefresh] = useState(0)
+  const [partySettings, setPartySettings] = useState<AccountingPartySettings>({ enabled: false })
+
   const [syncState, setSyncState] = useState<"idle" | "loading" | "ready" | "error" | "syncing">("idle")
   const [syncError, setSyncError] = useState<string | null>(null)
   const [syncOverview, setSyncOverview] = useState<ProviderPartySyncOverview | null>(null)
@@ -82,6 +91,27 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   const currentOwnerId = currentUser?.internalUserId ?? null
   const canManageAccounting = hasPermission(currentUser, "Finance.Integration.Manage")
   const requiredOrgTypeId = organisationType === "company" ? null : reference?.organisationTypes.find((type) => type.name.trim().toLowerCase() === organisationType)?.id ?? null
+
+  function withRequiredOrganisationType(orgTypeIds: string[]) {
+    if (!requiredOrgTypeId) return orgTypeIds
+    if (organisationType === "customer") {
+      const hasCustomerClassification = (reference?.organisationTypes ?? []).some((type) => orgTypeIds.includes(type.id) && isCustomerClassification(type.name))
+      return hasCustomerClassification ? orgTypeIds : [...orgTypeIds, requiredOrgTypeId]
+    }
+    return orgTypeIds.includes(requiredOrgTypeId) ? orgTypeIds : [...orgTypeIds, requiredOrgTypeId]
+  }
+
+  function changeCompanyTypes(nextTypeIds: string[]) {
+    setDraft((current) => {
+      const newlySelectedCustomerType = (reference?.organisationTypes ?? []).find((type) =>
+        nextTypeIds.includes(type.id) && !current.orgTypeIds.includes(type.id) && isCustomerClassification(type.name),
+      )
+      const exclusiveTypeIds = newlySelectedCustomerType
+        ? selectCustomerClassification(nextTypeIds, newlySelectedCustomerType.id, reference?.organisationTypes ?? [])
+        : nextTypeIds
+      return { ...current, orgTypeIds: withRequiredOrganisationType(exclusiveTypeIds) }
+    })
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250)
@@ -310,7 +340,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   function openCreate() {
     setCreateError(null)
     setCreateSection("account")
-    setDraft((current) => ({ ...current, orgTypeIds: requiredOrgTypeId && !current.orgTypeIds.includes(requiredOrgTypeId) ? [...current.orgTypeIds, requiredOrgTypeId] : current.orgTypeIds }))
+    setDraft((current) => ({ ...current, orgTypeIds: withRequiredOrganisationType(current.orgTypeIds) }))
     setCreateOpen(true)
   }
 
@@ -319,15 +349,32 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
     if (nextOpen) {
       setCreateError(null)
       setCreateSection("account")
-      setDraft((current) => ({ ...current, orgTypeIds: requiredOrgTypeId && !current.orgTypeIds.includes(requiredOrgTypeId) ? [...current.orgTypeIds, requiredOrgTypeId] : current.orgTypeIds }))
+      setDraft((current) => ({ ...current, orgTypeIds: withRequiredOrganisationType(current.orgTypeIds) }))
     }
+  }
+
+  async function reviewIdentities(confirm = false) {
+    if (!selectedConnectionId || partyBusy) return
+    setPartyBusy(true)
+    setPartyHealthError(null)
+    try {
+      if (confirm && identityReview) {
+        const result = await confirmAccountingIdentityReview(selectedConnectionId, identityReview.reviews)
+        const failed = result.results.filter((item) => !item.queued)
+        setIdentityReview(null)
+        setPartyRefresh((value) => value + 1)
+        if (failed.length) setPartyHealthError(failed.map((item) => item.message).join(" "))
+        toast.success(t(`${result.results.length - failed.length} existing links reviewed; account verification queued`))
+      } else setIdentityReview(await getAccountingIdentityReview(selectedConnectionId))
+    } catch (error) { setPartyHealthError(error instanceof Error ? error.message : t("The existing links could not be reviewed.")) }
+    finally { setPartyBusy(false) }
   }
 
   async function create() {
     setCreating(true)
     setCreateError(null)
     try {
-      const account = await createCustomer({ ...draft, orgTypeIds: requiredOrgTypeId && !draft.orgTypeIds.includes(requiredOrgTypeId) ? [...draft.orgTypeIds, requiredOrgTypeId] : draft.orgTypeIds })
+      const account = await createCustomer({ ...draft, orgTypeIds: withRequiredOrganisationType(draft.orgTypeIds) })
       toast.success(t(`${singular[0].toUpperCase() + singular.slice(1)} created`))
       setCreateOpen(false)
       setDraft({ ...emptyAccount(), orgTypeIds: requiredOrgTypeId ? [requiredOrgTypeId] : [] })
@@ -342,6 +389,32 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
 
   function update<K extends keyof CreateCustomerInput>(key: K, value: CreateCustomerInput[K]) {
     setDraft((current) => ({ ...current, [key]: value }))
+  }
+
+
+  useEffect(() => {
+    if (!syncOpen || !selectedConnectionId) return
+    let cancelled = false
+    setPartyHealth(null)
+    setIdentityReview(null)
+    setPartyHealthError(null)
+    void getAccountingPartyHealth(selectedConnectionId).then((health) => {
+      if (!cancelled) { setPartyHealth(health); setPartySettings(health.settings) }
+    }).catch((error) => { if (!cancelled) setPartyHealthError(error instanceof Error && error.message === "Finance endpoint not found." ? "Accounting checks need the latest finance service. Contact your workspace administrator to complete the integration update." : error instanceof Error ? error.message : "Account checks could not be loaded.") })
+    return () => { cancelled = true }
+  }, [syncOpen, selectedConnectionId, partyRefresh])
+
+  async function accountCheckAction(save = false) {
+    if (!selectedConnectionId || partyBusy) return
+    setPartyBusy(true)
+    setPartyHealthError(null)
+    try {
+      if (save) await saveAccountingPartySettings(selectedConnectionId, partySettings)
+      else await recheckAccountingParties(selectedConnectionId)
+      setPartyRefresh((value) => value + 1)
+      toast.success(t(save ? "Automatic sync settings saved" : "Account checks queued"))
+    } catch (error) { setPartyHealthError(error instanceof Error ? error.message : "The account check could not be queued.") }
+    finally { setPartyBusy(false) }
   }
 
   async function runAccountSync() {
@@ -361,9 +434,14 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
     }
   }
 
+  const requiresAccountingAddress = (reference?.organisationTypes ?? []).some((type) =>
+    withRequiredOrganisationType(draft.orgTypeIds).includes(type.id) && ["customer", "supplier"].includes(type.name.toLowerCase()),
+  )
+  const accountingAddressComplete = Boolean(draft.addressLine1?.trim() && draft.townCity?.trim() && /^[A-Z]{2}$/.test(draft.countryCode ?? ""))
+
   const accountSteps: WizardStep[] = [
     { id: "account", label: `${singular[0].toUpperCase() + singular.slice(1)} details`, hint: `Name the ${singular} and choose every role it has.`, complete: Boolean(draft.name.trim() && draft.orgTypeIds.length) },
-    { id: "address", label: "Address", hint: `Record the address operators will use for this ${singular}.`, complete: Boolean(draft.addressLine1 || draft.townCity || draft.postZipCode || draft.countryCode) },
+    { id: "address", label: "Address", hint: `Record the address operators will use for this ${singular}.`, complete: requiresAccountingAddress ? accountingAddressComplete : Boolean(draft.addressLine1 || draft.townCity || draft.postZipCode || draft.countryCode) },
     { id: "contact", label: "Primary contact", hint: "Add one useful person now, or leave this step blank.", complete: Boolean(draft.contactFirstName || draft.contactLastName || draft.contactEmail) },
   ]
   const countryCodeIsValid = !draft.countryCode || /^[A-Z]{2}$/.test(draft.countryCode)
@@ -469,23 +547,37 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
       />
 
       {organisationType !== "company" ? (
-        <Dialog open={syncOpen} onOpenChange={(next) => { if (syncState !== "syncing") setSyncOpen(next) }}>
+        <Dialog open={syncOpen} onOpenChange={(next) => { if (syncState !== "syncing" && !partyBusy) setSyncOpen(next) }}>
           <DialogContent className="max-h-[88vh] overflow-hidden border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
             <DialogHeader className="text-start">
               <DialogTitle>{t(`Sync ${title.toLowerCase()} with accounting system`)}</DialogTitle>
-              <DialogDescription>{t(`Create or link every Multideck ${singular} in the connected accounting system. Existing mappings are verified and every result is retained.`)}</DialogDescription>
+              <DialogDescription>{t(`Check account delivery, review exceptions and configure automatic creation. Ledger and balance reconciliation are separate checks.`)}</DialogDescription>
             </DialogHeader>
             <div className="grid min-h-0 gap-4 overflow-y-auto pe-1">
               {syncState === "loading" ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label={`Loading ${singular} sync history`} /></div> : null}
               {syncState === "ready" || syncState === "syncing" ? (
                 <label className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]">
                   <span>{t("Accounting system")}</span>
-                  <select value={selectedConnectionId} onChange={(event) => setSelectedConnectionId(event.target.value)} disabled={syncState === "syncing" || !syncOverview?.connections.length} className="h-10 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[14px] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:opacity-60">
+                  <select value={selectedConnectionId} onChange={(event) => setSelectedConnectionId(event.target.value)} disabled={partyBusy || syncState === "syncing" || !syncOverview?.connections.length} className="h-10 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[14px] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:opacity-60">
                     {syncOverview?.connections.length ? syncOverview.connections.map((connection) => <option key={connection.id} value={connection.id}>{connection.providerName}{connection.externalCompany ? ` · ${connection.externalCompany}` : ""}</option>) : <option value="">{t("No active accounting connection")}</option>}
                   </select>
                 </label>
               ) : null}
               {!syncOverview?.connections.length && syncState === "ready" ? <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-4 text-[13px] leading-5 text-[var(--md-text)]"><p className="font-medium text-[var(--md-ink)]">{t("Connect an accounting system first")}</p><p className="mt-1">{t("Activate ERPNext or Sage 50 Desktop in Finance setup before syncing accounts.")}</p></div> : null}
+              {selectedConnectionId ? <section aria-label={t("Account sync health")} className="grid gap-3 border-t border-[var(--md-line)] pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-[14px] font-medium">{t("Account checks")}</h3><Button variant="outline" size="sm" disabled={partyBusy} onClick={() => { setPartyRefresh((value) => value + 1); setReloadToken((value) => value + 1) }}>{t("Refresh status")}</Button></div>
+                {partyHealth ? <>{!partyHealth.workerEnabled ? <p role="status" className="text-[12px] text-[var(--md-amber)]">{t("The account sync worker is not active. Checks will stay queued until deployment setup is complete.")}</p> : null}<div className="grid grid-cols-3 gap-3"><SyncMetric label={t("Verified")} value={partyHealth.synced} tone="teal" /><SyncMetric label={t("Pending")} value={partyHealth.queued} /><SyncMetric label={t("Needs review")} value={partyHealth.attention} tone={partyHealth.attention ? "red" : "neutral"} /></div>
+                  <p className="text-[12px] text-[var(--md-text)]">{t("These checks cover customer and supplier records and accounting addresses. They do not confirm matching ledgers or balances.")}</p>
+                  {partyHealth.incoming ? <div className="space-y-2 border-t border-[var(--md-line)] pt-3"><h4 className="text-[13px] font-medium">{t("Incoming accounting changes")}</h4><p className="text-[12px] text-[var(--md-text)]">{t("Pending")}: {partyHealth.incoming.pending} · {t("Matched deliveries")}: {partyHealth.incoming.matched} · {t("Needs review")}: {partyHealth.incoming.attention}</p><p className="text-[12px] text-[var(--md-text)]">{t("External changes are checked against approved deliveries. They do not change Multideck’s books automatically.")}</p>{partyHealth.incoming.issues.map((issue) => <div key={issue.id} className="py-1 text-[12px]"><p className="font-medium" data-i18n-skip>{issue.document_type} · {issue.document_number}</p><p className="text-[var(--md-text)]">{t(issue.message || "This incoming change needs review in Finance setup.")}</p></div>)}</div> : null}
+                  {partyHealth.total === 0 ? <p className="text-[13px] text-[var(--md-text)]">{t("No accounts have been queued for this connection yet.")}</p> : null}
+                  <div className="max-h-[180px] overflow-y-auto divide-y divide-[var(--md-line)]">{partyHealth.issues.map((issue) => <div key={issue.id} className="py-2 text-[12px]"><a className="text-[var(--md-accent)] underline" href={`${issue.party_type === "customer" ? "/customers" : "/suppliers"}/${issue.org_id}`}>{issue.organisation_name}</a><span className="ms-2">{t(humanize(issue.status))}</span><p className="mt-1 text-[var(--md-text)]">{t(issue.last_error || "Waiting for the next account check.")}</p></div>)}</div>
+                  {syncOverview?.connections.find((connection) => connection.id === selectedConnectionId)?.providerCode === "erpnext" ? <details className="text-[13px]"><summary className="cursor-pointer font-medium">{t("Automatic account sync settings")}</summary><div className="mt-3 grid gap-3"><label className="flex items-center gap-2"><input type="checkbox" checked={partySettings.enabled} disabled={partyBusy} onChange={(event) => setPartySettings((value) => ({ ...value, enabled: event.target.checked }))} />{t("Create and maintain accounts automatically")}</label><div className="grid gap-3 sm:grid-cols-3"><Field label={t("Customer group")} value={partySettings.customerGroup ?? ""} onChange={(customerGroup) => setPartySettings((value) => ({ ...value, customerGroup }))} /><Field label={t("Supplier group")} value={partySettings.supplierGroup ?? ""} onChange={(supplierGroup) => setPartySettings((value) => ({ ...value, supplierGroup }))} /><Field label={t("Territory")} value={partySettings.territory ?? ""} onChange={(territory) => setPartySettings((value) => ({ ...value, territory }))} /></div><Button variant="outline" disabled={partyBusy} onClick={() => void accountCheckAction(true)}>{t("Save sync settings")}</Button></div></details> : <p className="text-[12px] text-[var(--md-text)]">{t("Automatic verified sync is not yet available for this provider.")}</p>}
+                  {partySettings.enabled ? <Button variant="outline" disabled={partyBusy} onClick={() => void reviewIdentities()}>{t("Review existing account links")}</Button> : null}
+                  {identityReview ? <section aria-label={t("Existing account link review")} className="space-y-3 border-t border-[var(--md-line)] pt-3"><h4 className="text-[13px] font-medium">{t("Review existing account links")}</h4><p className="text-[12px] text-[var(--md-text)]">{t("Keep these existing ERPNext accounts and attach permanent Multideck identities. The next account check will apply the listed name, classification and address changes. Financial transactions are unchanged.")}</p><div className="max-h-[240px] overflow-y-auto divide-y divide-[var(--md-line)]">{identityReview.reviews.map((item) => <div key={item.jobId} className="py-2 text-[12px]"><p className="font-medium" data-i18n-skip>{item.organisationName} · {item.partyType}</p><p data-i18n-skip>{item.providerName} ({item.providerId})</p>{item.changes.map((change) => <p key={change.field} data-i18n-skip>{humanize(change.field)}: {String(change.from || "Not set")} → {String(change.to || "Not set")}</p>)}<p>{t(item.addressAction)}</p>{item.addressChanges.map((change) => <p key={change.field} data-i18n-skip>{humanize(change.field)}: {String(change.from || "Not set")} → {String(change.to || "Not set")}</p>)}</div>)}</div>{identityReview.issues.map((issue) => <p key={issue.jobId} role="status" className="text-[12px] text-[var(--md-amber)]">{t(issue.message)}</p>)}{!identityReview.reviews.length ? <p className="text-[12px]">{t("No existing links are ready for identity review.")}</p> : <Button disabled={partyBusy} onClick={() => void reviewIdentities(true)}>{t("Confirm these existing links")}</Button>}<Button variant="ghost" disabled={partyBusy} onClick={() => setIdentityReview(null)}>{t("Close review")}</Button></section> : null}
+                  <Button variant="outline" disabled={partyBusy || syncState === "syncing"} onClick={() => void accountCheckAction()}>{t(partyBusy ? "Queuing checks…" : "Check all accounts")}</Button>
+                </> : !partyHealthError ? <p role="status" className="text-[13px] text-[var(--md-text)]">{t("Loading account checks…")}</p> : null}
+                {partyHealthError ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{t(partyHealthError)}</p> : null}
+              </section> : null}
               {displayedSync ? (
                 <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-1">
                   <div className="grid grid-cols-3 gap-1 px-3 py-3 text-center">
@@ -503,7 +595,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setSyncOpen(false)} disabled={syncState === "syncing"}>{t("Close")}</Button>
-              <Button type="button" onClick={() => void runAccountSync()} disabled={!selectedConnectionId || syncState === "loading" || syncState === "syncing"}>{syncState === "syncing" ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}{t(syncState === "syncing" ? "Syncing accounts" : "Sync all accounts")}</Button>
+              <Button type="button" onClick={() => void runAccountSync()} disabled={partyBusy || !partyHealth || partyHealth.settings.enabled || !selectedConnectionId || syncState === "loading" || syncState === "syncing"}>{syncState === "syncing" ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}{t(syncState === "syncing" ? "Syncing accounts" : "Sync all accounts")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -520,7 +612,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         submitLabel={`Create ${singular}`}
         onSubmit={() => void create()}
         saving={creating}
-        submitDisabled={!draft.name.trim() || !draft.orgTypeIds.length || !countryCodeIsValid}
+        submitDisabled={!draft.name.trim() || !draft.orgTypeIds.length || !countryCodeIsValid || (requiresAccountingAddress && !accountingAddressComplete)}
         bodyMinHeight={300}
         className="sm:max-w-[760px]"
       >
@@ -531,15 +623,15 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
               <span>{t("Company types")} *</span>
               <MultiSelectMenu
                 value={draft.orgTypeIds}
-                options={(reference?.organisationTypes ?? []).map((type) => ({ value: type.id, label: t(type.name) }))}
-                onValueChange={(value) => update("orgTypeIds", requiredOrgTypeId && !value.includes(requiredOrgTypeId) ? [...value, requiredOrgTypeId] : value)}
+                options={(reference?.organisationTypes ?? []).filter((type) => !isLegacyKeyCustomerRole(type.name)).map((type) => ({ value: type.id, label: t(type.name) }))}
+                onValueChange={changeCompanyTypes}
                 placeholder={reference ? "Choose company types" : "Loading company types"}
                 label="Company types"
                 required={!draft.orgTypeIds.length}
                 disabled={referenceState === "loading" || referenceState === "error"}
                 className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 text-[16px] sm:text-[14px]"
               />
-              <span className="text-[12px] font-normal leading-5 text-[var(--md-text)]">{t("Choose every role this company has. A company can be a customer, supplier, agent or any combination.")}</span>
+              <span className="text-[12px] font-normal leading-5 text-[var(--md-text)]">{t("Choose one customer classification, then add every other role this company has.")}</span>
               {referenceState === "error" ? (
                 <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] px-3 py-2.5 text-[12px] font-normal text-[var(--md-text)]">
                   <span>{t("Organisation types could not be loaded. Try again before creating this company.")}</span>
@@ -551,8 +643,9 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         ) : null}
         {createSection === "address" ? (
           <div className="grid gap-4">
-            <Field label={t("Address line 1")} value={draft.addressLine1 ?? ""} onChange={(value) => update("addressLine1", value || null)} />
-            <div className="grid gap-4 sm:grid-cols-3"><Field label={t("Town or city")} value={draft.townCity ?? ""} onChange={(value) => update("townCity", value || null)} /><Field label={t("Postcode")} value={draft.postZipCode ?? ""} onChange={(value) => update("postZipCode", value || null)} /><Field label={t("Country code")} value={draft.countryCode ?? ""} onChange={(value) => update("countryCode", value.toUpperCase() || null)} hint={t("Two-letter ISO code, e.g. GB")} error={draft.countryCode && !countryCodeIsValid ? t("Enter a two-letter ISO country code, such as GB.") : undefined} maxLength={2} dir="ltr" /></div>
+            {requiresAccountingAddress ? <p className="text-[13px] text-[var(--md-text)]">{t("Customers and suppliers need an accounting address. Enter address line 1, town/city and country. This address will be used for accounting until another is selected.")}</p> : null}
+            <Field label={t("Address line 1")} required={requiresAccountingAddress} value={draft.addressLine1 ?? ""} onChange={(value) => update("addressLine1", value || null)} />
+            <div className="grid gap-4 sm:grid-cols-3"><Field label={t("Town or city")} required={requiresAccountingAddress} value={draft.townCity ?? ""} onChange={(value) => update("townCity", value || null)} /><Field label={t("Postcode")} value={draft.postZipCode ?? ""} onChange={(value) => update("postZipCode", value || null)} /><Field label={t("Country code")} required={requiresAccountingAddress} value={draft.countryCode ?? ""} onChange={(value) => update("countryCode", value.toUpperCase() || null)} hint={t("Two-letter ISO code, e.g. GB")} error={draft.countryCode && !countryCodeIsValid ? t("Enter a two-letter ISO country code, such as GB.") : undefined} maxLength={2} dir="ltr" /></div>
           </div>
         ) : null}
         {createSection === "contact" ? (

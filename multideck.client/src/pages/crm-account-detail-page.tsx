@@ -17,6 +17,7 @@ import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { ProgressRing } from "@/components/multideck/dashboard-radials"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import { InlineField, InlineFieldGroup, InlineSelectField, InlineToggleChip } from "@/components/multideck/inline-field"
+import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { OrganisationFoundationPanel } from "@/components/multideck/organisation-foundation-panel"
 import { PhoneCallLinkedRecordSection } from "@/components/multideck/phone-call-components"
 import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
@@ -24,10 +25,11 @@ import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { useLanguage } from "@/i18n/language-provider"
+import { clearCustomerClassification, isCustomerClassification, isLegacyKeyCustomerRole, selectCustomerClassification } from "@/lib/organisation-roles"
 import { cn } from "@/lib/utils"
 import { CustomerApiError, getCustomer, getCustomerReference, updateAccount, updateAccountCompanyTypes, type AccountScoreExplanation, type ApiCustomerDetail, type CustomerReference, type UpdateAccountInput } from "@/lib/customer-api"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
@@ -44,8 +46,6 @@ type Moment = {
   detail: string | null
   email: { threadId: string; direction: "inbound" | "outbound" } | null
 }
-
-const companyTypesBatchDelayMs = 450
 
 function sameIds(left: string[] | null, right: string[]) {
   return left !== null && left.length === right.length && left.every((id) => right.includes(id))
@@ -111,6 +111,14 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
     },
     [],
   )
+
+  useEffect(() => {
+    if (companyTypesSaveTimerRef.current) clearTimeout(companyTypesSaveTimerRef.current)
+    companyTypesSaveTimerRef.current = null
+    companyTypeIdsDraftRef.current = null
+    confirmedCompanyTypeIdsRef.current = []
+    setCompanyTypeIdsDraft(null)
+  }, [accountId])
 
   useEffect(() => {
     let active = true
@@ -305,6 +313,8 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   const storedCompanyTypeIds = organisationTypeIds(currentAccount.types, reference)
   const currentTypeIds = companyTypeIdsDraft ?? storedCompanyTypeIds
   const currentCompanyTypes = reference ? reference.organisationTypes.filter((type) => currentTypeIds.includes(type.id)) : currentAccount.types.map((name) => ({ id: name, name }))
+  const customerClassificationTypes = reference?.organisationTypes.filter((type) => isCustomerClassification(type.name)) ?? []
+  const operationalRoleTypes = reference?.organisationTypes.filter((type) => !isCustomerClassification(type.name) && !isLegacyKeyCustomerRole(type.name)) ?? []
   const address = currentAccount.address
   const businessProfile = companyProfile(currentAccount.metadata)
   const saveBusinessProfile = (key: CompanyProfileKey, value: string) => patch(current => ({ metadata: updateCompanyProfile(current.metadata, key, value) }))
@@ -344,7 +354,24 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
     }
   }
 
-  function selectCompanyTypes(orgTypeIds: string[], saveDelayMs = companyTypesBatchDelayMs) {
+  function discardCompanyTypeDraft() {
+    if (companyTypesSaveTimerRef.current) clearTimeout(companyTypesSaveTimerRef.current)
+    companyTypesSaveTimerRef.current = null
+    companyTypeIdsDraftRef.current = null
+    setCompanyTypeIdsDraft(null)
+  }
+
+  function validateAndFlushCompanyTypes() {
+    if (!companyTypeIdsDraftRef.current) return
+    if (!companyTypeIdsDraftRef.current.length) {
+      discardCompanyTypeDraft()
+      toast.error(t("Choose at least one company type."))
+      return
+    }
+    void flushCompanyTypes()
+  }
+
+  function selectCompanyTypes(orgTypeIds: string[], saveDelayMs: number | null = null) {
     const nextTypeIds = [...new Set(orgTypeIds)]
 
     if (!companyTypesSaveInFlightRef.current && sameIds(nextTypeIds, confirmedCompanyTypeIdsRef.current)) {
@@ -358,7 +385,9 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
     companyTypeIdsDraftRef.current = nextTypeIds
     setCompanyTypeIdsDraft(nextTypeIds)
     if (companyTypesSaveTimerRef.current) clearTimeout(companyTypesSaveTimerRef.current)
-    companyTypesSaveTimerRef.current = setTimeout(() => void flushCompanyTypes(), saveDelayMs)
+    if (saveDelayMs !== null) {
+      companyTypesSaveTimerRef.current = setTimeout(validateAndFlushCompanyTypes, saveDelayMs)
+    }
   }
 
   return (
@@ -403,10 +432,15 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                           </StatusPill>
                         )
                       })}
+                      {currentAccount.strategic ? (
+                        <StatusPill kind="status" indicator={false} tone="blue">
+                          {t("Key Account")}
+                        </StatusPill>
+                      ) : null}
                       {reference?.organisationTypes.length ? (
                         <DropdownMenu
                           onOpenChange={(open) => {
-                            if (!open) void flushCompanyTypes()
+                            if (!open) validateAndFlushCompanyTypes()
                           }}
                         >
                           <DropdownMenuTrigger asChild>
@@ -415,8 +449,26 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start" className="w-[min(260px,calc(100vw-32px))] rounded-[var(--md-radius-lg)]">
-                            <DropdownMenuLabel>{t("Company types")}</DropdownMenuLabel>
-                            {reference.organisationTypes.map((type) => (
+                            <DropdownMenuLabel>{t("Customer classification")}</DropdownMenuLabel>
+                            {customerClassificationTypes.map((type) => (
+                              <DropdownMenuCheckboxItem
+                                key={type.id}
+                                checked={currentTypeIds.includes(type.id)}
+                                onSelect={(event) => event.preventDefault()}
+                                onCheckedChange={(checked) => selectCompanyTypes(
+                                  checked === true
+                                    ? selectCustomerClassification(currentTypeIds, type.id, reference.organisationTypes)
+                                    : clearCustomerClassification(currentTypeIds, reference.organisationTypes),
+                                )}
+                              >
+                                  <StatusPill kind="status" indicator={false} tone="neutral">
+                                    {t(type.name)}
+                                  </StatusPill>
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                            {operationalRoleTypes.length ? <DropdownMenuSeparator /> : null}
+                            {operationalRoleTypes.length ? <DropdownMenuLabel>{t("Other roles")}</DropdownMenuLabel> : null}
+                            {operationalRoleTypes.map((type) => (
                               <DropdownMenuCheckboxItem key={type.id} checked={currentTypeIds.includes(type.id)} onSelect={(event) => event.preventDefault()} onCheckedChange={(checked) => selectCompanyTypes(checked === true ? [...currentTypeIds, type.id] : currentTypeIds.filter((id) => id !== type.id))}>
                                 <StatusPill kind="status" indicator={false} tone="neutral">
                                   {t(type.name)}
@@ -735,6 +787,29 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
           <div hidden={activeTab !== "warehouse"}>{warehouseVisited && <WarehousePricingWorkspace key={accountId} customerOrgId={accountId} customerName={currentAccount.name} navigate={navigate} />}</div>
           {activeTab === "overview" || activeTab === "notes" || activeTab === "details" || activeTab === "warehouse" ? null : activeTab === "live" ? (
             <CustomerLiveGrantWorkspace key={`live-${currentAccount.id}`} customerId={currentAccount.id} />
+          ) : activeTab === "addresses" ? (
+            <div className="grid gap-[var(--md-page-stack-gap)]">
+              {reference ? <OrganisationFoundationPanel
+                account={currentAccount}
+                reference={reference}
+                view="addresses"
+                onChange={(updated) => { accountRef.current = updated; setAccount(updated) }}
+              /> : null}
+              <AccountOperationsPanel
+                account={currentAccount}
+                activeTab={activeTab}
+                canManageFinancial={hasPermission(currentUser, "Finance.Configuration.Manage")}
+                canManageBankDetails={hasPermission(currentUser, "Finance.Configuration.Manage") && hasPermission(currentUser, "Finance.Banks.Manage")}
+                currencyOptions={reference?.currencies ?? []}
+                financeReference={{
+                  legalEntities: reference?.legalEntities ?? [],
+                  paymentTerms: reference?.paymentTerms ?? [],
+                  taxTreatments: reference?.taxTreatments ?? [],
+                }}
+                onOpenContact={(contactId) => navigate(`/crm/contacts/${contactId}`)}
+                onChange={(updated) => { accountRef.current = updated; setAccount(updated) }}
+              />
+            </div>
           ) : (
             <AccountOperationsPanel
               account={currentAccount}
@@ -747,6 +822,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
                 paymentTerms: reference?.paymentTerms ?? [],
                 taxTreatments: reference?.taxTreatments ?? [],
               }}
+              onOpenContact={(contactId) => navigate(`/crm/contacts/${contactId}`)}
               onChange={(updated) => { accountRef.current = updated; setAccount(updated) }}
             />
           )}
