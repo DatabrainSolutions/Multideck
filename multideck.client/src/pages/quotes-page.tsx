@@ -2071,7 +2071,11 @@ function UnifiedQuoteChargesPanel({
     <>{chargeCatalogueError ? <p role="alert" className="mb-3 text-[13px] text-[var(--md-red)]">{chargeCatalogueError}</p> : null}<UnifiedQuoteChargesWorkspace
       rows={rows}
       onRowsChange={updateCharges}
-      createRow={() => newQuoteChargeRow(quote)}
+      createRow={() => {
+        const row = newQuoteChargeRow(quote)
+        const onlyChoice = chargeChoices.length === 1 ? chargeChoices[0] : null
+        return onlyChoice ? { ...row, code: onlyChoice.code, description: onlyChoice.description } : row
+      }}
       chargeChoices={chargeChoices}
       parties={parties}
       currencies={currencies}
