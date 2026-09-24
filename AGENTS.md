@@ -5,7 +5,7 @@
 This repository is Multideck App, the operator application and sole operational source of truth. App owns operational workflows, Carbone documents, tenant Auth, private Storage, integrations, and audit. Customer portal work belongs in `DatabrainSolutions/Multideck.Live`; tenant/deployment/domain control-plane work belongs in `DatabrainSolutions/Multideck.Cloud`. Read [the canonical architecture](docs/architecture/three-product-platform.md) before changing those boundaries.
 
 - Run App on port 3000; tenant deployments are named `multideck-app-{slug}`.
-- Supabase is the production backend. .NET is transitional tooling/parity code; add no new production dependency to it.
+- Supabase is the production backend: Edge Functions and migrations in root `supabase`. The former .NET server has been removed; do not reintroduce it.
 - Client UI and frontend configuration belong in `multideck.client`. Shared primitives: `src/components/ui`; product components: `src/components/multideck`.
 - Backend implementation belongs in root `supabase`: `functions` for privileged operations, `functions/_shared` for backend-only TypeScript, `migrations` for incremental changes, `baseline` for the schema-only provisioning snapshot, and `tests` for backend contracts. Never put credentials or service-role code in the client. Never edit applied migrations; add a migration.
 

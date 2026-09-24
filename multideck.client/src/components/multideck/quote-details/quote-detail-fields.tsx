@@ -885,12 +885,11 @@ export function LocationFields({
   ))
   const locationIndex = getLocationDirectoryIndex(options, mode)
   const modeOptions = locationIndex.options
-  // Country and location are the operator inputs. UN/LOCODE is derived from
-  // the exact location they select, so an existing code must never trap the
-  // place directory on the previous choice.
+  // Any location field can lead; country narrows place suggestions without
+  // making a country selection a prerequisite for entering a location.
   const placePool = selectedCountryReference
     ? locationIndex.byCountryCode.get(normalizeSearch(selectedCountryReference.code)) ?? EMPTY_LOCATION_OPTIONS
-    : EMPTY_LOCATION_OPTIONS
+    : modeOptions
   const countryOptions = useMemo(() => uniqueBy(countries, (country) => country.code).map((country) => ({
     id: `country:${country.code}`,
     value: country.name,
@@ -952,8 +951,8 @@ export function LocationFields({
       </legend>
       <div className="md-location-fields-grid">
         <CompactCombobox label="Country" value={value.countryName} options={countryOptions} recommendedOptions={recommendedCountries} onValueChange={applyCountryInput} placeholder="Country name or code" disabled={disabled} required={required} invalid={invalid && !value.countryName} width="full" />
-        <CompactCombobox label="Town, city or port" value={value.place} options={placeOptions} recommendedOptions={recommendedPlaces} onValueChange={(input) => onChange(resolveLinkedLocation(options, value, "place", input))} onOptionSelect={applySelectedOption} placeholder={selectedCountryReference ? "Type a place" : "Select country first"} disabled={disabled || !selectedCountryReference} required={required} invalid={invalid && !value.place} width="full" />
-        <AutoFilledField className="md-location-code" label="UN/LOCODE" value={value.unlocode} emptyLabel="Select country and location" width="full" valueDirection="ltr" autoPopulated={unlocodeAutoPopulated} disabled={disabled} onChange={(input) => onChange({ ...value, unlocode: input.toLocaleUpperCase().replace(/\s+/g, "") })} />
+        <CompactCombobox label="Town, city or port" value={value.place} options={placeOptions} recommendedOptions={recommendedPlaces} onValueChange={(input) => onChange(resolveLinkedLocation(options, value, "place", input))} onOptionSelect={applySelectedOption} placeholder="Search town, city or port" disabled={disabled} required={required} invalid={invalid && !value.place} width="full" />
+        <AutoFilledField className="md-location-code" label="UN/LOCODE" value={value.unlocode} emptyLabel="e.g. GBFXT" width="full" valueDirection="ltr" autoPopulated={unlocodeAutoPopulated} disabled={disabled} onChange={(input) => onChange(resolveLinkedLocation(options, value, "unlocode", input))} />
       </div>
     </fieldset>
   )

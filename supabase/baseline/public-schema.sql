@@ -154096,3 +154096,1774 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
+
+-- A committed ledger posting must be a complete, balanced double-entry journal.
+-- Deferred checks support both batch-first and draft-then-post workflows.
+create or replace function public._multideck_assert_balanced_posting(p_batch uuid)
+returns void language plpgsql security definer set search_path = pg_catalog, public as $$
+declare b public."FIN_PostingBatches"%rowtype; n bigint; d numeric; c numeric; invalid boolean;
+begin
+  select * into b from public."FIN_PostingBatches" where "FINPostBatch_ID"=p_batch;
+  if not found or b."FINPostBatch_StatusCode" <> 'posted' then return; end if;
+  select count(*), coalesce(sum("FINPostLine_DebitAmount"),0), coalesce(sum("FINPostLine_CreditAmount"),0),
+    coalesce(bool_or(
+      "FINPostLine_NominalAccountID" is null or
+      not (("FINPostLine_DebitAmount">0 and "FINPostLine_CreditAmount"=0) or
+           ("FINPostLine_CreditAmount">0 and "FINPostLine_DebitAmount"=0)) or
+      "FINPostLine_DebitAmount"::text in ('NaN','Infinity','-Infinity') or
+      "FINPostLine_CreditAmount"::text in ('NaN','Infinity','-Infinity')
+    ),false)
+  into n,d,c,invalid from public."FIN_PostingLines" where "FINPostLine_BatchID"=p_batch;
+  if n<2 or invalid or d<=0 or d<>c or
+     b."FINPostBatch_DebitTotal"<>d or b."FINPostBatch_CreditTotal"<>c then
+    raise exception using errcode='23514',
+      message='Journal must balance: each line needs a nominal account and either a debit or a credit; total debits must equal total credits.',
+      detail=format('Posting batch %s: %s lines, debits %s, credits %s.',p_batch,n,d,c);
+  end if;
+end $$;
+
+-- Writing the parent serialises competing line edits, including at stronger
+-- isolation levels where a lock alone could leave a stale transaction snapshot.
+create or replace function public._multideck_lock_posting_parent()
+returns trigger language plpgsql security definer set search_path = pg_catalog, public as $$
+declare old_id uuid; new_id uuid; batch_id uuid;
+begin
+  if TG_OP <> 'INSERT' then old_id := OLD."FINPostLine_BatchID"; end if;
+  if TG_OP <> 'DELETE' then new_id := NEW."FINPostLine_BatchID"; end if;
+  for batch_id in select distinct x from unnest(array[old_id,new_id]) x where x is not null order by x loop
+    update public."FIN_PostingBatches"
+      set "FINPostBatch_DebitTotal"="FINPostBatch_DebitTotal"
+      where "FINPostBatch_ID"=batch_id;
+  end loop;
+  if TG_OP='DELETE' then return OLD; end if;
+  return NEW;
+end $$;
+
+create or replace function public._multideck_check_posting_balance()
+returns trigger language plpgsql security definer set search_path = pg_catalog, public as $$
+begin
+  if TG_TABLE_NAME='FIN_PostingBatches' then
+    perform public._multideck_assert_balanced_posting(NEW."FINPostBatch_ID");
+  else
+    if TG_OP <> 'INSERT' then perform public._multideck_assert_balanced_posting(OLD."FINPostLine_BatchID"); end if;
+    if TG_OP <> 'DELETE' then perform public._multideck_assert_balanced_posting(NEW."FINPostLine_BatchID"); end if;
+  end if;
+  return null;
+end $$;
+
+create trigger "TR_FIN_PostingLines_balance_lock"
+before insert or update or delete on public."FIN_PostingLines"
+for each row execute function public._multideck_lock_posting_parent();
+create constraint trigger "TR_FIN_PostingLines_balanced"
+after insert or update or delete on public."FIN_PostingLines"
+deferrable initially deferred for each row execute function public._multideck_check_posting_balance();
+create constraint trigger "TR_FIN_PostingBatches_balanced"
+after insert or update on public."FIN_PostingBatches"
+deferrable initially deferred for each row execute function public._multideck_check_posting_balance();
+
+revoke all on function public._multideck_assert_balanced_posting(uuid) from public;
+revoke all on function public._multideck_lock_posting_parent() from public;
+revoke all on function public._multideck_check_posting_balance() from public;
+
+-- Never invent a balancing line for historical errors. Stop deployment for review.
+do $$ declare b uuid; begin
+  for b in select "FINPostBatch_ID" from public."FIN_PostingBatches" where "FINPostBatch_StatusCode"='posted'
+  loop perform public._multideck_assert_balanced_posting(b); end loop;
+end $$;
+
+-- Validate final transaction state: CRM creation may insert roles before profiles.
+-- No ownership is inferred and no historical records are silently reassigned.
+begin;
+create function public._accounting_require_party_profile(p_org uuid, p_entity uuid default null)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_count integer;
+begin
+ select count(*) into v_count from public."CRM_AccountProfiles" p
+ where p."CRMAccount_OrgID"=p_org and not p."CRMAccount_IsDeleted"
+ and p."CRMAccount_CompanyID" is not null
+ and (p_entity is null or exists(select 1 from public."cmp_LegalEntities" e
+   where e."LegalEntity_ID"=p_entity and e."Company_ID"=p."CRMAccount_CompanyID"
+   and (p."CRMAccount_LegalEntityID" is null or p."CRMAccount_LegalEntityID"=p_entity)));
+ if v_count<>1 then
+  raise exception 'An active, unambiguous CRM profile in the correct company and legal entity is required. Repair the organisation record before linking or posting.' using errcode='23514';
+ end if;
+end $$;
+revoke all on function public._accounting_require_party_profile(uuid,uuid) from public,anon,authenticated;
+
+-- Serialise dependent writers against profile removal/reassignment. A real row
+-- update also causes stale repeatable-read writers to fail instead of racing.
+create function public._accounting_lock_party_profile() returns trigger
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_old uuid; v_new uuid; v_org uuid;
+begin
+ if tg_op<>'INSERT' then v_old:=coalesce(to_jsonb(old)->>'CRMAccount_OrgID',to_jsonb(old)->>'Org_ID',to_jsonb(old)->>'ACCIPM_OrgID',to_jsonb(old)->>'FINDoc_PartyOrgID')::uuid; end if;
+ if tg_op<>'DELETE' then v_new:=coalesce(to_jsonb(new)->>'CRMAccount_OrgID',to_jsonb(new)->>'Org_ID',to_jsonb(new)->>'ACCIPM_OrgID',to_jsonb(new)->>'FINDoc_PartyOrgID')::uuid; end if;
+ for v_org in select distinct id from unnest(array[v_old,v_new]) id where id is not null order by id loop
+  update public."Org_Master" set "Org_Name"="Org_Name" where "Org_id"=v_org;
+ end loop;
+ if tg_op='DELETE' then return old; end if;
+ return new;
+end $$;
+revoke all on function public._accounting_lock_party_profile() from public,anon,authenticated;
+
+create function public._accounting_check_party_profile() returns trigger
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_org uuid; v_entity uuid;
+begin
+ if tg_table_name='CRM_AccountProfiles' then
+  -- Preserve profiles required by any retained financial document or active link.
+  for v_org in select distinct id from unnest(array[old."CRMAccount_OrgID",case when tg_op='UPDATE' then new."CRMAccount_OrgID" end]) id where id is not null loop
+   if exists(select 1 from public."Org_Master_Type" mt join public."Org_Types" t on t."OrgType_ID"=mt."OrgType_ID"
+     where mt."Org_ID"=v_org and lower(t."OrgType_Name") in ('customer','potential customer','key customer account','supplier')) then
+    perform public._accounting_require_party_profile(v_org);
+   end if;
+   for v_entity in
+    select d."FINDoc_LegalEntityID" from public."FIN_Documents" d where d."FINDoc_PartyOrgID"=v_org
+    union select c."ACCIC_LegalEntityID" from public."ACCI_PartyMappings" m join public."ACCI_Connections" c on c."ACCIC_ID"=m."ACCIPM_ConnectionID"
+     where m."ACCIPM_OrgID"=v_org and m."ACCIPM_IsActive"
+   loop perform public._accounting_require_party_profile(v_org,v_entity); end loop;
+  end loop;
+ elsif tg_table_name='Org_Master_Type' then
+  if exists(select 1 from public."Org_Master_Type" mt join public."Org_Types" t on t."OrgType_ID"=mt."OrgType_ID"
+    where mt."Org_ID"=new."Org_ID" and lower(t."OrgType_Name") in ('customer','potential customer','key customer account','supplier')) then
+   perform public._accounting_require_party_profile(new."Org_ID");
+  end if;
+ elsif tg_table_name='FIN_Documents' then
+  select d."FINDoc_PartyOrgID",d."FINDoc_LegalEntityID" into v_org,v_entity from public."FIN_Documents" d where d."FINDoc_ID"=new."FINDoc_ID";
+  if v_org is not null then perform public._accounting_require_party_profile(v_org,v_entity); end if;
+ else
+  select m."ACCIPM_OrgID",c."ACCIC_LegalEntityID" into v_org,v_entity from public."ACCI_PartyMappings" m join public."ACCI_Connections" c on c."ACCIC_ID"=m."ACCIPM_ConnectionID"
+   where m."ACCIPM_ID"=new."ACCIPM_ID" and m."ACCIPM_IsActive";
+  if v_org is not null then perform public._accounting_require_party_profile(v_org,v_entity); end if;
+ end if;
+ return null;
+end $$;
+revoke all on function public._accounting_check_party_profile() from public,anon,authenticated;
+create trigger accounting_profile_lock before update or delete on public."CRM_AccountProfiles" for each row execute function public._accounting_lock_party_profile();
+create trigger accounting_role_profile_lock before insert or update on public."Org_Master_Type" for each row execute function public._accounting_lock_party_profile();
+create trigger accounting_document_profile_lock before insert or update on public."FIN_Documents" for each row execute function public._accounting_lock_party_profile();
+create trigger accounting_mapping_profile_lock before insert or update on public."ACCI_PartyMappings" for each row execute function public._accounting_lock_party_profile();
+create constraint trigger accounting_profile_required after update or delete on public."CRM_AccountProfiles" deferrable initially deferred for each row execute function public._accounting_check_party_profile();
+create constraint trigger accounting_role_profile_required after insert or update on public."Org_Master_Type" deferrable initially deferred for each row execute function public._accounting_check_party_profile();
+create constraint trigger accounting_document_profile_required after insert or update on public."FIN_Documents" deferrable initially deferred for each row execute function public._accounting_check_party_profile();
+create constraint trigger accounting_mapping_profile_required after insert or update on public."ACCI_PartyMappings" deferrable initially deferred for each row execute function public._accounting_check_party_profile();
+commit;
+
+-- Cost-accrual review-only rollout (20260922072154).
+begin;
+
+-- Read-only rollout: use one database snapshot and exact decimal strings. No
+-- existing estimate, accrual, posting, policy or supplier obligation is changed.
+create function public.multideck_finance_cost_review(
+  p_actor uuid, p_entity uuid, p_offset integer default 0, p_search text default ''
+) returns jsonb language plpgsql stable security invoker set search_path=pg_catalog,public as $$
+declare result jsonb; currency text;
+begin
+  perform public._multideck_journal_access(p_actor,p_entity,'Finance.Management.View');
+  if p_offset is null or p_offset<0 or p_offset>1000000 or p_search is null or length(p_search)>120 then
+    raise exception 'Invalid cost review page or search.' using errcode='22023';
+  end if;
+  select "LegalEntity_BaseCurrencyCodeSnapshot" into currency from public."cmp_LegalEntities" where "LegalEntity_ID"=p_entity;
+  if currency is null or currency !~ '^[A-Z]{3}$' then raise exception 'Configure the legal entity base currency.' using errcode='22023'; end if;
+  with scoped as materialized (
+    select l.*,j."Job_Number",j."Job_Period",j."Job_Status",j."Job_IsDeleted"
+    from public."Job_Costing_Lines" l
+    join public."Job_Header" j on j."Job_ID"=l."Job_ID" and j."Job_LegalEntityID"=p_entity
+    join public."cmp_Offices" o on o."Office_ID"=coalesce(j."Job_OrgOfficeID",j."Job_OfficeID")
+    join public."cmp_LegalEntities" e on e."LegalEntity_ID"=p_entity and e."Company_ID"=o."Company_ID"
+    where (p_search='' or position(lower(p_search) in lower(coalesce(l."JobCostingLine_Description",'')||' '||j."Job_Period"||'-'||j."Job_Number"::text))>0)
+  ), page as (
+    select * from scoped order by "Job_Period" desc,"Job_Number" desc,"JobCostingLine_Number","JobCostingLine_ID" limit 100 offset p_offset
+  ), evidence as (
+    select l.*,a.actual,a.documents,a.has_credit,a.has_pending,a.has_wrong_supplier,
+      b.balance,b.accrual_ids,b.invalid_balance,b.currency_mismatch,
+      n."FINNom_Code" nominal_code,
+      coalesce(n."FINNom_IsActive",false) and not coalesce(n."FINNom_IsControlAccount",true) nominal_valid
+    from page l
+    left join public."FIN_NominalAccounts" n on n."FINNom_ID"=l."JobCostingLine_CostNominalAccountID" and n."FINNom_LegalEntityID"=p_entity
+    cross join lateral (
+      select coalesce(sum(case when d."FINDoc_TypeCode"='debit_note' then -abs(link."FINDocLineJob_LocalNetAmount") else link."FINDocLineJob_LocalNetAmount" end)
+        filter(where d."FINDoc_NativePostingStatusCode"='posted'),0) actual,
+        coalesce(jsonb_agg(distinct d."FINDoc_ID") filter(where d."FINDoc_NativePostingStatusCode"='posted'),'[]'::jsonb) documents,
+        coalesce(bool_or(d."FINDoc_TypeCode"='debit_note' or d."FINDoc_NativePostingStatusCode"='reversed'),false) has_credit,
+        coalesce(bool_or(d."FINDoc_NativePostingStatusCode" not in ('posted','reversed')),false) has_pending,
+        coalesce(bool_or(d."FINDoc_PartyOrgID" is distinct from l."JobCostingLine_SupplierID"),false) has_wrong_supplier
+      from public."FIN_DocumentLineJobLinks" link
+      join public."FIN_Documents" d on d."FINDoc_ID"=link."FINDocLineJob_DocumentID" and d."FINDoc_LegalEntityID"=p_entity and d."FINDoc_TypeCode" in ('pl_invoice','debit_note')
+      where link."FINDocLineJob_JobCostingLineID"=l."JobCostingLine_ID" and link."FINDocLineJob_JobID"=l."Job_ID"
+    ) a
+    cross join lateral (
+      select coalesce(sum(ac."FINAccrual_AccruedAmount"-ac."FINAccrual_RelievedAmount") filter(where ac."FINAccrual_CurrencyCodeSnapshot"=currency),0) balance,
+        coalesce(jsonb_agg(ac."FINAccrual_ID" order by ac."FINAccrual_ID"),'[]'::jsonb) accrual_ids,
+        coalesce(bool_or(ac."FINAccrual_RelievedAmount"<0 or ac."FINAccrual_RelievedAmount">ac."FINAccrual_AccruedAmount"),false) invalid_balance,
+        coalesce(bool_or(ac."FINAccrual_CurrencyCodeSnapshot" is distinct from currency),false) currency_mismatch
+      from public."FIN_Accruals" ac
+      join public."FIN_Periods" ap on ap."FINPeriod_ID"=ac."FINAccrual_PeriodID" and ap."FINPeriod_LegalEntityID"=p_entity
+      where ac."FINAccrual_JobCostingLineID"=l."JobCostingLine_ID" and ac."FINAccrual_JobID"=l."Job_ID"
+        and ac."FINAccrual_StatusCode" in ('posted','partially_reversed','reversed')
+    ) b
+  ), rows as (
+    select jsonb_build_object(
+      'id',"JobCostingLine_ID",'jobId',"Job_ID",'jobReference',"Job_Period"||'-'||"Job_Number",'lineNo',"JobCostingLine_Number",
+      'chargeCodeId',"JobCostingLine_ChargeCodeID",'supplierId',"JobCostingLine_SupplierID",'description',"JobCostingLine_Description",'nominalCode',nominal_code,
+      'currentEstimate',"JobCostingLine_CostAmountLocal"::text,'originalEstimate',null,
+      'actualCost',actual::text,'openAccrual',case when currency_mismatch or invalid_balance then null else balance::text end,
+      'remainingEstimate',case when "JobCostingLine_CostAmountLocal" is null or has_credit or actual<0 then null else greatest("JobCostingLine_CostAmountLocal"-actual,0)::text end,
+      'favourableVariance',case when "JobCostingLine_CostAmountLocal" is null then null else ("JobCostingLine_CostAmountLocal"-actual)::text end,
+      'sourceDocumentIds',documents,'sourceAccrualIds',accrual_ids,
+      'reasons',to_jsonb(array_remove(array[
+        case when "JobCostingLine_CostAmountLocal" is null then 'Cost estimate missing' end,
+        case when "JobCostingLine_CostAmountLocal"<0 then 'Negative estimate requires review' end,
+        case when "Job_IsDeleted" or "Job_Status" in ('cancelled','draft','provisional') then 'Job eligibility requires review' end,
+        case when has_credit or actual<0 then 'Credit or reversal requires review' end,
+        case when has_pending then 'Linked documents not yet posted' end,
+        case when has_wrong_supplier then 'Supplier match requires review' end,
+        case when not nominal_valid then 'Cost nominal requires review' end,
+        case when currency_mismatch then 'Accrual currency requires review' end,
+        case when invalid_balance then 'Accrual balance requires review' end,
+        case when actual>"JobCostingLine_CostAmountLocal" then 'Actual cost exceeds estimate' end,
+        case when actual>0 then 'Confirm partial or final invoice' else 'Awaiting matched invoice' end
+      ],null))) value,"Job_Period","Job_Number","JobCostingLine_Number","JobCostingLine_ID"
+    from evidence
+  )
+  select jsonb_build_object('mode','review_only','asOf',statement_timestamp(),'currency',currency,'offset',p_offset,'pageSize',100,
+    'total',(select count(*) from scoped),
+    'rows',coalesce((select jsonb_agg(value order by "Job_Period" desc,"Job_Number" desc,"JobCostingLine_Number","JobCostingLine_ID") from rows),'[]'::jsonb)) into result;
+  return result;
+end; $$;
+revoke all on function public.multideck_finance_cost_review(uuid,uuid,integer,text) from public,anon,authenticated;
+grant execute on function public.multideck_finance_cost_review(uuid,uuid,integer,text) to service_role;
+
+comment on function public.multideck_finance_cost_review(uuid,uuid,integer,text) is 'Read-only lifetime job-charge cost review. No finalisation authority, age-based release or automatic posting. Exact decimal strings; finance view permission and company/entity isolation required.';
+commit;
+
+begin;
+
+-- All mutations are server-authorised. Browser roles cannot edit evidence or
+-- manufacture approval identities, and approval never implies activation.
+create table public."FIN_CostPolicies" (
+  id uuid primary key default gen_random_uuid(),
+  legal_entity_id uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
+  revision integer not null check(revision>0),
+  currency text not null check(currency ~ '^[A-Z]{3}$'),
+  under_percent numeric(7,4) not null check(under_percent between 0 and 100),
+  under_cap numeric(18,4) not null check(under_cap>=0),
+  over_percent numeric(7,4) not null check(over_percent between 0 and 100),
+  over_cap numeric(18,4) not null check(over_cap>=0),
+  auto_finalise boolean not null default false,
+  recognition_rule text not null check(length(trim(recognition_rule)) between 10 and 2000),
+  created_by uuid not null references public."cmp_Users"("User_ID"),
+  created_at timestamptz not null default now(),
+  approved_by uuid references public."cmp_Users"("User_ID"),
+  approved_at timestamptz,
+  approval_reason text,
+  unique(legal_entity_id,revision),
+  check ((approved_by is null and approved_at is null) or (approved_by is not null and approved_at is not null and approved_by<>created_by))
+);
+create table public."FIN_CostEvidence" (
+  id uuid primary key default gen_random_uuid(),
+  legal_entity_id uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
+  charge_id uuid not null references public."Job_Costing_Lines"("JobCostingLine_ID"),
+  source_revision text not null,
+  service_completed_on date not null,
+  invoice_received_on date,
+  final_document_id uuid references public."FIN_Documents"("FINDoc_ID"),
+  is_final boolean not null default false,
+  disputed boolean not null default false,
+  reason text not null check(length(trim(reason)) between 5 and 2000),
+  recorded_by uuid not null references public."cmp_Users"("User_ID"),
+  recorded_at timestamptz not null default now(),
+  check(not is_final or (final_document_id is not null and invoice_received_on is not null)),
+  check(invoice_received_on is null or invoice_received_on>=service_completed_on)
+);
+create index on public."FIN_CostEvidence"(legal_entity_id,charge_id,recorded_at desc,id);
+create table public."FIN_CostControlAudit" (
+  id uuid primary key default gen_random_uuid(),
+  legal_entity_id uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
+  actor_id uuid not null references public."cmp_Users"("User_ID"),
+  action text not null,
+  record_id uuid not null,
+  snapshot jsonb not null,
+  occurred_at timestamptz not null default now()
+);
+create index on public."FIN_CostControlAudit"(legal_entity_id,occurred_at desc);
+alter table public."FIN_CostPolicies" enable row level security;
+alter table public."FIN_CostEvidence" enable row level security;
+alter table public."FIN_CostControlAudit" enable row level security;
+revoke all on public."FIN_CostPolicies",public."FIN_CostEvidence",public."FIN_CostControlAudit" from public,anon,authenticated;
+grant select,insert,update on public."FIN_CostPolicies" to service_role;
+grant select,insert on public."FIN_CostEvidence",public."FIN_CostControlAudit" to service_role;
+
+insert into public."sys_WorkflowRecordTypes"("WorkflowRecordType_Code","WorkflowRecordType_Name","WorkflowRecordType_SourceTable","WorkflowRecordType_Description")
+values ('cost_control','Charge cost control','FIN_CostControlAudit','Policy approval and charge evidence with immutable snapshots')
+on conflict("WorkflowRecordType_Code") do nothing;
+
+-- Source identity deliberately excludes accrual relief: an invoice release is
+-- not new supplier evidence. Every estimate, supplier, link or invoice change
+-- invalidates prior final confirmation, including same-total replacements.
+create function public._multideck_cost_source(p_entity uuid,p_charge uuid)
+returns jsonb language plpgsql stable security invoker set search_path=pg_catalog,public as $$
+declare result jsonb;
+begin
+  select jsonb_build_object('charge',to_jsonb(l),'job',jsonb_build_object('id',j."Job_ID",'status',j."Job_Status",'deleted',j."Job_IsDeleted"),
+    'documents',coalesce((select jsonb_agg(jsonb_build_object('link',to_jsonb(k),'document',to_jsonb(d)) order by k."FINDocLineJob_ID")
+      from public."FIN_DocumentLineJobLinks" k join public."FIN_Documents" d on d."FINDoc_ID"=k."FINDocLineJob_DocumentID"
+      where k."FINDocLineJob_JobCostingLineID"=p_charge and k."FINDocLineJob_JobID"=j."Job_ID"),'[]'::jsonb)) into result
+  from public."Job_Costing_Lines" l join public."Job_Header" j on j."Job_ID"=l."Job_ID" and j."Job_LegalEntityID"=p_entity
+  join public."cmp_Offices" o on o."Office_ID"=coalesce(j."Job_OrgOfficeID",j."Job_OfficeID")
+  join public."cmp_LegalEntities" e on e."LegalEntity_ID"=p_entity and e."Company_ID"=o."Company_ID"
+  where l."JobCostingLine_ID"=p_charge;
+  if result is null then raise exception 'Charge is not accessible in this legal entity.' using errcode='42501'; end if;
+  return result;
+end; $$;
+revoke all on function public._multideck_cost_source(uuid,uuid) from public,anon,authenticated;
+grant execute on function public._multideck_cost_source(uuid,uuid) to service_role;
+
+create function public.multideck_finance_cost_controls(p_actor uuid,p_entity uuid,p_action text,p_input jsonb default '{}')
+returns jsonb language plpgsql volatile security invoker set search_path=pg_catalog,public as $$
+declare policy public."FIN_CostPolicies"; evidence public."FIN_CostEvidence"; source jsonb; result jsonb; audit_id uuid;
+  v_currency text; charge uuid; source_version text; value text; amount numeric; received date; completed date;
+begin
+  perform public._multideck_journal_access(p_actor,p_entity,case when p_action in ('read','charge','history') then 'Finance.Management.View'
+    when p_action='approve_policy' then 'Finance.Management.Approve' else 'Finance.Management.Prepare' end);
+  if p_action not in ('read','charge','history','save_policy','approve_policy','record_evidence') then raise exception 'Unknown cost control action.' using errcode='22023'; end if;
+  select "LegalEntity_BaseCurrencyCodeSnapshot" into v_currency from public."cmp_LegalEntities" where "LegalEntity_ID"=p_entity;
+  if p_action='read' then
+    return jsonb_build_object('policies',coalesce((select jsonb_agg(to_jsonb(p) order by revision desc) from
+      (select * from public."FIN_CostPolicies" where legal_entity_id=p_entity order by revision desc limit 20) p),'[]'::jsonb),
+      'postingEnabled',coalesce((select enabled from public."FIN_CostAutomation" where legal_entity_id=p_entity),false),'currency',v_currency,
+      'canPost',public._multideck_dexter_has_permission(p_actor,'Finance.Management.Post'),
+      'cases',coalesce((select jsonb_agg(to_jsonb(f) order by evaluated_at desc) from (select id,charge_id,evidence_id,status,reason,journal_id,evaluated_at,snapshot->>'estimate' estimate,snapshot->>'actual' actual,snapshot->>'residual' residual from public."FIN_CostFinalisations" where legal_entity_id=p_entity order by evaluated_at desc limit 50) f),'[]'::jsonb),
+      'canPrepare',public._multideck_dexter_has_permission(p_actor,'Finance.Management.Prepare'),
+      'canApprove',public._multideck_dexter_has_permission(p_actor,'Finance.Management.Approve'),
+      'actorId',p_actor);
+  elsif p_action='save_policy' then
+    -- Entity lock serialises revision allocation, even before the first policy.
+    perform 1 from public."cmp_LegalEntities" where "LegalEntity_ID"=p_entity for update;
+    if v_currency is null or v_currency!~'^[A-Z]{3}$' then raise exception 'Configure the entity base currency.' using errcode='22023'; end if;
+    foreach value in array array['underPercent','underCap','overPercent','overCap'] loop
+      if coalesce(p_input->>value,'') !~ '^\d{1,12}(\.\d{1,4})?$' then raise exception 'Use non-negative decimal limits with up to four places.' using errcode='22023'; end if;
+      amount:=(p_input->>value)::numeric;
+      if value in ('underPercent','overPercent') and amount>100 then raise exception 'Percentage limits cannot exceed 100.' using errcode='22023'; end if;
+    end loop;
+    if coalesce(length(trim(p_input->>'recognitionRule')),0) not between 10 and 2000 then raise exception 'Describe the completed-service evidence required for accrual recognition.' using errcode='22023'; end if;
+    insert into public."FIN_CostPolicies"(legal_entity_id,revision,currency,under_percent,under_cap,over_percent,over_cap,auto_finalise,recognition_rule,created_by)
+      select p_entity,coalesce(max(revision),0)+1,v_currency,(p_input->>'underPercent')::numeric,(p_input->>'underCap')::numeric,
+        (p_input->>'overPercent')::numeric,(p_input->>'overCap')::numeric,coalesce((p_input->>'autoFinalise')::boolean,false),trim(p_input->>'recognitionRule'),p_actor
+      from public."FIN_CostPolicies" where legal_entity_id=p_entity returning * into policy;
+    result:=to_jsonb(policy);
+  elsif p_action='approve_policy' then
+    perform 1 from public."cmp_LegalEntities" where "LegalEntity_ID"=p_entity for update;
+    select * into policy from public."FIN_CostPolicies" where id=(p_input->>'id')::uuid and legal_entity_id=p_entity for update;
+    if not found then raise exception 'Policy not found.' using errcode='P0002'; end if;
+    if policy.created_by=p_actor then raise exception 'Another authorised colleague must approve this policy.' using errcode='42501'; end if;
+    if policy.currency is distinct from v_currency or exists(select 1 from public."FIN_CostPolicies" where legal_entity_id=p_entity and revision>policy.revision) then raise exception 'This policy is superseded. Review the latest revision.' using errcode='22023'; end if;
+    if policy.approved_by is not null then return to_jsonb(policy); end if;
+    if coalesce(length(trim(p_input->>'reason')),0) not between 5 and 2000 then raise exception 'Record the policy approval reason.' using errcode='22023'; end if;
+    update public."FIN_CostPolicies" set approved_by=p_actor,approved_at=now(),approval_reason=trim(p_input->>'reason') where id=policy.id returning * into policy;
+    result:=to_jsonb(policy);
+  else
+    charge:=(p_input->>'chargeId')::uuid;
+    source:=public._multideck_cost_source(p_entity,charge); source_version:=md5(source::text);
+    if p_action='charge' then
+      select * into evidence from public."FIN_CostEvidence" where charge_id=charge and legal_entity_id=p_entity order by recorded_at desc,id desc limit 1;
+      return jsonb_build_object('revision',source_version,'evidence',case when evidence.id is null then null else to_jsonb(evidence) end,
+        'evidenceCurrent',evidence.source_revision=source_version,
+        'finalisation',(select jsonb_build_object('status',f.status,'reason',f.reason,'journalId',f.journal_id,'mirrorStatus',j.mirror_status,'mirrorError',j.mirror_error) from public."FIN_CostFinalisations" f left join public."FIN_Journals" j on j.id=f.journal_id where f.charge_id=charge and f.legal_entity_id=p_entity order by f.evaluated_at desc limit 1),
+        'documents',coalesce((select jsonb_agg(jsonb_build_object('id',d->'document'->>'FINDoc_ID','number',d->'document'->>'FINDoc_Number'))
+          from jsonb_array_elements(source->'documents') d where d->'document'->>'FINDoc_TypeCode'='pl_invoice'
+            and d->'document'->>'FINDoc_NativePostingStatusCode'='posted' and d->'document'->>'FINDoc_LegalEntityID'=p_entity::text
+            and d->'document'->>'FINDoc_PartyOrgID'=source->'charge'->>'JobCostingLine_SupplierID'),'[]'::jsonb),
+        'history',coalesce((select jsonb_agg(to_jsonb(x) order by recorded_at desc) from
+          (select * from public."FIN_CostEvidence" where charge_id=charge and legal_entity_id=p_entity order by recorded_at desc,id desc limit 20) x),'[]'::jsonb));
+    elsif p_action='history' then
+      -- Real evidence only, same entity/supplier/charge code, excluding this
+      -- charge. Censor all still-open observations at the server's current date.
+      return coalesce((select jsonb_agg(jsonb_build_object('days',case when x.is_final then x.invoice_received_on-x.service_completed_on else current_date-x.service_completed_on end,'invoiced',x.is_final))
+        from (select distinct on(e.charge_id) e.* from public."FIN_CostEvidence" e
+          join public."Job_Costing_Lines" l on l."JobCostingLine_ID"=e.charge_id
+          where e.legal_entity_id=p_entity and e.charge_id<>charge
+            and l."JobCostingLine_SupplierID"::text=source->'charge'->>'JobCostingLine_SupplierID'
+            and l."JobCostingLine_ChargeCodeID"::text=source->'charge'->>'JobCostingLine_ChargeCodeID'
+          order by e.charge_id,e.recorded_at desc,e.id desc) x
+        where not x.disputed and x.source_revision=md5(public._multideck_cost_source(p_entity,x.charge_id)::text)),'[]'::jsonb);
+    end if;
+    if p_input->>'revision' is distinct from source_version then raise exception 'Charge evidence changed. Refresh and review before confirming.' using errcode='40001'; end if;
+    completed:=(p_input->>'serviceCompletedOn')::date; received:=nullif(p_input->>'invoiceReceivedOn','')::date;
+    if completed is null or completed>current_date or received>current_date or received<completed then raise exception 'Use actual service and invoice receipt dates, not future dates.' using errcode='22023'; end if;
+    if coalesce(length(trim(p_input->>'reason')),0) not between 5 and 2000 then raise exception 'Describe the source evidence for this confirmation.' using errcode='22023'; end if;
+    if coalesce((p_input->>'isFinal')::boolean,false) then
+      if received is null or not exists(select 1 from jsonb_array_elements(source->'documents') d
+        where d->'document'->>'FINDoc_ID'=p_input->>'finalDocumentId' and d->'document'->>'FINDoc_TypeCode'='pl_invoice'
+          and d->'document'->>'FINDoc_NativePostingStatusCode'='posted' and d->'document'->>'FINDoc_LegalEntityID'=p_entity::text
+          and d->'document'->>'FINDoc_PartyOrgID'=source->'charge'->>'JobCostingLine_SupplierID') then
+        raise exception 'Choose an exactly matched posted supplier invoice and its received date.' using errcode='22023'; end if;
+    end if;
+    insert into public."FIN_CostEvidence"(legal_entity_id,charge_id,source_revision,service_completed_on,invoice_received_on,final_document_id,is_final,disputed,reason,recorded_by)
+      values(p_entity,charge,source_version,completed,received,case when coalesce((p_input->>'isFinal')::boolean,false) then (p_input->>'finalDocumentId')::uuid else null end,
+        coalesce((p_input->>'isFinal')::boolean,false),coalesce((p_input->>'disputed')::boolean,false),trim(p_input->>'reason'),p_actor) returning * into evidence;
+    result:=to_jsonb(evidence);
+  end if;
+  insert into public."FIN_CostControlAudit"(legal_entity_id,actor_id,action,record_id,snapshot)
+    values(p_entity,p_actor,p_action,(result->>'id')::uuid,result) returning id into audit_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_HasFieldChanges","AuditEvent_ChangedFieldCount","AuditEvent_MetadataJSON")
+    values('finance_lifecycle',p_actor,p_entity,'multideck-app','finance','public','FIN_CostControlAudit','cost_control',audit_id,p_action,'Cost accrual control · '||p_action,true,1,result);
+  return result;
+end; $$;
+revoke all on function public.multideck_finance_cost_controls(uuid,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.multideck_finance_cost_controls(uuid,uuid,text,jsonb) to service_role;
+commit;
+
+begin;
+-- This worker finalises the remaining balance of existing charge accruals.
+-- Initial/service accrual recognition stays in the approved period workflow.
+create table public."FIN_CostAutomation" (
+  legal_entity_id uuid primary key references public."cmp_LegalEntities"("LegalEntity_ID"),
+  policy_id uuid not null references public."FIN_CostPolicies"(id),
+  enabled boolean not null default false,
+  authorised_by uuid not null references public."cmp_Users"("User_ID"),
+  authorised_at timestamptz not null default now(),
+  reason text not null check(length(trim(reason)) between 5 and 2000)
+);
+create table public."FIN_CostFinalisations" (
+  id uuid primary key default gen_random_uuid(),
+  legal_entity_id uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
+  charge_id uuid not null references public."Job_Costing_Lines"("JobCostingLine_ID"),
+  evidence_id uuid not null unique references public."FIN_CostEvidence"(id),
+  policy_id uuid not null references public."FIN_CostPolicies"(id),
+  status text not null check(status in ('review','posted','settled')),
+  reason text not null,
+  journal_id uuid references public."FIN_Journals"(id),
+  snapshot jsonb not null,
+  evaluated_at timestamptz not null default now()
+);
+create index on public."FIN_CostFinalisations"(legal_entity_id,status,evaluated_at);
+create table public."FIN_CostExceptionApprovals" (
+  id uuid primary key default gen_random_uuid(),
+  finalisation_id uuid not null references public."FIN_CostFinalisations"(id),
+  snapshot_hash text not null,
+  approved_by uuid not null references public."cmp_Users"("User_ID"),
+  approved_at timestamptz not null default now(),
+  reason text not null check(length(trim(reason)) between 5 and 2000)
+);
+create index on public."FIN_CostExceptionApprovals"(finalisation_id,approved_at desc);
+alter table public."FIN_CostExceptionApprovals" enable row level security;
+revoke all on public."FIN_CostExceptionApprovals" from public,anon,authenticated;
+grant select,insert on public."FIN_CostExceptionApprovals" to service_role;
+alter table public."FIN_CostAutomation" enable row level security;
+alter table public."FIN_CostFinalisations" enable row level security;
+revoke all on public."FIN_CostAutomation",public."FIN_CostFinalisations" from public,anon,authenticated;
+grant select,insert,update on public."FIN_CostAutomation",public."FIN_CostFinalisations" to service_role;
+
+create function public.multideck_cost_automation(p_actor uuid,p_entity uuid,p_enabled boolean,p_policy uuid,p_reason text)
+returns jsonb language plpgsql security invoker set search_path=pg_catalog,public as $$
+declare v_policy public."FIN_CostPolicies"; result jsonb; audit_id uuid;
+begin
+  perform public._multideck_journal_access(p_actor,p_entity,'Finance.Management.Post');
+  perform public._multideck_journal_access(p_actor,p_entity,'Finance.Management.Approve');
+  perform 1 from public."cmp_LegalEntities" where "LegalEntity_ID"=p_entity for update;
+  select * into v_policy from public."FIN_CostPolicies" where id=p_policy and legal_entity_id=p_entity;
+  if not found or (p_enabled and (v_policy.approved_by is null or not v_policy.auto_finalise or exists(select 1 from public."FIN_CostPolicies" where legal_entity_id=p_entity and revision>v_policy.revision))) then
+    raise exception 'Approve the latest automatic-finalisation policy first.' using errcode='22023'; end if;
+  if p_enabled is null or coalesce(length(trim(p_reason)),0) not between 5 and 2000 then raise exception 'Record an activation or pause reason.' using errcode='22023'; end if;
+  insert into public."FIN_CostAutomation"(legal_entity_id,policy_id,enabled,authorised_by,reason)
+    values(p_entity,p_policy,p_enabled,p_actor,trim(p_reason)) on conflict(legal_entity_id) do update
+    set policy_id=excluded.policy_id,enabled=excluded.enabled,authorised_by=excluded.authorised_by,authorised_at=now(),reason=excluded.reason returning to_jsonb("FIN_CostAutomation".*) into result;
+  insert into public."FIN_CostControlAudit"(legal_entity_id,actor_id,action,record_id,snapshot) values(p_entity,p_actor,'automation',p_policy,result) returning id into audit_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_MetadataJSON")
+    values('finance_lifecycle',p_actor,p_entity,'multideck-app','finance','public','FIN_CostControlAudit','cost_control',audit_id,'automation','Cost finalisation automation changed',result);
+  return result;
+end; $$;
+revoke all on function public.multideck_cost_automation(uuid,uuid,boolean,uuid,text) from public,anon,authenticated;
+grant execute on function public.multideck_cost_automation(uuid,uuid,boolean,uuid,text) to service_role;
+
+create function public.multideck_cost_finalise(p_entity uuid,p_evidence uuid)
+returns jsonb language plpgsql security invoker set search_path=pg_catalog,public as $$
+declare settings public."FIN_CostAutomation"; policy public."FIN_CostPolicies"; evidence public."FIN_CostEvidence";
+  source jsonb; actual numeric; estimate numeric; variance numeric; cap numeric; pct numeric; remaining numeric:=0;
+  reasons text[]:='{}'; v_period uuid; v_currency text; v_mode text; v_connected boolean; v_native boolean;
+  a record; line record; original uuid; expense uuid; control uuid; journal uuid; batch uuid; number bigint;
+  lines jsonb:='[]'; idx integer:=0; final_id uuid; existing public."FIN_CostFinalisations";
+  v_snapshot jsonb; approval public."FIN_CostExceptionApprovals";
+begin
+  -- Short, bounded native transaction. Source-table locks prevent invoice/link
+  -- phantoms between confirmation validation and posting. Provider IO is outside.
+  perform set_config('lock_timeout','2s',true);
+  perform set_config('statement_timeout','15s',true);
+  lock table public."FIN_Documents",public."FIN_DocumentLineJobLinks",public."Job_Costing_Lines",public."Job_Header",public."FIN_Accruals" in share row exclusive mode;
+  select * into settings from public."FIN_CostAutomation" where legal_entity_id=p_entity for share;
+  if not found or not settings.enabled then return jsonb_build_object('status','disabled'); end if;
+  perform public._multideck_journal_access(settings.authorised_by,p_entity,'Finance.Management.Post');
+  perform public._multideck_journal_access(settings.authorised_by,p_entity,'Finance.Management.Approve');
+  select * into policy from public."FIN_CostPolicies" where id=settings.policy_id and legal_entity_id=p_entity for share;
+  if policy.approved_by is null or not policy.auto_finalise or exists(select 1 from public."FIN_CostPolicies" where legal_entity_id=p_entity and revision>policy.revision) then
+    return jsonb_build_object('status','review','reason','Latest policy approval required'); end if;
+  perform public._multideck_journal_access(policy.approved_by,p_entity,'Finance.Management.Approve');
+  select * into evidence from public."FIN_CostEvidence" where id=p_evidence and legal_entity_id=p_entity;
+  if not found then raise exception 'Evidence not found.' using errcode='P0002'; end if;
+  select * into existing from public."FIN_CostFinalisations" where evidence_id=p_evidence for update;
+  if existing.status in ('posted','settled') then return to_jsonb(existing); end if;
+  source:=public._multideck_cost_source(p_entity,evidence.charge_id);
+  if not evidence.is_final or evidence.disputed or evidence.source_revision<>md5(source::text) or exists(select 1 from public."FIN_CostEvidence" e where e.charge_id=evidence.charge_id and (e.recorded_at,e.id)>(evidence.recorded_at,evidence.id)) then reasons:=array_append(reasons,'Current undisputed final-invoice confirmation required'); end if;
+  if source->'job'->>'status' in ('draft','provisional','cancelled') or (source->'job'->>'deleted')::boolean then reasons:=array_append(reasons,'Job eligibility requires review'); end if;
+  select "LegalEntity_BaseCurrencyCodeSnapshot" into v_currency from public."cmp_LegalEntities" where "LegalEntity_ID"=p_entity;
+  if policy.currency is distinct from v_currency then reasons:=array_append(reasons,'Policy currency changed'); end if;
+  if exists(select 1 from jsonb_array_elements(source->'documents') d where d->'document'->>'FINDoc_LegalEntityID' is distinct from p_entity::text
+    or d->'document'->>'FINDoc_PartyOrgID' is distinct from source->'charge'->>'JobCostingLine_SupplierID'
+    or d->'document'->>'FINDoc_TypeCode'<>'pl_invoice' or d->'document'->>'FINDoc_NativePostingStatusCode'<>'posted'
+    or (d->'link'->>'FINDocLineJob_LocalNetAmount')::numeric<=0) then reasons:=array_append(reasons,'Invoice, credit, reversal or supplier match requires review'); end if;
+  select coalesce(sum((d->'link'->>'FINDocLineJob_LocalNetAmount')::numeric),0) into actual from jsonb_array_elements(source->'documents') d;
+  estimate:=(source->'charge'->>'JobCostingLine_CostAmountLocal')::numeric;
+  if actual<=0 or estimate is null or estimate<0 then reasons:=array_append(reasons,'Positive actual and valid estimate required'); end if;
+  variance:=abs(actual-estimate); cap:=case when actual>estimate then policy.over_cap else policy.under_cap end;
+  pct:=case when actual>estimate then policy.over_percent else policy.under_percent end;
+  if variance>cap or variance*100>estimate*pct then reasons:=array_append(reasons,'Outside approved tolerance; human review required'); end if;
+  select mirror_mode,active_connection,native_ledger_enabled into v_mode,v_connected,v_native from public._multideck_finance_mirror_state(p_entity);
+  if not v_native or (v_mode='required' and not v_connected) then reasons:=array_append(reasons,'Native ledger or required mirror is not ready'); end if;
+  select "FINPeriod_ID" into v_period from public."FIN_Periods" where "FINPeriod_LegalEntityID"=p_entity and "FINPeriod_Code"=to_char(current_date,'YYYYMM') and "FINPeriod_StatusCode"='open' for update;
+  if v_period is null then reasons:=array_append(reasons,'Current accounting period must exist and be open'); end if;
+  -- One original debit/credit pair per source accrual; never infer the expense
+  -- from a changed charge-code mapping. Unsupported historical shapes stop.
+  for a in select ac.*,p."FINPeriod_LegalEntityID" entity from public."FIN_Accruals" ac join public."FIN_Periods" p on p."FINPeriod_ID"=ac."FINAccrual_PeriodID"
+    where ac."FINAccrual_JobCostingLineID"=evidence.charge_id and ac."FINAccrual_AccruedAmount">ac."FINAccrual_RelievedAmount" order by ac."FINAccrual_ID" loop
+    if a.entity<>p_entity or a."FINAccrual_CurrencyCodeSnapshot" is distinct from v_currency or a."FINAccrual_StatusCode" not in ('posted','partially_reversed') or a."FINAccrual_RelievedAmount"<0 then reasons:=array_append(reasons,'Accrual balance or currency requires review'); continue; end if;
+    select r."FINCloseRun_PostingBatchID" into original from public."FIN_PeriodCloseRunItems" i join public."FIN_PeriodCloseRuns" r on r."FINCloseRun_ID"=i."FINCloseItem_CloseRunID" where i."FINCloseItem_ID"=a."FINAccrual_CloseRunItemID" and r."FINCloseRun_LegalEntityID"=p_entity;
+    expense:=null; control:=null;
+    if (select count(*) from public."FIN_PostingLines" where "FINPostLine_BatchID"=original and "FINPostLine_AccrualID"=a."FINAccrual_ID")=2 then
+      select "FINPostLine_NominalAccountID" into expense from public."FIN_PostingLines" where "FINPostLine_BatchID"=original and "FINPostLine_AccrualID"=a."FINAccrual_ID" and "FINPostLine_DebitAmount"=a."FINAccrual_AccruedAmount" and "FINPostLine_CreditAmount"=0;
+      select "FINPostLine_NominalAccountID" into control from public."FIN_PostingLines" where "FINPostLine_BatchID"=original and "FINPostLine_AccrualID"=a."FINAccrual_ID" and "FINPostLine_CreditAmount"=a."FINAccrual_AccruedAmount" and "FINPostLine_DebitAmount"=0;
+    end if;
+    if expense is null or control is null or expense=control or (select count(*) from public."FIN_NominalAccounts" where "FINNom_ID" in (expense,control) and "FINNom_LegalEntityID"=p_entity and "FINNom_IsActive")<>2 then reasons:=array_append(reasons,'Original balanced nominal mapping requires review'); continue; end if;
+    lines:=lines||jsonb_build_array(jsonb_build_object('accountId',control,'debit',(a."FINAccrual_AccruedAmount"-a."FINAccrual_RelievedAmount")::text,'credit','0.0000','accrualId',a."FINAccrual_ID"),
+      jsonb_build_object('accountId',expense,'debit','0.0000','credit',(a."FINAccrual_AccruedAmount"-a."FINAccrual_RelievedAmount")::text,'accrualId',a."FINAccrual_ID"));
+    remaining:=remaining+a."FINAccrual_AccruedAmount"-a."FINAccrual_RelievedAmount";
+  end loop;
+  -- A residual larger than estimate minus actual signals unreconciled invoice
+  -- relief. Never call that a tolerance write-back.
+  if remaining>greatest(estimate-actual,0) then reasons:=array_append(reasons,'Reconcile invoice relief before finalising the residual'); end if;
+  if jsonb_array_length(lines)>200 then reasons:=array_append(reasons,'Large accrual history requires a reviewed adjustment'); end if;
+  v_snapshot:=jsonb_build_object('sourceRevision',md5(source::text),'estimate',estimate::text,'actual',actual::text,'residual',remaining::text,'policy',to_jsonb(policy),'evidence',to_jsonb(evidence),'lines',lines);
+  select * into approval from public."FIN_CostExceptionApprovals" where finalisation_id=existing.id and snapshot_hash=md5(v_snapshot::text) order by approved_at desc limit 1;
+  if approval.id is not null then
+    perform public._multideck_journal_access(approval.approved_by,p_entity,'Finance.Management.Approve');
+    reasons:=array_remove(reasons,'Outside approved tolerance; human review required');
+  end if;
+  insert into public."FIN_CostFinalisations"(legal_entity_id,charge_id,evidence_id,policy_id,status,reason,snapshot)
+    values(p_entity,evidence.charge_id,p_evidence,policy.id,'review',coalesce(array_to_string(reasons,'; '),''),v_snapshot)
+    on conflict(evidence_id) do update set policy_id=excluded.policy_id,reason=excluded.reason,snapshot=excluded.snapshot,evaluated_at=now() returning id into final_id;
+  if cardinality(reasons)>0 then
+    insert into public."FIN_CostControlAudit"(legal_entity_id,actor_id,action,record_id,snapshot) select p_entity,settings.authorised_by,'review_required',final_id,to_jsonb(f) from public."FIN_CostFinalisations" f where id=final_id;
+    return (select to_jsonb(f) from public."FIN_CostFinalisations" f where id=final_id);
+  end if;
+  if remaining>0 then
+    insert into public."FIN_Journals"(legal_entity_id,accounting_date,reference,description,currency,lines,created_by,status,posted_by,posted_at,mirror_status)
+      values(p_entity,current_date,'COST-FINAL','Final supplier cost variance',v_currency,lines,settings.authorised_by,'posted',settings.authorised_by,now(),case when v_mode<>'disabled' and v_connected then 'queued' else 'not_required' end) returning id,"FIN_Journals".number into journal,number;
+    insert into public."FIN_PostingBatches"("FINPostBatch_Number","FINPostBatch_StatusCode","FINPostBatch_SourceTable","FINPostBatch_SourceID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID","FINPostBatch_DebitTotal","FINPostBatch_CreditTotal","FINPostBatch_CurrencyCodeSnapshot","FINPostBatch_PostedAt","FINPostBatch_PostedBy","FINPostBatch_CreatedBy")
+      values('JN-'||number,'posted','FIN_Journals',journal,v_period,p_entity,remaining,remaining,v_currency,now(),settings.authorised_by,settings.authorised_by) returning "FINPostBatch_ID" into batch;
+    for line in select value v from jsonb_array_elements(lines) loop
+      idx:=idx+1;
+      insert into public."FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_AccrualID","FINPostLine_JobID","FINPostLine_Description","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot")
+        values(batch,idx,(line.v->>'accountId')::uuid,(line.v->>'accrualId')::uuid,(source->'job'->>'id')::uuid,'Final supplier cost variance',(line.v->>'debit')::numeric,(line.v->>'credit')::numeric,v_currency);
+      update public."FIN_Accruals" set "FINAccrual_RelievedAmount"="FINAccrual_AccruedAmount","FINAccrual_StatusCode"='reversed',"FINAccrual_ReversalPeriodID"=v_period,"FINAccrual_ReversedAt"=now(),"FINAccrual_ReversedBy"=settings.authorised_by where "FINAccrual_ID"=(line.v->>'accrualId')::uuid;
+    end loop;
+    update public."FIN_Journals" set batch_id=batch where id=journal;
+  end if;
+  update public."FIN_CostFinalisations" set status=case when remaining>0 then 'posted' else 'settled' end,reason=case when approval.id is null then 'Confirmed final invoice within both approved limits' else 'Confirmed final invoice with independent exception approval' end,journal_id=journal,
+    snapshot=snapshot||jsonb_build_object('exceptionApprovalId',approval.id) where id=final_id;
+  insert into public."FIN_CostControlAudit"(legal_entity_id,actor_id,action,record_id,snapshot) select p_entity,settings.authorised_by,'finalise',final_id,to_jsonb(f) from public."FIN_CostFinalisations" f where id=final_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_MetadataJSON")
+    select 'finance_lifecycle',settings.authorised_by,p_entity,'multideck-app','finance','public','FIN_CostFinalisations','cost_control',final_id,'finalise','Final supplier cost variance',to_jsonb(f) from public."FIN_CostFinalisations" f where id=final_id;
+  return (select to_jsonb(f) from public."FIN_CostFinalisations" f where id=final_id);
+end; $$;
+revoke all on function public.multideck_cost_finalise(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.multideck_cost_finalise(uuid,uuid) to service_role;
+
+create function public.multideck_cost_approve_exception(p_actor uuid,p_entity uuid,p_case uuid,p_reason text)
+returns jsonb language plpgsql security invoker set search_path=pg_catalog,public as $$
+declare f public."FIN_CostFinalisations"; e public."FIN_CostEvidence"; a public."FIN_CostExceptionApprovals"; audit_id uuid;
+begin
+  perform public._multideck_journal_access(p_actor,p_entity,'Finance.Management.Approve');
+  select * into f from public."FIN_CostFinalisations" where id=p_case and legal_entity_id=p_entity for update;
+  if not found or f.status<>'review' or f.reason<>'Outside approved tolerance; human review required' then raise exception 'Resolve blocking evidence before approving a tolerance exception.' using errcode='22023'; end if;
+  select * into e from public."FIN_CostEvidence" where id=f.evidence_id;
+  if e.recorded_by=p_actor then raise exception 'Another authorised colleague must approve the exception.' using errcode='42501'; end if;
+  if e.source_revision<>md5(public._multideck_cost_source(p_entity,f.charge_id)::text) then raise exception 'Evidence changed. Refresh the case.' using errcode='40001'; end if;
+  if coalesce(length(trim(p_reason)),0) not between 5 and 2000 then raise exception 'Record an exception approval reason.' using errcode='22023'; end if;
+  insert into public."FIN_CostExceptionApprovals"(finalisation_id,snapshot_hash,approved_by,reason) values(f.id,md5(f.snapshot::text),p_actor,trim(p_reason)) returning * into a;
+  insert into public."FIN_CostControlAudit"(legal_entity_id,actor_id,action,record_id,snapshot) values(p_entity,p_actor,'approve_exception',a.id,to_jsonb(a)||jsonb_build_object('reviewedSnapshot',f.snapshot)) returning id into audit_id;
+  insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_MetadataJSON")
+    values('finance_lifecycle',p_actor,p_entity,'multideck-app','finance','public','FIN_CostControlAudit','cost_control',audit_id,'approve_exception','Cost tolerance exception approved',to_jsonb(a)||jsonb_build_object('reviewedSnapshot',f.snapshot));
+  return to_jsonb(a);
+end; $$;
+revoke all on function public.multideck_cost_approve_exception(uuid,uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.multideck_cost_approve_exception(uuid,uuid,uuid,text) to service_role;
+
+create function public.multideck_cost_work_queue()
+returns jsonb language sql security invoker set search_path=pg_catalog,public as $$
+ select jsonb_build_object(
+  'pending',coalesce((select jsonb_agg(to_jsonb(q)) from (
+    select e.id,e.legal_entity_id from public."FIN_CostEvidence" e
+      join public."FIN_CostAutomation" a on a.legal_entity_id=e.legal_entity_id and a.enabled
+      join public."FIN_CostPolicies" p on p.id=a.policy_id and p.approved_by is not null and p.auto_finalise
+    where e.is_final and (not exists(select 1 from public."FIN_CostFinalisations" f where f.evidence_id=e.id)
+      or exists(select 1 from public."FIN_CostFinalisations" f join public."FIN_CostExceptionApprovals" x on x.finalisation_id=f.id and x.snapshot_hash=md5(f.snapshot::text) where f.evidence_id=e.id and f.status='review' and x.approved_at>f.evaluated_at))
+      and not exists(select 1 from public."FIN_CostEvidence" n where n.charge_id=e.charge_id and (n.recorded_at,n.id)>(e.recorded_at,e.id))
+    order by e.recorded_at,e.id limit 5) q),'[]'::jsonb),
+  'delivery',coalesce((select jsonb_agg(to_jsonb(q)) from (
+    select j.id,j.legal_entity_id,a.authorised_by from public."FIN_CostFinalisations" f
+      join public."FIN_Journals" j on j.id=f.journal_id
+      join public."FIN_CostAutomation" a on a.legal_entity_id=j.legal_entity_id and a.enabled
+    -- Explicit failures need correction and the existing Journals retry action.
+    -- Only uncertain, expired deliveries retry automatically with pinned identity.
+    where j.mirror_status in ('queued','sending') and j.mirror_attempts<5 and (j.mirror_lease_until is null or j.mirror_lease_until<now())
+    order by j.created_at,j.id limit 5) q),'[]'::jsonb))
+$$;
+revoke all on function public.multideck_cost_work_queue() from public,anon,authenticated;
+grant execute on function public.multideck_cost_work_queue() to service_role;
+
+-- A subsequent period review must not recreate a liability already finalised.
+-- Reopening requires a reviewed correction, not an unnoticed second accrual.
+create function public._multideck_cost_finalised_guard()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+  if exists(select 1 from public."FIN_CostFinalisations" where charge_id=new."FINAccrual_JobCostingLineID" and status in ('posted','settled')) then
+    raise exception 'This charge has been finalised. Review a late-invoice correction before creating another accrual.' using errcode='22023'; end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_cost_finalised_guard() from public,anon,authenticated;
+create trigger "TR_FIN_Accruals_finalised_guard" before insert on public."FIN_Accruals" for each row execute function public._multideck_cost_finalised_guard();
+commit;
+
+-- Retain customer and supplier bulk-sync results as tenant-company finance
+-- evidence. Provider master-data writes remain a deliberate register action;
+-- Dexter can read the result and react to completed runs, but cannot initiate it.
+
+begin;
+
+alter function public.multideck_dexter_domain_finance(uuid,text,integer)
+  rename to _multideck_dexter_domain_finance_before_provider_party_sync;
+revoke all on function public._multideck_dexter_domain_finance_before_provider_party_sync(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public._multideck_dexter_domain_finance_before_provider_party_sync(uuid,text,integer) to service_role;
+
+create function public.multideck_dexter_domain_finance(p_company_id uuid,p_search text,p_take integer)
+returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+  with records as (
+    select value,coalesce((value->'evidence'->>'updatedAt')::timestamptz,'2000-01-01'::timestamptz) updated_at
+    from jsonb_array_elements(public._multideck_dexter_domain_finance_before_provider_party_sync(p_company_id,p_search,p_take)) value
+    union all
+    select jsonb_build_object(
+      'recordId',run."ACCISR_ID",'recordKind','provider_party_sync','partyType',run."ACCISR_SettingsJSON"->>'partyType',
+      'providerCode',connection."ACCIC_ProviderCode",'providerName',connection."ACCIC_Name",'externalCompany',connection."ACCIC_ExternalTenantName",
+      'status',run."ACCISR_StatusCode",'processed',run."ACCISR_RecordsRead",
+      'synced',run."ACCISR_RecordsCreated"+run."ACCISR_RecordsUpdated",'failed',run."ACCISR_RecordsFailed",
+      'accountResults',coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'organisationId',event."ACCISE_LocalID",'organisationName',event."ACCISE_ResponsePayloadJSON"->>'organisationName',
+          'accountCode',event."ACCISE_ResponsePayloadJSON"->>'accountCode',
+          'status',case when event."ACCISE_Severity"='error' then 'failed' else 'synced' end,
+          'action',event."ACCISE_ResponsePayloadJSON"->>'action','providerPartyId',event."ACCISE_ExternalID",'message',event."ACCISE_Message"
+        ) order by event."ACCISE_CreatedAt")
+        from public."ACCI_SyncEvents" event
+        where event."ACCISE_SyncRunID"=run."ACCISR_ID" and event."ACCISE_EventCode" in ('party_account_synced','party_account_sync_failed')
+      ),'[]'::jsonb),
+      'registerRoute',case when run."ACCISR_SettingsJSON"->>'partyType'='supplier' then '/suppliers' else '/customers' end,
+      'evidence',jsonb_build_object('sourceTable','ACCI_SyncRuns','sourceId',run."ACCISR_ID",'connectionId',connection."ACCIC_ID",'updatedAt',coalesce(run."ACCISR_CompletedAt",run."ACCISR_CreatedAt"))
+    ),coalesce(run."ACCISR_CompletedAt",run."ACCISR_CreatedAt")
+    from public."ACCI_SyncRuns" run
+    join public."ACCI_Connections" connection on connection."ACCIC_ID"=run."ACCISR_ConnectionID"
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=connection."ACCIC_LegalEntityID"
+    where entity."Company_ID"=p_company_id and run."ACCISR_SettingsJSON"->>'kind'='party_master'
+      and (nullif(btrim(p_search),'') is null or concat_ws(' ',run."ACCISR_SettingsJSON"->>'partyType',connection."ACCIC_ProviderCode",connection."ACCIC_Name",connection."ACCIC_ExternalTenantName",run."ACCISR_StatusCode",'account sync') ilike '%'||btrim(p_search)||'%')
+  )
+  select coalesce(jsonb_agg(value order by updated_at desc),'[]'::jsonb)
+  from (select * from records order by updated_at desc limit greatest(1,least(coalesce(p_take,10),25))) limited;
+$$;
+revoke all on function public.multideck_dexter_domain_finance(uuid,text,integer) from public,anon,authenticated;
+grant execute on function public.multideck_dexter_domain_finance(uuid,text,integer) to service_role;
+
+create or replace function public._multideck_dexter_provider_party_sync_watch_change()
+returns trigger language plpgsql volatile security definer set search_path=pg_catalog,public as $$
+declare v_company uuid; v_legal_entity uuid; v_old jsonb; v_new jsonb;
+begin
+  select entity."Company_ID",entity."LegalEntity_ID" into v_company,v_legal_entity
+  from public."ACCI_Connections" connection
+  join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=connection."ACCIC_LegalEntityID"
+  where connection."ACCIC_ID"=new."ACCISR_ConnectionID";
+  v_old:=jsonb_build_object('accountSyncStatus',old."ACCISR_StatusCode",'partyType',old."ACCISR_SettingsJSON"->>'partyType','processed',old."ACCISR_RecordsRead",'synced',old."ACCISR_RecordsCreated"+old."ACCISR_RecordsUpdated",'failed',old."ACCISR_RecordsFailed",'connectionId',old."ACCISR_ConnectionID",'legalEntityId',v_legal_entity);
+  v_new:=jsonb_build_object('accountSyncStatus',new."ACCISR_StatusCode",'partyType',new."ACCISR_SettingsJSON"->>'partyType','processed',new."ACCISR_RecordsRead",'synced',new."ACCISR_RecordsCreated"+new."ACCISR_RecordsUpdated",'failed',new."ACCISR_RecordsFailed",'connectionId',new."ACCISR_ConnectionID",'legalEntityId',v_legal_entity);
+  if new."ACCISR_SettingsJSON"->>'kind'='party_master' and new."ACCISR_StatusCode" in ('synced','failed') and v_old is distinct from v_new and v_company is not null and exists(
+    select 1 from public."AI_DexterWatches" watch where watch."AIDexterWatch_CompanyID"=v_company and watch."AIDexterWatch_CapabilityCode"='finance' and watch."AIDexterWatch_StatusCode"='active'
+      and (watch."AIDexterWatch_TargetID" is null or watch."AIDexterWatch_TargetID" in (new."ACCISR_ID",new."ACCISR_ConnectionID",v_legal_entity))
+  ) then
+    insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON")
+    values(v_company,'finance','ACCI_SyncRuns',new."ACCISR_ID",v_old,v_new);
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_dexter_provider_party_sync_watch_change() from public,anon,authenticated;
+
+drop trigger if exists "TR_ACCI_SyncRuns_dexter_party_watch" on public."ACCI_SyncRuns";
+create trigger "TR_ACCI_SyncRuns_dexter_party_watch"
+after update of "ACCISR_StatusCode","ACCISR_RecordsRead","ACCISR_RecordsCreated","ACCISR_RecordsUpdated","ACCISR_RecordsFailed"
+on public."ACCI_SyncRuns" for each row execute function public._multideck_dexter_provider_party_sync_watch_change();
+
+update public."sys_AIDexterDataDomains" set
+  "AIDexterDomain_Description"='Tenant-safe native finance, AR/AP, cash, charge profitability, external mirror state, compliance obligations and customer or supplier account-sync evidence.',
+  "AIDexterDomain_UpdatedAt"=now()
+where "AIDexterDomain_Code"='finance';
+
+update public."sys_AIDexterWatchCapabilities" set
+  "AIDexterWatchCapability_Description"='Event-driven finance documents, postings, charge profitability, external mirror delivery and completed customer or supplier account-sync runs.',
+  "AIDexterWatchCapability_FieldsJSON"=(select coalesce(jsonb_agg(distinct value),'[]'::jsonb) from jsonb_array_elements(coalesce("AIDexterWatchCapability_FieldsJSON",'[]'::jsonb)||'["accountSyncStatus","partyType","processed","synced","failed"]'::jsonb)),
+  "AIDexterWatchCapability_UpdatedAt"=now()
+where "AIDexterWatchCapability_Code"='finance';
+
+commit;
+
+-- Durable receipt only: signed provider events never change approved books.
+begin;
+
+alter table public."ACCI_WebhookEvents"
+  add column "ACCIWH_DeliveryKey" text,
+  add column "ACCIWH_PayloadSHA256" text,
+  add column "ACCIWH_RawPayloadText" text,
+  add column "ACCIWH_ExternalCompany" text,
+  add column "ACCIWH_ExternalModifiedAt" timestamp without time zone,
+  add constraint "ACCI_WebhookEvents_receipt_evidence" check (
+    "ACCIWH_DeliveryKey" is null or (
+      "ACCIWH_DeliveryKey" ~ '^[a-f0-9]{64}$'
+      and "ACCIWH_PayloadSHA256" is not null and "ACCIWH_PayloadSHA256" ~ '^[a-f0-9]{64}$'
+      and "ACCIWH_RawPayloadText" is not null and octet_length("ACCIWH_RawPayloadText") between 1 and 262144
+      and "ACCIWH_ExternalCompany" is not null and length("ACCIWH_ExternalCompany") between 1 and 240
+      and "ACCIWH_ExternalModifiedAt" is not null and "ACCIWH_SignatureVerified"
+    )
+  );
+
+-- Legacy receipts retain their original evidence. Never pretend they were scoped
+-- or deduplicated by this new receiver, and never discard them to build an index.
+create unique index "UX_ACCI_WebhookEvents_delivery"
+  on public."ACCI_WebhookEvents" ("ACCIWH_ProviderCode", "ACCIWH_DeliveryKey");
+
+alter table public."ACCI_WebhookEvents" enable row level security;
+revoke all on table public."ACCI_WebhookEvents" from public, anon, authenticated;
+grant select, insert, update on table public."ACCI_WebhookEvents" to service_role;
+
+create or replace function public.multideck_erpnext_receive_webhook(p_raw_payload text)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+set datestyle = 'ISO, YMD'
+as $$
+declare
+  v_payload jsonb;
+  v_type text;
+  v_name text;
+  v_company text;
+  v_event text;
+  v_modified timestamp without time zone;
+  v_key text;
+  v_connection uuid;
+  v_count integer := 0;
+  v_candidate record;
+  v_id uuid;
+  v_existing jsonb;
+begin
+  -- Only the tenant Edge receiver calls this, after HMAC verification over the
+  -- original bytes. The public browser roles have no EXECUTE or table grants.
+  if p_raw_payload is null or octet_length(p_raw_payload) not between 1 and 262144 then
+    raise exception 'Invalid webhook body size.' using errcode = '22023';
+  end if;
+  v_payload := p_raw_payload::jsonb;
+  if jsonb_typeof(v_payload) is distinct from 'object' then
+    raise exception 'Webhook payload must be an object.' using errcode = '22023';
+  end if;
+  if jsonb_typeof(v_payload->'doctype') is distinct from 'string'
+    or jsonb_typeof(v_payload->'name') is distinct from 'string'
+    or jsonb_typeof(v_payload->'company') is distinct from 'string'
+    or jsonb_typeof(v_payload->'modified') is distinct from 'string'
+    or (v_payload ? 'event' and jsonb_typeof(v_payload->'event') is distinct from 'string') then
+    raise exception 'Webhook identity and version must be strings.' using errcode = '22023';
+  end if;
+  v_type := v_payload->>'doctype';
+  v_name := v_payload->>'name';
+  v_company := v_payload->>'company';
+  v_event := coalesce(v_payload->>'event', 'updated');
+  if v_type not in ('Sales Invoice', 'Purchase Invoice', 'Payment Entry', 'Bank Account')
+    or length(v_name) not between 1 and 240 or btrim(v_name) = ''
+    or length(v_company) not between 1 and 240 or btrim(v_company) = ''
+    or length(v_event) not between 1 and 120 or btrim(v_event) = ''
+    or (v_payload->>'modified') !~ '^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?$' then
+    raise exception 'Invalid webhook identity or version.' using errcode = '22023';
+  end if;
+  v_modified := (v_payload->>'modified')::timestamp without time zone;
+
+  for v_candidate in
+    select connection."ACCIC_ID"
+    from public."ACCI_Connections" connection
+    join public."cmp_LegalEntities" entity on entity."LegalEntity_ID" = connection."ACCIC_LegalEntityID"
+    where connection."ACCIC_ProviderCode" = 'erpnext'
+      and connection."ACCIC_StatusCode" = 'active'
+      and connection."ACCIC_ExternalTenantName" = v_company
+      and entity."LegalEntity_IsActive" and entity."Company_ID" is not null
+    for share of connection, entity
+  loop
+    v_count := v_count + 1;
+    v_connection := v_candidate."ACCIC_ID";
+  end loop;
+  if v_count <> 1 then
+    raise exception 'Webhook company must resolve to exactly one active ERPNext connection.' using errcode = 'P0002';
+  end if;
+
+  v_key := encode(sha256(convert_to(jsonb_build_array(v_company, v_type, v_name, v_event, v_modified)::text, 'UTF8')), 'hex');
+  insert into public."ACCI_WebhookEvents" (
+    "ACCIWH_ConnectionID", "ACCIWH_ProviderCode", "ACCIWH_EventType", "ACCIWH_ExternalObjectType", "ACCIWH_ExternalID",
+    "ACCIWH_SignatureVerified", "ACCIWH_ProcessingStatusCode", "ACCIWH_RawPayloadJSON", "ACCIWH_RawPayloadText",
+    "ACCIWH_DeliveryKey", "ACCIWH_PayloadSHA256", "ACCIWH_ExternalCompany", "ACCIWH_ExternalModifiedAt"
+  ) values (
+    v_connection, 'erpnext', v_event, v_type, v_name, true, 'queued', v_payload, p_raw_payload,
+    v_key, encode(sha256(convert_to(p_raw_payload, 'UTF8')), 'hex'), v_company, v_modified
+  ) on conflict ("ACCIWH_ProviderCode", "ACCIWH_DeliveryKey") do nothing
+  returning "ACCIWH_ID" into v_id;
+
+  if v_id is not null then
+    return jsonb_build_object('accepted', true, 'duplicate', false, 'eventId', v_id);
+  end if;
+  select "ACCIWH_ID", "ACCIWH_RawPayloadJSON" into v_id, v_existing
+    from public."ACCI_WebhookEvents"
+    where "ACCIWH_ProviderCode" = 'erpnext' and "ACCIWH_DeliveryKey" = v_key;
+  if v_id is null then
+    raise exception 'Concurrent webhook receipt must be retried.' using errcode = '40001';
+  end if;
+  if v_existing is distinct from v_payload then
+    raise exception 'Webhook version has conflicting payloads; original evidence retained.' using errcode = '23505';
+  end if;
+  -- Acknowledgement is idempotent: do not reset status or timestamps or overwrite
+  -- original evidence when the provider retries, including after processing.
+  return jsonb_build_object('accepted', true, 'duplicate', true, 'eventId', v_id);
+end;
+$$;
+
+revoke all on function public.multideck_erpnext_receive_webhook(text) from public, anon, authenticated;
+grant execute on function public.multideck_erpnext_receive_webhook(text) to service_role;
+comment on function public.multideck_erpnext_receive_webhook(text) is
+  'Service-only durable ERPNext receipt after Edge HMAC verification. No accounting mutations, customer-visible data or Dexter/watch capability. Queued is not reconciled.';
+
+commit;
+
+-- Durable customer/supplier intent. No provider network calls inside CRM transactions.
+begin;
+create table public."ACCI_PartySyncQueue" (
+ id uuid primary key default gen_random_uuid(),
+ connection_id uuid not null references public."ACCI_Connections"("ACCIC_ID") on delete restrict,
+ org_id uuid not null references public."Org_Master"("Org_id") on delete restrict,
+ party_type text not null check(party_type in ('customer','supplier')),
+ revision bigint not null default 1,
+ status text not null default 'queued' check(status in ('queued','processing','synced','blocked','failed')),
+ lease_token uuid, lease_until timestamptz, attempts integer not null default 0,
+ next_attempt_at timestamptz not null default now(),
+ provider_id text, verified_payload jsonb, evidence jsonb not null default '{}',
+ last_error text, verified_at timestamptz, updated_at timestamptz not null default now(),
+ unique(connection_id,org_id,party_type)
+);
+alter table public."ACCI_PartySyncQueue" enable row level security;
+revoke all on public."ACCI_PartySyncQueue" from public,anon,authenticated;
+grant select,insert,update on public."ACCI_PartySyncQueue" to service_role;
+create index "ACCI_party_due" on public."ACCI_PartySyncQueue"(next_attempt_at) where status in ('queued','failed','processing');
+create index "ACCI_party_org" on public."ACCI_PartySyncQueue"(org_id);
+
+-- Serialise all mapping writers, including reviewed legacy workflows. Existing
+-- unique indexes cover equal roles; this also prevents overlapping "both" links.
+create function public._accounting_party_mapping_guard() returns trigger
+language plpgsql security invoker set search_path=pg_catalog,public as $$
+begin
+ if not new."ACCIPM_IsActive" or new."ACCIPM_PartyType" not in ('customer','supplier','both') then return new;end if;
+ perform pg_advisory_xact_lock(hashtextextended(new."ACCIPM_ConnectionID"::text,0));
+ if exists(select 1 from public."ACCI_PartyMappings" m where m."ACCIPM_ID"<>new."ACCIPM_ID"
+  and m."ACCIPM_ConnectionID"=new."ACCIPM_ConnectionID" and m."ACCIPM_IsActive"
+  and m."ACCIPM_PartyType" in ('customer','supplier','both')
+  and (m."ACCIPM_PartyType"=new."ACCIPM_PartyType" or m."ACCIPM_PartyType"='both' or new."ACCIPM_PartyType"='both')
+  and (m."ACCIPM_OrgID"=new."ACCIPM_OrgID" or m."ACCIPM_ProviderPartyID"=new."ACCIPM_ProviderPartyID")
+  and not (m."ACCIPM_OrgID"=new."ACCIPM_OrgID" and m."ACCIPM_PartyType"=new."ACCIPM_PartyType")) then
+  raise exception 'Conflicting active customer/supplier mapping. Review the existing link.' using errcode='23505';
+ end if;
+ return new;
+end $$;
+revoke all on function public._accounting_party_mapping_guard() from public,anon,authenticated;
+create trigger "TR_accounting_party_mapping_guard" before insert or update on public."ACCI_PartyMappings" for each row execute function public._accounting_party_mapping_guard();
+
+-- Called by trusted triggers and worker catch-up. Trigger rights are needed for
+-- ordinary permitted CRM writes; this has no browser-callable execution grant.
+create function public.multideck_accounting_enqueue_parties(p_org uuid default null,p_refresh boolean default true)
+returns void language sql security definer set search_path=pg_catalog,public as $$
+ insert into public."ACCI_PartySyncQueue"(connection_id,org_id,party_type)
+ select distinct c."ACCIC_ID",o."Org_id",lower(t."OrgType_Name")
+ from public."Org_Master" o
+ join public."CRM_AccountProfiles" p on p."CRMAccount_OrgID"=o."Org_id" and not p."CRMAccount_IsDeleted"
+ join public."Org_Master_Type" ot on ot."Org_ID"=o."Org_id"
+ join public."Org_Types" t on t."OrgType_ID"=ot."OrgType_ID" and lower(t."OrgType_Name") in ('customer','supplier')
+ join public."cmp_LegalEntities" e on e."Company_ID"=p."CRMAccount_CompanyID" and e."LegalEntity_IsActive"
+   and (p."CRMAccount_LegalEntityID" is null or p."CRMAccount_LegalEntityID"=e."LegalEntity_ID")
+ join public."ACCI_Connections" c on c."ACCIC_LegalEntityID"=e."LegalEntity_ID" and c."ACCIC_StatusCode"='active'
+ where p_org is null or o."Org_id"=p_org
+ on conflict(connection_id,org_id,party_type) do update set
+ revision="ACCI_PartySyncQueue".revision+1,
+ status=case when "ACCI_PartySyncQueue".status='processing' then 'processing' else 'queued' end,
+ attempts=0,next_attempt_at=now(),updated_at=now() where p_refresh;
+$$;
+revoke all on function public.multideck_accounting_enqueue_parties(uuid,boolean) from public,anon,authenticated;
+grant execute on function public.multideck_accounting_enqueue_parties(uuid,boolean) to service_role;
+
+create function public._accounting_party_changed() returns trigger
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare r jsonb; old_id uuid; new_id uuid;
+begin
+ if tg_op='UPDATE' and to_jsonb(new)=to_jsonb(old) then return new;end if;
+ if tg_table_name in ('ACCI_Connections','cmp_LegalEntities','Org_Types') then
+  perform public.multideck_accounting_enqueue_parties(null);
+  -- Revocation also invalidates previously green rows that no longer qualify
+  -- for the active-connection enqueue query.
+  update public."ACCI_PartySyncQueue" q set revision=q.revision+1,
+   status=case when q.status='processing' then q.status else 'queued' end,next_attempt_at=now(),updated_at=now()
+   where tg_table_name='Org_Types'
+    or (tg_table_name='ACCI_Connections' and q.connection_id=(to_jsonb(new)->>'ACCIC_ID')::uuid)
+    or (tg_table_name='cmp_LegalEntities' and q.connection_id in(select "ACCIC_ID" from public."ACCI_Connections" where "ACCIC_LegalEntityID"=(to_jsonb(new)->>'LegalEntity_ID')::uuid));
+ else
+  if tg_op<>'INSERT' then
+   r:=to_jsonb(old); old_id:=coalesce(r->>'Org_id',r->>'Org_ID',r->>'CRMAccount_OrgID',r->>'CRMAccountOps_OrgID')::uuid;
+   if tg_table_name='Org_AddressTypes' then select "Org_ID" into old_id from public."Org_Addresses" where "OrgAdd_ID"=(r->>'OrgAdd_ID')::uuid;end if;
+   if old_id is not null then perform public.multideck_accounting_enqueue_parties(old_id);end if;
+  end if;
+  if tg_op<>'DELETE' then
+   r:=to_jsonb(new); new_id:=coalesce(r->>'Org_id',r->>'Org_ID',r->>'CRMAccount_OrgID',r->>'CRMAccountOps_OrgID')::uuid;
+   if tg_table_name='Org_AddressTypes' then select "Org_ID" into new_id from public."Org_Addresses" where "OrgAdd_ID"=(r->>'OrgAdd_ID')::uuid;end if;
+   if new_id is not null and new_id is distinct from old_id then perform public.multideck_accounting_enqueue_parties(new_id);end if;
+  end if;
+ end if;
+ -- Removed roles/deleted profiles must also wake existing jobs for scope checks.
+ update public."ACCI_PartySyncQueue" set revision=revision+1,
+ status=case when status='processing' then status else 'queued' end,next_attempt_at=now(),updated_at=now()
+ where org_id in (old_id,new_id);
+ return coalesce(new,old);
+end $$;
+revoke all on function public._accounting_party_changed() from public,anon,authenticated;
+create trigger "TR_accounting_party_master" after insert or update on public."Org_Master" for each row execute function public._accounting_party_changed();
+create trigger "TR_accounting_party_role" after insert or update or delete on public."Org_Master_Type" for each row execute function public._accounting_party_changed();
+create trigger "TR_accounting_party_profile" after insert or update or delete on public."CRM_AccountProfiles" for each row execute function public._accounting_party_changed();
+create trigger "TR_accounting_party_address" after insert or update or delete on public."Org_Addresses" for each row execute function public._accounting_party_changed();
+create trigger "TR_accounting_party_address_roles" after insert or update or delete on public."Org_AddressTypes" for each row execute function public._accounting_party_changed();
+create trigger "TR_accounting_party_preferences" after insert or update or delete on public."CRM_AccountOperationalProfiles" for each row execute function public._accounting_party_changed();
+create trigger "TR_accounting_party_connection" after insert or update of "ACCIC_StatusCode","ACCIC_LegalEntityID","ACCIC_SettingsJSON","ACCIC_ExternalTenantName" on public."ACCI_Connections" for each row execute function public._accounting_party_changed();
+create trigger "TR_accounting_party_type_definition" after update on public."Org_Types" for each row execute function public._accounting_party_changed();
+create trigger "TR_accounting_party_entity" after update of "LegalEntity_IsActive","Company_ID" on public."cmp_LegalEntities" for each row execute function public._accounting_party_changed();
+
+create function public.multideck_accounting_claim_parties(p_limit integer default 5)
+returns setof public."ACCI_PartySyncQueue" language sql security invoker set search_path=pg_catalog,public as $$
+ with due as (
+ select id from public."ACCI_PartySyncQueue"
+ where ((status in ('queued','failed') and next_attempt_at<=now() and attempts<8)
+ or (status='processing' and lease_until<now()))
+ order by next_attempt_at,id for update skip locked limit greatest(1,least(p_limit,10))
+ ) update public."ACCI_PartySyncQueue" q set status='processing',lease_token=gen_random_uuid(),lease_until=now()+interval '5 minutes',attempts=attempts+1
+ from due where q.id=due.id returning q.*;
+$$;
+revoke all on function public.multideck_accounting_claim_parties(integer) from public,anon,authenticated;
+grant execute on function public.multideck_accounting_claim_parties(integer) to service_role;
+
+-- Lease/revision fencing and audit finalisation are one transaction. Stale
+-- responses never turn a newer CRM change green. Existing finance Dexter reads
+-- and deterministic completed-run watch signals consume the same audit records.
+create function public.multideck_accounting_finish_party(p_id uuid,p_token uuid,p_revision bigint,p_result jsonb)
+returns boolean language plpgsql security invoker set search_path=pg_catalog,public as $$
+declare q public."ACCI_PartySyncQueue"; run_id uuid; s text; provider text; org_name text;
+begin
+ select * into q from public."ACCI_PartySyncQueue" where id=p_id for update;
+ if not found or q.lease_token is distinct from p_token or q.status<>'processing' or q.lease_until<now() then return false;end if;
+ s:=p_result->>'status';
+ if s not in ('synced','blocked','failed') or s is null then raise exception 'Invalid result.' using errcode='22023';end if;
+ if s='synced' and (nullif(p_result->>'providerId','') is null or jsonb_typeof(p_result->'verifiedPayload')<>'object') then
+  raise exception 'Provider readback evidence is required.' using errcode='22023';end if;
+ if q.revision<>p_revision then
+  update public."ACCI_PartySyncQueue" set status='queued',lease_token=null,lease_until=null,next_attempt_at=now() where id=q.id;
+  return false;
+ end if;
+ if s='synced' then
+  perform pg_advisory_xact_lock(hashtextextended(q.connection_id::text,0));
+  if exists(select 1 from public."ACCI_PartyMappings" where "ACCIPM_ConnectionID"=q.connection_id and "ACCIPM_IsActive"
+    and "ACCIPM_PartyType" in(q.party_type,'both') and
+    (("ACCIPM_ProviderPartyID"=p_result->>'providerId' and "ACCIPM_OrgID"<>q.org_id)
+     or ("ACCIPM_OrgID"=q.org_id and ("ACCIPM_PartyType"='both' or "ACCIPM_ProviderPartyID"<>p_result->>'providerId')))) then
+   raise exception 'Conflicting provider mapping.' using errcode='23505';end if;
+  insert into public."ACCI_PartyMappings"("ACCIPM_ConnectionID","ACCIPM_OrgID","ACCIPM_PartyType","ACCIPM_ProviderPartyID","ACCIPM_ProviderPartyName","ACCIPM_LastSyncedAt","ACCIPM_IsActive")
+  values(q.connection_id,q.org_id,q.party_type,p_result->>'providerId',p_result->>'providerName',now(),true)
+  on conflict("ACCIPM_ConnectionID","ACCIPM_OrgID","ACCIPM_PartyType") do update set
+    "ACCIPM_ProviderPartyID"=excluded."ACCIPM_ProviderPartyID","ACCIPM_ProviderPartyName"=excluded."ACCIPM_ProviderPartyName","ACCIPM_LastSyncedAt"=now(),"ACCIPM_IsActive"=true;
+ end if;
+ select "ACCIC_ProviderCode" into provider from public."ACCI_Connections" where "ACCIC_ID"=q.connection_id;
+ select "Org_Name" into org_name from public."Org_Master" where "Org_id"=q.org_id;
+ insert into public."ACCI_SyncRuns"("ACCISR_ConnectionID","ACCISR_DirectionCode","ACCISR_StatusCode","ACCISR_StartedAt","ACCISR_RecordsRead","ACCISR_SettingsJSON")
+ values(q.connection_id,case when q.party_type='customer' then 'sales' else 'purchase' end,'processing',now(),1,
+ jsonb_build_object('kind','party_master','partyType',q.party_type,'automatic',true,'scope','party_master','queueId',q.id,'revision',q.revision)) returning "ACCISR_ID" into run_id;
+ insert into public."ACCI_SyncEvents"("ACCISE_SyncRunID","ACCISE_ConnectionID","ACCISE_Severity","ACCISE_EventCode","ACCISE_Message","ACCISE_LocalTable","ACCISE_LocalID","ACCISE_ExternalObjectType","ACCISE_ExternalID","ACCISE_ResponsePayloadJSON")
+ values(run_id,q.connection_id,case when s='synced' then 'info' else 'error' end,case when s='synced' then 'party_account_synced' else 'party_account_sync_failed' end,
+ left(coalesce(p_result->>'message','Account sync completed.'),500),'Org_Master',q.org_id,initcap(q.party_type),p_result->>'providerId',
+ jsonb_build_object('organisationName',org_name,'partyType',q.party_type,'action',coalesce(p_result->>'action',s),'scope','party_master','evidence',p_result->'evidence'));
+ update public."ACCI_SyncRuns" set "ACCISR_StatusCode"=case when s='synced' then 'synced' else 'failed' end,
+ "ACCISR_CompletedAt"=now(),"ACCISR_RecordsUpdated"=case when s='synced' then 1 else 0 end,"ACCISR_RecordsFailed"=case when s='synced' then 0 else 1 end where "ACCISR_ID"=run_id;
+ update public."ACCI_PartySyncQueue" set status=s,lease_token=null,lease_until=null,
+ provider_id=coalesce(p_result->>'providerId',provider_id),
+ verified_payload=case when s='synced' then p_result->'verifiedPayload' else verified_payload end,
+ verified_at=case when s='synced' then now() else verified_at end,evidence=coalesce(p_result->'evidence','{}'),
+ last_error=case when s='synced' then null else left(p_result->>'message',500) end,
+ next_attempt_at=now()+least(3600,power(2,least(attempts,10))::integer*30)*interval '1 second',updated_at=now() where id=q.id;
+ return true;
+end $$;
+revoke all on function public.multideck_accounting_finish_party(uuid,uuid,bigint,jsonb) from public,anon,authenticated;
+grant execute on function public.multideck_accounting_finish_party(uuid,uuid,bigint,jsonb) to service_role;
+
+
+create function public.multideck_accounting_recheck_parties(p_connection uuid)
+returns integer language plpgsql security invoker set search_path=pg_catalog,public as $$
+declare n integer;
+begin
+ -- Backfill all current accounts for the requested connection's company only.
+ perform public.multideck_accounting_enqueue_parties(p."CRMAccount_OrgID")
+ from public."CRM_AccountProfiles" p join public."cmp_LegalEntities" e on e."Company_ID"=p."CRMAccount_CompanyID"
+ join public."ACCI_Connections" c on c."ACCIC_LegalEntityID"=e."LegalEntity_ID" where c."ACCIC_ID"=p_connection and not p."CRMAccount_IsDeleted";
+ update public."ACCI_PartySyncQueue" set status=case when status='processing' then status else 'queued' end,
+ revision=revision+1,attempts=0,next_attempt_at=now(),updated_at=now() where connection_id=p_connection;
+ get diagnostics n=row_count; return n;
+end $$;
+revoke all on function public.multideck_accounting_recheck_parties(uuid) from public,anon,authenticated;
+grant execute on function public.multideck_accounting_recheck_parties(uuid) to service_role;
+
+create table public."ACCI_PartyWorkerSettings"(singleton boolean primary key default true check(singleton),endpoint text not null,enabled boolean not null default false,last_check_at timestamptz);
+alter table public."ACCI_PartyWorkerSettings" enable row level security;
+revoke all on public."ACCI_PartyWorkerSettings" from public,anon,authenticated;
+grant select,insert,update on public."ACCI_PartyWorkerSettings" to service_role;
+
+create function public.multideck_accounting_party_health(p_connection uuid)
+returns jsonb language sql stable security invoker set search_path=pg_catalog,public as $$
+ select jsonb_build_object('scope','party_master','connectionId',p_connection,'checkedAt',now(),
+ 'workerEnabled',coalesce((select enabled from public."ACCI_PartyWorkerSettings" where singleton),false),
+ 'total',count(*),'synced',count(*) filter(where status='synced'),
+ 'queued',count(*) filter(where status in ('queued','processing')),
+ 'attention',count(*) filter(where status in ('blocked','failed')),
+ 'oldestVerification',min(verified_at),'fullLedgerReconciled',false,
+ 'issues',coalesce((select jsonb_agg(r) from (
+ select q.id,q.org_id,o."Org_Name" as organisation_name,q.party_type,q.status,q.last_error,q.attempts,q.verified_at,q.provider_id from public."ACCI_PartySyncQueue" q join public."Org_Master" o on o."Org_id"=q.org_id
+ where q.connection_id=p_connection and q.status<>'synced' order by q.updated_at limit 100) r),'[]'::jsonb))
+ from public."ACCI_PartySyncQueue" where connection_id=p_connection;
+$$;
+revoke all on function public.multideck_accounting_party_health(uuid) from public,anon,authenticated;
+grant execute on function public.multideck_accounting_party_health(uuid) to service_role;
+
+create function public.multideck_accounting_party_settings(p_connection uuid,p_settings jsonb,p_actor uuid)
+returns void language plpgsql security invoker set search_path=pg_catalog,public as $$
+begin
+ update public."ACCI_Connections" set "ACCIC_SettingsJSON"=jsonb_set("ACCIC_SettingsJSON",'{partySync}',p_settings),"ACCIC_UpdatedAt"=now(),"ACCIC_UpdatedBy"=p_actor
+ where "ACCIC_ID"=p_connection;
+ if not found then raise exception 'Accounting connection not found.' using errcode='P0002';end if;
+ insert into public."ACCI_SyncEvents"("ACCISE_ConnectionID","ACCISE_Severity","ACCISE_EventCode","ACCISE_Message","ACCISE_ResponsePayloadJSON")
+ values(p_connection,'info','party_sync_settings_changed','Automatic account sync settings changed.',jsonb_build_object('actorId',p_actor,'settings',p_settings));
+end $$;
+revoke all on function public.multideck_accounting_party_settings(uuid,jsonb,uuid) from public,anon,authenticated;
+grant execute on function public.multideck_accounting_party_settings(uuid,jsonb,uuid) to service_role;
+
+-- Deployment opts the intended tenant into its worker. Secrets stay in Vault;
+-- the service-only setup RPC is called by the deployment operator, never a UI.
+create function public.multideck_accounting_worker_secret() returns text
+language sql security definer set search_path=pg_catalog,public as $$
+ select decrypted_secret from vault.decrypted_secrets where name='multideck_accounting_party_worker_secret' limit 1;
+$$;
+revoke all on function public.multideck_accounting_worker_secret() from public,anon,authenticated;
+grant execute on function public.multideck_accounting_worker_secret() to service_role;
+create function public._accounting_party_kick() returns void
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare endpoint text; secret text;
+begin
+ select s.endpoint into endpoint from public."ACCI_PartyWorkerSettings" s where s.enabled;
+ if endpoint is null then return;end if;
+ secret:=public.multideck_accounting_worker_secret(); if secret is null then return;end if;
+ perform net.http_post(url:=endpoint,headers:=jsonb_build_object('Content-Type','application/json','x-multideck-accounting-secret',secret),body:='{}'::jsonb,timeout_milliseconds:=55000);
+end $$;
+revoke all on function public._accounting_party_kick() from public,anon,authenticated;
+grant execute on function public._accounting_party_kick() to service_role;
+create function public.multideck_accounting_configure_worker(p_endpoint text,p_enabled boolean)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+ if p_endpoint !~ '^https://[a-z0-9]+\.supabase\.co/functions/v1/accounting-party-worker$' then raise exception 'Use the intended tenant Supabase worker URL.' using errcode='22023';end if;
+ if not exists(select 1 from vault.decrypted_secrets where name='multideck_accounting_party_worker_secret') then
+  perform vault.create_secret(gen_random_uuid()::text||gen_random_uuid()::text,'multideck_accounting_party_worker_secret');end if;
+ insert into public."ACCI_PartyWorkerSettings"(endpoint,enabled) values(p_endpoint,p_enabled)
+ on conflict(singleton) do update set endpoint=excluded.endpoint,enabled=excluded.enabled;
+ if p_enabled then perform cron.schedule('multideck-accounting-parties','* * * * *','select public._accounting_party_kick()');
+ elsif exists(select 1 from cron.job where jobname='multideck-accounting-parties') then perform cron.unschedule('multideck-accounting-parties');end if;
+end $$;
+revoke all on function public.multideck_accounting_configure_worker(text,boolean) from public,anon,authenticated;
+grant execute on function public.multideck_accounting_configure_worker(text,boolean) to service_role;
+
+-- A single daily catch-up per tenant also detects provider edits without webhook
+-- delivery. Row locking makes simultaneous cron invocations harmless.
+create function public.multideck_accounting_party_catchup() returns void
+language plpgsql security invoker set search_path=pg_catalog,public as $$
+begin
+ perform 1 from public."ACCI_PartyWorkerSettings" where enabled and (last_check_at is null or last_check_at<now()-interval '1 day') for update skip locked;
+ if not found then return;end if;
+ perform public.multideck_accounting_enqueue_parties(null,false);
+ update public."ACCI_PartySyncQueue" set status='queued',revision=revision+1,attempts=0,next_attempt_at=now(),updated_at=now()
+ where status='synced' and verified_at<now()-interval '1 day';
+ update public."ACCI_PartyWorkerSettings" set last_check_at=now() where enabled;
+end $$;
+revoke all on function public.multideck_accounting_party_catchup() from public,anon,authenticated;
+grant execute on function public.multideck_accounting_party_catchup() to service_role;
+select public.multideck_accounting_enqueue_parties(null);
+commit;
+
+begin;
+alter function public.multideck_finance_cost_review(uuid,uuid,integer,text) rename to _multideck_cost_review_before_controls;
+revoke all on function public._multideck_cost_review_before_controls(uuid,uuid,integer,text) from public,anon,authenticated;
+create function public.multideck_finance_cost_review(p_actor uuid,p_entity uuid,p_offset integer default 0,p_search text default '')
+returns jsonb language plpgsql stable security invoker set search_path=pg_catalog,public as $$
+declare result jsonb; rows jsonb:='[]'; row jsonb; final public."FIN_CostFinalisations"; evidence public."FIN_CostEvidence";
+begin
+  result:=public._multideck_cost_review_before_controls(p_actor,p_entity,p_offset,p_search);
+  for row in select value from jsonb_array_elements(result->'rows') loop
+    select * into final from public."FIN_CostFinalisations" where legal_entity_id=p_entity and charge_id=(row->>'id')::uuid order by evaluated_at desc,id desc limit 1;
+    select * into evidence from public."FIN_CostEvidence" where legal_entity_id=p_entity and charge_id=(row->>'id')::uuid order by recorded_at desc,id desc limit 1;
+    if final.status in ('posted','settled') then
+      if final.evidence_id=evidence.id and evidence.source_revision=md5(public._multideck_cost_source(p_entity,(row->>'id')::uuid)::text) then
+        row:=row||jsonb_build_object('remainingEstimate','0.0000','reasons',jsonb_build_array('Final invoice confirmed; residual settled'));
+      else
+        row:=row||jsonb_build_object('remainingEstimate',null,'reasons',(row->'reasons')||jsonb_build_array('Finalised charge changed; review late invoice or estimate'));
+      end if;
+    elsif final.status='review' then
+      row:=row||jsonb_build_object('reasons',(row->'reasons')||jsonb_build_array(final.reason));
+    elsif evidence.is_final and evidence.source_revision=md5(public._multideck_cost_source(p_entity,(row->>'id')::uuid)::text) then
+      row:=jsonb_set(row,'{reasons}',coalesce((select jsonb_agg(value) from jsonb_array_elements(row->'reasons') where value<>'"Confirm partial or final invoice"'::jsonb),'[]'::jsonb)||jsonb_build_array('Final invoice confirmed; awaiting controlled evaluation'));
+    end if;
+    rows:=rows||jsonb_build_array(row);
+  end loop;
+  return result||jsonb_build_object('mode','controlled','rows',rows);
+end; $$;
+revoke all on function public.multideck_finance_cost_review(uuid,uuid,integer,text) from public,anon,authenticated;
+grant execute on function public.multideck_finance_cost_review(uuid,uuid,integer,text) to service_role;
+comment on function public.multideck_finance_cost_review(uuid,uuid,integer,text) is 'Lifetime cost review with persisted finalisation evidence. Stale finals require review; settled residuals are not presented as remaining liabilities.';
+commit;
+
+-- Incoming changes are compared with retained delivery evidence, never posted.
+begin;
+-- Failed deliveries retain identity without claiming a successful sync time.
+alter table public."ACCI_ExternalRefs" alter column "ACCIER_LastSyncedAt" drop not null;
+alter table public."ACCI_WebhookEvents"
+  add column "ACCIWH_LeaseToken" uuid,
+  add column "ACCIWH_LeaseUntil" timestamptz,
+  add column "ACCIWH_Attempts" integer not null default 0,
+  add column "ACCIWH_NextAttemptAt" timestamptz not null default now(),
+  add column "ACCIWH_ProcessingEvidence" jsonb;
+alter table public."ACCI_ReconciliationIssues"
+  add column "ACCIRI_WebhookEventID" uuid references public."ACCI_WebhookEvents"("ACCIWH_ID");
+create unique index "UX_ACCI_ReconciliationIssues_webhook" on public."ACCI_ReconciliationIssues"("ACCIRI_WebhookEventID");
+create index "IX_ACCI_WebhookEvents_pending" on public."ACCI_WebhookEvents"("ACCIWH_NextAttemptAt")
+  where "ACCIWH_ProcessingStatusCode" in ('queued','failed','processing');
+
+create function public.multideck_erpnext_claim_inbound(p_limit integer default 5)
+returns jsonb language plpgsql security invoker set search_path = pg_catalog, public as $$
+declare v_jobs jsonb;
+begin
+  with candidates as (
+    select "ACCIWH_ID" from public."ACCI_WebhookEvents"
+    where "ACCIWH_ProviderCode"='erpnext' and "ACCIWH_SignatureVerified"
+      and "ACCIWH_DeliveryKey" is not null
+      and (("ACCIWH_ProcessingStatusCode" in ('queued','failed') and "ACCIWH_Attempts" < 8 and "ACCIWH_NextAttemptAt"<=now())
+        or ("ACCIWH_ProcessingStatusCode"='processing' and "ACCIWH_LeaseUntil"<now()))
+    order by "ACCIWH_ReceivedAt", "ACCIWH_ID"
+    limit greatest(1,least(coalesce(p_limit,5),10)) for update skip locked
+  ), claimed as (
+    update public."ACCI_WebhookEvents" e set "ACCIWH_ProcessingStatusCode"='processing',
+      "ACCIWH_LeaseToken"=gen_random_uuid(), "ACCIWH_LeaseUntil"=now()+interval '5 minutes',
+      "ACCIWH_Attempts"=least("ACCIWH_Attempts"+1,8)
+    from candidates c where c."ACCIWH_ID"=e."ACCIWH_ID" returning e.*
+  ) select coalesce(jsonb_agg(to_jsonb(claimed)), '[]'::jsonb) into v_jobs from claimed;
+  return v_jobs;
+end $$;
+
+-- One transaction retains processing evidence, creates the review issue and
+-- publishes the audit event. Old workers cannot complete a reclaimed receipt.
+create function public.multideck_erpnext_finish_inbound(p_id uuid,p_token uuid,p_result jsonb)
+returns boolean language plpgsql security invoker set search_path = pg_catalog, public as $$
+declare
+  v_event public."ACCI_WebhookEvents"; v_connection public."ACCI_Connections";
+  v_ref public."ACCI_ExternalRefs"; v_outcome text; v_status text; v_message text;
+  v_scope boolean; v_ref_count integer;
+begin
+  select * into v_event from public."ACCI_WebhookEvents" where "ACCIWH_ID"=p_id for update;
+  if not found or v_event."ACCIWH_ProcessingStatusCode"<>'processing'
+    or v_event."ACCIWH_LeaseToken" is distinct from p_token or v_event."ACCIWH_LeaseUntil"<=now() then return false; end if;
+  if jsonb_typeof(p_result) is distinct from 'object' or octet_length(p_result::text)>262144
+    or coalesce(p_result->>'outcome','') not in ('matched','review','retry') then
+    raise exception 'Invalid inbound result.' using errcode='22023';
+  end if;
+  v_outcome:=p_result->>'outcome';
+  v_message:=left(coalesce(p_result->>'message','ERPNext change needs review.'),500);
+  select * into v_connection from public."ACCI_Connections" where "ACCIC_ID"=v_event."ACCIWH_ConnectionID" for share;
+  select true into v_scope from public."cmp_LegalEntities" where "LegalEntity_ID"=v_connection."ACCIC_LegalEntityID"
+    and "LegalEntity_IsActive" and "Company_ID" is not null for share;
+  if not coalesce(v_scope,false) or v_connection."ACCIC_StatusCode" is distinct from 'active'
+    or v_connection."ACCIC_ProviderCode" is distinct from 'erpnext'
+    or v_connection."ACCIC_ExternalTenantName" is distinct from v_event."ACCIWH_ExternalCompany" then
+    v_outcome:='review'; v_message:='The ERPNext connection scope changed. Review this retained event.';
+  end if;
+  select count(*) into v_ref_count from public."ACCI_ExternalRefs"
+    where "ACCIER_ConnectionID"=v_event."ACCIWH_ConnectionID"
+      and "ACCIER_ExternalObjectType"=v_event."ACCIWH_ExternalObjectType" and "ACCIER_ExternalID"=v_event."ACCIWH_ExternalID";
+  if v_ref_count=1 then
+    select * into v_ref from public."ACCI_ExternalRefs"
+      where "ACCIER_ConnectionID"=v_event."ACCIWH_ConnectionID"
+        and "ACCIER_ExternalObjectType"=v_event."ACCIWH_ExternalObjectType" and "ACCIER_ExternalID"=v_event."ACCIWH_ExternalID" for share;
+  end if;
+  -- Bind a green result to precisely the retained reference read by the worker.
+  if v_outcome='matched' and (nullif(p_result->>'reviewedSite','') is null
+    or p_result->>'reviewedSite' is distinct from v_connection."ACCIC_SettingsJSON"#>>'{partySync,siteOrigin}'
+    or v_ref_count<>1 or v_ref."ACCIER_SyncStatusCode" is distinct from 'synced'
+    or p_result->>'referenceId' is distinct from v_ref."ACCIER_ID"::text
+    or p_result->'expectedPayload' is distinct from v_ref."ACCIER_LastPayloadJSON") then
+    v_outcome:='retry'; v_message:='Delivery evidence changed during the check. A fresh check is required.';
+  end if;
+  if v_outcome='retry' and v_event."ACCIWH_Attempts">=8 then
+    v_outcome:='review'; v_message:='ERPNext incoming change could not be verified after eight attempts. Review the connection and retained event.';
+  end if;
+  v_status:=case v_outcome when 'matched' then 'synced' when 'review' then 'blocked' else 'failed' end;
+  update public."ACCI_WebhookEvents" set "ACCIWH_ProcessingStatusCode"=v_status,
+    "ACCIWH_LeaseToken"=null,"ACCIWH_LeaseUntil"=null,
+    "ACCIWH_ProcessedAt"=case when v_outcome='retry' then null else now() end,
+    "ACCIWH_ErrorMessage"=case when v_outcome='matched' then null else v_message end,
+    "ACCIWH_NextAttemptAt"=now()+make_interval(secs=>least(3600,30*power(2,v_event."ACCIWH_Attempts")::integer)),
+    "ACCIWH_ProcessingEvidence"=(p_result-'expectedPayload')||jsonb_build_object('outcome',v_outcome,'scope','document_delivery','checkedAt',now(),'fullLedgerReconciled',false)
+    where "ACCIWH_ID"=p_id;
+  -- A deleted connection still leaves its event blocked, without inventing a
+  -- new tenant or transferring the evidence to a different connection.
+  if v_connection."ACCIC_ID" is not null and v_outcome<>'retry' then
+    if v_outcome='review' then
+      insert into public."ACCI_ReconciliationIssues"("ACCIRI_ConnectionID","ACCIRI_ExternalRefID","ACCIRI_LocalTable","ACCIRI_LocalID",
+        "ACCIRI_IssueType","ACCIRI_Severity","ACCIRI_StatusCode","ACCIRI_Title","ACCIRI_DetailText","ACCIRI_WebhookEventID")
+      values(v_connection."ACCIC_ID",v_ref."ACCIER_ID",v_ref."ACCIER_LocalTable",v_ref."ACCIER_LocalID",
+        'provider_inbound_review','error','queued','ERPNext change needs reconciliation',v_message,p_id)
+      on conflict ("ACCIRI_WebhookEventID") do nothing;
+    end if;
+    insert into public."ACCI_SyncEvents"("ACCISE_ConnectionID","ACCISE_Severity","ACCISE_EventCode","ACCISE_Message",
+      "ACCISE_LocalTable","ACCISE_LocalID","ACCISE_ExternalObjectType","ACCISE_ExternalID","ACCISE_RequestID","ACCISE_ResponsePayloadJSON")
+    values(v_connection."ACCIC_ID",case when v_outcome='matched' then 'info' else 'error' end,
+      'provider_inbound_'||v_outcome,v_message,v_ref."ACCIER_LocalTable",v_ref."ACCIER_LocalID",
+      v_event."ACCIWH_ExternalObjectType",v_event."ACCIWH_ExternalID",p_id::text,
+      jsonb_build_object('receiptId',p_id,'outcome',v_outcome,'scope','document_delivery','fullLedgerReconciled',false));
+  end if;
+  return true;
+end $$;
+revoke all on function public.multideck_erpnext_claim_inbound(integer),public.multideck_erpnext_finish_inbound(uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.multideck_erpnext_claim_inbound(integer),public.multideck_erpnext_finish_inbound(uuid,uuid,jsonb) to service_role;
+create function public.multideck_erpnext_inbound_health(p_connection uuid)
+returns jsonb language sql security invoker set search_path = pg_catalog,public as $$
+  select jsonb_build_object('scope','document_delivery','fullLedgerReconciled',false,
+    'pending',count(*) filter(where "ACCIWH_ProcessingStatusCode" in ('queued','processing','failed')),
+    'matched',count(*) filter(where "ACCIWH_ProcessingStatusCode"='synced'),
+    'attention',count(*) filter(where "ACCIWH_ProcessingStatusCode"='blocked'),
+    'issues',coalesce((select jsonb_agg(row_to_json(r)) from (
+      select "ACCIWH_ID" as id,"ACCIWH_ExternalObjectType" as document_type,"ACCIWH_ExternalID" as document_number,
+        "ACCIWH_ErrorMessage" as message,"ACCIWH_ReceivedAt" as received_at
+      from public."ACCI_WebhookEvents" where "ACCIWH_ConnectionID"=p_connection
+        and "ACCIWH_ProcessingStatusCode"='blocked' order by "ACCIWH_ReceivedAt" desc limit 100
+    ) r),'[]'::jsonb))
+  from public."ACCI_WebhookEvents" where "ACCIWH_ConnectionID"=p_connection and "ACCIWH_DeliveryKey" is not null;
+$$;
+revoke all on function public.multideck_erpnext_inbound_health(uuid) from public,anon,authenticated;
+grant execute on function public.multideck_erpnext_inbound_health(uuid) to service_role;
+commit;
+
+begin;
+
+-- Headers are deliberately not FIN_NominalAccounts: a header can never satisfy
+-- the existing posting-line FK. Existing charts and postings remain unchanged.
+create table public."FIN_NominalGroups" (
+  id uuid primary key default gen_random_uuid(),
+  legal_entity_id uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
+  code text not null check(length(code) between 1 and 80 and code=btrim(code)),
+  name text not null check(length(btrim(name)) between 1 and 180),
+  kind text not null check(kind in ('cost','revenue')),
+  control_account_id uuid not null references public."FIN_NominalAccounts"("FINNom_ID"),
+  created_by uuid not null references public."cmp_Users"("User_ID"),
+  created_at timestamptz not null default now(),
+  unique(legal_entity_id,code)
+);
+create index on public."FIN_NominalGroups"(control_account_id);
+create table public."FIN_NominalGroupMembers" (
+  account_id uuid primary key references public."FIN_NominalAccounts"("FINNom_ID"),
+  group_id uuid not null references public."FIN_NominalGroups"(id),
+  role text not null check(role in ('actual','accrued')),
+  unique(group_id,role)
+);
+create table public."FIN_ChargeNominalMappings" (
+  legal_entity_id uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
+  charge_id uuid not null references public."RATE_ChargeCodes"("RATECharge_ID"),
+  cost_group_id uuid references public."FIN_NominalGroups"(id),
+  revenue_group_id uuid references public."FIN_NominalGroups"(id),
+  version integer not null default 1 check(version>0),
+  updated_by uuid not null references public."cmp_Users"("User_ID"),
+  updated_at timestamptz not null default now(),
+  primary key(legal_entity_id,charge_id),
+  check(cost_group_id is not null or revenue_group_id is not null)
+);
+create index on public."FIN_ChargeNominalMappings"(charge_id);
+create index on public."FIN_ChargeNominalMappings"(cost_group_id);
+create index on public."FIN_ChargeNominalMappings"(revenue_group_id);
+create table public."FIN_NominalStructureAudit" (
+  id uuid primary key default gen_random_uuid(),
+  legal_entity_id uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
+  actor_id uuid not null references public."cmp_Users"("User_ID"),
+  action text not null,
+  before_snapshot jsonb,
+  after_snapshot jsonb not null,
+  recorded_at timestamptz not null default now()
+);
+create index on public."FIN_NominalStructureAudit"(legal_entity_id,recorded_at desc);
+alter table public."FIN_NominalGroups" enable row level security;
+alter table public."FIN_NominalGroupMembers" enable row level security;
+alter table public."FIN_ChargeNominalMappings" enable row level security;
+alter table public."FIN_NominalStructureAudit" enable row level security;
+revoke all on public."FIN_NominalGroups",public."FIN_NominalGroupMembers",public."FIN_ChargeNominalMappings",public."FIN_NominalStructureAudit" from public,anon,authenticated;
+grant select,insert on public."FIN_NominalGroups",public."FIN_NominalGroupMembers",public."FIN_NominalStructureAudit" to service_role;
+grant select,insert,update on public."FIN_ChargeNominalMappings" to service_role;
+
+create function public._multideck_nominal_structure_immutable() returns trigger
+language plpgsql set search_path=pg_catalog,public as $$
+begin
+  raise exception 'Nominal group identities and their audit history cannot be rewritten.' using errcode='22023';
+end; $$;
+create trigger nominal_groups_immutable before update or delete on public."FIN_NominalGroups" for each row execute function public._multideck_nominal_structure_immutable();
+create trigger nominal_members_immutable before update or delete on public."FIN_NominalGroupMembers" for each row execute function public._multideck_nominal_structure_immutable();
+create trigger nominal_structure_audit_immutable before update or delete on public."FIN_NominalStructureAudit" for each row execute function public._multideck_nominal_structure_immutable();
+revoke all on function public._multideck_nominal_structure_immutable() from public,anon,authenticated;
+
+-- Called again when resolving mappings so disabling/reclassifying a nominal does
+-- not leave an apparently usable relationship behind.
+create function public._multideck_validate_nominal_group(p_entity uuid,p_group uuid,p_kind text)
+returns jsonb language plpgsql set search_path=pg_catalog,public as $$
+declare g public."FIN_NominalGroups"; n public."FIN_NominalAccounts"; m record; result jsonb;
+begin
+  select * into g from public."FIN_NominalGroups" where id=p_group and legal_entity_id=p_entity and kind=p_kind for share;
+  if not found then raise exception 'Choose a group of the correct kind in this legal entity.' using errcode='22023'; end if;
+  select * into n from public."FIN_NominalAccounts" where "FINNom_ID"=g.control_account_id for share;
+  if not found or n."FINNom_LegalEntityID" is distinct from p_entity or not n."FINNom_IsActive" or not n."FINNom_IsControlAccount"
+    or n."FINNom_ReportCategoryCode" is distinct from (case when p_kind='cost' then 'liability' else 'asset' end) then
+    raise exception 'Choose an active balance-sheet accrual or WIP control in this legal entity.' using errcode='22023';
+  end if;
+  if (select count(*) from public."FIN_NominalGroupMembers" where group_id=p_group)<>2 then
+    raise exception 'Each group requires an actual and an accrued posting account.' using errcode='22023';
+  end if;
+  result:=to_jsonb(g);
+  for m in select * from public."FIN_NominalGroupMembers" where group_id=p_group order by role loop
+    select * into n from public."FIN_NominalAccounts" where "FINNom_ID"=m.account_id for share;
+    if not found or n."FINNom_LegalEntityID" is distinct from p_entity or not n."FINNom_IsActive" or n."FINNom_IsControlAccount"
+      or not coalesce(case when p_kind='revenue' then n."FINNom_ReportCategoryCode"='income'
+        else n."FINNom_ReportCategoryCode" in ('direct_cost','expense') end,false) then
+      raise exception 'Actual and accrued accounts must be active, non-control P&L accounts of the correct kind in this legal entity.' using errcode='22023';
+    end if;
+    result:=result||jsonb_build_object(m.role,jsonb_build_object('id',n."FINNom_ID",'code',n."FINNom_Code",'name',n."FINNom_Name"));
+  end loop;
+  return result;
+end; $$;
+revoke all on function public._multideck_validate_nominal_group(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public._multideck_validate_nominal_group(uuid,uuid,text) to service_role;
+
+create function public.multideck_finance_nominal_structure(p_actor uuid,p_entity uuid,p_action text,p_input jsonb default '{}')
+returns jsonb language plpgsql set search_path=pg_catalog,public as $$
+declare g public."FIN_NominalGroups"; m public."FIN_ChargeNominalMappings"; result jsonb; previous jsonb; gid uuid; cid uuid; rid uuid;
+begin
+  perform public._multideck_journal_access(p_actor,p_entity,case when p_action='read' then 'Finance.Management.View' else 'Finance.Configuration.Manage' end);
+  if p_action='read' then
+    return jsonb_build_object('groups',coalesce((select jsonb_agg(to_jsonb(x) order by code) from public."FIN_NominalGroups" x where legal_entity_id=p_entity),'[]'::jsonb),
+      'members',coalesce((select jsonb_agg(to_jsonb(member)) from public."FIN_NominalGroupMembers" member join public."FIN_NominalGroups" grp on grp.id=member.group_id where grp.legal_entity_id=p_entity),'[]'::jsonb),
+      'chargeMappings',coalesce((select jsonb_agg(to_jsonb(x) order by charge_id) from public."FIN_ChargeNominalMappings" x where legal_entity_id=p_entity),'[]'::jsonb));
+  end if;
+  -- Serialise group allocation and mapping revisions for this entity.
+  perform 1 from public."cmp_LegalEntities" where "LegalEntity_ID"=p_entity for update;
+  if p_action='create_group' then
+    insert into public."FIN_NominalGroups"(legal_entity_id,code,name,kind,control_account_id,created_by)
+    values(p_entity,p_input->>'code',p_input->>'name',p_input->>'kind',(p_input->>'controlAccountId')::uuid,p_actor) returning * into g;
+    insert into public."FIN_NominalGroupMembers"(group_id,account_id,role) values
+      (g.id,(p_input->>'actualAccountId')::uuid,'actual'),(g.id,(p_input->>'accruedAccountId')::uuid,'accrued');
+    result:=public._multideck_validate_nominal_group(p_entity,g.id,g.kind);
+  elsif p_action='map_charge' then
+    gid:=(p_input->>'chargeId')::uuid; cid:=nullif(p_input->>'costGroupId','')::uuid; rid:=nullif(p_input->>'revenueGroupId','')::uuid;
+    perform 1 from public."RATE_ChargeCodes" where "RATECharge_ID"=gid and "RATECharge_IsActive" for share;
+    if not found then raise exception 'Choose an active charge code.' using errcode='22023'; end if;
+    if cid is not null then perform public._multideck_validate_nominal_group(p_entity,cid,'cost'); end if;
+    if rid is not null then perform public._multideck_validate_nominal_group(p_entity,rid,'revenue'); end if;
+    select * into m from public."FIN_ChargeNominalMappings" where legal_entity_id=p_entity and charge_id=gid for update;
+    if coalesce(m.version,0) is distinct from (p_input->>'version')::integer then
+      raise exception 'The charge mapping changed. Refresh and review before saving.' using errcode='22023';
+    end if;
+    previous:=case when m.charge_id is not null then to_jsonb(m) end;
+    insert into public."FIN_ChargeNominalMappings"(legal_entity_id,charge_id,cost_group_id,revenue_group_id,updated_by)
+      values(p_entity,gid,cid,rid,p_actor)
+      on conflict(legal_entity_id,charge_id) do update set cost_group_id=excluded.cost_group_id,revenue_group_id=excluded.revenue_group_id,
+        version="FIN_ChargeNominalMappings".version+1,updated_by=p_actor,updated_at=now() returning * into m;
+    result:=to_jsonb(m);
+  else raise exception 'Unknown nominal structure action.' using errcode='22023';
+  end if;
+  insert into public."FIN_NominalStructureAudit"(legal_entity_id,actor_id,action,before_snapshot,after_snapshot) values(p_entity,p_actor,p_action,previous,result);
+  return result;
+end; $$;
+revoke all on function public.multideck_finance_nominal_structure(uuid,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.multideck_finance_nominal_structure(uuid,uuid,text,jsonb) to service_role;
+
+-- No fallback: callers cannot accidentally use another entity's mapping or an
+-- old generic nominal. This resolver does not itself post or activate cutover.
+create function public.multideck_finance_resolve_charge_nominals(p_actor uuid,p_entity uuid,p_charge uuid)
+returns jsonb language plpgsql set search_path=pg_catalog,public as $$
+declare m public."FIN_ChargeNominalMappings";
+begin
+  perform public._multideck_journal_access(p_actor,p_entity,'Finance.Management.View');
+  perform 1 from public."RATE_ChargeCodes" where "RATECharge_ID"=p_charge and "RATECharge_IsActive" for share;
+  if not found then raise exception 'Charge code is inactive or unavailable.' using errcode='22023'; end if;
+  select * into m from public."FIN_ChargeNominalMappings" where legal_entity_id=p_entity and charge_id=p_charge for share;
+  if not found then raise exception 'Configure this charge code for the selected legal entity before posting.' using errcode='22023'; end if;
+  return jsonb_build_object('version',m.version,'chargeId',p_charge,'legalEntityId',p_entity,
+    'cost',case when m.cost_group_id is not null then public._multideck_validate_nominal_group(p_entity,m.cost_group_id,'cost') end,
+    'revenue',case when m.revenue_group_id is not null then public._multideck_validate_nominal_group(p_entity,m.revenue_group_id,'revenue') end);
+end; $$;
+revoke all on function public.multideck_finance_resolve_charge_nominals(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.multideck_finance_resolve_charge_nominals(uuid,uuid,uuid) to service_role;
+commit;
+
+begin;
+
+-- Preserve existing classifications; never reinterpret historical balances from
+-- a CargoWise (or tenant-defined) numbering convention.
+create or replace function public._multideck_finance_derive_report_category()
+returns trigger language plpgsql set search_path=pg_catalog,public as $$
+begin
+  if new."FINNom_ReportCategoryCode" is not null then return new; end if;
+  new."FINNom_ReportCategoryCode":=case lower(btrim(new."FINNom_AccountTypeCode"))
+    when 'bank' then 'asset'
+    when 'receivable' then 'asset'
+    when 'current asset' then 'asset'
+    when 'fixed asset' then 'asset'
+    when 'payable' then 'liability'
+    when 'current liability' then 'liability'
+    when 'long term liability' then 'liability'
+    when 'equity' then 'equity'
+    when 'income account' then 'income'
+    when 'cost of goods sold' then 'direct_cost'
+    when 'expense account' then 'expense'
+    else null end;
+  if new."FINNom_ReportCategoryCode" is null then
+    raise exception 'Choose an explicit report category for this nominal account.' using errcode='22023';
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_derive_report_category() from public,anon,authenticated;
+
+-- Extend the existing atomic, permissioned and audited administration writer.
+-- Fail closed if its source has changed rather than silently dropping the field.
+do $patch$
+declare definition text; original text; segment text; revised text; start_at integer; finish_at integer;
+begin
+  definition:=pg_get_functiondef('public.multideck_finance_save_administration(uuid,uuid,uuid,jsonb,text)'::regprocedure);
+  start_at:=strpos(definition,'  for v_item in select value from jsonb_array_elements(coalesce(p_settings->''nominalAccounts''');
+  finish_at:=strpos(definition,'  for v_item in select value from jsonb_array_elements(coalesce(p_settings->''banks''');
+  if start_at=0 or finish_at<=start_at then raise exception 'Finance nominal writer has changed; review the classification migration.'; end if;
+  segment:=substring(definition from start_at for finish_at-start_at); original:=segment;
+  segment:=replace(segment,'"FINNom_Code","FINNom_Name","FINNom_AccountTypeCode",','"FINNom_Code","FINNom_Name","FINNom_ReportCategoryCode","FINNom_AccountTypeCode",');
+  segment:=replace(segment,'values(v_code,coalesce(nullif(btrim(v_item->>''name''),''''),v_code),','values(v_code,coalesce(nullif(btrim(v_item->>''name''),''''),v_code),nullif(v_item->>''reportCategoryCode'',''''),');
+  segment:=replace(segment,'"FINNom_Name"=excluded."FINNom_Name",','"FINNom_Name"=excluded."FINNom_Name","FINNom_ReportCategoryCode"=case when v_item ? ''reportCategoryCode'' then excluded."FINNom_ReportCategoryCode" else "FIN_NominalAccounts"."FINNom_ReportCategoryCode" end,');
+  segment:=replace(segment,'set "FINNom_Code"=v_code,','set "FINNom_Code"=v_code,"FINNom_ReportCategoryCode"=case when v_item ? ''reportCategoryCode'' then nullif(v_item->>''reportCategoryCode'','''') else "FINNom_ReportCategoryCode" end,');
+  if segment=original or strpos(segment,'nullif(v_item->>''reportCategoryCode'','''')')=0 then raise exception 'Report classification was not added to the finance writer.'; end if;
+  revised:=overlay(definition placing segment from start_at for finish_at-start_at);
+  execute revised;
+end; $patch$;
+commit;
+begin;
+
+-- Existing codes stay available until an administrator explicitly configures
+-- their scope. A configured code must have at least one allowed combination.
+alter table public."RATE_ChargeCodes"
+  add column "RATECharge_ScopeConfigured" boolean not null default false,
+  add column "RATECharge_Version" integer not null default 1 check ("RATECharge_Version" > 0);
+
+create table public."RATE_ChargeApplicability" (
+  charge_id uuid not null references public."RATE_ChargeCodes"("RATECharge_ID") on delete cascade,
+  record_kind text not null check (record_kind in ('quote','booking')),
+  direction text not null check (direction in ('import','export','cross_trade','other')),
+  mode text not null check (mode in ('air','sea','road','mix','other')),
+  primary key (charge_id,record_kind,direction,mode)
+);
+create index on public."RATE_ChargeApplicability"(record_kind,direction,mode,charge_id);
+alter table public."RATE_ChargeApplicability" enable row level security;
+revoke all on public."RATE_ChargeApplicability" from public,anon,authenticated;
+grant select,insert,delete on public."RATE_ChargeApplicability" to service_role;
+
+create table public."RATE_ChargeCatalogueAudit" (
+  id uuid primary key default gen_random_uuid(),
+  charge_id uuid not null references public."RATE_ChargeCodes"("RATECharge_ID"),
+  actor_id uuid not null references public."cmp_Users"("User_ID"),
+  legal_entity_id uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
+  before_snapshot jsonb,
+  after_snapshot jsonb not null,
+  recorded_at timestamptz not null default now()
+);
+alter table public."RATE_ChargeCatalogueAudit" enable row level security;
+revoke all on public."RATE_ChargeCatalogueAudit" from public,anon,authenticated;
+grant select,insert on public."RATE_ChargeCatalogueAudit" to service_role;
+
+create function public.multideck_manage_charge_catalogue(p_actor uuid,p_entity uuid,p_input jsonb)
+returns jsonb language plpgsql set search_path=pg_catalog,public as $$
+declare
+  charge public."RATE_ChargeCodes";
+  before_state jsonb;
+  result jsonb;
+  matrix jsonb := p_input->'applicability';
+  item jsonb;
+  v_charge_id uuid := nullif(p_input->>'id','')::uuid;
+  expected_version integer := coalesce((p_input->>'version')::integer,0);
+  code text := upper(btrim(p_input->>'code'));
+  name text := btrim(p_input->>'name');
+  category text := p_input->>'category';
+begin
+  perform public._multideck_journal_access(p_actor,p_entity,'Finance.Configuration.Manage');
+  if code is null or code !~ '^[A-Z0-9][A-Z0-9._-]{0,79}$'
+    or name is null or length(name) not between 1 and 180
+    or category is null or not exists(select 1 from public."sys_RateChargeCategories" where "RATECCAT_Code"=category)
+    or p_input->>'side' not in ('buy','sell','both','pass_through') or p_input->>'side' is null
+    or jsonb_typeof(matrix) is distinct from 'array' or jsonb_array_length(matrix)=0 or jsonb_array_length(matrix)>40 then
+    raise exception 'Enter a valid code, name, category and at least one quote or booking type.' using errcode='22023';
+  end if;
+  for item in select value from jsonb_array_elements(matrix) loop
+    if item->>'recordKind' not in ('quote','booking') or item->>'direction' not in ('import','export','cross_trade','other')
+      or item->>'mode' not in ('air','sea','road','mix','other') or item->>'recordKind' is null
+      or item->>'direction' is null or item->>'mode' is null then
+      raise exception 'Choose valid quote or booking applicability.' using errcode='22023';
+    end if;
+  end loop;
+  -- The catalogue is shared within this isolated tenant; serialise edits across
+  -- legal entities and check the version before replacing the matrix.
+  perform pg_advisory_xact_lock(hashtext('multideck-charge-catalogue'));
+  if exists(select 1 from public."RATE_ChargeCodes" c
+    where upper(c."RATECharge_Code")=code and c."RATECharge_ID" is distinct from v_charge_id) then
+    raise exception 'This charge code already exists.' using errcode='22023';
+  end if;
+  if v_charge_id is null then
+    if expected_version<>0 then raise exception 'Refresh the charge catalogue before saving.' using errcode='22023'; end if;
+    insert into public."RATE_ChargeCodes"("RATECharge_Code","RATECharge_Name","RATECharge_Description","RATECharge_CategoryCode",
+      "RATECharge_DefaultApplicabilityCode","RATECharge_IsFreight","RATECharge_IsSurcharge","RATECharge_IsPassThrough",
+      "RATECharge_IsActive","RATECharge_ScopeConfigured","RATECharge_CreatedBy","RATECharge_UpdatedBy")
+    values(code,name,nullif(btrim(p_input->>'description'),''),category,coalesce(nullif(p_input->>'side',''),'both'),
+      category='freight',category in ('fuel','security','peak'),p_input->>'side'='pass_through',
+      coalesce((p_input->>'active')::boolean,true),true,p_actor,p_actor) returning * into charge;
+    v_charge_id:=charge."RATECharge_ID";
+  else
+    select * into charge from public."RATE_ChargeCodes" where "RATECharge_ID"=v_charge_id for update;
+    if not found then raise exception 'Charge code not found.' using errcode='22023'; end if;
+    if charge."RATECharge_Version"<>expected_version then raise exception 'The charge code changed. Refresh before saving.' using errcode='22023'; end if;
+    before_state:=to_jsonb(charge)||jsonb_build_object('applicability',
+      coalesce((select jsonb_agg(jsonb_build_object('recordKind',record_kind,'direction',direction,'mode',mode))
+        from public."RATE_ChargeApplicability" a where a.charge_id=charge."RATECharge_ID"),'[]'::jsonb));
+    update public."RATE_ChargeCodes" set "RATECharge_Code"=code,"RATECharge_Name"=name,
+      "RATECharge_Description"=nullif(btrim(p_input->>'description'),''),"RATECharge_CategoryCode"=category,
+      "RATECharge_DefaultApplicabilityCode"=coalesce(nullif(p_input->>'side',''),'both'),
+      "RATECharge_IsFreight"=category='freight',"RATECharge_IsSurcharge"=category in ('fuel','security','peak'),
+      "RATECharge_IsPassThrough"=p_input->>'side'='pass_through',
+      "RATECharge_IsActive"=coalesce((p_input->>'active')::boolean,true),"RATECharge_ScopeConfigured"=true,
+      "RATECharge_Version"="RATECharge_Version"+1,"RATECharge_UpdatedAt"=now(),"RATECharge_UpdatedBy"=p_actor
+    where "RATECharge_ID"=v_charge_id returning * into charge;
+    delete from public."RATE_ChargeApplicability" where charge_id=charge."RATECharge_ID";
+  end if;
+  insert into public."RATE_ChargeApplicability"(charge_id,record_kind,direction,mode)
+    select distinct v_charge_id,value->>'recordKind',value->>'direction',value->>'mode' from jsonb_array_elements(matrix);
+  result:=to_jsonb(charge)||jsonb_build_object('applicability',matrix);
+  insert into public."RATE_ChargeCatalogueAudit"(charge_id,actor_id,legal_entity_id,before_snapshot,after_snapshot)
+    values(v_charge_id,p_actor,p_entity,before_state,result);
+  return result;
+end; $$;
+revoke all on function public.multideck_manage_charge_catalogue(uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.multideck_manage_charge_catalogue(uuid,uuid,jsonb) to service_role;
+
+commit;
+
+begin;
+
+-- Only managed, active codes may enter a newly saved operational charge line.
+create function public.multideck_resolve_operational_charge(
+  p_code text, p_kind text, p_direction text, p_mode text
+) returns uuid language plpgsql volatile set search_path=pg_catalog,public as $$
+declare
+  charge public."RATE_ChargeCodes";
+  direction_code text := lower(regexp_replace(coalesce(p_direction,''),'[^a-z]+','_','g'));
+  mode_label text := lower(btrim(coalesce(p_mode,'')));
+  mode_code text;
+begin
+  perform pg_advisory_xact_lock(hashtext('multideck-charge-catalogue'));
+  if p_kind not in ('quote','booking') then raise exception 'Choose a quote or booking charge context.' using errcode='22023'; end if;
+  if direction_code not in ('import','export','cross_trade') then direction_code:='other'; end if;
+  mode_code:=case when mode_label ~ '^(multi|mix)' then 'mix'
+    when mode_label ~ '^(sea|ocean)' then 'sea'
+    when mode_label ~ '^air' then 'air'
+    when mode_label ~ '^road' then 'road' else 'other' end;
+  select * into charge from public."RATE_ChargeCodes"
+    where upper("RATECharge_Code")=upper(btrim(p_code)) and "RATECharge_IsActive" for share;
+  if not found then raise exception 'Choose an active Multideck charge code.' using errcode='22023'; end if;
+  if charge."RATECharge_ScopeConfigured" and not exists (
+    select 1 from public."RATE_ChargeApplicability" a
+    where a.charge_id=charge."RATECharge_ID" and a.record_kind=p_kind
+      and a.direction=direction_code and a.mode=mode_code
+  ) then raise exception 'This charge code does not apply to the selected direction and mode.' using errcode='22023'; end if;
+  return charge."RATECharge_ID";
+end; $$;
+revoke all on function public.multideck_resolve_operational_charge(text,text,text,text) from public,anon,authenticated;
+grant execute on function public.multideck_resolve_operational_charge(text,text,text,text) to service_role;
+
+create function public.multideck_assign_booking_charge_codes(p_job uuid,p_charges jsonb)
+returns void language plpgsql security definer set search_path='' as $$
+declare
+  job public."Job_Header";
+  line record;
+  costing_line public."Job_Costing_Lines";
+  mapping public."FIN_ChargeNominalMappings";
+  v_charge_id uuid;
+  entity_id uuid;
+  cost_nominal uuid;
+  revenue_nominal uuid;
+begin
+  select * into job from public."Job_Header" where "Job_ID"=p_job for update;
+  if not found then raise exception 'Booking not found.' using errcode='22023'; end if;
+  entity_id:=public._multideck_finance_resolve_job_legal_entity(p_job);
+  for line in select value->>'code' as code,ordinality::integer as number
+    from jsonb_array_elements(coalesce(p_charges,'[]'::jsonb)) with ordinality
+  loop
+    if nullif(btrim(line.code),'') is not null then
+      v_charge_id:=public.multideck_resolve_operational_charge(line.code,'booking',job."Job_Direction",job."Job_TransportModeSummary");
+      select * into costing_line from public."Job_Costing_Lines"
+        where "Job_ID"=p_job and "JobCostingLine_Number"=line.number for update;
+      if not found then raise exception 'A booking charge line is missing.' using errcode='22023'; end if;
+      if entity_id is null then raise exception 'Choose a legal entity for this booking before applying charges.' using errcode='22023'; end if;
+      select * into mapping from public."FIN_ChargeNominalMappings" mapped
+        where mapped.legal_entity_id=entity_id and mapped.charge_id=v_charge_id for share;
+      if not found then raise exception 'Configure the charge code nominal mapping for this legal entity before applying booking charges.' using errcode='22023'; end if;
+      cost_nominal:=null;
+      revenue_nominal:=null;
+      if coalesce(costing_line."JobCostingLine_CostAmountCurrency",0)<>0 then
+        if mapping.cost_group_id is null then raise exception 'Configure a cost nominal group for this charge code.' using errcode='22023'; end if;
+        cost_nominal:=(public._multideck_validate_nominal_group(entity_id,mapping.cost_group_id,'cost')#>>'{actual,id}')::uuid;
+      end if;
+      if coalesce(costing_line."JobCostingLine_RevenueAmountCurrency",0)<>0 then
+        if mapping.revenue_group_id is null then raise exception 'Configure a revenue nominal group for this charge code.' using errcode='22023'; end if;
+        revenue_nominal:=(public._multideck_validate_nominal_group(entity_id,mapping.revenue_group_id,'revenue')#>>'{actual,id}')::uuid;
+      end if;
+      update public."Job_Costing_Lines" set "JobCostingLine_ChargeCodeID"=v_charge_id,
+        "JobCostingLine_CostNominalAccountID"=coalesce(cost_nominal,"JobCostingLine_CostNominalAccountID"),
+        "JobCostingLine_RevenueNominalAccountID"=coalesce(revenue_nominal,"JobCostingLine_RevenueNominalAccountID")
+        where "JobCostingLine_ID"=costing_line."JobCostingLine_ID";
+    end if;
+  end loop;
+end; $$;
+revoke all on function public.multideck_assign_booking_charge_codes(uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.multideck_assign_booking_charge_codes(uuid,jsonb) to service_role;
+
+alter table public."CusQuote_Lines" add constraint "CusQuote_Lines_managed_charge_fkey"
+  foreign key("CusQuoteLine_ChargeCodeID") references public."RATE_ChargeCodes"("RATECharge_ID") not valid;
+
+-- The current quote writer already guards tenant, role, version and lifecycle.
+-- Wrap it in the same transaction so a failed charge check rolls back the save.
+alter function public.quote_workflow_save_quote(uuid,uuid,jsonb)
+  rename to quote_workflow_save_before_managed_charges_20260923;
+revoke all on function public.quote_workflow_save_before_managed_charges_20260923(uuid,uuid,jsonb) from public,anon,authenticated,service_role;
+revoke all on function quote_api.save_quote(uuid,uuid,jsonb) from service_role;
+create function public.quote_workflow_save_quote(caller_auth_user_id uuid,requested_quote_id uuid,payload jsonb)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare
+  saved jsonb;
+  line jsonb;
+  line_number integer:=0;
+  quote_id uuid;
+  charge_id uuid;
+begin
+  saved:=public.quote_workflow_save_before_managed_charges_20260923(caller_auth_user_id,requested_quote_id,payload);
+  quote_id:=(saved->>'quoteId')::uuid;
+  if quote_id is null then raise exception 'The saved quote identity is missing.' using errcode='22023'; end if;
+  for line in select value from jsonb_array_elements(coalesce(payload->'charges','[]'::jsonb)) loop
+    if quote_api.jsonb_has_content(line-array['showToCustomer','quantity','costRoe','sellRoe']) then
+      line_number:=line_number+1;
+      charge_id:=public.multideck_resolve_operational_charge(line->>'code','quote',payload->>'direction',payload->>'mode');
+      update public."CusQuote_Lines" set "CusQuoteLine_ChargeCodeID"=charge_id
+        where "CusQuoteHeader_ID"=quote_id and "CusQuoteLine_Number"=line_number;
+      if not found then raise exception 'A saved quote charge line is missing.' using errcode='22023'; end if;
+    end if;
+  end loop;
+  return saved;
+end; $$;
+revoke all on function public.quote_workflow_save_quote(uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.quote_workflow_save_quote(uuid,uuid,jsonb) to service_role;
+
+-- A booking created from an accepted quote carries the same charge identities.
+alter function booking_api.convert_accepted_quote(uuid,uuid,uuid)
+  rename to convert_accepted_quote_before_managed_charges_20260923;
+revoke all on function booking_api.convert_accepted_quote_before_managed_charges_20260923(uuid,uuid,uuid) from public,anon,authenticated,service_role;
+create function booking_api.convert_accepted_quote(requested_quote_id uuid,requested_actor_user_id uuid default null,requested_response_id uuid default null)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare
+  converted jsonb;
+  job public."Job_Header";
+begin
+  converted:=booking_api.convert_accepted_quote_before_managed_charges_20260923(requested_quote_id,requested_actor_user_id,requested_response_id);
+  if coalesce((converted->>'reused')::boolean,false) or coalesce((converted->>'outOfSync')::boolean,false) then return converted; end if;
+  select * into job from public."Job_Header" where "Job_ID"=(converted->>'jobId')::uuid;
+  if not found then return converted; end if;
+  if exists(select 1 from public."Job_Costing_Lines" where "Job_ID"=job."Job_ID") then
+    perform public.multideck_assign_booking_charge_codes(job."Job_ID",job."Job_SourceSnapshotJSON"#>'{acceptedSnapshot,quote,charges}');
+  end if;
+  return converted;
+end; $$;
+revoke all on function booking_api.convert_accepted_quote(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function booking_api.convert_accepted_quote(uuid,uuid,uuid) to service_role;
+
+-- Quote revision application writes its charge lines through the existing
+-- approval workflow. Complete the identities in that same transaction.
+alter function public.booking_workflow_apply_quote_sync_v2(uuid,uuid,uuid,jsonb,text,boolean)
+  rename to booking_workflow_apply_quote_sync_before_managed_charges_20260923;
+revoke all on function public.booking_workflow_apply_quote_sync_before_managed_charges_20260923(uuid,uuid,uuid,jsonb,text,boolean) from public,anon,authenticated,service_role;
+revoke all on function public.booking_workflow_apply_quote_sync_confirmed(uuid,uuid,uuid,jsonb,boolean) from service_role;
+revoke all on function public.booking_workflow_apply_quote_sync(uuid,uuid,uuid,jsonb) from service_role;
+create function public.booking_workflow_apply_quote_sync_v2(
+  caller_auth_user_id uuid,requested_job_id uuid,requested_review_id uuid,
+  requested_fields jsonb,expected_review_token text,confirm_mode_change boolean default false
+) returns jsonb language plpgsql security definer set search_path='' as $$
+declare applied jsonb; charges jsonb;
+begin
+  applied:=public.booking_workflow_apply_quote_sync_before_managed_charges_20260923(
+    caller_auth_user_id,requested_job_id,requested_review_id,requested_fields,expected_review_token,confirm_mode_change);
+  if coalesce((applied->>'reused')::boolean,false) or not (requested_fields ? 'charges') then return applied; end if;
+  select proposed_snapshot->'charges' into charges from booking_api.quote_sync_reviews where review_id=requested_review_id and job_id=requested_job_id;
+  perform public.multideck_assign_booking_charge_codes(requested_job_id,charges);
+  return applied;
+end; $$;
+revoke all on function public.booking_workflow_apply_quote_sync_v2(uuid,uuid,uuid,jsonb,text,boolean) from public,anon,authenticated;
+grant execute on function public.booking_workflow_apply_quote_sync_v2(uuid,uuid,uuid,jsonb,text,boolean) to service_role;
+
+-- Provisional bookings release accepted-quote charges only when progressing.
+-- PostgreSQL runs this trigger after the existing provisional release trigger.
+create function booking_api.attach_provisional_managed_charge_codes() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+  if lower(old."Job_Status") in ('draft','provisional')
+    and booking_api.lifecycle_label(new."Job_Status")='In progress'
+    and new."Job_SourceQuoteID" is not null
+    and exists(select 1 from public."Job_Costing_Lines" where "Job_ID"=new."Job_ID") then
+    perform public.multideck_assign_booking_charge_codes(new."Job_ID",new."Job_SourceSnapshotJSON"#>'{acceptedSnapshot,quote,charges}');
+  end if;
+  return new;
+end; $$;
+create trigger zz_managed_quote_charge_codes after update of "Job_Status" on public."Job_Header"
+for each row execute function booking_api.attach_provisional_managed_charge_codes();
+revoke all on function booking_api.attach_provisional_managed_charge_codes() from public,anon,authenticated,service_role;
+
+commit;

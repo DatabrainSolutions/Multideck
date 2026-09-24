@@ -3,6 +3,8 @@ import { Calculator, Check, LoaderCircle, Pencil, RefreshCw, RotateCcw, Send, Sh
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { SettingsPageHeader, SettingsPanel } from "@/components/multideck/settings-components"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -18,6 +20,11 @@ import {
   FinanceAccrualsApiError,
   getFinanceAccrualWorkspace,
   getFinanceManagementEntities,
+  getFinanceCostReview,
+  getCostControls, getChargeCostControls, updateCostControls,
+  type CostControls, type ChargeCostControls,
+  type CostReview,
+  type CostReviewRow,
   postAccrualWipRun,
   rejectAccrualWipRun,
   requestAccrualWipReview,
@@ -123,6 +130,7 @@ export function FinanceAccrualWipPage({ currentUser }: { currentUser?: AuthUserS
         { label: t("Outside-period activity"), value: money(totals.outside), detail: t("Documents posted in other periods"), tone: "red" as const },
         { label: t("Adjusted margin"), value: money(totals.margin), detail: t("After proposed corrections"), tone: "teal" as const },
       ]} /></div>
+      {entityId ? <CostReviewPanel key={entityId} entityId={entityId} /> : null}
       <SettingsPanel title={t("Job period control")} description={t("The assigned period drives management reporting. Reassignment is audited and does not change operational dates or statutory accounting dates.")}>
         <div className="flex flex-wrap items-center justify-between gap-3 py-1"><p className="text-[13px] text-[var(--md-text)]">{t("Jobs assigned to this entity")}: <span className="font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{workspace?.assignableJobs.length ?? 0}</span></p>{canPrepare ? <Button type="button" size="sm" variant="outline" onClick={openAssign}><Pencil />{t("Assign job period")}</Button> : null}</div>
       </SettingsPanel>
@@ -144,4 +152,167 @@ export function FinanceAccrualWipPage({ currentUser }: { currentUser?: AuthUserS
     <Dialog open={dialog === "reject"} onOpenChange={(open) => !open && setDialog(null)}><DialogContent><DialogHeader><DialogTitle>{t("Reject period review")}</DialogTitle><DialogDescription>{t("Return this review to a rejected state with a clear reason for the preparer.")}</DialogDescription></DialogHeader><Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("Reason for rejection")} /><DialogFooter><Button variant="outline" onClick={() => setDialog(null)}>{t("Cancel")}</Button><Button disabled={busy || !reason.trim() || !visibleRun} onClick={() => visibleRun && void perform(() => rejectAccrualWipRun(visibleRun.FINCloseRun_ID, reason), "Period review rejected.")}>{t("Reject review")}</Button></DialogFooter></DialogContent></Dialog>
     <Dialog open={dialog === "reverse"} onOpenChange={(open) => !open && setDialog(null)}><DialogContent><DialogHeader><DialogTitle>{t("Reverse management journal")}</DialogTitle><DialogDescription>{t("Post the exact opposite journal into the chosen open period. The original remains locked and auditable.")}</DialogDescription></DialogHeader><label className="space-y-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t("Reversal period")}</span><Input value={reversalPeriod} onChange={(event) => setReversalPeriod(event.target.value.replace(/\D/g, "").slice(0, 6))} data-i18n-skip dir="ltr" /></label><Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("Reason for reversal")} /><DialogFooter><Button variant="outline" onClick={() => setDialog(null)}>{t("Cancel")}</Button><Button disabled={busy || !validPeriod(reversalPeriod) || !reason.trim() || !visibleRun} onClick={() => visibleRun && void perform(() => reverseAccrualWipRun(visibleRun.FINCloseRun_ID, reversalPeriod, reason), "Management journal reversed.")}>{busy ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}{t("Post reversal")}</Button></DialogFooter></DialogContent></Dialog>
   </>
+}
+
+// Page-specific review surface; posting remains in the established approved workflow.
+function CostReviewPanel({ entityId }: { entityId: string }) {
+  const { t, language } = useLanguage()
+  const [expanded, setExpanded] = useState(false)
+  const [review, setReview] = useState<CostReview | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [offset, setOffset] = useState(0)
+  const [search, setSearch] = useState("")
+  const [refresh, setRefresh] = useState(0)
+  const [selected, setSelected] = useState<CostReviewRow | null>(null)
+  useEffect(() => {
+    if (!expanded) return
+    let current = true
+    setLoading(true); setError(null)
+    const timer = window.setTimeout(() => {
+      void getFinanceCostReview(entityId, offset, search).then((result) => {
+        if (current) setReview(result)
+      }).catch((cause) => {
+        if (current) setError(cause instanceof Error ? cause.message : t("Cost review could not be loaded."))
+      }).finally(() => { if (current) setLoading(false) })
+    }, 250)
+    return () => { current = false; window.clearTimeout(timer) }
+  }, [expanded, entityId, offset, search, refresh, t])
+  const format = (value: string | null) => value === null ? t("Needs review") : new Intl.NumberFormat(language, { style: "currency", currency: review!.currency }).format(Number(value))
+  const columns: DataTableColumn<CostReviewRow>[] = [
+    { id: "job", label: t("Job / charge"), width: 210, cell: row => <button type="button" className="text-start text-[var(--md-accent)] hover:underline" onClick={() => setSelected(row)}>{row.jobReference} · {row.lineNo}<span className="block text-[11px] text-[var(--md-text)]">{row.description}</span></button> },
+    { id: "nominal", label: t("Cost nominal"), width: 105, cell: row => row.nominalCode || "–" },
+    { id: "estimate", label: t("Current estimate"), kind: "number", width: 135, cell: row => format(row.currentEstimate) },
+    { id: "actual", label: t("Actual to date"), kind: "number", width: 135, cell: row => format(row.actualCost) },
+    { id: "accrual", label: t("Posted open accrual"), kind: "number", width: 145, cell: row => format(row.openAccrual) },
+    { id: "remaining", label: t("Estimated remainder"), kind: "number", width: 145, cell: row => format(row.remainingEstimate) },
+    { id: "review", label: t("Review required"), width: 240, cell: row => <span className="text-[var(--md-amber)]">{row.reasons.map(reason => t(reason)).join(" · ")}</span> },
+  ]
+  return <SettingsPanel title={t("Lifetime cost review")} description={t("Charge-level estimates, posted actuals across all periods, final-invoice evidence and controlled residual releases.")}>
+    <div className="p-4 sm:p-5">
+    <Button type="button" variant="outline" size="sm" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{t(expanded ? "Hide cost review" : "Open cost review")}</Button>
+    {expanded ? <div className="mt-3 space-y-3">
+      <CostPolicyControls entityId={entityId} />
+      <p className="text-[12px] text-[var(--md-subtle)]">{t("The estimated remainder is not a posting recommendation. Final-invoice evidence, an approved policy and explicit activation are required for automatic residual releases. Initial accrual recognition remains in the period review below. Historical original estimates are not reconstructed.")}</p>
+      {error ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{error}{review ? ` ${t("Previously loaded figures may be out of date.")}` : ""}</p> : null}
+      {loading && !review ? <DotGridLoader label={t("Loading cost review")} /> : null}
+      <DataTable columns={columns} rows={(review?.rows ?? []).filter(row => `${row.jobReference} ${row.description}`.toLowerCase().includes(search.toLowerCase()))} getRowKey={row => row.id} ariaLabel={t("Charge cost review")} minimumWidth={1000}
+        toolbarSearch={<Input aria-label={t("Search jobs and charges")} placeholder={t("Search jobs and charges")} maxLength={120} value={search} onChange={event => { setSearch(event.target.value); setOffset(0) }} />}
+        toolbarOptions={<Button type="button" size="sm" variant="outline" disabled={loading} onClick={() => setRefresh(value => value + 1)}>{loading ? <DotGridLoader size="sm" /> : <RefreshCw />}{t("Refresh")}</Button>}
+        emptyState={<p>{t(loading ? "Loading charge evidence…" : error ? "Charge evidence is unavailable." : "No matching charge lines.")}</p>} />
+      {review ? <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-[var(--md-subtle)]">
+        <span>{t("Snapshot")}: {new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(review.asOf))} · {t("Charges")}: {review.total}</span>
+        <div className="flex items-center gap-2"><Button type="button" size="sm" variant="outline" disabled={loading || offset === 0} onClick={() => setOffset(Math.max(0, offset - review.pageSize))}>{t("Previous")}</Button><span>{review.total ? review.offset + 1 : 0}–{Math.min(review.offset + review.rows.length, review.total)} / {review.total}</span><Button type="button" size="sm" variant="outline" disabled={loading || offset + review.pageSize >= review.total} onClick={() => setOffset(offset + review.pageSize)}>{t("Next")}</Button></div>
+      </div> : null}
+    </div> : null}
+    <Dialog open={Boolean(selected)} onOpenChange={open => { if (!open) setSelected(null) }}><DialogContent className="max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{selected?.jobReference} · {selected?.description}</DialogTitle><DialogDescription>{t("An invoice arriving does not establish that it is the supplier’s final invoice. Record the evidence before any release is considered.")}</DialogDescription></DialogHeader>{selected ? <>
+      <dl className="grid grid-cols-2 gap-3 text-[13px]"><dt>{t("Current estimate")}</dt><dd>{format(selected.currentEstimate)}</dd><dt>{t("Actual to date")}</dt><dd>{format(selected.actualCost)}</dd><dt>{t("Posted open accrual")}</dt><dd>{format(selected.openAccrual)}</dd><dt>{t("Estimate less actual")}</dt><dd>{format(selected.favourableVariance)}</dd></dl>
+      <p className="text-[12px] text-[var(--md-subtle)]">{t("Estimate less actual is not realised profit while further supplier invoices remain possible.")}</p>
+      <ul className="list-disc space-y-1 ps-5 text-[13px]">{selected.reasons.map(reason => <li key={reason}>{t(reason)}</li>)}</ul>
+      <p className="text-[12px]">{t("Matched posted documents")}: {selected.sourceDocumentIds.length} · {t("Accrual records")}: {selected.sourceAccrualIds.length}</p>
+      <ChargeEvidenceControls key={selected.id} entityId={entityId} chargeId={selected.id} />
+    </> : null}<DialogFooter><Button variant="outline" onClick={() => setSelected(null)}>{t("Close")}</Button></DialogFooter></DialogContent></Dialog>
+    </div>
+  </SettingsPanel>
+}
+
+// These are workflow-specific sections, not reusable component-gallery primitives.
+function CostPolicyControls({ entityId }: { entityId: string }) {
+  const { t } = useLanguage()
+  const [data, setData] = useState<CostControls | null>(null)
+  const [error, setError] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [edit, setEdit] = useState(false)
+  const [refresh, setRefresh] = useState(0)
+  const [reason, setReason] = useState("")
+  const [form, setForm] = useState({ underPercent: "0", underCap: "0", overPercent: "0", overCap: "0", recognitionRule: "", autoFinalise: false })
+  useEffect(() => {
+    let current = true
+    void getCostControls(entityId).then(value => { if (current) { setData(value); setError("") } }).catch(cause => { if (current) setError(cause instanceof Error ? cause.message : t("Cost policy could not be loaded.")) })
+    return () => { current = false }
+  }, [entityId, refresh, t])
+  const latest = data?.policies[0]
+  const perform = async (action: "save_policy" | "approve_policy" | "automation" | "retry_finalisation" | "approve_exception", input: Record<string, unknown>) => {
+    setBusy(true); setError("")
+    try { await updateCostControls(entityId, action, input); setEdit(false); setReason(""); setRefresh(value => value + 1) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("Cost policy could not be saved.")) }
+    finally { setBusy(false) }
+  }
+  return <section aria-label={t("Cost accrual policy")} className="space-y-3 border-b border-[var(--md-line)] pb-4">
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-[14px] font-medium">{t("Cost accrual policy")}</h3><span className="text-[12px] text-[var(--md-amber)]">{t(data?.postingEnabled ? "Residual finalisation enabled" : "Automatic posting disabled")}</span></div>
+    {error ? <p role="alert" className="text-[var(--md-red)]">{error}<Button variant="ghost" size="sm" disabled={busy} onClick={() => setRefresh(value => value + 1)}>{t("Retry")}</Button></p> : null}
+    {!data && !error ? <DotGridLoader label={t("Loading policy")} /> : null}
+    {data ? <>
+      <p className="text-[12px] text-[var(--md-text)]">{latest ? `${t("Revision")} ${latest.revision} · ${t(latest.approved_by ? "Approved" : "Awaiting independent approval")}` : t("No approved tolerance policy. All differences require review.")}</p>
+      {latest ? <><p className="text-[13px]">{t("Under estimate")}: {latest.under_percent}% / {latest.under_cap} {latest.currency} · {t("Over estimate")}: {latest.over_percent}% / {latest.over_cap} {latest.currency}</p><p className="text-[12px] whitespace-pre-wrap">{latest.recognition_rule}</p></> : null}
+      <p className="text-[12px] text-[var(--md-subtle)]">{t("Both the percentage and amount limit must pass. Approval records the policy; it does not enable the posting worker. Final invoice evidence is always required for releasing a residual.")}</p>
+      {data.canPrepare ? <Button variant="outline" size="sm" disabled={busy} onClick={() => setEdit(value => !value)}>{t(edit ? "Cancel policy draft" : "Prepare policy revision")}</Button> : null}
+      {edit ? <form className="space-y-3" onSubmit={event => { event.preventDefault(); void perform("save_policy", form) }}>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{([['underPercent', 'Under estimate %'], ['underCap', 'Under estimate cap'], ['overPercent', 'Over estimate %'], ['overCap', 'Over estimate cap']] as const).map(([key, label]) => <label key={key} className="space-y-1 text-[12px]"><span>{t(label)} {key.endsWith("Cap") ? `(${data.currency})` : ""}</span><Input required inputMode="decimal" pattern="[0-9]+(\.[0-9]{1,4})?" value={form[key]} onChange={event => setForm(old => ({ ...old, [key]: event.target.value }))} /></label>)}</div>
+        <label className="block space-y-1 text-[12px]"><span>{t("Required service-completion evidence")}</span><Textarea required minLength={10} maxLength={2000} value={form.recognitionRule} onChange={event => setForm(old => ({ ...old, recognitionRule: event.target.value }))} /></label>
+        <label className="flex items-center gap-2 text-[12px]"><Checkbox checked={form.autoFinalise} onCheckedChange={value => setForm(old => ({ ...old, autoFinalise: value === true }))} />{t("Allow automatic finalisation within these limits once automation is activated")}</label>
+        <Button type="submit" disabled={busy}>{busy ? <DotGridLoader size="sm" /> : null}{t("Save for approval")}</Button>
+      </form> : null}
+      {!edit && latest && !latest.approved_by && data.canApprove && latest.created_by !== data.actorId ? <form className="space-y-2" onSubmit={event => { event.preventDefault(); void perform("approve_policy", { id: latest.id, reason }) }}><label className="block space-y-1 text-[12px]"><span>{t("Approval reason")}</span><Textarea required minLength={5} maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} /></label><Button type="submit" disabled={busy}>{t("Approve this policy revision")}</Button></form> : null}
+      {latest && !latest.approved_by && latest.created_by === data.actorId ? <p className="text-[12px] text-[var(--md-subtle)]">{t("Another authorised colleague must approve your policy.")}</p> : null}
+      {!edit && latest && data.canApprove && data.canPost && (data.postingEnabled || latest.approved_by && latest.auto_finalise) ? <form className="space-y-2" onSubmit={event => { event.preventDefault(); void perform("automation", { policyId: latest.id, enabled: !data.postingEnabled, reason }) }}>
+        <p className="text-[12px] text-[var(--md-text)]">{t("Activation permits balanced residual write-backs on existing accruals after final-invoice confirmation. Initial accruals still use the approved period workflow. The tenant accounting worker must be running; ERPNext delivery failures remain visible in Journals.")}</p>
+        <label className="block space-y-1 text-[12px]"><span>{t("Activation / pause reason")}</span><Textarea required minLength={5} maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} /></label>
+        <Button type="submit" disabled={busy}>{t(data.postingEnabled ? "Pause residual finalisation" : "Activate residual finalisation")}</Button>
+      </form> : null}
+      {data.cases.length ? <details className="text-[12px]"><summary>{t("Finalisation results and exceptions")}</summary><ul className="mt-2 space-y-3">{data.cases.map(item => <li key={item.id} className="space-y-2 border-b border-[var(--md-line)] pb-2"><p>{t(item.status)} · {item.reason}</p><p>{t("Charge")}: {item.charge_id} · {t("Estimate")}: {item.estimate} · {t("Actual")}: {item.actual} · {t("Residual release")}: {item.residual} {data.currency}</p>{item.status === "review" && data.canPost ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void perform("retry_finalisation", { evidenceId: item.evidence_id })}>{t("Recheck after correction")}</Button> : null}{item.status === "review" && item.reason === "Outside approved tolerance; human review required" && data.canApprove ? <form className="space-y-2" onSubmit={event => { event.preventDefault(); const fields = new FormData(event.currentTarget); void perform("approve_exception", { caseId: item.id, reason: fields.get("reason") }) }}><label className="block space-y-1"><span>{t("Reason for approving this exact residual release")}</span><Textarea name="reason" required minLength={5} maxLength={2000} /></label><Button type="submit" disabled={busy}>{t("Approve tolerance exception")}</Button></form> : null}</li>)}</ul></details> : null}
+    </> : null}
+  </section>
+}
+
+function ChargeEvidenceControls({ entityId, chargeId }: { entityId: string; chargeId: string }) {
+  const { t, language } = useLanguage()
+  const [data, setData] = useState<ChargeCostControls | null>(null)
+  const [canPrepare, setCanPrepare] = useState(false)
+  const [error, setError] = useState("")
+  const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [refresh, setRefresh] = useState(0)
+  const [form, setForm] = useState({ serviceCompletedOn: "", invoiceReceivedOn: "", finalDocumentId: "", isFinal: false, disputed: false, reason: "" })
+  useEffect(() => {
+    let current = true
+    setData(null)
+    void Promise.all([getChargeCostControls(entityId, chargeId), getCostControls(entityId)]).then(([value, controls]) => {
+      if (!current) return
+      setData(value); setCanPrepare(controls.canPrepare); setError("")
+      setForm({ serviceCompletedOn: value.evidence?.service_completed_on ?? "", invoiceReceivedOn: value.evidence?.invoice_received_on ?? "", finalDocumentId: value.evidence?.final_document_id ?? "", isFinal: value.evidenceCurrent && Boolean(value.evidence?.is_final), disputed: Boolean(value.evidence?.disputed), reason: "" })
+    }).catch(cause => { if (current) setError(cause instanceof Error ? cause.message : t("Charge evidence could not be loaded.")) })
+    return () => { current = false }
+  }, [entityId, chargeId, refresh, t])
+  const save = async () => {
+    if (!data) return
+    setBusy(true); setError(""); setSaved(false)
+    try { await updateCostControls(entityId, "record_evidence", { ...form, chargeId, revision: data.revision }); setSaved(true); setRefresh(value => value + 1) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("Evidence could not be saved.")) }
+    finally { setBusy(false) }
+  }
+  return <section className="space-y-3 border-t border-[var(--md-line)] pt-3">
+    <h3 className="text-[14px] font-medium">{t("Service and final-invoice evidence")}</h3>
+    {error ? <p role="alert" className="text-[var(--md-red)]">{error}<Button variant="ghost" size="sm" disabled={busy} onClick={() => setRefresh(value => value + 1)}>{t("Refresh evidence")}</Button></p> : null}
+    {saved ? <p role="status" className="text-[var(--md-green)]">{t("Evidence saved for controlled evaluation.")}</p> : null}
+    {!data && !error ? <DotGridLoader label={t("Loading charge evidence")} /> : null}
+    {data ? <>
+      {data.finalisation ? <p role="status" className="text-[12px]">{t("Finalisation")}: {t(data.finalisation.status)} · {data.finalisation.reason}{data.finalisation.mirrorStatus ? ` · ${t("Accounts system")}: ${t(data.finalisation.mirrorStatus)}` : ""}{data.finalisation.mirrorError ? ` · ${data.finalisation.mirrorError}` : ""}</p> : null}
+      {data.evidence && !data.evidenceCurrent ? <p role="status" className="text-[var(--md-amber)]">{t("The charge or invoice changed. Previous confirmation is stale; review the current evidence.")}</p> : null}
+      <p className="text-[12px] text-[var(--md-text)]">{data.prediction.probability === null ? t("Arrival prediction unavailable: insufficient current evidence or comparable history.") : `${t("Final invoice expected within 30 days")}: ${new Intl.NumberFormat(language, { style: "percent", maximumFractionDigits: 0 }).format(data.prediction.probability)}`} · {t("Comparable observations")}: {data.prediction.sampleSize}</p>
+      <p className="text-[12px] text-[var(--md-subtle)]">{t("History uses this entity, supplier and charge code, including outstanding charges. A prediction never authorises a write-back.")}</p>
+      {canPrepare ? <form className="space-y-3" onSubmit={event => { event.preventDefault(); void save() }}>
+        <label className="block space-y-1 text-[12px]"><span>{t("Actual service completion date")}</span><Input required type="date" value={form.serviceCompletedOn} onChange={event => setForm(old => ({ ...old, serviceCompletedOn: event.target.value }))} /></label>
+        <label className="flex items-center gap-2 text-[12px]"><Checkbox checked={form.isFinal} onCheckedChange={value => setForm(old => ({ ...old, isFinal: value === true }))} />{t("Supplier has confirmed this is the final invoice for this charge")}</label>
+        {form.isFinal ? <>
+          <label className="block space-y-1 text-[12px]"><span>{t("Matched final invoice")}</span><select required className="h-9 w-full rounded-md bg-[var(--md-bg)] px-3" value={form.finalDocumentId} onChange={event => setForm(old => ({ ...old, finalDocumentId: event.target.value }))}><option value="">{t("Choose a posted invoice")}</option>{Array.from(new Map(data.documents.map(document => [document.id, document])).values()).map(document => <option key={document.id} value={document.id}>{document.number || document.id}</option>)}</select></label>
+          <label className="block space-y-1 text-[12px]"><span>{t("Actual invoice received date")}</span><Input required type="date" value={form.invoiceReceivedOn} onChange={event => setForm(old => ({ ...old, invoiceReceivedOn: event.target.value }))} /></label>
+        </> : null}
+        <label className="flex items-center gap-2 text-[12px]"><Checkbox checked={form.disputed} onCheckedChange={value => setForm(old => ({ ...old, disputed: value === true }))} />{t("This charge is disputed — block automatic adjustment")}</label>
+        <label className="block space-y-1 text-[12px]"><span>{t("Evidence / reason")}</span><Textarea required minLength={5} maxLength={2000} value={form.reason} onChange={event => setForm(old => ({ ...old, reason: event.target.value }))} /></label>
+        <Button type="submit" disabled={busy}>{busy ? <DotGridLoader size="sm" /> : null}{t("Save evidence")}</Button>
+      </form> : null}
+      {data.history.length ? <details className="text-[12px]"><summary>{t("Confirmation history")}</summary><ul className="mt-2 space-y-2">{data.history.map(item => <li key={item.id}><span>{new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.recorded_at))} · {t(item.is_final ? "Final invoice" : "Further invoices possible")}</span><p className="whitespace-pre-wrap">{item.reason}</p></li>)}</ul></details> : null}
+    </> : null}
+  </section>
 }

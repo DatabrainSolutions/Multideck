@@ -16,18 +16,6 @@ const syncLeaseMigration = readFileSync(
   resolve(supabaseRoot, "migrations/20260801120500_inbox_sync_lease.sql"),
   "utf8",
 )
-const appPermissions = readFileSync(
-  resolve(supabaseRoot, "../multideck.server/Authorization/AppPermissions.cs"),
-  "utf8",
-)
-const sendProcessor = readFileSync(
-  resolve(supabaseRoot, "../multideck.server/Modules/Inbox/Processing/InboxSendProcessor.cs"),
-  "utf8",
-)
-const inboxService = readFileSync(
-  resolve(supabaseRoot, "../multideck.server/Modules/Inbox/InboxService.cs"),
-  "utf8",
-)
 
 test("Inbox extends the existing communication domain instead of duplicating it", () => {
   for (const table of [
@@ -269,27 +257,8 @@ test("mailbox ACLs, provider events, and Dexter summaries carry explicit safety 
     /A different provider account is already connected\. Disconnect it before connecting another account\.[\s\S]*?errcode = '42501'/,
   )
 
-  for (const permission of [
-    "Email.Connect",
-    "Email.Read",
-    "Email.Send",
-    "Email.ManageShared",
-    "Email.AIRead",
-  ]) {
-    assert.match(appPermissions, new RegExp(`"${permission.replace(".", "\\.")}"`))
-  }
-
-  assert.match(appPermissions, /public static class Email/)
-  assert.match(appPermissions, /Email\.Connect,[\s\S]*Email\.Read,[\s\S]*Email\.Send,[\s\S]*Email\.ManageShared,[\s\S]*Email\.AiRead,/)
 })
 
 test("outbound email is claimed atomically and ambiguous provider results are never auto-retried", () => {
   assert.match(migration, /'sending', 'Sending', 'Claimed by a worker; the provider outcome may require reconciliation\.', false/)
-  assert.match(sendProcessor, /for update skip locked/)
-  assert.match(sendProcessor, /set "CommSend_StatusCode" = 'sending'/)
-  assert.match(sendProcessor, /returning send\."CommSend_ID" as "Value"/)
-  assert.match(sendProcessor, /The provider send result is uncertain\. Check the provider Sent folder before sending again\./)
-  assert.match(sendProcessor, /await FailAsync\([\s\S]*?"The provider send result is uncertain\.[\s\S]*?false,/)
-  assert.match(inboxService, /SHA256\.HashData\(Encoding\.UTF8\.GetBytes\(value\)\)/)
-  assert.match(inboxService, /return \$"inbox:\{userId:N\}:\{hash\}"/)
 })

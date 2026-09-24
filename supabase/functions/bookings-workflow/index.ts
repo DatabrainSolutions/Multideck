@@ -13,6 +13,25 @@ const permittedMimeTypes = new Set([
   "application/vnd.ms-excel",
 ])
 
+async function withManagedChargeCodes(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], workspace: any) {
+  const jobId = workspace?.booking?.jobId
+  if (typeof jobId !== "string" || !Array.isArray(workspace?.charges) || !workspace.charges.length) return workspace
+  const { data: lines, error: lineError } = await admin.from("Job_Costing_Lines")
+    .select("JobCostingLine_ID,JobCostingLine_ChargeCodeID").eq("Job_ID", jobId)
+  if (lineError) throw lineError
+  const ids = [...new Set((lines ?? []).map(line => line.JobCostingLine_ChargeCodeID).filter(Boolean))]
+  const { data: codes, error: codeError } = ids.length
+    ? await admin.from("RATE_ChargeCodes").select("RATECharge_ID,RATECharge_Code").in("RATECharge_ID", ids)
+    : { data: [], error: null }
+  if (codeError) throw codeError
+  const codeById = new Map((codes ?? []).map(code => [code.RATECharge_ID, code.RATECharge_Code]))
+  const idByLine = new Map((lines ?? []).map(line => [line.JobCostingLine_ID, line.JobCostingLine_ChargeCodeID]))
+  return { ...workspace, charges: workspace.charges.map((charge: any) => {
+    const chargeCodeId = idByLine.get(charge.id) ?? null
+    return { ...charge, chargeCodeId, code: codeById.get(chargeCodeId) ?? null }
+  }) }
+}
+
 function safeFileName(value: string) {
   const fileName = value.trim().replace(/[\u0000-\u001f\u007f/\\]+/g, "-").replace(/\s+/g, " ").slice(0, 240)
   if (!fileName || fileName === "." || fileName === "..") throw new BookingWorkflowError(400, "Choose a valid document file.")
@@ -134,7 +153,7 @@ Deno.serve(async (request) => {
         requested_reference: await canonicalBookingReference(admin, userId, requestedReference),
       })
       if (error || !data) throw error ?? new Error("Booking workspace returned no result")
-      return jsonResponse(request, data)
+      return jsonResponse(request, await withManagedChargeCodes(admin, data))
     }
     if (action === "customs-readiness") {
       const { data, error } = await admin.rpc("booking_workflow_customs_readiness", {
@@ -203,7 +222,7 @@ Deno.serve(async (request) => {
         confirm_mode_change: confirmModeChange,
       })
       if (error || !data) throw error ?? new Error("Quote update returned no result")
-      return jsonResponse(request, data)
+      return jsonResponse(request, { ...data, workspace: await withManagedChargeCodes(admin, data.workspace) })
     }
     if (action === "send-to-customs") {
       const { data, error } = await admin.rpc("booking_workflow_send_to_customs", {
@@ -221,7 +240,7 @@ Deno.serve(async (request) => {
       payload: parsePayload(body.booking),
     })
     if (error || !data) throw error ?? new Error("Booking save returned no result")
-    return jsonResponse(request, data)
+    return jsonResponse(request, await withManagedChargeCodes(admin, data))
   } catch (error) {
     const safe = toClientError(error)
     console.error("Booking workflow failed", { status: safe.status, reason: safe.auditMessage })

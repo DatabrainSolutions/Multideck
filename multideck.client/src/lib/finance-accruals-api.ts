@@ -130,11 +130,35 @@ export type FinanceAccrualWorkspace = {
 
 export class FinanceAccrualsApiError extends Error {}
 
+export type CostReviewRow = {
+  id: string; jobId: string; jobReference: string; lineNo: number; description: string
+  chargeCodeId: string | null; supplierId: string | null; nominalCode: string | null
+  currentEstimate: string | null; originalEstimate: null; actualCost: string; openAccrual: string | null
+  remainingEstimate: string | null; favourableVariance: string | null
+  sourceDocumentIds: string[]; sourceAccrualIds: string[]; reasons: string[]
+}
+export type CostReview = { mode: "review_only" | "controlled"; asOf: string; currency: string; offset: number; pageSize: number; total: number; rows: CostReviewRow[] }
+
+export function getFinanceCostReview(legalEntityId: string, offset = 0, search = "") {
+  return call<CostReview>(`/cost-review?legalEntityId=${encodeURIComponent(legalEntityId)}&offset=${offset}&search=${encodeURIComponent(search)}`)
+}
+
+export type CostPolicy = { id: string; revision: number; currency: string; under_percent: string | number; under_cap: string | number; over_percent: string | number; over_cap: string | number; auto_finalise: boolean; recognition_rule: string; created_by: string; approved_by: string | null; approved_at: string | null }
+export type CostControls = { policies: CostPolicy[]; postingEnabled: boolean; currency: string; canPrepare: boolean; canApprove: boolean; canPost: boolean; actorId: string; cases: { id: string; charge_id: string; evidence_id: string; status: string; reason: string; journal_id: string | null; estimate: string; actual: string; residual: string }[] }
+export type CostEvidence = { id: string; service_completed_on: string; invoice_received_on: string | null; final_document_id: string | null; is_final: boolean; disputed: boolean; reason: string; recorded_at: string; recorded_by: string }
+export type ChargeCostControls = { revision: string; evidence: CostEvidence | null; evidenceCurrent: boolean; finalisation: { status: string; reason: string; journalId: string | null; mirrorStatus: string | null; mirrorError: string | null } | null; documents: { id: string; number: string | null }[]; history: CostEvidence[]; prediction: { probability: number | null; sampleSize: number; reason: string; ageDays?: number; horizonDays?: number } }
+export function getCostControls(legalEntityId: string) { return call<CostControls>(`/cost-controls?legalEntityId=${encodeURIComponent(legalEntityId)}`) }
+export function getChargeCostControls(legalEntityId: string, chargeId: string) { return call<ChargeCostControls>(`/cost-controls?legalEntityId=${encodeURIComponent(legalEntityId)}&chargeId=${encodeURIComponent(chargeId)}`) }
+export function updateCostControls(legalEntityId: string, action: "save_policy" | "approve_policy" | "record_evidence" | "automation" | "retry_finalisation" | "approve_exception", input: Record<string, unknown>) {
+  return jsonRequest("POST", "/cost-controls", { ...input, legalEntityId, action })
+}
+
 async function call<T>(path: string, init?: RequestInit) {
   const session = await getSupabaseSession()
   if (!session?.access_token) throw new FinanceAccrualsApiError("Sign in again to continue.")
   const response = await edgeFetch("finance-accruals", path, session.access_token, init)
   if (!response.ok) {
+    if (response.status === 404 && path.startsWith("/cost-review?")) throw new FinanceAccrualsApiError("The cost review service update has not been deployed. Automatic finalisation remains disabled.")
     const error = await response.json().catch(() => null)
     throw new FinanceAccrualsApiError(error?.detail ?? "Accruals and WIP could not complete that request.")
   }

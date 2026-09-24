@@ -84,7 +84,6 @@
     opacity: 0.5;
   }
 }
-
 .spring-check__fill {
   position: absolute;
   inset: 0;
@@ -135,4 +134,3 @@
     transition: none;
   }
 }
-

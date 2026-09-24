@@ -1,0 +1,207 @@
+/* Multideck CRM — 0.1.1, 15 September 2026.
+ * Install ONLY in the separate Multideck brand's Custom CSS field.
+ * Source: multideck.client/src/styles.css :root light tokens.
+ * This is a presentation layer, never an authentication or tenant boundary.
+ * No remote fonts, scripts, telemetry, hidden navigation or DOM rewriting.
+ * Live agency and login selectors inspected; tenant workflows require QA.
+ */
+:root {
+  --md-crm-font: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --md-crm-ink: #0b1413;
+  --md-crm-text: #4f5b58;
+  --md-crm-subtle: #687570;
+  --md-crm-bg: #f3f4f4;
+  --md-crm-sidebar: #f7f8f8;
+  --md-crm-surface: #ffffff;
+  --md-crm-soft: #f7f9f8;
+  --md-crm-hover: #eef1f0;
+  --md-crm-line: #ccd4d1;
+  --md-crm-selected: #c8dcd6;
+  --md-crm-selected-ink: #145b54;
+  --md-crm-accent: #0a7068;
+  --md-crm-accent-hover: #086f67;
+  --md-crm-accent-ink: #ffffff;
+  --md-crm-radius: 6px;
+  --md-crm-panel-radius: 10px;
+  --md-crm-motion: 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Keep the brand's first release on a consistent light palette. No automatic
+ * OS/storage theme switching; dark coverage needs a separate live QA pass. */
+body, #app {
+  font-family: var(--md-crm-font) !important;
+  color: var(--md-crm-ink);
+  background-color: var(--md-crm-bg);
+}
+#app :is(h1,h2,h3,h4,h5,h6,p,label,input,textarea,select,button,table,pre,code),
+#sidebar-v2 a, .cm-editor, .cm-content, .cm-gutters {
+  font-family: var(--md-crm-font) !important;
+}
+#app :is(h1,h2,h3,h4,h5,h6) { font-weight: 500; }
+
+/* Shell: retain HighLevel's widths, collapse behaviour and mobile navigation. */
+#sidebar-v2, .hl_sidebar {
+  background: var(--md-crm-sidebar) !important;
+  color: var(--md-crm-text) !important;
+  border-inline-end: 1px solid var(--md-crm-line);
+}
+#sidebar-v2 a {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: var(--md-crm-text) !important;
+  border-radius: var(--md-crm-radius) !important;
+  opacity: 1 !important;
+  transition: background-color var(--md-crm-motion), color var(--md-crm-motion);
+}
+#sidebar-v2 a:hover { background: var(--md-crm-hover) !important; }
+#sidebar-v2 :is(a.active,a.exact-active,a[aria-current="page"]) {
+  background: var(--md-crm-selected) !important;
+  color: var(--md-crm-selected-ink) !important;
+  font-weight: 500 !important;
+}
+#location-switcher-sidbar-v2 {
+  background: var(--md-crm-hover) !important;
+  color: var(--md-crm-ink) !important;
+  border-radius: var(--md-crm-radius) !important;
+}
+.hl_header, .hl_topHeader {
+  background: var(--md-crm-surface) !important;
+  color: var(--md-crm-ink) !important;
+  border-bottom: 1px solid var(--md-crm-line);
+  box-shadow: none !important;
+}
+#sidebar-v2 img[alt="agency logo"], .login__logo img {
+  object-fit: contain;
+  max-width: 100%;
+}
+
+/* Shared controls. Do not turn danger, warning or success actions teal. */
+.n-button, .hl-btn, .btn {
+  font-family: var(--md-crm-font) !important;
+  border-radius: var(--md-crm-radius) !important;
+  font-weight: 500 !important;
+}
+.n-button--primary-type {
+  --n-color: var(--md-crm-accent) !important;
+  --n-color-hover: var(--md-crm-accent-hover) !important;
+  --n-color-pressed: var(--md-crm-accent-hover) !important;
+  --n-color-focus: var(--md-crm-accent) !important;
+  --n-text-color: var(--md-crm-accent-ink) !important;
+  --n-text-color-hover: var(--md-crm-accent-ink) !important;
+  --n-text-color-pressed: var(--md-crm-accent-ink) !important;
+  --n-text-color-focus: var(--md-crm-accent-ink) !important;
+  --n-border: 1px solid var(--md-crm-accent) !important;
+  --n-border-hover: 1px solid var(--md-crm-accent-hover) !important;
+  --n-border-focus: 1px solid var(--md-crm-accent) !important;
+  --n-border-pressed: 1px solid var(--md-crm-accent-hover) !important;
+}
+.btn-primary, .login__button {
+  background-color: var(--md-crm-accent) !important;
+  border-color: var(--md-crm-accent) !important;
+  color: var(--md-crm-accent-ink) !important;
+}
+.btn-primary:hover:not(:disabled), .login__button:hover:not(:disabled) {
+  background-color: var(--md-crm-accent-hover) !important;
+}
+.n-input, .n-base-selection {
+  --n-border-radius: var(--md-crm-radius) !important;
+  --n-border-hover: 1px solid var(--md-crm-accent) !important;
+  --n-border-focus: 1px solid var(--md-crm-accent) !important;
+  --n-box-shadow-focus: 0 0 0 3px color-mix(in srgb, var(--md-crm-accent) 18%, transparent) !important;
+  font-family: var(--md-crm-font) !important;
+}
+.form-control {
+  font-family: var(--md-crm-font) !important;
+  border-radius: var(--md-crm-radius) !important;
+}
+/* Validation colours stay provider-owned. Focus must remain visible on all
+ * controls, including controls whose provider stylesheet removes outlines. */
+#app :is(a,button,input,textarea,select,[role="button"],[role="tab"],[tabindex]):focus-visible {
+  outline: 2px solid var(--md-crm-accent) !important;
+  outline-offset: 3px !important;
+}
+#app :is(button,input,select,textarea):disabled,
+#app :is(button,[role="button"])[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* Reviewed component families; no wildcard colour replacement or resizing
+ * of editors, charts, payment dialogs, campaign content or embedded frames. */
+.n-tabs {
+  --n-tab-text-color-active: var(--md-crm-accent) !important;
+  --n-tab-text-color-hover: var(--md-crm-accent) !important;
+  --n-bar-color: var(--md-crm-accent) !important;
+}
+.n-data-table {
+  --n-th-color: var(--md-crm-soft) !important;
+  --n-th-text-color: var(--md-crm-text) !important;
+  --n-td-color: var(--md-crm-surface) !important;
+  --n-td-color-hover: var(--md-crm-hover) !important;
+  --n-td-text-color: var(--md-crm-ink) !important;
+  --n-border-color: var(--md-crm-line) !important;
+  --n-border-radius: var(--md-crm-panel-radius) !important;
+}
+.n-card {
+  --n-color: var(--md-crm-surface) !important;
+  --n-text-color: var(--md-crm-text) !important;
+  --n-title-text-color: var(--md-crm-ink) !important;
+  --n-border-radius: var(--md-crm-panel-radius) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  #sidebar-v2 a { transition: none !important; }
+}
+
+/* Authentication: selectors inspected at crm.multideck.app, 15 Sep 2026.
+ * Preserve form fields, validation, password visibility and security flows. */
+.hl_login {
+  background: var(--md-crm-bg) !important;
+  color: var(--md-crm-ink) !important;
+  font-family: var(--md-crm-font) !important;
+  min-height: 100dvh;
+  color-scheme: light;
+}
+.hl_login--header {
+  background: var(--md-crm-surface) !important;
+  border-bottom: 1px solid var(--md-crm-line) !important;
+}
+.hl_login--header img { width: 174px; max-width: 100%; height: auto; object-fit: contain; }
+.hl_login--body .card {
+  background: var(--md-crm-surface) !important;
+  border: 1px solid var(--md-crm-line) !important;
+  border-radius: var(--md-crm-panel-radius) !important;
+  box-shadow: 0 12px 28px rgba(42,52,50,.08) !important;
+  max-width: 460px;
+  margin-inline: auto;
+}
+.hl_login--body .card-body { padding: 36px !important; }
+.hl_login .heading2 {
+  font-size: 24px !important;
+  font-weight: 500 !important;
+  color: var(--md-crm-ink) !important;
+  letter-spacing: -.4px;
+}
+.hl_login :is(label,p,select,input) { font-family: var(--md-crm-font) !important; }
+.hl_login label { color: var(--md-crm-text) !important; font-weight: 400 !important; }
+.hl_login .hl-text-input {
+  background: var(--md-crm-soft) !important;
+  color: var(--md-crm-ink) !important;
+  border: 1px solid var(--md-crm-line);
+  border-radius: var(--md-crm-radius) !important;
+  min-height: 42px;
+  box-shadow: none !important;
+}
+.hl_login input::placeholder { color: var(--md-crm-subtle) !important; opacity: 1; }
+.hl_login .hl-btn {
+  min-height: 42px;
+  background: var(--md-crm-accent) !important;
+  border-color: var(--md-crm-accent) !important;
+  color: var(--md-crm-accent-ink) !important;
+  box-shadow: none !important;
+}
+.hl_login .hl-btn:hover:not(:disabled) { background: var(--md-crm-accent-hover) !important; }
+.hl_login a { color: var(--md-crm-accent) !important; font-weight: 500 !important; }
+.hl_login a:hover { text-decoration: underline; }
+@media (max-width: 540px) {
+  .hl_login--body .card-body { padding: 24px !important; }
+  .hl_login--body .card { width: 100%; }
+}

@@ -1,0 +1,35 @@
+[
+  {
+    "doctype": "Custom Field",
+    "dt": "Customer",
+    "fieldname": "custom_multideck_party_key",
+    "label": "Multideck account identity",
+    "fieldtype": "Data",
+    "unique": 1,
+    "no_copy": 1,
+    "hidden": 1,
+    "description": "Stable tenant, legal entity, organisation and customer-role identity. Managed by the Multideck integration."
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Supplier",
+    "fieldname": "custom_multideck_party_key",
+    "label": "Multideck account identity",
+    "fieldtype": "Data",
+    "unique": 1,
+    "no_copy": 1,
+    "hidden": 1,
+    "description": "Stable tenant, legal entity, organisation and supplier-role identity. Managed by the Multideck integration."
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Address",
+    "fieldname": "custom_multideck_address_key",
+    "label": "Multideck accounting address identity",
+    "fieldtype": "Data",
+    "unique": 1,
+    "no_copy": 1,
+    "hidden": 1,
+    "description": "Stable Multideck accounting-address identity. Managed by the Multideck integration."
+  }
+]

@@ -28,8 +28,6 @@ nul
 .vercel
 
 /supabase/.temp/
-/multideck.server/Backend/supabase/.temp/
-/multideck.server/Backend/supabase/supabase/.temp/
 *.cache
 *.log
 Multideck_Scope_v5.docx
