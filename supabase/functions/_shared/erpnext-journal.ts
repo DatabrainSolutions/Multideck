@@ -53,7 +53,7 @@ export async function exportErpNextJournal(input: JournalExport) {
   try {
     const before = await read()
     verifyJournal(before, input, Number(before.docstatus) === 1)
-    if (Number(before.docstatus) === 0) await erpNextSubmit("Journal Entry", externalId)
+    if (Number(before.docstatus) === 0) await erpNextSubmit("Journal Entry", externalId, before)
     verifyJournal(await read(), input, true)
     return externalId
   } catch (error) { throw new JournalDeliveryError(error instanceof Error ? error.message : "Journal delivery could not be confirmed.", externalId) }
