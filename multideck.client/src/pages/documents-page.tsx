@@ -1706,7 +1706,8 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     }
   }
 
-  const publishedTemplates = workspace?.templates.filter((template) => template.status === "published") ?? []
+  // Booking confirmations need the Booking Documents price/scope review first.
+  const publishedTemplates = workspace?.templates.filter((template) => template.status === "published" && template.code !== "JOB_CONFIRMATION") ?? []
   const generatedDocuments = workspace?.generatedDocuments ?? []
   const generatedDocumentTotal = workspace?.generatedDocumentTotal ?? generatedDocuments.length
   const generatedDocumentColumns = useMemo<DataTableColumn<GeneratedDocumentSummary>[]>(() => [
@@ -1721,7 +1722,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   if (manageOpen && workspace) {
     return (
       <CreateDocumentWorkspace
-        templates={publishedTemplates}
+        templates={workspace.templates.filter((template) => template.status === "published")}
         canManageTemplates={workspace.permissions.canManageTemplates}
         initialTemplateCode={selectedTemplateCode}
         resumeActiveDraft={false}
@@ -1735,7 +1736,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   if (createOpen && workspace) {
     return (
       <QuickCreateDocumentWorkspace
-        templates={workspace.templates.filter((template) => template.status === "published")}
+        templates={publishedTemplates}
         initialTemplateCode={selectedTemplateCode}
         onClose={closeCreate}
         onRendered={loadWorkspace}

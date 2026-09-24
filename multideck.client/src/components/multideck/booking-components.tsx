@@ -4,7 +4,8 @@ import { bookingDraftConflicts, rebaseBookingDraft } from "@/lib/booking-draft"
 import { planningChargeReadback } from "@/lib/booking-charge-readback"
 import { planningAuditChanges } from "@/lib/booking-planning-audit"
 import { bookingOwnerLabel } from "@/lib/booking-owner"
-import { getBookingAttachmentAccess, getBookingQuoteDocumentAccess } from "@/lib/booking-workflow-api"
+import { getBookingAttachmentAccess, getBookingConfirmationReview, getBookingQuoteDocumentAccess, type BookingConfirmationReview } from "@/lib/booking-workflow-api"
+import { getGeneratedDocumentDownload, renderDocument } from "@/lib/document-builder-api"
 import { hasPermission } from "@/lib/auth-user"
 import "@/quotes-transfer.css"
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
@@ -2143,6 +2144,7 @@ function BookingCargoWiseField({
   error,
   label,
   maxLength,
+  multiline = false,
   onChange,
   onOptionSelect,
   options,
@@ -2164,6 +2166,7 @@ function BookingCargoWiseField({
   error?: string
   label: string
   maxLength?: number
+  multiline?: boolean
   onChange?: (value: string) => void
   onOptionSelect?: (option: BookingFieldOption) => void
   options?: readonly (string | BookingFieldOption)[]
@@ -2205,6 +2208,19 @@ function BookingCargoWiseField({
               {normalizedOptions.map((option) => <SelectItem key={option.id ?? option.value} value={option.value}>{t(option.label)}</SelectItem>)}
             </SelectContent>
           </Select>
+        ) : multiline ? (
+          <Textarea
+            id={fieldId}
+            disabled={!editable}
+            aria-label={t(label)}
+            data-i18n-skip
+            dir="auto"
+            maxLength={maxLength}
+            rows={3}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="min-h-20 min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-2 py-2 text-[12px] font-medium shadow-[var(--md-shadow-line)]"
+          />
         ) : (
           <AutoPopulatedInput
             autoPopulated={autoPopulated}
@@ -2961,6 +2977,7 @@ function BookingRecordDetails({
   const cargo = workspace.cargo[cargoIndex]
   const editableDetails = asRecord(workspace.booking.editableDetails)
   const detailValue = (key: string, fallback = "") => Object.prototype.hasOwnProperty.call(editableDetails, key) ? recordText(editableDetails, key) : fallback
+  const scopeSelected = (key: string) => editableDetails[key] === true
   const quoteType = recordText(editableDetails, "quoteType") || recordText(quote, "quoteType") || recordText(facts, "quoteType") || record.booking.direction
   const quoteReference = recordText(quote, "reference") || recordText(asRecord(workspace?.sourceQuote), "reference")
   const value = (source: Record<string, unknown>, key: string, fallback = "") => recordText(source, key) || fallback
@@ -3272,6 +3289,25 @@ function BookingRecordDetails({
 
       <div data-booking-detail-section="route" className="grid items-stretch gap-2">
         <BookingCargoWiseGroup title="Route & service">
+          <div className="mb-3 grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+            <div>
+              <h4 className="text-[12px] font-medium text-[var(--md-ink)]">{t("Work Jenkar is arranging")}</h4>
+              <p className="mt-1 text-[11px] text-[var(--md-text)]">{t("Select only the parts covered by this Booking. Customer-arranged onward work is not required.")}</p>
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {([ ["scopeCollection", "Collection"], ["scopeMainTransport", "Main transport"], ["scopeDelivery", "Delivery"] ] as const).map(([key, label]) => (
+                <label key={key} className="flex cursor-pointer items-center gap-2 text-[12px] text-[var(--md-ink)]">
+                  <Checkbox checked={scopeSelected(key)} disabled={!editable} onCheckedChange={(checked) => onDetailChange(key, checked === true)} />
+                  {t(label)}
+                </label>
+              ))}
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              {scopeSelected("scopeCollection") ? <BookingCargoWiseField label="Collection remarks" value={detailValue("collectionRemarks")} maxLength={4000} multiline span {...editDetail("collectionRemarks")} /> : null}
+              {scopeSelected("scopeDelivery") ? <BookingCargoWiseField label="Delivery remarks" value={detailValue("deliveryRemarks")} maxLength={4000} multiline span {...editDetail("deliveryRemarks")} /> : null}
+              <BookingCargoWiseField label="Special instructions for customer" value={detailValue("specialInstructions")} maxLength={4000} multiline span {...editDetail("specialInstructions")} />
+            </div>
+          </div>
           <div data-booking-service-grid className="grid gap-3 xl:grid-cols-2 @min-[80rem]/booking-details:grid-cols-6">
             <div className="grid content-start gap-1.5 @min-[80rem]/booking-details:contents">
               <div className="grid gap-1.5 md:grid-cols-2 @min-[80rem]/booking-details:contents">
@@ -3360,6 +3396,7 @@ function BookingRecordDetails({
                     <summary className="cursor-pointer rounded-[var(--md-radius-md)] py-2 text-[12px] font-medium text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">{t("Operational details")} · {t("Step")} {index + 1}</summary>
                     <div className="grid min-w-0 gap-2 pt-2 md:grid-cols-2 xl:grid-cols-3 [--md-field-label-width:110px]">
                       {operationalFields.map(({ field, label, maxLength }) => <BookingCargoWiseField key={field} label={label} value={String(leg[field] ?? "")} maxLength={maxLength} wrapValue {...editRoute(index, field)} />)}
+                      <BookingCargoWiseField label="Carrier / haulier notes (internal)" value={recordText(asRecord(leg.routeData), "carrierNotes")} multiline wrapValue span {...editRoute(index, "carrierNotes")} />
                       <BookingRouteScheduleFields route={leg} editable={editable} onChange={(field, nextValue) => onRouteChange(index, field, nextValue)} />
                       {workspace.routeCutoffsSupported ? <BookingRouteCutoffFields route={leg} editable={editable} onChange={(field, value) => onRouteChange(index, field, value)} /> : null}
                     </div>
@@ -3472,6 +3509,7 @@ function BookingRecordDetails({
           <div className="sm:col-span-2 xl:col-span-2 2xl:col-span-2">
             <div ref={goodsDescriptionRef}><BookingCargoWiseField label="Goods description" value={goodsDescription} placeholder="Describe the goods" {...editCargo(cargoIndex, "description")} /></div>
           </div>
+          <BookingCargoWiseField label="Marks and numbers" value={cargoValue("marksAndNumbers", cargoDataValue("marksAndNumbers"))} {...editCargo(cargoIndex, "marksAndNumbers")} />
           <BookingCargoWiseField label="Packages / pieces" value={cargoValue("packageQuantity", value(facts, "packageQuantity"))} {...editCargo(cargoIndex, "packageQuantity")} />
           <BookingCargoWiseField label="Package type" value={cargoValue("packageType", value(facts, "packageType"))} options={[...freightPackageTypeOptions]} searchable {...editCargo(cargoIndex, "packageType")} />
           <BookingCargoWiseField label="Gross weight (kg)" value={cargoValue("grossWeightKg", value(facts, "grossWeightKg"))} {...editCargo(cargoIndex, "grossWeightKg")} />
@@ -3553,10 +3591,21 @@ function bookingDocumentCategory(document: BookingWorkflowWorkspace["documents"]
   return "job"
 }
 
-function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) {
+function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSaved }: {
+  record: BookingDetailRecord
+  canGenerate: boolean
+  blocked: boolean
+  onWorkspaceSaved: (workspace: BookingWorkflowWorkspace) => Promise<void>
+}) {
   const { language, t } = useLanguage()
-  const [preview, setPreview] = useState<{ id: string; name: string; url?: string; error?: string; attachment?: boolean; mimeType?: string } | null>(null)
+  const [preview, setPreview] = useState<{ id: string; name: string; url?: string; error?: string; attachment?: boolean; generated?: boolean; mimeType?: string } | null>(null)
   const [downloading, setDownloading] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [review, setReview] = useState<BookingConfirmationReview | null>(null)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [confirmPrices, setConfirmPrices] = useState(false)
   const documentRequest = useRef(0)
   useEffect(() => () => { documentRequest.current += 1 }, [])
   async function openQuotePdf(id: string, name: string, attachment = false) {
@@ -3569,12 +3618,62 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
       if (request === documentRequest.current) setPreview({ id, name, attachment, error: cause instanceof Error ? cause.message : t("The attachment could not be opened. Please try again.") })
     }
   }
+  async function openGeneratedPdf(id: string, name: string) {
+    const request = ++documentRequest.current
+    setPreview({ id, name, generated: true, mimeType: "application/pdf" })
+    try {
+      const access = await getGeneratedDocumentDownload(id, true)
+      if (request === documentRequest.current) setPreview({ id, name: access.fileName, generated: true, url: access.signedUrl, mimeType: "application/pdf" })
+    } catch (cause) {
+      if (request === documentRequest.current) setPreview({ id, name, generated: true, error: cause instanceof Error ? cause.message : t("The PDF could not be opened.") })
+    }
+  }
+  async function openReview() {
+    if (!record.workspace || blocked || !canGenerate) return
+    setReviewOpen(true)
+    setReview(null)
+    setReviewError(null)
+    setConfirmPrices(false)
+    setReviewLoading(true)
+    try {
+      const next = await getBookingConfirmationReview(record.workspace.booking.jobId)
+      setReview(next)
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : t("Booking information could not be reviewed.")
+      setReviewError(message.includes("Choose a supported booking action")
+        ? t("Booking PDFs are awaiting their backend release. No document has been created.") : message)
+    } finally { setReviewLoading(false) }
+  }
+  async function generateConfirmation() {
+    if (!record.workspace || !review || generating || !canGenerate || blocked) return
+    setGenerating(true)
+    setReviewError(null)
+    try {
+      const result = await renderDocument({
+        templateCode: "JOB_CONFIRMATION",
+        targetType: "Job_Header",
+        jobNumber: String(record.workspace.booking.jobNumber),
+        outputFormat: "pdf",
+        contentSections: ["job", "customer", "cargo", "routing"],
+        bookingReviewToken: review.reviewToken,
+        confirmCustomerPrices: confirmPrices && review.priceAvailable && !review.provisional,
+      })
+      await onWorkspaceSaved(await getBookingWorkflow(record.workspace.booking.bookingReference))
+      setReviewOpen(false)
+      toast.success(t("Booking PDF saved"), { description: t("This version is available in Job documents.") })
+      await openGeneratedPdf(result.generatedDocumentId, result.fileName)
+    } catch (cause) {
+      setReviewError(cause instanceof Error ? cause.message : t("The Booking PDF could not be generated."))
+    } finally { setGenerating(false) }
+  }
   async function downloadQuotePdf() {
     if (!preview || downloading) return
     setDownloading(true)
     try {
       // Refresh authorisation for every download instead of reusing an expired URL.
-      const access = preview.attachment ? await getBookingAttachmentAccess(record.booking.id, preview.id) : { ...await getBookingQuoteDocumentAccess(record.booking.id, preview.id), mimeType: "application/pdf" }
+      const access = preview.generated ? { ...await getGeneratedDocumentDownload(preview.id), mimeType: "application/pdf" }
+        : preview.attachment ? await getBookingAttachmentAccess(record.booking.id, preview.id)
+          : { ...await getBookingQuoteDocumentAccess(record.booking.id, preview.id), mimeType: "application/pdf" }
       const response = await fetch(access.signedUrl, { credentials: "omit", signal: AbortSignal.timeout(60_000) })
       if (!response.ok) throw new Error(t("The PDF could not be downloaded. Please try again."))
       const blob = await response.blob()
@@ -3652,9 +3751,10 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
                     {group.description ? <p className="mt-0.5 text-[10.5px] leading-4 text-[var(--md-text)]">{t(group.description)}</p> : null}
                   </div>
                 </div>
-                <span className="text-[10.5px] font-medium text-[var(--md-subtle)]">
-                  <span data-i18n-skip>{groupDocuments.length}</span> {t(groupDocuments.length === 1 ? "file" : "files")}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10.5px] font-medium text-[var(--md-subtle)]"><span data-i18n-skip>{groupDocuments.length}</span> {t(groupDocuments.length === 1 ? "file" : "files")}</span>
+                  {group.category === "job" && canGenerate ? <Button type="button" size="sm" disabled={blocked} onClick={() => void openReview()}>{t("Create Booking PDF")}</Button> : null}
+                </div>
               </div>
 
               {groupDocuments.length ? (
@@ -3700,6 +3800,9 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
                           {group.category === "quote" ? <Button size="sm" variant="outline"
                             aria-label={`${t("Open PDF")}: ${document.fileName || document.title}`}
                             onClick={() => void openQuotePdf(document.id, document.fileName || document.title)}>{t("Open PDF")}</Button> : null}
+                          {document.typeCode === "booking_confirmation" ? <Button size="sm" variant="outline"
+                            aria-label={`${t("Open PDF")}: ${document.fileName || document.title}`}
+                            onClick={() => void openGeneratedPdf(document.id, document.fileName || document.title)}>{t("Open PDF")}</Button> : null}
                           {group.category === "customs" && (document.typeCode === "commercial_invoice_original" || document.isCurrent !== false && ["commercial_invoice", "packing_list"].includes(document.typeCode ?? "")) && document.fileName ? <Button size="sm" variant="outline"
                             aria-label={`${t("View")}: ${document.fileName}`}
                             onClick={() => void openQuotePdf(document.id, document.fileName || document.title, true)}>{t("View")}</Button> : null}
@@ -3717,9 +3820,9 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
         <Dialog open={preview !== null} onOpenChange={open => { if (!open) { documentRequest.current += 1; setPreview(null) } }}>
           <DialogContent className="w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-5xl">
             <DialogHeader><DialogTitle>{preview?.name}</DialogTitle>
-              <DialogDescription>{t(preview?.attachment ? "Saved Booking attachment." : "Saved accepted Quote PDF. The original document is unchanged.")}</DialogDescription></DialogHeader>
+              <DialogDescription>{t(preview?.generated ? "Saved Booking information PDF. This version is unchanged." : preview?.attachment ? "Saved Booking attachment." : "Saved accepted Quote PDF. The original document is unchanged.")}</DialogDescription></DialogHeader>
             {preview?.error ? <div role="alert" className="grid gap-2 text-[13px]">
-              <p>{preview.error}</p><Button variant="outline" onClick={() => void openQuotePdf(preview.id, preview.name, preview.attachment)}>{t("Try again")}</Button>
+              <p>{preview.error}</p><Button variant="outline" onClick={() => preview.generated ? void openGeneratedPdf(preview.id, preview.name) : void openQuotePdf(preview.id, preview.name, preview.attachment)}>{t("Try again")}</Button>
             </div> : preview?.url ? (preview.mimeType === "application/pdf" ? <iframe title={`${t("Attachment")}: ${preview.name}`} src={preview.url} className="h-[65vh] w-full rounded-[var(--md-radius-lg)] bg-white" />
               : preview.mimeType?.startsWith("image/") ? <img src={preview.url} alt={preview.name} className="max-h-[65vh] w-full object-contain" />
                 : <p>{t("Preview is not available for this file type. Download it to open it.")}</p>)
@@ -3727,6 +3830,46 @@ function BookingDocumentsWorkspace({ record }: { record: BookingDetailRecord }) 
             <DialogFooter>
               {preview?.url ? <Button asChild variant="outline"><a href={preview.url} target="_blank" rel="noopener noreferrer">{t("Open in new tab")}</a></Button> : null}
               <Button disabled={!preview?.url || downloading} onClick={() => void downloadQuotePdf()}>{t(downloading ? "Downloading…" : preview?.attachment ? "Download" : "Download PDF")}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={reviewOpen} onOpenChange={(open) => { if (!generating) setReviewOpen(open) }}>
+          <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{t("Review Booking information")}</DialogTitle>
+              <DialogDescription>{t("A saved PDF freezes the selected service and customer selling prices at this point. Internal costs and carrier notes are excluded.")}</DialogDescription>
+            </DialogHeader>
+            {reviewLoading ? <div className="grid place-items-center py-8"><DotGridLoader label={t("Loading Booking information…")} /></div> : null}
+            {reviewError ? <p role="alert" className="rounded-[var(--md-radius-md)] bg-[var(--md-status-red-bg)] p-3 text-[12px] text-[var(--md-status-red-ink)]">{reviewError}</p> : null}
+            {review ? <div className="grid gap-4 text-[12px] text-[var(--md-ink)]">
+              <div className="grid gap-1"><p className="font-medium" data-i18n-skip>{review.bookingReference} · {review.customer?.name}</p>
+                <p>{review.provisional ? t("Provisional—not confirmed") : t("Booking information")}</p>
+                <p>{t("Prepared by")} <span data-i18n-skip>{review.preparedBy}</span></p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([ ["collection", "Collection", review.collection], ["mainTransport", "Main transport", review.mainTransport], ["delivery", "Delivery", review.delivery] ] as const)
+                  .filter(([key]) => review.scope[key])
+                  .map(([key, label, details]) => <div key={key} className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
+                    <p className="font-medium">{t(label)}</p>
+                    {key === "mainTransport" ? <p>{Array.isArray(details) ? details.map(step => [step.origin, step.destination].filter(Boolean).join(" → ")).join(" · ") : ""}</p>
+                      : <p data-i18n-skip>{details && !Array.isArray(details) ? details.address || "" : ""}</p>}
+                  </div>)}
+              </div>
+              {review.specialInstructions ? <p><span className="font-medium">{t("Special instructions")}:</span> <span data-i18n-skip>{review.specialInstructions}</span></p> : null}
+              <div className="grid gap-2">
+                <p className="font-medium">{t("Customer selling prices")}</p>
+                {review.priceAvailable && !review.provisional ? <>
+                  <div className="max-h-44 overflow-y-auto rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]">
+                    {review.chargeLines.map(line => <div key={line.id} className="flex justify-between gap-3 px-3 py-2 shadow-[var(--md-stroke-bottom)]"><span data-i18n-skip>{line.description}</span><span className="shrink-0 tabular-nums" data-i18n-skip>{line.currency} {line.sellAmount.toFixed(2)}</span></div>)}
+                  </div>
+                  <p className="text-right font-medium" data-i18n-skip>{review.chargeTotals.map(total => `${total.currency} ${total.amount.toFixed(2)}`).join(" · ")}</p>
+                  <label className="flex items-center gap-2"><Checkbox checked={confirmPrices} onCheckedChange={checked => setConfirmPrices(checked === true)} />{t("I have reviewed and confirm these customer selling prices for this PDF")}</label>
+                </> : <p className="text-[var(--md-text)]">{t("Price to be confirmed")}</p>}
+              </div>
+            </div> : null}
+            <DialogFooter>
+              <Button variant="ghost" disabled={generating} onClick={() => setReviewOpen(false)}>{t("Cancel")}</Button>
+              <Button disabled={!review || generating || blocked} onClick={() => void generateConfirmation()}>{t(generating ? "Saving PDF…" : confirmPrices ? "Save PDF with reviewed prices" : "Save PDF — price to be confirmed")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -4649,6 +4792,8 @@ function BookingQuoteSyncReviewPanel({
 
 function BookingDetailTabPage({
   planningCharges,
+  documentBlocked,
+  canGenerateDocument,
   onAssignCustomer,
   renderDangerousGoods,
   renderSecurityEvidence,
@@ -4687,6 +4832,8 @@ function BookingDetailTabPage({
   workspace,
 }: {
   planningCharges?: ReactNode
+  documentBlocked: boolean
+  canGenerateDocument: boolean
   onAssignCustomer: () => void
   renderDangerousGoods?: (cargo: BookingWorkflowCargo, renderHandling?: (entry: ReactNode, records: ReactNode, unsaved: boolean) => ReactNode) => ReactNode
   renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
@@ -4725,7 +4872,7 @@ function BookingDetailTabPage({
   workspace: BookingWorkflowWorkspace
 }) {
   if (activeTab === "Details") return <BookingRecordDetails weightValidation={weightValidation} renderDangerousGoods={renderDangerousGoods} renderSecurityEvidence={renderSecurityEvidence} renderMilestones={renderMilestones} allocationEditor={allocationEditor} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
-  if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} />
+  if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} blocked={documentBlocked} canGenerate={canGenerateDocument} onWorkspaceSaved={onWorkspaceSaved} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace customsError={customsError} navigate={navigate} onWorkspaceSaved={onWorkspaceSaved} onViewChange={onCustomsViewChange} readiness={customsReadiness} record={record} view={customsView} />
   if (activeTab === "Finance") return planningCharges ?? <BookingFinanceWorkspace record={record} />
   if (activeTab === "Notes") return <LifecycleNotes subjectType="booking" subjectId={record.workspace?.booking.jobId ?? null} />
@@ -5863,6 +6010,8 @@ export function BookingDetailWorkspace({
           data-booking-tab-panel
         >
           <BookingDetailTabPage
+            documentBlocked={detailsDirty || savingDetails || planningPending || applyingQuoteSync || provisionalBusy}
+            canGenerateDocument={hasPermission(currentUser, "Documents.Generate")}
             onAssignCustomer={() => {
               changeActiveTab("Details")
               requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-booking-customer-select] [role="combobox"], [data-booking-customer-select] input')?.focus())

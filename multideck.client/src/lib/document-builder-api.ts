@@ -83,6 +83,8 @@ export type RenderDocumentRequest = {
   contentSections: DocumentContentSectionCode[]
   reason?: string
   studioTemplateBase64?: string
+  bookingReviewToken?: string
+  confirmCustomerPrices?: boolean
 }
 
 export type DocumentStudioSession = {
@@ -419,11 +421,11 @@ export async function approveDocumentStudioTemplate(templateId: string) {
   return response.json() as Promise<ApproveDocumentStudioTemplateResponse>
 }
 
-export async function getGeneratedDocumentDownload(generatedDocumentId: string): Promise<DocumentDownloadResponse> {
+export async function getGeneratedDocumentDownload(generatedDocumentId: string, preview = false): Promise<DocumentDownloadResponse> {
   const client = requireDocumentClient()
   const { data, error } = await client.functions.invoke<DocumentDownloadResponse>("document-download", {
     method: "POST",
-    body: { generatedDocumentId },
+    body: { generatedDocumentId, preview },
   })
 
   if (error) throw await toFunctionError(error, "A secure download link could not be created.")

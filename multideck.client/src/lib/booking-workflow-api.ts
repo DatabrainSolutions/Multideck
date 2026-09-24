@@ -92,6 +92,7 @@ export type BookingWorkflowCargo = {
   id?: string
   lineNumber?: number
   description?: string | null
+  marksAndNumbers?: string | null
   knownCargo?: string | null
   commodity?: string | null
   pieces?: string | number | null
@@ -233,6 +234,7 @@ export type BookingWorkflowRoute = {
   vehicleRegistration?: string | null
   trailerNumber?: string | null
   railService?: string | null
+  carrierNotes?: string | null
   isMainCarriage?: boolean
   routeData?: Record<string, unknown>
   updatedAt?: string | null
@@ -258,6 +260,26 @@ export type BookingWorkflowDocument = {
   sourceRecordId?: string | null
   sourceReference?: string | null
   metadata?: Record<string, unknown> | null
+}
+
+export type BookingConfirmationReview = {
+  jobId: string
+  bookingReference: string
+  customerReference: string | null
+  status: string
+  provisional: boolean
+  preparedBy: string
+  customer: { id: string; name: string }
+  scope: { collection: boolean; mainTransport: boolean; delivery: boolean }
+  collection: { address: string | null; plannedAt: string | null; remarks: string | null } | null
+  mainTransport: { sequence: number; mode: string; origin: string | null; destination: string | null }[] | null
+  delivery: { address: string | null; plannedAt: string | null; remarks: string | null } | null
+  cargo: { description: string | null; marksAndNumbers: string | null; packages: number | null; packageType: string | null; grossWeightKg: number | null }[]
+  specialInstructions: string | null
+  priceAvailable: boolean
+  chargeLines: { id: string; description: string; sellAmount: number; currency: string }[]
+  chargeTotals: { currency: string; amount: number }[]
+  reviewToken: string
 }
 
 export type BookingWorkflowDeclaration = {
@@ -513,6 +535,10 @@ export function openBookingWorkflow(idempotencyKey: string, initialMode?: "road"
 
 export function getBookingWorkflow(reference: string) {
   return invoke<BookingWorkflowWorkspace>({ action: "workspace", reference }, "The booking workspace could not be loaded.")
+}
+
+export function getBookingConfirmationReview(jobId: string) {
+  return invoke<BookingConfirmationReview>({ action: "booking-confirmation-review", jobId }, "Booking information could not be reviewed.")
 }
 
 export function saveBookingWorkflow(jobId: string, booking: Record<string, unknown>) {

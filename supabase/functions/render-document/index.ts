@@ -26,6 +26,8 @@ type RenderRequest = {
   contentSections?: unknown
   reason?: string
   studioTemplateBase64?: string
+  bookingReviewToken?: string
+  confirmCustomerPrices?: boolean
 }
 
 type PreparedRender = {
@@ -191,6 +193,26 @@ Deno.serve(async (request) => {
       throw selectionError ?? new Error("Document content selection returned no data")
     }
     prepared = { ...prepared, dataset: selectedDataset as Record<string, unknown> }
+    if (templateCode === "JOB_CONFIRMATION") {
+      if (outputFormat !== "pdf" || typeof payload.bookingReviewToken !== "string"
+        || !/^[a-f0-9]{32}$/.test(payload.bookingReviewToken)
+        || typeof payload.confirmCustomerPrices !== "boolean") {
+        throw new FunctionError(400, "Review the Booking information and customer prices in Booking Documents first.", "Booking confirmation review was missing")
+      }
+      const { data: confirmation, error: confirmationError } = await context.admin
+        .schema("document_api")
+        .rpc("prepare_booking_confirmation", {
+          caller_auth_user_id: context.userId,
+          requested_render_job_id: prepared.renderJobId,
+          expected_review_token: payload.bookingReviewToken,
+          confirm_customer_prices: payload.confirmCustomerPrices,
+        })
+      if (confirmationError?.code === "40001") {
+        throw new FunctionError(409, "The Booking changed. Review the latest details and prices before generating the PDF.", "Booking confirmation review became stale")
+      }
+      if (confirmationError || !confirmation) throw confirmationError ?? new Error("Booking confirmation preparation returned no data")
+      prepared = { ...prepared, dataset: confirmation as Record<string, unknown> }
+    }
     const studioTemplateBytes = decodeStudioTemplate(payload.studioTemplateBase64)
 
     if (studioTemplateBytes) {
@@ -224,6 +246,7 @@ Deno.serve(async (request) => {
             ...(studioTemplateBytes ? { template: payload.studioTemplateBase64 } : {}),
             convertTo: prepared.outputFormat,
             lang: prepared.languageCode,
+            ...(templateCode === "JOB_CONFIRMATION" ? { timezone: "UTC" } : {}),
             reportName: safeReportName(prepared.templateCode, prepared.jobReference),
           }),
           signal: controller.signal,
@@ -253,7 +276,9 @@ Deno.serve(async (request) => {
     const generatedDocumentId = crypto.randomUUID()
     const createdAt = new Date()
     const extension = prepared.outputFormat
-    const fileName = `${safeReportName(prepared.templateCode, prepared.jobReference)}.${extension}`
+    const fileName = templateCode === "JOB_CONFIRMATION"
+      ? `${safeReportName(prepared.templateCode, prepared.jobReference)}-${createdAt.toISOString().replace(/[-:.TZ]/g, "")}-${generatedDocumentId.slice(0, 8)}.${extension}`
+      : `${safeReportName(prepared.templateCode, prepared.jobReference)}.${extension}`
     const environment = (Deno.env.get("MULTIDECK_ENVIRONMENT")?.trim() || "production").replace(/[^a-z0-9_-]/gi, "-")
     uploadedPath = [
       "v1",

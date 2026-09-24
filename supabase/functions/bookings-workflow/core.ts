@@ -1,4 +1,4 @@
-export type BookingWorkflowAction = "declaration-attachments" | "declaration-attachment-access" | "attachment-access" | "quote-document-access" | "quote-charge-review" | "apply-quote-charge-review" | "operational-charges" | "save-operational-charges" | "opening-options" | "save-ownership" | "open" | "open-road" | "workspace" | "save" | "planning-charges" | "save-planning-charges" | "provisional-action" | "save-milestone" | "save-dangerous-goods" | "save-security-evidence" | "customs-readiness" | "send-to-customs" | "quote-sync-review" | "apply-quote-sync"
+export type BookingWorkflowAction = "booking-confirmation-review" | "declaration-attachments" | "declaration-attachment-access" | "attachment-access" | "quote-document-access" | "quote-charge-review" | "apply-quote-charge-review" | "operational-charges" | "save-operational-charges" | "opening-options" | "save-ownership" | "open" | "open-road" | "workspace" | "save" | "planning-charges" | "save-planning-charges" | "provisional-action" | "save-milestone" | "save-dangerous-goods" | "save-security-evidence" | "customs-readiness" | "send-to-customs" | "quote-sync-review" | "apply-quote-sync"
 
 export class BookingWorkflowError extends Error {
   constructor(public readonly status: number, public readonly clientMessage: string, public readonly auditMessage = clientMessage) {
@@ -7,6 +7,7 @@ export class BookingWorkflowError extends Error {
 }
 
 export function parseAction(value: unknown): BookingWorkflowAction {
+  if (value === "booking-confirmation-review") return value
   if (value === "attachment-access") return value
   if (value === "declaration-attachments" || value === "declaration-attachment-access") return value
   if (value === "quote-document-access") return value

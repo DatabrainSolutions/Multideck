@@ -181,6 +181,17 @@ Deno.serve(async (request) => {
     const body = await request.json() as Record<string, unknown>
     const action = parseAction(body.action)
 
+    if (action === "booking-confirmation-review") {
+      const { data, error } = await admin.rpc("booking_confirmation_review", {
+        caller_auth_user_id: userId,
+        requested_job_id: parseUuid(body.jobId, "Booking"),
+      })
+      if (error?.code === "PGRST202") throw new BookingWorkflowError(409, "Booking information documents are awaiting their backend release.")
+      if (error?.code === "22023" || error?.code === "55000") throw new BookingWorkflowError(409, error.message)
+      if (error || !data) throw error ?? new Error("Booking confirmation review returned no result")
+      return jsonResponse(request, data)
+    }
+
     if (action === "opening-options") {
       const { data, error } = await admin.rpc("booking_workflow_open_options", { caller_auth_user_id: userId })
       if (error || !data) throw error ?? new Error("Booking modes returned no result")
