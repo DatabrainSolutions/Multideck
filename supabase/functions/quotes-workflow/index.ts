@@ -1415,6 +1415,12 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
   ])
   const firstError = customerResult.error || chargeResult.error || partyResult.error || versionResult.error || eventResult.error || latestIssueResult.error || quoteDocumentsResult.error || linkedBookingResult.error
   if (firstError) throw firstError
+  const chargeCodeIds = [...new Set((chargeResult.data ?? []).map(line => String(line.CusQuoteLine_ChargeCodeID || "")).filter(Boolean))]
+  const { data: chargeCodeRows, error: chargeCodeError } = chargeCodeIds.length
+    ? await admin.from("RATE_ChargeCodes").select("RATECharge_ID,RATECharge_Code").in("RATECharge_ID", chargeCodeIds)
+    : { data: [], error: null }
+  if (chargeCodeError) throw chargeCodeError
+  const chargeCodesById = new Map((chargeCodeRows ?? []).map(row => [row.RATECharge_ID, row.RATECharge_Code]))
   const events = eventResult.data ?? []
   const customerResponseEvent = events.find((event) => ["customer_accepted", "customer_declined", "customer_challenged"].includes(String(event.CusQuoteEvent_TypeCode)))
   let customerResponse: Row | null = null
@@ -1455,7 +1461,8 @@ async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateReque
   }
   const parties = new Map((partyResult.data ?? []).map((party) => [String(party.CusQuoteParty_RoleCode), party as Row]))
   const charges = (chargeResult.data ?? []).map((line) => ({
-    id: String(line.CusQuoteLine_ID), description: String(line.CusQuoteLine_Description), supplierId: line.CusQuoteLine_SupplierID,
+    id: String(line.CusQuoteLine_ID), code: chargeCodesById.get(line.CusQuoteLine_ChargeCodeID) ?? null,
+    chargeCodeId: line.CusQuoteLine_ChargeCodeID, description: String(line.CusQuoteLine_Description), supplierId: line.CusQuoteLine_SupplierID,
     costCurrency: String(line.CusQuoteLine_CostCurrencyCode || "GBP"), costAmount: Number(line.CusQuoteLine_CostAmountCurrency || 0),
     costLocal: Number(line.CusQuoteLine_CostAmountLocal || 0), costRoe: Number(line.CusQuoteLine_CostROE || 1),
     sellCurrency: String(line.CusQuoteLine_RevenueCurrencyCode || "GBP"), sellAmount: Number(line.CusQuoteLine_RevenueAmountCurrency || 0),
@@ -1575,6 +1582,27 @@ Deno.serve(async (request) => {
     const body = await request.json() as Record<string, unknown>
     const action = parseAction(body.action)
     if (action === "sources") return jsonResponse(request, await sourceOptions(admin, userId, body.compact === true))
+    if (action === "charge-catalogue") {
+      await operatorContext(admin, userId)
+      const codes: Row[] = []
+      for (let offset = 0; ; offset += 500) {
+        const { data, error } = await admin.from("RATE_ChargeCodes")
+          .select("RATECharge_ID,RATECharge_Code,RATECharge_Name,RATECharge_Description,RATECharge_DefaultApplicabilityCode,RATECharge_ScopeConfigured")
+          .eq("RATECharge_IsActive", true).order("RATECharge_Code").order("RATECharge_ID").range(offset, offset + 499)
+        if (error) throw error
+        codes.push(...(data ?? []))
+        if ((data ?? []).length < 500) break
+      }
+      const scopes: Row[] = []
+      for (let offset = 0; offset < codes.length; offset += 20) {
+        const ids = codes.slice(offset, offset + 20).map(code => String(code.RATECharge_ID))
+        const { data, error } = await admin.from("RATE_ChargeApplicability")
+          .select("charge_id,record_kind,direction,mode").in("charge_id", ids)
+        if (error) throw error
+        scopes.push(...(data ?? []))
+      }
+      return jsonResponse(request, { codes, scopes })
+    }
     if (action === "branding") {
       const operator = await requireAdministrator(admin, userId)
       return jsonResponse(request, await brandingResponse(admin, operator.companyId))

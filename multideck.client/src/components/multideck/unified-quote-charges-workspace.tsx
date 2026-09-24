@@ -18,6 +18,7 @@ import {
 } from "@/components/icons/hugeicons"
 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import type { ChargeChoice } from "@/lib/charge-catalogue"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { Button } from "@/components/ui/button"
@@ -107,6 +108,7 @@ export interface UnifiedQuoteChargesWorkspaceProps {
   selectedRowId?: string | null
   onSelectedRowIdChange?: (rowId: string | null) => void
   createRow?: (context: CreateQuoteChargeRowContext) => UnifiedQuoteChargeRow
+  chargeChoices?: readonly ChargeChoice[]
   readOnly?: boolean
   storageKey?: string
   rowReadOnlyReason?: (rowId: string) => string | undefined
@@ -674,6 +676,7 @@ export function UnifiedQuoteChargesWorkspace({
   selectedRowId,
   onSelectedRowIdChange,
   createRow,
+  chargeChoices,
   readOnly = false,
   rowReadOnlyReason,
   storageKey = "unified-quote-charges",
@@ -813,7 +816,15 @@ export function UnifiedQuoteChargesWorkspace({
       canHide: false,
       resizable: true,
       sortValue: (row) => row.code,
-      cell: (row) => (
+      cell: (row) => chargeChoices ? (
+        <Select value={row.code || undefined} onValueChange={code => {
+          const choice = chargeChoices.find(option => option.code === code)
+          if (choice) updateRow(row.id, { code: choice.code, description: choice.description })
+        }} disabled={readOnly || !chargeChoices.length}>
+          <SelectTrigger aria-label={t("Charge code")} size="sm" className="h-8 w-full min-w-0"><SelectValue placeholder={t("Choose")}>{row.code || undefined}</SelectValue></SelectTrigger>
+          <SelectContent>{chargeChoices.map(choice => <SelectItem key={choice.id} value={choice.code}>{choice.code} · {choice.name}</SelectItem>)}</SelectContent>
+        </Select>
+      ) : (
         <Input
           value={row.code}
           onChange={(event) => updateRow(row.id, { code: event.target.value })}
@@ -1037,7 +1048,7 @@ export function UnifiedQuoteChargesWorkspace({
         </DropdownMenu>
       ),
     },
-  ], [baseCurrencyDefinition, currencies, currencyFor, language, parties, rateFor, readOnly, selectRow, t, updateRow])
+  ], [baseCurrencyDefinition, chargeChoices, currencies, currencyFor, language, parties, rateFor, readOnly, selectRow, t, updateRow])
 
   const rateSummary = useMemo(() => {
     const relevant = exchangeRates.filter((rate) => rate.baseCurrency === baseCurrency)
@@ -1098,7 +1109,7 @@ export function UnifiedQuoteChargesWorkspace({
               <span className="shrink-0 text-[10px] font-medium text-[var(--md-ink)]">{t(rateLabel)}</span>
               {rateDetail ? <span data-i18n-skip dir="auto" className="max-w-40 truncate text-[10px] text-[var(--md-subtle)]">{rateDetail}</span> : null}
             </div>
-            <Button type="button" variant="ghost" size="sm" onClick={addRow} disabled={readOnly} className="h-8 rounded-[var(--md-radius-md)] text-[10.5px] shadow-[var(--md-shadow-line)]">
+            <Button type="button" variant="ghost" size="sm" onClick={addRow} disabled={readOnly || (chargeChoices !== undefined && chargeChoices.length === 0)} className="h-8 rounded-[var(--md-radius-md)] text-[10.5px] shadow-[var(--md-shadow-line)]">
               <Plus data-icon="inline-start" className="size-3.5" strokeWidth={1.5} />
               {t("Add")}
             </Button>
@@ -1112,7 +1123,8 @@ export function UnifiedQuoteChargesWorkspace({
           <div className="mx-auto grid max-w-sm justify-items-center gap-2 px-4">
             <CircleGauge className="size-5 text-[var(--md-subtle)]" strokeWidth={1.25} aria-hidden="true" />
             <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("No charge lines yet")}</p>
-            {!readOnly ? <Button type="button" variant="outline" size="sm" onClick={addRow}><Plus data-icon="inline-start" />{t("Add charge")}</Button> : null}
+            {!readOnly && chargeChoices !== undefined && chargeChoices.length === 0 ? <p className="text-[12px] text-[var(--md-subtle)]">{t("No charge codes apply to this direction and mode.")}</p> : null}
+            {!readOnly && (chargeChoices === undefined || chargeChoices.length > 0) ? <Button type="button" variant="outline" size="sm" onClick={addRow}><Plus data-icon="inline-start" />{t("Add charge")}</Button> : null}
           </div>
         )}
         className="md-unified-quote-charges-table rounded-[var(--md-radius-xl)] !bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)] [&_th]:!bg-[var(--md-surface)] [&_td]:!bg-[var(--md-surface)] [&_tr[data-state=selected]_td]:!bg-[var(--md-selected-bg)]"

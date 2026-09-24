@@ -1,5 +1,7 @@
 import { HttpError } from "./backend.ts"
-import { erpNextCreate, erpNextList, erpNextOrigin, erpNextSubmit } from "./erpnext.ts"
+import { erpNextList, erpNextOrigin, erpNextRequest, erpNextSubmit } from "./erpnext.ts"
+import { ensureErpNextDocument } from "./erpnext-document-identity.ts"
+import { compareErpNextReadback } from "./erpnext-readback.ts"
 
 export type AccountingProviderCode =
   | "erpnext"
@@ -29,6 +31,8 @@ export type CanonicalFinanceLine = {
   quantity: number
   unitAmount: number
   taxRatePercent: number
+  netAmount: number
+  taxAmount: number
   providerTaxCode: string | null
   providerItemCode: string | null
   providerAccountCode: string | null
@@ -80,13 +84,14 @@ export class AccountingProviderPartialError extends Error {
     readonly externalObjectType: string,
     readonly externalId: string,
     readonly requestPayload: Record<string, unknown>,
+    readonly readback: ReturnType<typeof compareErpNextReadback> | null = null,
   ) {
     super(message)
   }
 }
 
 export const accountingProviders: readonly AccountingProviderDefinition[] = [
-  { purpose: "external_mirror", code: "erpnext", name: "ERPNext", connectionModel: "api_token", enabled: true, requiresLocalAgent: false, capabilities: ["documents", "credits", "cash", "allocations", "webhooks"], unavailableReason: null },
+  { purpose: "external_mirror", code: "erpnext", name: "ERPNext", connectionModel: "api_token", enabled: true, requiresLocalAgent: false, capabilities: ["documents", "credits", "cash", "allocations", "webhooks", "journals"], unavailableReason: null },
   { purpose: "external_mirror", code: "xero", name: "Xero", connectionModel: "oauth2", enabled: false, requiresLocalAgent: false, capabilities: ["documents", "credits", "cash", "allocations", "webhooks"], unavailableReason: "The Xero OAuth adapter has not passed the tenant integration contract yet." },
   { purpose: "external_mirror", code: "quickbooks_online", name: "QuickBooks Online", connectionModel: "oauth2", enabled: false, requiresLocalAgent: false, capabilities: ["documents", "credits", "cash", "allocations", "webhooks"], unavailableReason: "The QuickBooks Online adapter has not passed the tenant integration contract yet." },
   { purpose: "external_mirror", code: "sage_accounting", name: "Sage Accounting", connectionModel: "oauth2", enabled: false, requiresLocalAgent: false, capabilities: ["documents", "credits", "cash", "allocations"], unavailableReason: "The Sage Accounting adapter has not passed the tenant integration contract yet." },
@@ -289,23 +294,51 @@ async function exportToErpNext(input: CanonicalFinanceExport): Promise<Accountin
     throw new HttpError(409, "The existing provider reference has a different accounting document type.")
   }
   let externalId = input.existingExternalId
+  let identityKey: string | null = null
   if (!externalId) {
-    const created = await erpNextCreate(request.doctype, request.payload)
-    externalId = String(created.name)
+    const identity = await ensureErpNextDocument(input, request.doctype, request.payload)
+    externalId = identity.externalId
+    identityKey = identity.key
   }
   let submitted: Record<string, unknown>
   try {
-    submitted = await erpNextSubmit(request.doctype, externalId)
-  } catch (error) {
-    if (!input.existingExternalId) {
-      throw new AccountingProviderPartialError(
-        error instanceof Error ? error.message : "ERPNext created the draft but did not submit it.",
-        request.doctype,
-        externalId,
-        request.payload,
-      )
+    const read = async () => {
+      const result = await erpNextRequest<{ data?: Record<string, unknown> }>(`/api/resource/${encodeURIComponent(request.doctype)}/${encodeURIComponent(externalId!)}`, { exactNumbers: true })
+      return result.data ?? {}
     }
-    throw error
+    const assertReadback = (document: Record<string, unknown>, status: 0 | 1) => {
+      if (identityKey && document.custom_multideck_document_key !== identityKey) {
+        throw new AccountingProviderPartialError("ERPNext did not retain the unique Multideck document identity. Review the retained reference before retrying.", request.doctype, externalId!, request.payload)
+      }
+      const readback = compareErpNextReadback(input, document, externalId!, status)
+      if (readback.status !== "matched") {
+        throw new AccountingProviderPartialError(
+          `ERPNext does not match the approved Multideck transaction (${readback.differences.slice(0, 5).map(difference => difference.field).join(", ")}). Review the retained provider reference before retrying.`,
+          request.doctype, externalId!, request.payload, readback,
+        )
+      }
+      return readback
+    }
+    const before = await read()
+    // A previous submit may have succeeded even when its response was lost.
+    // Verify that exact submitted record and recover without submitting twice.
+    if (before.docstatus === 1 || before.docstatus === "1") {
+      assertReadback(before, 1)
+      submitted = before
+    } else {
+      assertReadback(before, 0)
+      await erpNextSubmit(request.doctype, externalId, before)
+      submitted = await read()
+      assertReadback(submitted, 1)
+    }
+  } catch (error) {
+    if (error instanceof AccountingProviderPartialError) throw error
+    // Retain the reference for both new and recovered documents, including a
+    // successful submission whose readback failed. Never infer draft state here.
+    throw new AccountingProviderPartialError(
+      error instanceof Error ? error.message : "ERPNext delivery could not be verified.",
+      request.doctype, externalId, request.payload,
+    )
   }
   return {
     externalObjectType: request.doctype,
@@ -313,7 +346,7 @@ async function exportToErpNext(input: CanonicalFinanceExport): Promise<Accountin
     externalNumber: typeof submitted.name === "string" ? submitted.name : externalId,
     externalUrl: `${erpNextOrigin()}/app/${request.doctype.toLowerCase().replaceAll(" ", "-")}/${encodeURIComponent(externalId)}`,
     requestPayload: request.payload,
-    responsePayload: submitted,
+    responsePayload: { ...submitted, multideckCanonicalExport: input, multideckDeliveryVerification: { scope: "document_delivery", status: "matched", verifiedAt: new Date().toISOString() } },
   }
 }
 

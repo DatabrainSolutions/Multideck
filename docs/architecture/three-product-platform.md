@@ -71,7 +71,7 @@ Multideck App UI
 
 Carbone never connects directly to Supabase. The browser never supplies SQL or a table name. Template codes map to approved, published versions. The exact JSON supplied to Carbone is retained as the audit snapshot. Live can expose a generated file only through a separate `live_api` customer-entitlement endpoint that confirms the signed-in customer may see that job and document.
 
-The implementation and Lee handover guide are in `multideck.server/Backend/Documents/CARBONE_DOCUMENT_BUILDER.md`.
+The implementation and Lee handover guide are in [docs/architecture/carbone-document-builder.md](carbone-document-builder.md).
 
 ## Cloud control plane
 

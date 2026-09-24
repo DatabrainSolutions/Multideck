@@ -257,6 +257,17 @@ export const sidebarAreas: SidebarArea[] = [
         ],
       },
       {
+        id: "finance-general-ledger",
+        label: "General ledger",
+        icon: Calculator,
+        children: [
+          { label: "Transactions", icon: Layers3, route: "/finance/general-ledger" },
+          { label: "Account enquiries", icon: FileText, route: "/finance/general-ledger/accounts" },
+          { label: "Journals", icon: FileText, route: "/finance/general-ledger/journals" },
+          { label: "Chart of accounts", icon: Calculator, route: "/finance/ledger" },
+        ],
+      },
+      {
         id: "finance-accounting-planned",
         label: "More accounting settings",
         icon: Globe2,

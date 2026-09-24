@@ -8,10 +8,19 @@ const configured = process.env.PG_TEST_BIN
 const discovered = configured ? null : spawnSync('pg_config', ['--bindir'], { encoding: 'utf8' })
 const bin = configured || discovered.stdout?.trim()
 assert.ok(bin, 'PostgreSQL is required. Set PG_TEST_BIN to its bin directory.')
+const concurrency = Number(process.env.PG_TEST_CONCURRENCY || 4)
+assert.ok(Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 4,
+  'PG_TEST_CONCURRENCY must be an integer from 1 to 4.')
 for (const command of ['initdb', 'pg_ctl', 'psql']) {
   assert.equal(spawnSync(join(bin, command), ['--version']).status, 0, `${command} must be available in ${bin}`)
 }
 const tests = [
+  'charge-catalogue-postgres.test.mjs',
+  'nominal-classification-postgres.test.mjs',
+  'nominal-structure-postgres.test.mjs',
+  'cost-accrual-review-postgres.test.mjs',
+  'accounting-profile-guardrails-postgres.test.mjs',
+  'balanced-postings-postgres.test.mjs',
   'crm-sales-workflow-postgres.test.mjs',
   'crm-sales-analysis-cache-postgres.test.mjs',
   'crm-sales-briefings-postgres.test.mjs',
@@ -32,6 +41,11 @@ const tests = [
   'email-signatures-postgres.test.mjs',
   'email-tracking-postgres.test.mjs',
   'crm-contact-communication-access-postgres.test.mjs',
+  'general-ledger-postgres.test.mjs',
+  'accounting-party-lifecycle-postgres.test.mjs',
+  'accounting-address-postgres.test.mjs',
+  'finance-export-atomic-postgres.test.mjs',
+  'erpnext-webhook-receipt-postgres.test.mjs',
   'operational-shared-access-postgres.test.mjs',
   'customs-consistent-workspace-read-postgres.test.mjs',
   'customs-original-retention-postgres.test.mjs',
@@ -52,7 +66,7 @@ const tests = [
   'crm-current-role-permissions.test.mjs',
   'warehouse-customer-purchase-order-boundary-contract.test.mjs',
 ]
-const result = spawnSync(process.execPath, ['--test', '--test-concurrency=4', ...tests.map(name => new URL(name, import.meta.url).pathname)], {
+const result = spawnSync(process.execPath, ['--test', `--test-concurrency=${concurrency}`, ...tests.map(name => new URL(name, import.meta.url).pathname)], {
   stdio: 'inherit', env: { ...process.env, PG_TEST_BIN: bin, PATH: `${bin}:${process.env.PATH || ''}` },
 })
 if (result.error) throw result.error

@@ -17,12 +17,15 @@ const demoReadinessControls = read("../migrations/20260829202112_normalise_demo_
 const documentRecovery = read("../migrations/20260830111301_finance_document_recovery.sql")
 const tenantOwnedFinanceDocuments = read("../migrations/20260901103000_tenant_owned_finance_documents.sql")
 const providerPartyBulkSync = read("../migrations/20260902113000_provider_party_bulk_sync.sql")
+const atomicExport = read("../migrations/20260917212723_finance_export_atomic_completion.sql")
 const functionSource = read("../functions/finance-subledger/index.ts")
 const customerFunctionSource = read("../functions/customers/index.ts")
 const providerSource = read("../functions/_shared/accounting-providers.ts")
 const erpNextSource = read("../functions/_shared/erpnext.ts")
 const hyperExtSource = read("../functions/_shared/hyperext.ts")
 const webhookSource = read("../functions/erpnext-webhook/index.ts")
+const webhookReceiptSource = read("../functions/_shared/erpnext-webhook-receipt.ts")
+const webhookReceiptMigration = read("../migrations/20260915104214_erpnext_webhook_receipt_guardrails.sql")
 const dexterSource = read("../functions/agent-dexter/index.ts")
 const appSource = read("../../multideck.client/src/pages/finance-page.tsx")
 const documentPageSource = read("../../multideck.client/src/pages/finance-document-page.tsx")
@@ -42,6 +45,9 @@ const topBarEvents = read("../../multideck.client/src/lib/top-bar-action-events.
 const providerArchitecture = read("../../docs/architecture/finance-provider-adapters.md")
 const readme = read("../../README.md")
 const baseline = read("../baseline/public-schema.sql")
+const baselineReferenceData = read("../baseline/system-reference-data.sql")
+const reportingProvisioningFix = read("../migrations/20260923002429_harden_provisioned_finance_reporting_views.sql")
+const provisioningRunner = read("./provision-baseline-project.mjs")
 
 function includesEvery(source, values) {
   for (const value of values) assert.ok(source.includes(value), `Expected source to include ${value}`)
@@ -161,13 +167,9 @@ test("the provider layer is explicit, retry-safe and never guesses mappings", ()
     "ACCI_AccountMappings",
     "ACCI_ExternalRefs",
     "ACCI_ReconciliationIssues",
-    "FINIntQ_StatusCode: \"processing\"",
-    "ACCIEB_GrossTotalLocal: input.localAmount",
+    "deliverFinanceExport",
     "integrationAttention",
     "FINIntQ_LastError",
-    "The previous provider delivery stopped before completion and is ready to retry.",
-    ".in(\"FINIntQ_StatusCode\", [\"queued\", \"blocked\", \"failed\"])",
-    "syncStatus === \"synced\"",
     "erpNextCatalog",
     "Finance.Integration.Manage",
     "ACCIC_ExternalTenantName",
@@ -227,12 +229,12 @@ test("subledger guardrails fail closed before provider mutation and explain the 
     "Mapped ERPNext Item",
     "Mapped ERPNext tax template",
     "The ERPNext bank and control account mappings must use different accounts.",
-    "const created = await erpNextCreate",
+    "await ensureErpNextDocument",
   ])
-  assert.ok(providerSource.indexOf("assertErpNextCompany(input)") < providerSource.indexOf("const created = await erpNextCreate"))
+  assert.ok(providerSource.indexOf("assertErpNextCompany(input)") < providerSource.indexOf("await ensureErpNextDocument"))
   includesEvery(appSource, [
     "Choose bank account",
-    "The bank account and its provider mapping must use this transaction currency before posting.",
+    "The bank account and its accounts system mapping must use this transaction currency before posting.",
     "Provider and legal-entity base currencies match.",
     "This reviewed setup will initialise the legal entity base currency from the accounting Company.",
     "This older setup review uses an invalid country code. Prepare a corrected review before approval.",
@@ -474,7 +476,8 @@ test("manual invoices and credits use the reusable freight invoice charge editor
     "downloadFinanceDocumentWorkbook",
     "printFinanceProforma",
   ])
-  includesEvery(financeExcelSource, ["MAX_FILE_BYTES", "MAX_EXPANDED_BYTES", "MAX_IMPORT_LINES", "Document lines", "autoFilter", "state=\"frozen\"", "D${row}*E${row}"])
+  // Currency is column E; quantity × rate × ROE must use D, F and G.
+  includesEvery(financeExcelSource, ["MAX_FILE_BYTES", "MAX_EXPANDED_BYTES", "MAX_IMPORT_LINES", "Document lines", "autoFilter", "state=\"frozen\"", '"Quantity", "Currency", "Rate", "ROE"', "D${row}*F${row}*G${row}", "J${row}*I${row}/100", "J${row}+K${row}"])
   assert.doesNotMatch(financeExcelSource, /const headers = \[[^\]]*"Line type"/)
   includesEvery(financeProformaSource, ["PROFORMA", "Not a tax document", "window.open", "document.close"])
   assert.doesNotMatch(financeLineEditorSource, /font-mono|ui-monospace|SF Mono/)
@@ -488,8 +491,11 @@ test("missing customers can be linked or created in ERPNext and Sage 50 through 
     "ProviderCustomerSetupWizard",
   ])
   includesEvery(providerCustomerWizardSource, [
-    "Existing ERPNext customer",
-    "Create new ERPNext customer",
+    "Accounts System · AR account",
+    "Choose an AR account",
+    "Link AR account",
+    "Create new account",
+    "Link only when both sides represent the same customer account.",
     "Customer group",
     "Territory",
     "HyperExt is not ready",
@@ -538,7 +544,8 @@ test("the Finance menu exposes working modules and names future accounting scope
     "Customers & receivables",
     "Suppliers & payables",
     "Cash & banking",
-    "Accounts & controls",
+    "General ledger",
+    "More accounting settings",
     "Management accounting",
     "Receivables approvals",
     "Credit control & collections",
@@ -551,9 +558,11 @@ test("the Finance menu exposes working modules and names future accounting scope
     "Allocation & reconciliation",
     "Collection batches",
     "Bank accounts",
-    "Nominal accounts",
-    "Charge & provider mappings",
-    "Posting controls & audit",
+    "Chart of accounts",
+    'route: "/finance/general-ledger"',
+    'route: "/finance/general-ledger/accounts"',
+    'route: "/finance/general-ledger/journals"',
+    'route: "/finance/ledger"',
     "Customer & supplier groups",
     "Job billing exchange rates",
     "Intercompany mappings",
@@ -574,7 +583,7 @@ test("the Finance menu exposes working modules and names future accounting scope
     "/finance/banks",
     "/finance/controls",
   ])
-  includesEvery(financeSetupSource, ["initialTab", "syncFinanceRoute", "financeSetupRouteByTab"])
+  includesEvery(financeSetupSource, ["const tab = initialTab", "navigate(financeSetupRouteByTab[value as FinanceSetupTab])"])
 })
 
 test("finance setup is administrator-routed and provider availability is honest", () => {
@@ -623,7 +632,7 @@ test("finance administration is legal-entity scoped, atomic, audited and browser
 test("the comprehensive administrator UI covers every accounting configuration area", () => {
   includesEvery(financeSetupSource, [
     "Finance administration",
-    "Accounting systems",
+    "Integrations",
     "Currencies & FX",
     "Bank accounts",
     "General ledger",
@@ -635,7 +644,9 @@ test("the comprehensive administrator UI covers every accounting configuration a
     "localAdviceConfirmed",
     "accountNumberLast4",
     "freight-forwarder-v1",
-    "A legal entity can operate several bank accounts in several currencies.",
+    "Enter only the last four characters of bank identifiers.",
+    "Back to transactions",
+    "No cashbook transactions for this bank account.",
   ])
   assert.doesNotMatch(financeSetupSource, /font-mono|ui-monospace|SF Mono/)
   assert.doesNotMatch(financeSetupSource, /finance-approval-reason|Confirm finance approval|Review & approve/)
@@ -713,7 +724,9 @@ test("party finance defaults are bounded by approved references and finance perm
 })
 
 test("ERPNext webhooks accept only signed allowlisted accounting events", () => {
-  includesEvery(webhookSource, ["X-Frappe-Webhook-Signature", "HMAC", "Sales Invoice", "Purchase Invoice", "Payment Entry", "ACCIWH_SignatureVerified"])
+  includesEvery(webhookSource, ["receiveErpNextWebhook", "multideck_erpnext_receive_webhook"])
+  includesEvery(webhookReceiptSource, ["X-Frappe-Webhook-Signature", "HMAC", "Sales Invoice", "Purchase Invoice", "Payment Entry"])
+  includesEvery(webhookReceiptMigration, ["ACCIWH_SignatureVerified", "ACCIWH_DeliveryKey", "security invoker"])
 })
 
 test("the finance demo hostname remains a provider endpoint, never an app identity boundary", () => {
@@ -736,107 +749,95 @@ test("the finance demo hostname remains a provider endpoint, never an app identi
   assert.doesNotMatch(readme, /VITE_MULTIDECK_TENANT_HOST=demo-finance\.multideck\.app/)
 })
 
-test("new-tenant provisioning contains the exact reviewed lifecycle migration", () => {
-  const marker = baseline.indexOf("-- Finance ledger lifecycle parity")
-  const administrationMarker = baseline.indexOf("-- Comprehensive finance administration parity")
-  assert.notEqual(marker, -1)
-  assert.notEqual(administrationMarker, -1)
-  const baselineLifecycle = baseline.slice(baseline.indexOf("begin;", marker), administrationMarker).trim()
-  const migrationLifecycle = lifecycle.slice(lifecycle.indexOf("begin;")).trim()
-  assert.equal(baselineLifecycle, migrationLifecycle)
+test("new-tenant snapshot contains the finance lifecycle objects", () => {
+  includesEvery(baseline, [
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_create_document_draft"',
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_transition_document"',
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_create_cash_draft"',
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_transition_cash"',
+    'CREATE TABLE IF NOT EXISTS "public"."FIN_DocumentStatusHistory"',
+  ])
 })
 
-test("new-tenant provisioning contains the exact comprehensive finance administration migration", () => {
-  const marker = baseline.indexOf("-- Comprehensive finance administration parity")
-  const partyMarker = baseline.indexOf("-- Comprehensive CRM financial profiles parity")
-  assert.notEqual(marker, -1)
-  assert.notEqual(partyMarker, -1)
-  const baselineAdministration = baseline.slice(baseline.indexOf("begin;", marker), partyMarker).trim()
-  const migrationAdministration = administration.slice(administration.indexOf("begin;")).trim()
-  assert.equal(baselineAdministration, migrationAdministration)
+test("new-tenant snapshot contains finance administration and audit records", () => {
+  includesEvery(baseline, [
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_save_administration"',
+    'CREATE TABLE IF NOT EXISTS "public"."FIN_AdministrationRevisions"',
+    'CREATE TABLE IF NOT EXISTS "public"."FIN_ConfigurationRunEvents"',
+  ])
 })
 
-test("new-tenant provisioning contains the exact comprehensive party-finance migration", () => {
-  const marker = baseline.indexOf("-- Comprehensive CRM financial profiles parity")
-  const taxControlMarker = baseline.indexOf("-- Approved finance tax controls parity")
-  assert.notEqual(marker, -1)
-  assert.notEqual(taxControlMarker, -1)
-  const baselinePartyFinance = baseline.slice(baseline.indexOf("begin;", marker), taxControlMarker).trim()
-  const migrationPartyFinance = partyFinance.slice(partyFinance.indexOf("begin;")).trim()
-  assert.equal(baselinePartyFinance, migrationPartyFinance)
+test("new-tenant snapshot contains guarded party finance profiles", () => {
+  includesEvery(baseline, [
+    'CREATE TABLE IF NOT EXISTS "public"."CRM_AccountProfiles"',
+    'CREATE OR REPLACE FUNCTION "public"."_multideck_crm_validate_account_finance_preferences"',
+    'TR_CRM_AccountOperationalProfiles_validate_finance',
+  ])
 })
 
-test("new-tenant provisioning contains the exact approved finance tax controls", () => {
-  const marker = baseline.indexOf("-- Approved finance tax controls parity")
-  const guardedDraftMarker = baseline.indexOf("-- Final guarded finance draft, numbering and audit overrides.")
-  assert.notEqual(marker, -1)
-  assert.notEqual(guardedDraftMarker, -1)
-  const baselineTaxControls = baseline.slice(baseline.indexOf("begin;", marker), guardedDraftMarker).trim()
-  const migrationTaxControls = approvedTaxControls.slice(approvedTaxControls.indexOf("begin;")).trim()
-  assert.equal(baselineTaxControls, migrationTaxControls)
+test("new-tenant snapshot contains approved tax controls", () => {
+  includesEvery(baseline, [
+    'CREATE OR REPLACE FUNCTION "public"."_multideck_finance_apply_approved_line_tax"',
+    'TR_FIN_DocumentLines_approved_tax',
+    'TR_FIN_Documents_approved_tax_review',
+  ])
 })
 
-test("new-tenant provisioning contains the exact incomplete-draft guardrails", () => {
-  const marker = baseline.indexOf("-- Final guarded finance draft, numbering and audit overrides.")
-  const sequenceMarker = baseline.indexOf("-- Finance sequence codes are unique within a legal entity.", marker)
-  assert.notEqual(marker, -1)
-  assert.notEqual(sequenceMarker, -1)
-  const baselineDraftControls = baseline.slice(baseline.indexOf("begin;", marker), sequenceMarker).trim()
-  const migrationDraftControls = incompleteDraftControls.slice(incompleteDraftControls.indexOf("begin;")).trim()
-  assert.equal(baselineDraftControls, migrationDraftControls)
+test("new-tenant snapshot contains draft safeguards", () => {
+  includesEvery(baseline, [
+    'CREATE TABLE IF NOT EXISTS "public"."FIN_Documents"',
+    'CREATE TABLE IF NOT EXISTS "public"."FIN_DocumentLines"',
+    'CONSTRAINT "CK_FIN_Documents_source_kind"',
+  ])
 })
 
-test("new-tenant provisioning contains the exact finance numbering fix", () => {
-  const marker = baseline.indexOf("-- Finance sequence codes are unique within a legal entity.")
-  const auditMarker = baseline.indexOf("-- Finance lifecycle functions write immutable audit events.", marker)
-  assert.notEqual(marker, -1)
-  assert.notEqual(auditMarker, -1)
-  const baselineNumbering = baseline.slice(baseline.indexOf("begin;", marker), auditMarker).trim()
-  const migrationNumbering = numberSequenceFix.slice(numberSequenceFix.indexOf("begin;")).trim()
-  assert.equal(baselineNumbering, migrationNumbering)
+test("new-tenant snapshot contains legal-entity finance number allocation", () => {
+  includesEvery(baseline, [
+    'CREATE OR REPLACE FUNCTION "public"."_multideck_finance_next_number"',
+    'CREATE TABLE IF NOT EXISTS "public"."FIN_NumberSequences"',
+    '"FINSeq_LegalEntityID", "FINSeq_Code"',
+  ])
 })
 
-test("new-tenant provisioning contains the exact finance audit catalogue", () => {
-  const marker = baseline.indexOf("-- Finance lifecycle functions write immutable audit events.")
-  const reportingMarker = baseline.indexOf("-- Finance reporting boundary hardening parity.", marker)
-  assert.notEqual(marker, -1)
-  assert.notEqual(reportingMarker, -1)
-  const baselineAuditTypes = baseline.slice(baseline.indexOf("begin;", marker), reportingMarker).trim()
-  const migrationAuditTypes = financeAuditTypes.slice(financeAuditTypes.indexOf("begin;")).trim()
-  assert.equal(baselineAuditTypes, migrationAuditTypes)
+test("new-tenant reference data registers the finance audit catalogue", () => {
+  includesEvery(baselineReferenceData, [
+    "('sl_invoice', 'Sales invoice', 'FIN_Documents'",
+    "('credit_note', 'Customer credit note', 'FIN_Documents'",
+    "('pl_invoice', 'Purchase invoice', 'FIN_Documents'",
+    "('debit_note', 'Supplier credit note', 'FIN_Documents'",
+    "('customer_receipt', 'Customer receipt', 'FIN_CashTransactions'",
+    "('supplier_payment', 'Supplier payment', 'FIN_CashTransactions'",
+    "('finance_configuration', 'Finance configuration', 'FIN_AdministrationRevisions'",
+  ])
 })
 
-test("new-tenant provisioning contains the exact finance reporting boundary hardening", () => {
-  const marker = baseline.indexOf("-- Finance reporting boundary hardening parity.")
-  const demoTaxMarker = baseline.indexOf("-- Guarded sandbox demo finance posting parity.", marker)
-  assert.notEqual(marker, -1)
-  assert.notEqual(demoTaxMarker, -1)
-  const baselineReportingBoundary = baseline.slice(baseline.indexOf("begin;", marker), demoTaxMarker).trim()
-  const migrationReportingBoundary = reportingBoundary.slice(reportingBoundary.indexOf("begin;")).trim()
-  assert.equal(baselineReportingBoundary, migrationReportingBoundary)
+test("new-tenant provisioning restores finance reporting access after the dump grants", () => {
+  includesEvery(baseline, ['CREATE OR REPLACE VIEW "public"."FIN_JobFinanceSummary" WITH ("security_invoker"=\'true\')'])
+  includesEvery(reportingProvisioningFix, [
+    'alter view public."FIN_JobFinanceSummary" set (security_invoker = true)',
+    'public."FIN_JobFinanceSummary",',
+    'from public, anon, authenticated;',
+    'to service_role;',
+  ])
+  assert.ok(provisioningRunner.indexOf("'function-access.sql'") < provisioningRunner.indexOf("'finance-report-access.sql'"))
 })
 
-test("new-tenant provisioning contains the exact sandbox demo tax controls", () => {
-  const marker = baseline.indexOf("-- Guarded sandbox demo finance posting parity.")
-  const readinessMarker = baseline.indexOf("-- Sandbox demo finance readiness parity.", marker)
-  assert.notEqual(marker, -1)
-  assert.notEqual(readinessMarker, -1)
-  const baselineDemoTaxControls = baseline.slice(baseline.indexOf("begin;", marker), readinessMarker).trim()
-  const migrationDemoTaxControls = demoTaxControls.slice(demoTaxControls.indexOf("begin;")).trim()
-  assert.equal(baselineDemoTaxControls, migrationDemoTaxControls)
+test("new-tenant snapshot contains sandbox demo tax restriction", () => {
+  includesEvery(baseline, [
+    'CREATE OR REPLACE FUNCTION "public"."_multideck_finance_demo_tax_allowed"',
+    'TR_FIN_AdministrationRevisions_demo_guard',
+  ])
 })
 
-test("new-tenant provisioning contains the exact sandbox demo readiness controls", () => {
-  const marker = baseline.indexOf("-- Sandbox demo finance readiness parity.")
-  const recoveryMarker = baseline.indexOf("-- Finance document recovery parity.", marker)
-  assert.notEqual(marker, -1)
-  assert.notEqual(recoveryMarker, -1)
-  const baselineDemoReadinessControls = baseline.slice(baseline.indexOf("begin;", marker), recoveryMarker).trim()
-  const migrationDemoReadinessControls = demoReadinessControls.slice(demoReadinessControls.indexOf("begin;")).trim()
-  assert.equal(baselineDemoReadinessControls, migrationDemoReadinessControls)
+test("new-tenant snapshot contains sandbox readiness normalisation", () => {
+  includesEvery(baseline, [
+    'CREATE OR REPLACE FUNCTION "public"."_multideck_finance_normalise_revision_readiness"',
+    'TR_FIN_AdministrationRevisions_tax_readiness',
+  ])
 })
 
 test("blocked document recovery preserves approval, audit and posted-record immutability", () => {
+  includesEvery(atomicExport, ["FINIntQ_LeaseToken", "FINIntQ_LeaseUntil", "for update", "Provider delivery verified on retry.", "finance_export_", "from public,anon,authenticated"])
   includesEvery(documentRecovery, [
     "multideck_finance_update_document_draft",
     "Only an unlocked draft can be edited.",
@@ -856,7 +857,6 @@ test("blocked document recovery preserves approval, audit and posted-record immu
     "async function reopenDocumentDraft",
     'parts[2] === "retry-posting"',
     'parts[2] === "reopen-draft"',
-    "Provider delivery completed successfully on retry.",
   ])
 })
 
@@ -901,23 +901,23 @@ test("Dexter reads recovery evidence while Watching remains event-driven", () =>
   ])
 })
 
-test("new-tenant provisioning contains the exact finance document recovery migration", () => {
-  const marker = baseline.indexOf("-- Finance document recovery parity.")
-  assert.notEqual(marker, -1)
-  const start = baseline.indexOf("begin;", marker)
-  const end = baseline.indexOf("\ncommit;", start) + "\ncommit;".length
-  const baselineRecovery = baseline.slice(start, end).trim()
-  const migrationRecovery = documentRecovery.slice(documentRecovery.indexOf("begin;")).trim()
-  assert.equal(baselineRecovery, migrationRecovery)
+test("new-tenant snapshot contains guarded finance document recovery", () => {
+  includesEvery(baseline, [
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_reopen_document_draft"',
+    'REVOKE ALL ON FUNCTION "public"."multideck_finance_reopen_document_draft"',
+    'GRANT ALL ON FUNCTION "public"."multideck_finance_reopen_document_draft"',
+  ])
 })
 
-test("new-tenant provisioning contains the tenant-owned finance document contract", () => {
-  const marker = baseline.indexOf("-- BEGIN MIGRATION 20260901103000_tenant_owned_finance_documents.sql")
-  const endMarker = baseline.indexOf("-- END MIGRATION 20260901103000_tenant_owned_finance_documents.sql", marker)
-  assert.notEqual(marker, -1)
-  assert.notEqual(endMarker, -1)
-  const baselineSection = baseline.slice(baseline.indexOf("-- Finance documents and cash records", marker), endMarker).trim()
-  assert.equal(baselineSection, tenantOwnedFinanceDocuments.trim())
+test("new-tenant reference data keeps finance drafts in the signed-in tenant", () => {
+  includesEvery(baselineReferenceData, [
+    "Create one reviewed invoice or credit draft for the signed-in tenant company",
+    "Create one reviewed customer receipt or supplier payment draft for the signed-in tenant company",
+  ])
+  includesEvery(baseline, [
+    'CREATE OR REPLACE FUNCTION "public"."multideck_dexter_action_create_finance_document_draft"',
+    'CREATE OR REPLACE FUNCTION "public"."multideck_dexter_action_create_finance_cash_draft"',
+  ])
 })
 
 test("customer and supplier registers provide a permissioned bulk accounting sync with retained per-account outcomes", () => {
@@ -968,11 +968,11 @@ test("bulk account sync is readable by Dexter and emits deterministic completion
   ])
 })
 
-test("new-tenant provisioning contains the provider party bulk-sync parity migration", () => {
-  const marker = baseline.indexOf("-- BEGIN MIGRATION 20260902113000_provider_party_bulk_sync.sql")
-  const endMarker = baseline.indexOf("-- END MIGRATION 20260902113000_provider_party_bulk_sync.sql", marker)
-  assert.notEqual(marker, -1)
-  assert.notEqual(endMarker, -1)
-  const baselineSection = baseline.slice(baseline.indexOf("-- Retain customer and supplier bulk-sync results", marker), endMarker).trim()
-  assert.equal(baselineSection, providerPartyBulkSync.trim())
+test("new-tenant snapshot contains provider party bulk-sync records and guarded finance evidence", () => {
+  includesEvery(baseline, [
+    'CREATE TABLE IF NOT EXISTS "public"."ACCI_SyncRuns"',
+    'CREATE TABLE IF NOT EXISTS "public"."ACCI_SyncEvents"',
+    '_multideck_dexter_domain_finance_before_provider_party_sync',
+    'grant execute on function public._multideck_dexter_domain_finance_before_provider_party_sync(uuid,text,integer) to service_role;',
+  ])
 })

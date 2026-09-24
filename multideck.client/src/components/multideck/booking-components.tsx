@@ -75,6 +75,7 @@ import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
 import { cn } from "@/lib/utils"
 import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { organisationIsCustomer } from "@/lib/organisation-roles"
 import { calculateQuoteFreightDirection } from "@/lib/freight-direction"
 import { useLanguage } from "@/i18n/language-provider"
 import {
@@ -250,7 +251,7 @@ function bookingModeOptionValue(name: string, code?: string) {
 function bookingOrganisationHasRole(organisation: QuoteOrganisationOption, role: BookingOrganisationRole) {
   const types = organisation.types.map((type) => type.trim().toLocaleLowerCase())
   if (!types.length) return true
-  if (role === "customer" || role === "payer") return types.includes("customer")
+  if (role === "customer" || role === "payer") return organisationIsCustomer(types)
   if (role === "supplier") return types.includes("supplier")
   if (role === "carrier") return types.some((type) => /^(carrier|shipping line|haulier|freight forwarder)$/.test(type))
   if (role === "shipper") return types.some((type) => /\bshipper\b|\bconsignor\b/.test(type))
@@ -4196,7 +4197,7 @@ function BookingFinanceWorkspace({ record }: { record: BookingDetailRecord }) {
     const detail = Number.isFinite(sell) && sell !== 0
       ? `${t("Sell")} ${amountLabel}`
       : `${t("Cost")} ${amountLabel}`
-    return [`${index + 1}. ${description}`, detail] as const
+    return [`${index + 1}. ${charge.code ? `${charge.code} · ` : ""}${description}`, detail] as const
   })
 
   return (

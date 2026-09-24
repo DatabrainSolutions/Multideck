@@ -1,4 +1,5 @@
 import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
+import { invoiceArrivalEstimate } from "../_shared/cost-accrual-model.ts"
 
 type RunInput = { legalEntityId: string; periodCode: string; jobIds: string[]; reason: string }
 type ItemInput = { proposedWip: number; proposedAccrual: number; reviewerNote?: string | null }
@@ -74,7 +75,7 @@ async function calculateCandidates(admin: any, current: any, entity: any, target
   ])
   for (const result of [costingResult, legacyCostResult, legacyRevenueResult, documentResult, linkResult, organisationsResult, nominalResult]) if (result.error) throw new HttpError(500, result.error.message)
   const names = new Map((organisationsResult.data ?? []).map((item: any) => [item.Org_id, item.Org_Name]))
-  const nominal = new Map((nominalResult.data ?? []).map((item: any) => [item.FINNom_ID, item]))
+  const nominal = new Map<string, { FINNom_Code: string; FINNom_Name: string }>((nominalResult.data ?? []).map((item: any) => [item.FINNom_ID, item]))
   const linesByJob = new Map<string, any[]>()
   for (const line of costingResult.data ?? []) linesByJob.set(line.Job_ID, [...(linesByJob.get(line.Job_ID) ?? []), line])
   const legacyExpected = new Map<string, { cost: number; revenue: number }>()
@@ -118,7 +119,7 @@ async function calculateCandidates(admin: any, current: any, entity: any, target
         jobCostingLineId: line.JobCostingLine_ID, lineNo: line.JobCostingLine_Number, chargeCodeId: line.JobCostingLine_ChargeCodeID,
         domainCode: line.JobCostingLine_DomainCode, sourceTable: line.JobCostingLine_SourceTable,
         sourceId: line.JobCostingLine_SourceID, sourceLineId: line.JobCostingLine_SourceLineID,
-        chargeCode: null, description: line.JobCostingLine_Description, costNominalAccountId: line.JobCostingLine_CostNominalAccountID,
+        chargeCode: null as string | null, description: line.JobCostingLine_Description, costNominalAccountId: line.JobCostingLine_CostNominalAccountID,
         costNominalCode: nominal.get(line.JobCostingLine_CostNominalAccountID)?.FINNom_Code ?? null,
         revenueNominalAccountId: line.JobCostingLine_RevenueNominalAccountID,
         revenueNominalCode: nominal.get(line.JobCostingLine_RevenueNominalAccountID)?.FINNom_Code ?? null,
@@ -170,7 +171,7 @@ async function listRuns(admin: any, entityId: string) {
   const documentIds = [...new Set((releases ?? []).map((release: any) => release.FINRelease_DocumentID))]
   const { data: releaseDocuments, error: documentError } = documentIds.length ? await admin.from("FIN_Documents").select("FINDoc_ID,FINDoc_Number,FINDoc_TypeCode").in("FINDoc_ID", documentIds) : { data: [], error: null }
   if (documentError) throw new HttpError(500, documentError.message)
-  const documents = new Map((releaseDocuments ?? []).map((document: any) => [document.FINDoc_ID, document]))
+  const documents = new Map<string, { FINDoc_Number: string | null; FINDoc_TypeCode: string }>((releaseDocuments ?? []).map((document: any) => [document.FINDoc_ID, document]))
   const releasesByItem = new Map<string, any[]>()
   for (const release of releases ?? []) {
     const document = documents.get(release.FINRelease_DocumentID)
@@ -334,6 +335,54 @@ Deno.serve(async (request) => {
   try {
     const { admin, user } = await authenticate(request); const current = await currentInternalUser(admin, user); const parts = routeParts(request, "finance-accruals")
     if (request.method === "GET" && parts[0] === "entities") return json(request, await entities(admin, current))
+    if (parts[0] === "cost-controls" && parts.length === 1 && ["GET", "POST"].includes(request.method)) {
+      const query = new URL(request.url).searchParams
+      const input = request.method === "POST" ? await body<Record<string, unknown>>(request) : {}
+      const entityId = request.method === "POST" ? input.legalEntityId : query.get("legalEntityId")
+      const action = request.method === "POST" ? input.action : query.get("chargeId") ? "charge" : "read"
+      if (!uuid(entityId) || !["read", "charge", "save_policy", "approve_policy", "record_evidence", "automation", "retry_finalisation", "approve_exception"].includes(String(action))) throw new HttpError(400, "Choose a legal entity and valid cost control action.")
+      if (action === "approve_exception") {
+        const result = await admin.rpc("multideck_cost_approve_exception", { p_actor: current.User_ID, p_entity: entityId, p_case: input.caseId, p_reason: input.reason })
+        rpcFailure(result.error, "The tolerance exception could not be approved.")
+        return json(request, result.data)
+      }
+      if (action === "automation" || action === "retry_finalisation") {
+        await requirePermission(admin, current.User_ID, "Finance.Management.Post")
+        await legalEntity(admin, current, String(entityId))
+        const result = action === "automation"
+          ? await admin.rpc("multideck_cost_automation", { p_actor: current.User_ID, p_entity: entityId, p_enabled: input.enabled, p_policy: input.policyId, p_reason: input.reason })
+          : await admin.rpc("multideck_cost_finalise", { p_entity: entityId, p_evidence: input.evidenceId })
+        rpcFailure(result.error, "Cost automation could not complete this action.")
+        return json(request, result.data)
+      }
+      const payload = request.method === "POST" ? input : { chargeId: query.get("chargeId") }
+      const { data, error } = await admin.rpc("multideck_finance_cost_controls", { p_actor: current.User_ID, p_entity: entityId, p_action: action, p_input: payload })
+      if (error?.code === "PGRST202" || error?.code === "42883") throw new HttpError(409, "The cost control database update has not been deployed. Automatic posting remains disabled.")
+      if (error?.code === "40001") throw new HttpError(409, "Charge evidence changed. Refresh and review before confirming.")
+      rpcFailure(error, "Cost controls could not be updated.")
+      if (action === "charge") {
+        const history = await admin.rpc("multideck_finance_cost_controls", { p_actor: current.User_ID, p_entity: entityId, p_action: "history", p_input: payload })
+        rpcFailure(history.error, "Invoice ageing evidence could not be loaded.")
+        const completed = data.evidenceCurrent ? data.evidence?.service_completed_on : null
+        const age = completed ? Math.floor((Date.now() - Date.parse(`${completed}T00:00:00Z`)) / 86_400_000) : null
+        data.prediction = age !== null && age >= 0 && !data.evidence.is_final
+          ? { ...invoiceArrivalEstimate(history.data ?? [], age, 30), ageDays: age, horizonDays: 30 }
+          : { probability: null, reason: "current_service_evidence_required", sampleSize: history.data?.length ?? 0 }
+      }
+      return json(request, data)
+    }
+    if (request.method === "GET" && parts[0] === "cost-review" && parts.length === 1) {
+      await requirePermission(admin, current.User_ID, "Finance.Management.View")
+      const search = new URL(request.url).searchParams
+      const entityId = search.get("legalEntityId") ?? ""
+      const offset = Number(search.get("offset") ?? "0")
+      const query = search.get("search") ?? ""
+      if (!uuid(entityId) || !Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000 || query.length > 120) throw new HttpError(400, "Choose a legal entity and valid cost review page.")
+      const { data, error } = await admin.rpc("multideck_finance_cost_review", { p_actor: current.User_ID, p_entity: entityId, p_offset: offset, p_search: query })
+      if (error?.code === "PGRST202" || error?.code === "42883") throw new HttpError(409, "The cost review database update has not been deployed. Automatic finalisation remains disabled.")
+      rpcFailure(error, "The charge-level cost review could not be loaded.")
+      return json(request, data)
+    }
     if (request.method === "GET" && parts[0] === "workspace") {
       const search = new URL(request.url).searchParams
       return json(request, await workspace(admin, current, search.get("legalEntityId") ?? "", periodCode(search.get("periodCode") ?? new Date().toISOString().slice(0, 7).replace("-", ""))))

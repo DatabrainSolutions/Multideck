@@ -274,6 +274,8 @@ export type BookingWorkflowDeclaration = {
 export type BookingWorkflowCharge = {
   planningCurrency?: { cost?: string | null; sell?: string | null; base?: string | null } | null
   id?: string
+  code?: string | null
+  chargeCodeId?: string | null
   lineNumber?: number
   supplierId?: string | null
   description?: string | null

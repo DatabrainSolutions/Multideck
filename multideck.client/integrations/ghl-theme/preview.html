@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multideck CRM theme preview</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;font-size:13px;line-height:1.5}button,input,select{font:inherit}button,a,input,select{min-height:36px}button{cursor:pointer;padding:8px 14px;border:1px solid #ccd4d1;background:white}button:disabled{opacity:.45}a{text-decoration:none}#app{min-height:100vh;display:grid;grid-template-columns:224px 1fr}#sidebar-v2{padding:28px 16px;display:flex;flex-direction:column;gap:24px}#sidebar-v2 img{width:166px;height:auto}#sidebar-v2 nav{display:grid;gap:4px}#sidebar-v2 a{padding:9px 12px}#sidebar-v2 small{padding:0 12px;color:#687570}.workspace{min-width:0}.hl_header{padding:14px 32px;display:flex;align-items:center;justify-content:space-between;gap:12px}.avatar{border-radius:50%;background:#c8dcd6;color:#145b54;width:30px;height:30px;display:grid;place-items:center}.page{max-width:1250px;margin:auto;padding:36px 32px}.heading{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:28px}h1{font-size:24px;margin:0}h2{font-size:14px;margin:0}p{color:#4f5b58;margin:5px 0}small{color:#687570}.notice{padding:10px 16px;background:#eef1f0;border-bottom:1px solid #ccd4d1;color:#4f5b58}.n-card{background:var(--n-color);border:1px solid #ccd4d1;border-radius:var(--n-border-radius);padding:20px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}.stats strong{display:block;font-size:26px;font-weight:500;color:#0b1413;margin-top:6px}.toolbar{display:flex;justify-content:space-between;gap:12px;margin-bottom:16px}.form-control{padding:8px 12px;border:1px solid #ccd4d1;background:white;color:#0b1413;width:100%}.table-wrap{overflow:auto}.n-data-table{background:var(--n-td-color);border:1px solid var(--n-border-color);border-radius:var(--n-border-radius);overflow:hidden}table{border-collapse:collapse;width:100%;font-size:13px;text-align:left}th{background:var(--n-th-color);color:var(--n-th-text-color);font-size:12px;font-weight:500}th,td{padding:16px;border-bottom:1px solid #e3e8e6}tr:last-child td{border:0}tbody tr:hover{background:var(--n-td-color-hover)}td strong{font-weight:500}.status{display:inline-block;padding:3px 9px;border-radius:4px;background:#dcecea;color:#315f5b;font-size:12px;white-space:nowrap}.status.amber{background:#f2edb0;color:#746a00}.status.red{background:#ffc8c8;color:#8b0000}.bottom{display:grid;grid-template-columns:1.1fr 1fr;gap:24px;margin-top:24px}.n-button--primary-type{background:var(--n-color);color:var(--n-text-color);border:var(--n-border)}.n-button--primary-type:hover{background:var(--n-color-hover)}.fields{display:grid;gap:14px;margin-top:16px}.fields label{display:grid;gap:6px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.failure{color:#8b0000;background:#fff4f4;border:1px solid #ffc8c8;border-radius:6px;padding:12px;margin:16px 0}.empty{padding:32px;text-align:center}.brand-note{margin-top:auto}.loading{color:#4f5b58;padding:10px 0}[hidden]{display:none!important}
+    @media(max-width:850px){#app{grid-template-columns:170px 1fr}#sidebar-v2 img{width:135px}.stats{grid-template-columns:repeat(2,1fr)}.bottom{grid-template-columns:1fr}.page{padding:24px 18px}.hl_header{padding:14px 18px}}
+    @media(max-width:600px){#app{display:block}#sidebar-v2{padding:16px;gap:12px}#sidebar-v2 nav{display:flex;overflow:auto}#sidebar-v2 a{white-space:nowrap}#sidebar-v2 small,.brand-note{display:none}.heading{align-items:flex-start}h1{font-size:22px}.toolbar{flex-wrap:wrap}.toolbar input{flex:1;min-width:170px}.page{padding:24px 16px}.stats{gap:10px}.n-card{padding:16px}.hl_header{padding:12px 16px}}
+  </style>
+  <link rel="stylesheet" href="multideck-crm.css">
+</head>
+<body><div id="app">
+  <aside id="sidebar-v2">
+    <img src="multideck-logo.svg" alt="Multideck">
+    <small>CRM WORKSPACE</small>
+    <nav aria-label="CRM preview sections">
+      <a href="#overview" class="active" aria-current="page">Overview</a>
+      <a href="#leads">Contacts</a><a href="#follow-up">Opportunities</a><a href="#states">Conversations</a>
+    </nav>
+    <p class="brand-note">Multideck CRM<br><small>One consistent workspace</small></p>
+  </aside>
+  <div class="workspace">
+    <header class="hl_header"><span>Sales workspace</span><span class="avatar" aria-label="Demo user">MD</span></header>
+    <div class="notice">Theme preview · Illustrative records only · This is not the live HighLevel interface.</div>
+    <main class="page" id="overview">
+      <div class="heading"><div><h1>A clearer view of your sales day</h1><p>Keep the conversation moving.</p></div><button class="n-button n-button--primary-type" id="preview-action">Preview action</button></div>
+      <section class="stats" aria-label="Illustrative sales metrics">
+        <div class="n-card">New enquiries<strong>12</strong><small>This week</small></div>
+        <div class="n-card">Open opportunities<strong>£84,250</strong><small>Across 18 opportunities</small></div>
+        <div class="n-card">Follow-ups due<strong>4</strong><small>Ready for your attention</small></div>
+        <div class="n-card">Meetings booked<strong>7</strong><small>Over the next seven days</small></div>
+      </section>
+      <section id="leads" aria-label="Illustrative contact list">
+        <div class="toolbar"><h2>Recent enquiries</h2><input class="form-control" id="search" aria-label="Search preview contacts" placeholder="Search contacts or companies" style="max-width:290px"></div>
+        <div class="table-wrap"><div class="n-data-table"><table><thead><tr><th>Company / contact</th><th>Latest activity</th><th>Status</th><th>Owner</th></tr></thead><tbody>
+          <tr><td><strong>North Quay Imports</strong><br><small>Alex Morgan</small></td><td>Requested a freight consultation<br><small>Today, 09:15</small></td><td><span class="status">New enquiry</span></td><td>Sam</td></tr>
+          <tr><td><strong>Meridian Components</strong><br><small>Jamie Taylor</small></td><td>Replied to a campaign<br><small>Today, 08:40</small></td><td><span class="status amber">Follow-up due</span></td><td>Riley</td></tr>
+          <tr><td><strong>Harbour Supply Co.</strong><br><small>Charlie Evans</small></td><td>Booked a meeting<br><small>Yesterday, 16:20</small></td><td><span class="status">Meeting booked</span></td><td>Sam</td></tr>
+        </tbody></table><div id="empty" class="empty" hidden><h2>No matching contacts</h2><p>Try another name or clear your search.</p></div></div></div>
+      </section>
+      <div class="bottom">
+        <section class="n-card" id="follow-up"><h2>Plan the next conversation</h2><p>Control spacing, selected values and keyboard focus.</p><form id="preview-form"><div class="fields"><label>Contact name<input class="form-control" required value="Alex Morgan"></label><label>Follow-up<select class="form-control"><option>Tomorrow morning</option><option>Later this week</option></select></label></div><div class="actions"><button class="btn btn-primary">Save preview</button><button class="n-button" disabled>Unavailable action</button></div><p id="saved" role="status" hidden>Preview saved locally for this session.</p></form></section>
+        <section class="n-card" id="states"><h2>Clear, recoverable states</h2><div class="failure" id="failure" role="alert">The CRM connection is unavailable. Your work is still here.</div><button class="n-button" id="retry">Retry preview</button><p class="loading" id="progress" role="status" hidden>Checking connection…</p><p id="recovered" role="status" hidden>Connection restored in this preview.</p><p style="margin-top:20px"><span class="status red">Needs attention</span> Status colours retain their meaning.</p><small>Buttons and fields keep visible keyboard focus. Motion respects reduced-motion preferences.</small></section>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+  const search = document.querySelector('#search');
+  search.addEventListener('input', () => {
+    let count = 0;
+    document.querySelectorAll('tbody tr').forEach(row => {
+      row.hidden = !row.textContent.toLowerCase().includes(search.value.toLowerCase());
+      if (!row.hidden) count++;
+    });
+    document.querySelector('#empty').hidden = count > 0;
+  });
+  document.querySelector('#preview-form').addEventListener('submit', event => {
+    event.preventDefault(); document.querySelector('#saved').hidden = false;
+  });
+  document.querySelector('#preview-action').addEventListener('click', () => {
+    document.querySelector('#follow-up input').focus();
+  });
+  document.querySelector('#retry').addEventListener('click', event => {
+    event.target.disabled = true;
+    document.querySelector('#progress').hidden = false;
+    setTimeout(() => {
+      document.querySelector('#failure').hidden = true;
+      document.querySelector('#progress').hidden = true;
+      document.querySelector('#recovered').hidden = false;
+      event.target.hidden = true;
+    }, 900);
+  });
+</script></body></html>

@@ -85,7 +85,8 @@ export type QuotePartyDraft = {
 
 export type QuoteWorkflowCharge = {
   id: string
-  code?: string
+  code?: string | null
+  chargeCodeId?: string | null
   customerId?: string | null
   costRoeSource?: "job" | "override"
   sellRoeSource?: "job" | "override"
@@ -110,6 +111,13 @@ export type QuoteWorkflowCharge = {
   customerNotes?: string | null
   showToCustomer: boolean
 }
+
+export type QuoteChargeCatalogue = {
+  codes: Array<{ RATECharge_ID: string; RATECharge_Code: string; RATECharge_Name: string; RATECharge_Description: string | null; RATECharge_DefaultApplicabilityCode: string; RATECharge_ScopeConfigured: boolean }>
+  scopes: Array<{ charge_id: string; record_kind: "quote" | "booking"; direction: "import" | "export" | "cross_trade" | "other"; mode: "air" | "sea" | "road" | "mix" | "other" }>
+}
+
+export const getQuoteChargeCatalogue = () => invoke<QuoteChargeCatalogue>({ action: "charge-catalogue" }, "Charge codes could not be loaded.")
 
 export type QuoteWorkflowRecord = {
   id: string

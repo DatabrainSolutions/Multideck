@@ -17,6 +17,8 @@ import { customsImporterProfileErrors } from "../_shared/customs-importer-profil
 
 type Row = Record<string, any>
 type OrganisationType = "company" | "customer" | "supplier"
+const customerClassificationNames = new Set(["potential customer", "customer"])
+const retiredKeyCustomerRole = "key customer account"
 
 const organisationFilterFields = new Set([
   "any", "name", "accountCode", "organisationTypes", "address", "country",
@@ -76,6 +78,84 @@ function countryCode(value: unknown) {
   return code
 }
 
+function googlePlacesKey() {
+  const key = normalize(Deno.env.get("GOOGLE_PLACES_API_KEY"))
+  if (!key) throw new HttpError(503, "Online address search is not configured for this workspace.")
+  return key
+}
+
+async function googleAddressSuggestions(query: string | null, country: string | null, sessionToken: string | null) {
+  // Transient third-party suggestions are deliberately an operator-only aid.
+  // Dexter continues to use saved, tenant-scoped addresses through the audited
+  // customer capability; suggestions are not watched or treated as company
+  // evidence until an operator reviews and saves the selected address.
+  if (!query || query.length < 3) throw new HttpError(400, "Enter at least three characters to search for an address.")
+  const countryValue = countryCode(country)
+  if (!countryValue) throw new HttpError(400, "Choose a country before searching for an address.")
+  if (!sessionToken || !/^[a-zA-Z0-9-]{16,80}$/.test(sessionToken)) throw new HttpError(400, "Start a new address-search session.")
+  const response = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": googlePlacesKey(),
+      "X-Goog-FieldMask": "suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat",
+    },
+    body: JSON.stringify({ input: query.slice(0, 180), includedRegionCodes: [countryValue.toLowerCase()], languageCode: "en", sessionToken }),
+  })
+  if (!response.ok) throw new HttpError(502, "The online address source could not complete this search.")
+  const payload = objectValue(await response.json())
+  return (Array.isArray(payload.suggestions) ? payload.suggestions : []).flatMap((candidate) => {
+    const prediction = objectValue(objectValue(candidate).placePrediction)
+    const id = normalize(prediction.placeId)
+    if (!id) return []
+    const structured = objectValue(prediction.structuredFormat)
+    return [{
+      id,
+      label: normalize(objectValue(structured.mainText).text) ?? normalize(objectValue(prediction.text).text) ?? "Address",
+      detail: normalize(objectValue(structured.secondaryText).text) ?? "",
+      source: "Google Places",
+    }]
+  }).slice(0, 8)
+}
+
+function googleAddressComponent(components: unknown, kind: string, short = false) {
+  const item = (Array.isArray(components) ? components : []).find((candidate) => {
+    const types = objectValue(candidate).types
+    return Array.isArray(types) && types.includes(kind)
+  })
+  return normalize(objectValue(item)[short ? "shortText" : "longText"])
+}
+
+async function googleAddressDetails(placeId: string | null, sessionToken: string | null) {
+  if (!placeId || placeId.length > 240) throw new HttpError(400, "Choose a valid address suggestion.")
+  if (!sessionToken || !/^[a-zA-Z0-9-]{16,80}$/.test(sessionToken)) throw new HttpError(400, "Start a new address-search session.")
+  const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(sessionToken)}&languageCode=en`, {
+    headers: {
+      "X-Goog-Api-Key": googlePlacesKey(),
+      "X-Goog-FieldMask": "id,displayName,formattedAddress,addressComponents,internationalPhoneNumber,websiteUri",
+    },
+  })
+  if (!response.ok) throw new HttpError(502, "The selected address could not be loaded from the online source.")
+  const place = objectValue(await response.json())
+  const components = place.addressComponents
+  const streetNumber = googleAddressComponent(components, "street_number")
+  const route = googleAddressComponent(components, "route")
+  return {
+    source: "Google Places",
+    sourceId: normalize(place.id) ?? placeId,
+    formattedAddress: normalize(place.formattedAddress),
+    name: normalize(objectValue(place.displayName).text),
+    line1: [streetNumber, route].filter(Boolean).join(" ") || null,
+    line2: googleAddressComponent(components, "subpremise"),
+    townCity: googleAddressComponent(components, "postal_town") ?? googleAddressComponent(components, "locality"),
+    countyState: googleAddressComponent(components, "administrative_area_level_1"),
+    postZipCode: googleAddressComponent(components, "postal_code"),
+    countryCode: googleAddressComponent(components, "country", true)?.toUpperCase() ?? null,
+    phone: normalize(place.internationalPhoneNumber),
+    website: normalize(place.websiteUri),
+  }
+}
+
 function contactName(contact: Row) {
   return [contact.OrgContact_FirstName, contact.OrgContact_LastName].filter(Boolean).join(" ").trim()
 }
@@ -95,9 +175,16 @@ function organisationTypeIds(value: unknown, allowEmpty = false) {
 async function validateOrganisationTypeIds(admin: any, value: unknown, allowEmpty = false) {
   const ids = organisationTypeIds(value, allowEmpty)
   if (!ids.length) return ids
-  const { data, error } = await admin.from("Org_Types").select("OrgType_ID").in("OrgType_ID", ids)
+  const { data, error } = await admin.from("Org_Types").select("OrgType_ID,OrgType_Name").in("OrgType_ID", ids)
   if (error) throw new HttpError(500, error.message)
   if ((data ?? []).length !== ids.length) throw new HttpError(400, "Choose valid company types.")
+  if ((data ?? []).some((type: Row) => String(type.OrgType_Name ?? "").trim().toLowerCase() === retiredKeyCustomerRole)) {
+    throw new HttpError(400, "Key Account is managed within Customer settings.")
+  }
+  const customerClassificationCount = (data ?? []).filter((type: Row) => customerClassificationNames.has(String(type.OrgType_Name ?? "").trim().toLowerCase())).length
+  if (customerClassificationCount > 1) {
+    throw new HttpError(400, "Choose either Potential Customer or Customer.")
+  }
   return ids
 }
 
@@ -677,7 +764,7 @@ async function contactDetail(admin: any, companyId: string, userId: string, perm
 async function updateAccount(admin: any, current: Row, permissions: string[], id: string, payload: Row) {
   const name = normalize(payload.name)
   if (!name) throw new HttpError(400, "Enter an account name.")
-  if (Object.hasOwn(payload, "orgTypeIds")) payload.orgTypeIds = await validateOrganisationTypeIds(admin, payload.orgTypeIds, true)
+  if (Object.hasOwn(payload, "orgTypeIds")) payload.orgTypeIds = await validateOrganisationTypeIds(admin, payload.orgTypeIds)
   const address = objectValue(payload.address)
   countryCode(address.countryCode)
   const { error } = await admin.rpc("multideck_crm_update_account", {
@@ -693,7 +780,7 @@ async function updateAccount(admin: any, current: Row, permissions: string[], id
 async function updateAccountTypes(admin: any, current: Row, id: string, payload: Row) {
   const name = normalize(payload.name)
   if (!name) throw new HttpError(400, "Enter an account name.")
-  const orgTypeIds = await validateOrganisationTypeIds(admin, payload.orgTypeIds, true)
+  const orgTypeIds = await validateOrganisationTypeIds(admin, payload.orgTypeIds)
   const { data, error } = await admin.rpc("multideck_crm_update_account", {
     p_actor_user_id: current.User_ID,
     p_account_id: id,
@@ -742,7 +829,7 @@ async function updateOrganisationFoundation(admin: any, current: Row, permission
     p_expected_version: expectedVersion(payload.expectedVersion),
     p_input: { ...payload, scopeCode, accountCode },
   })
-  if (error) throw crmWriteError(error, "The organisation setup could not be saved.")
+  if (error) throw crmWriteError(error, "The organisation main details could not be saved.")
   return accountDetail(admin, current.Company_ID, current.User_ID, permissions, id)
 }
 
@@ -826,7 +913,14 @@ async function replaceAccountOperations(admin: any, current: Row, permissions: s
   if (JSON.stringify(currentFinance.bankAccounts ?? []) !== JSON.stringify(nextFinance.bankAccounts ?? []) && !permissions.includes("Finance.Banks.Manage")) {
     throw new HttpError(403, "Bank-management permission is required to change organisation bank details.")
   }
-  const { error } = await admin.rpc("multideck_crm_replace_account_operations", {
+  const customerProfile = objectValue(objectValue(payload.roleProfiles).customer)
+  if (customerProfile.keyAccount === true) {
+    const required = ["accountManagerName", "accountManagerEmail", "serviceReviewCadence", "escalationProcess"]
+    if (required.some((key) => !normalize(customerProfile[key]))) {
+      throw new HttpError(400, "Complete the Key Account manager, service review and escalation requirements.")
+    }
+  }
+  const { error } = await admin.rpc("multideck_crm_replace_account_operations_with_customer_settings", {
     p_actor_user_id: current.User_ID,
     p_org_id: accountId,
     p_expected_version: expectedVersion(payload.expectedVersion),
@@ -842,7 +936,7 @@ function crmWriteError(error: any, fallback: string): HttpError {
   }
   if (error?.code === "23505") return new HttpError(409, error.message || "That CRM record already exists.")
   if (error?.code === "P0002") return new HttpError(404, error.message || "The CRM record could not be found.")
-  if (error?.code === "22023" || error?.code === "22P02") return new HttpError(400, error.message || fallback)
+  if (error?.code === "22023" || error?.code === "22P02" || error?.code === "23514") return new HttpError(400, error.message || fallback)
   return new HttpError(500, error?.message || fallback)
 }
 
@@ -863,11 +957,20 @@ Deno.serve(async (request) => {
 
     if (request.method === "GET") {
       const permissions = await requirePermission(admin, current.User_ID, "Customers.Read")
+      if (parts[0] === "address-search" && parts[1] === "suggestions") {
+        const params = new URL(request.url).searchParams
+        return json(request, { items: await googleAddressSuggestions(params.get("q"), params.get("country"), params.get("sessionToken")) })
+      }
+      if (parts[0] === "address-search" && parts[1] === "details" && parts[2]) {
+        const params = new URL(request.url).searchParams
+        return json(request, await googleAddressDetails(parts[2], params.get("sessionToken")))
+      }
       if (parts[0] === "reference") {
-        const [{ data: organisationTypes, error }, { data: relationshipStatuses, error: relationshipError }, { data: offices, error: officeError }, { data: legalEntities, error: legalEntityError }, { data: currencies, error: currencyError }, { data: bootstrapCurrencies, error: bootstrapCurrencyError }, { data: paymentTerms, error: paymentTermError }, { data: taxTreatments, error: taxTreatmentError }, { data: financeRevisions, error: financeRevisionError }] = await Promise.all([
+        const [{ data: organisationTypes, error }, { data: relationshipStatuses, error: relationshipError }, { data: offices, error: officeError }, { data: countries, error: countryError }, { data: legalEntities, error: legalEntityError }, { data: currencies, error: currencyError }, { data: bootstrapCurrencies, error: bootstrapCurrencyError }, { data: paymentTerms, error: paymentTermError }, { data: taxTreatments, error: taxTreatmentError }, { data: financeRevisions, error: financeRevisionError }] = await Promise.all([
           admin.from("Org_Types").select("OrgType_ID,OrgType_Name").order("OrgType_Order").order("OrgType_Name"),
           admin.from("sys_CRMRelationshipStatuses").select("CRMRelStatus_Code,CRMRelStatus_Name").eq("CRMRelStatus_IsActive", true).order("CRMRelStatus_SortOrder"),
           admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Code,Office_CountryCode,Office_TimeZone").eq("Company_ID", current.Company_ID).eq("Office_IsActive", true).order("Office_Name"),
+          admin.from("RefCountry").select("RN_Code,RN_Desc").eq("RN_IsActive", true).not("RN_Code", "is", null).not("RN_Desc", "is", null).order("RN_Desc").limit(300),
           admin.from("cmp_LegalEntities").select("LegalEntity_ID,LegalEntity_Name,LegalEntity_CountryCode,LegalEntity_BaseCurrencyCodeSnapshot").eq("Company_ID", current.Company_ID).order("LegalEntity_Name"),
           admin.from("FIN_CurrencySettings").select("FINCurSet_LegalEntityID,FINCurSet_CurrencyCode,FINCurSet_Name").eq("FINCurSet_IsActive", true).order("FINCurSet_CurrencyCode"),
           admin.from("sys_Currency").select("Currency_Code,Currency_Name").in("Currency_Code", ["GBP", "EUR", "USD"]).order("Currency_Code"),
@@ -875,7 +978,7 @@ Deno.serve(async (request) => {
           admin.from("FIN_TaxCodes").select("FINTax_ID,FINTax_LegalEntityID,FINTax_Code,FINTax_Name,FINTax_CountryCode,FINTax_RatePercent,FINTax_TransactionTypeCode").eq("FINTax_IsActive", true).order("FINTax_Code"),
           admin.from("FIN_AdministrationRevisions").select("FINAdminRevision_LegalEntityID,FINAdminRevision_ConfigJSON").eq("FINAdminRevision_StatusCode", "approved"),
         ])
-        if (error || relationshipError || officeError || legalEntityError || currencyError || bootstrapCurrencyError || paymentTermError || taxTreatmentError || financeRevisionError) throw new HttpError(500, (error ?? relationshipError ?? officeError ?? legalEntityError ?? currencyError ?? bootstrapCurrencyError ?? paymentTermError ?? taxTreatmentError ?? financeRevisionError)?.message ?? "The CRM reference data could not be loaded.")
+        if (error || relationshipError || officeError || countryError || legalEntityError || currencyError || bootstrapCurrencyError || paymentTermError || taxTreatmentError || financeRevisionError) throw new HttpError(500, (error ?? relationshipError ?? officeError ?? countryError ?? legalEntityError ?? currencyError ?? bootstrapCurrencyError ?? paymentTermError ?? taxTreatmentError ?? financeRevisionError)?.message ?? "The CRM reference data could not be loaded.")
         const legalEntityIds = new Set((legalEntities ?? []).map((item: Row) => item.LegalEntity_ID))
         const approvedFinanceEntityIds = new Set((financeRevisions ?? []).filter((item: Row) => legalEntityIds.has(item.FINAdminRevision_LegalEntityID)).map((item: Row) => item.FINAdminRevision_LegalEntityID))
         const taxReadyEntityIds = new Set((financeRevisions ?? []).filter((item: Row) => legalEntityIds.has(item.FINAdminRevision_LegalEntityID) && objectValue(item.FINAdminRevision_ConfigJSON).taxSettings && objectValue(objectValue(item.FINAdminRevision_ConfigJSON).taxSettings).localAdviceConfirmed === true).map((item: Row) => item.FINAdminRevision_LegalEntityID))
@@ -884,7 +987,7 @@ Deno.serve(async (request) => {
           ? Array.from(new Map(scopedCurrencies.map((item: Row) => [item.FINCurSet_CurrencyCode, { code: item.FINCurSet_CurrencyCode, name: item.FINCurSet_Name ?? item.FINCurSet_CurrencyCode }])).values())
           : (bootstrapCurrencies ?? []).map((item: Row) => ({ code: item.Currency_Code, name: item.Currency_Name ?? item.Currency_Code }))
         return json(request, {
-          organisationTypes: (organisationTypes ?? []).map((item: Row) => ({ id: item.OrgType_ID, name: item.OrgType_Name })),
+          organisationTypes: (organisationTypes ?? []).filter((item: Row) => String(item.OrgType_Name ?? "").trim().toLowerCase() !== retiredKeyCustomerRole).map((item: Row) => ({ id: item.OrgType_ID, name: item.OrgType_Name })),
           // Kept for rollout compatibility with older clients. Account owner
           // filters now come from the bounded register facets instead.
           owners: [],
@@ -893,6 +996,7 @@ Deno.serve(async (request) => {
             id: item.Office_ID, name: item.Office_Name, code: item.Office_Code ?? null,
             countryCode: item.Office_CountryCode ?? null, timeZone: item.Office_TimeZone ?? "UTC",
           })),
+          countries: (countries ?? []).map((item: Row) => ({ code: item.RN_Code, name: item.RN_Desc })),
           currencies: availableCurrencies,
           legalEntities: (legalEntities ?? []).map((item: Row) => ({
             id: item.LegalEntity_ID, name: item.LegalEntity_Name,

@@ -27,10 +27,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
+import { availableChargeChoices } from "@/lib/charge-catalogue"
 import {
   convertQuoteWorkflow,
   downloadQuoteDocument,
   getQuoteSources,
+  getQuoteChargeCatalogue,
   getQuoteWorkflow,
   saveQuoteWorkflow,
   transitionQuoteWorkflow,
@@ -40,6 +42,7 @@ import {
   type QuoteWorkflowCharge,
   type QuoteWorkflowRecord,
   type QuoteWorkflowWorkspace,
+  type QuoteChargeCatalogue,
 } from "@/lib/quote-workflow-api"
 
 type WorkflowTab = "details" | "charges" | "documents" | "audit"
@@ -140,6 +143,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
   const [workspace, setWorkspace] = useState<QuoteWorkflowWorkspace | null>(null)
   const [record, setRecord] = useState<QuoteWorkflowRecord>(emptyRecord)
   const [charges, setCharges] = useState<QuoteWorkflowCharge[]>(() => [emptyCharge()])
+  const [chargeCatalogue, setChargeCatalogue] = useState<QuoteChargeCatalogue | null>(null)
   const [sources, setSources] = useState<QuoteSourceOption[]>([])
   const [suppliers, setSuppliers] = useState<QuoteSupplierOption[]>([])
   const [activeTab, setActiveTab] = useState<WorkflowTab>("details")
@@ -162,10 +166,12 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
     setLoading(true)
     setError(null)
     try {
-      const [optionData, loadedWorkspace] = await Promise.all([
+      const [optionData, loadedWorkspace, catalogue] = await Promise.all([
         getQuoteSources(),
         isNew ? Promise.resolve(null) : getQuoteWorkflow(String(quoteReference).toUpperCase()),
+        getQuoteChargeCatalogue(),
       ])
+      setChargeCatalogue(catalogue)
       setSources(optionData.sources)
       setSuppliers(optionData.suppliers)
       if (isNew) {
@@ -221,7 +227,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
 
   const chargeRows = useMemo<UnifiedQuoteChargeRow[]>(() => charges.map((charge) => ({
     id: charge.id,
-    code: charge.description.slice(0, 8).toUpperCase().replace(/[^A-Z0-9]/g, "") || "CHARGE",
+    code: charge.code ?? "",
     description: charge.description,
     supplierId: charge.supplierId ?? record.supplierId,
     customerId: record.customerId || null,
@@ -265,7 +271,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
       const sellLocal = row.sellRoe && row.sellRoe > 0 ? row.sell / row.sellRoe : row.sell
       const appliedMarkup = costLocal > 0 ? (sellLocal - costLocal) / costLocal * 100 : record.defaultMarkupPct
       return {
-        ...(existing ?? emptyCharge(record.currency ?? "GBP")), id: row.id, description: row.description,
+        ...(existing ?? emptyCharge(record.currency ?? "GBP")), id: row.id, code: row.code, description: row.description,
         supplierId: row.supplierId, costCurrency: row.costCurrency, costAmount: row.cost, costLocal,
         costRoe: row.costRoe ?? 1, sellCurrency: row.sellCurrency, sellAmount: row.sell, sellLocal,
         sellRoe: row.sellRoe ?? 1, calculationBasis: row.calculationBasis ?? existing?.calculationBasis ?? "fixed",
@@ -548,7 +554,7 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
                 ))}
               </div>
             </Surface>
-            <UnifiedQuoteChargesWorkspace rows={chargeRows} onRowsChange={updateChargeRows} parties={parties} baseCurrency={record.currency ?? "GBP"} readOnly={readOnly} storageKey={`quote-workflow-${record.id || "new"}`} />
+            <UnifiedQuoteChargesWorkspace rows={chargeRows} onRowsChange={updateChargeRows} chargeChoices={chargeCatalogue ? availableChargeChoices(chargeCatalogue, "quote", record.direction ?? "", record.mode ?? "") : []} parties={parties} baseCurrency={record.currency ?? "GBP"} readOnly={readOnly} storageKey={`quote-workflow-${record.id || "new"}`} />
             <Surface padding="none" className="rounded-[var(--md-radius-xl)] p-4">
               <Field label="Markup override reason" hint="Required by policy when the overall or line markup differs from the customer default."><Textarea value={record.markupOverrideReason ?? ""} onChange={(event) => updateRecord("markupOverrideReason", event.target.value)} disabled={readOnly} className="min-h-20 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]" /></Field>
             </Surface>
