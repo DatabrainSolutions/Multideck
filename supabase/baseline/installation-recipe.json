@@ -12,6 +12,9 @@
     { "id": "20260922134231_tenant_lifecycle_controls", "firstRelease": "1.2.1" },
     { "id": "20260922144245_lifecycle_supported_cron_controls", "firstRelease": "1.2.1" },
     { "id": "20260922152910_lifecycle_verified_offline_transition", "firstRelease": "1.2.1" },
-    { "id": "20260923133528_harden_template_function_access", "firstRelease": "1.2.2" }
+    { "id": "20260923133528_harden_template_function_access", "firstRelease": "1.2.2" },
+    { "id": "20260921120000_paid_seat_pricing_and_capacity", "firstRelease": "1.2.3" },
+    { "id": "20260921130000_preserve_paid_seat_voice_usage", "firstRelease": "1.2.3" },
+    { "id": "20260923160034_cloud_paid_seat_contract", "firstRelease": "1.2.3" }
   ]
 }

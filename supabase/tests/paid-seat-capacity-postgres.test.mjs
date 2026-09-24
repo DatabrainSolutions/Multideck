@@ -7,6 +7,7 @@ import { spawnSync, spawn } from 'node:child_process'
 const bin = process.env.PG_TEST_BIN || spawnSync('pg_config',['--bindir'],{encoding:'utf8'}).stdout.trim()
 const migration = readFileSync(new URL('../migrations/20260921120000_paid_seat_pricing_and_capacity.sql',import.meta.url),'utf8')
 const voiceMigration = readFileSync(new URL('../migrations/20260921130000_preserve_paid_seat_voice_usage.sql',import.meta.url),'utf8')
+const cloudContractMigration = readFileSync(new URL('../migrations/20260923160034_cloud_paid_seat_contract.sql',import.meta.url),'utf8')
 test('paid seats govern AI, prices, documents and concurrent admissions without browser writes', async () => {
  const dir=mkdtempSync(join(tmpdir(),'paid-seats-')), data=join(dir,'db'); let started=false
  const run=(cmd,args,input)=>{const r=spawnSync(join(bin,cmd),args,{input,encoding:'utf8',timeout:30000});assert.equal(r.status,0,`${r.stderr}\n${r.stdout}`);return r.stdout}
@@ -15,7 +16,10 @@ test('paid seats govern AI, prices, documents and concurrent admissions without 
  try {
  run('initdb',['-D',data,'-A','trust','-U','postgres','--no-locale','-E','UTF8']);run('pg_ctl',['-D',data,'-l',join(dir,'log'),'-o',`-k ${dir} -c listen_addresses=''`,'-w','start']);started=true
  sql(`
- create role anon;create role authenticated;create role service_role;create schema auth;create schema private;
+ create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create schema private;
+ grant usage on schema private to service_role;
+ create table private.cloud_product_state(singleton boolean primary key,tenant_id uuid);
+ grant select on private.cloud_product_state to service_role;
  create table public."cmp_Company"("Company_ID" uuid primary key);
  create table public."cmp_Users"("User_ID" uuid primary key default gen_random_uuid(),"Company_ID" uuid,"User_AccessStatus" text default 'active',"Auth_User_ID" uuid unique);
  create table public."AI_DexterUsagePolicies"("AIUsagePolicy_CompanyID" uuid primary key,"AIUsagePolicy_PlanCode" text default '25',"AIUsagePolicy_IncludedGbp" numeric default 1442.3077,"AIUsagePolicy_PayAsYouGoEnabled" boolean default false,"AIUsagePolicy_BillingReady" boolean default false,"AIUsagePolicy_ExtraUsageLimitGbp" numeric,"AIUsagePolicy_ExtraUsageRateMultiplier" numeric default 1,"AIUsagePolicy_UpdatedAt" timestamptz);
@@ -40,7 +44,12 @@ test('paid seats govern AI, prices, documents and concurrent admissions without 
  create function public._multideck_usage_team(uuid,timestamptz,timestamptz,text,integer,numeric) returns jsonb language sql as $$select '[]'::jsonb$$;
  ${migration}
  ${voiceMigration}
+ ${cloudContractMigration}
+ grant select on public."cmp_Company" to service_role;
+ grant select,insert,update on public."AI_DexterUsagePolicies" to service_role;
+ grant execute on function public._multideck_subscription(uuid) to service_role;
  insert into public."cmp_Company" values ('11111111-1111-1111-1111-111111111111'),('22222222-2222-2222-2222-222222222222');
+ insert into private.cloud_product_state values(true,'11111111-1111-1111-1111-111111111111');
  insert into public."AI_DexterUsagePolicies"("AIUsagePolicy_CompanyID","AIUsagePolicy_PaidSeats") values('11111111-1111-1111-1111-111111111111',2);
  do $$declare c uuid:='11111111-1111-1111-1111-111111111111'; s jsonb; n integer; price integer;begin
  foreach n in array array[1,10,11,25,26,50,51] loop
@@ -82,6 +91,21 @@ test('paid seats govern AI, prices, documents and concurrent admissions without 
  end$$;
  -- One remaining seat for simultaneous callers.
  insert into public."AI_DexterUsagePolicies"("AIUsagePolicy_CompanyID","AIUsagePolicy_PaidSeats") values('22222222-2222-2222-2222-222222222222',1);
+ set role service_role;
+ select public.multideck_cloud_apply_paid_seats('11111111-1111-1111-1111-111111111111',1,2,'10',null,null);
+ reset role;
+ do $$declare c uuid:='11111111-1111-1111-1111-111111111111';ack jsonb;begin
+ ack:=public.multideck_cloud_apply_paid_seats(c,1,2,'10',null,null);
+ if ack->>'confirmed'<>'true' or (ack->>'paidSeats')::integer<>2 then raise exception 'Cloud contract was not confirmed';end if;
+ ack:=public.multideck_cloud_apply_paid_seats(c,1,2,'10',null,null);
+ if ack->>'confirmed'<>'true' then raise exception 'Exact retry was not idempotent';end if;
+ begin perform public.multideck_cloud_apply_paid_seats(c,1,3,'10',null,null);raise exception 'conflicting retry accepted';exception when serialization_failure then null;end;
+ begin perform public.multideck_cloud_apply_paid_seats('22222222-2222-2222-2222-222222222222',2,1,'10',null,null);raise exception 'foreign tenant accepted';exception when insufficient_privilege then null;end;
+ begin perform public.multideck_cloud_apply_paid_seats(c,2,1,'10',null,null);raise exception 'occupied seat reduction accepted';exception when invalid_parameter_value then null;end;
+ ack:=public.multideck_cloud_apply_paid_seats(c,2,3,'10',null,null);
+ if (ack->>'paidSeats')::integer<>3 then raise exception 'amendment was not applied';end if;
+ if has_function_privilege('authenticated','public.multideck_cloud_apply_paid_seats(uuid,bigint,integer,text,numeric,integer)','execute') then raise exception 'browser can amend seats';end if;
+ end$$;
  `)
  const concurrent=(input)=>new Promise(resolve=>{const p=spawn(join(bin,'psql'),args);let out='';p.stderr.on('data',b=>out+=b);p.on('close',code=>resolve({code,out}));p.stdin.end(input)})
  const results=await Promise.all([1,2].map(()=>concurrent(`begin;insert into public."cmp_Users"("Company_ID") values('22222222-2222-2222-2222-222222222222');select pg_sleep(0.3);commit;`)))
