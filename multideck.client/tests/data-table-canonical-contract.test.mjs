@@ -15,6 +15,7 @@ const appSource = await readFile(new URL("../src/App.tsx", import.meta.url), "ut
 const warehousePageSource = await readFile(new URL("../src/pages/warehouse-page.tsx", import.meta.url), "utf8")
 const tablePrimitiveSource = await readFile(new URL("../src/components/ui/table.tsx", import.meta.url), "utf8")
 const styleSource = await readFile(new URL("../src/styles.css", import.meta.url), "utf8")
+const responsiveStyleSource = await readFile(new URL("../src/responsive.css", import.meta.url), "utf8")
 
 async function collectTsxFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -53,10 +54,16 @@ test("search, filters, and the Columns icon use the shared tab corner radius", (
   assert.match(columnsButton, /aria-label=\{t\(columnsButtonLabel/u)
 })
 
-test("table scrollbars stay hidden without disabling horizontal overflow", () => {
-  assert.match(tablePrimitiveSource, /className="md-table-scroll relative w-full overflow-x-auto"/u)
+test("table scrolling stays keyboard accessible with visible scroll cues on touch screens", () => {
+  assert.match(tablePrimitiveSource, /className="md-table-scroll [^"]*overflow-x-auto/u)
+  assert.match(tablePrimitiveSource, /tabIndex=\{0\}/u)
+  assert.match(tablePrimitiveSource, /role="region"/u)
+  assert.match(tablePrimitiveSource, /aria-label=/u)
   assert.match(styleSource, /\.md-table-scroll\s*\{[^}]*scrollbar-width: none;[^}]*-ms-overflow-style: none;/su)
   assert.match(styleSource, /\.md-table-scroll::-webkit-scrollbar\s*\{[^}]*display: none;/su)
+  assert.match(responsiveStyleSource, /@media \(max-width: 767px\), \(pointer: coarse\)/u)
+  assert.match(responsiveStyleSource, /\.md-table-scroll\s*\{[^}]*scrollbar-width: thin;/su)
+  assert.match(responsiveStyleSource, /\.md-table-scroll::-webkit-scrollbar\s*\{[^}]*display: block;/su)
 })
 
 test("every semantic pill uses the established filled table treatment", () => {

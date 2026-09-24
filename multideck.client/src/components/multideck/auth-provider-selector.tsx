@@ -18,7 +18,7 @@ export type AuthProviderDefinition = {
   id: AuthProviderId
   label: string
   shortDescription: string
-  settingsDescription: string
+  settingsDescription?: string
   logo?: string
 }
 
@@ -27,7 +27,6 @@ export const authProviderDefinitions: AuthProviderDefinition[] = [
     id: "google",
     label: "Google",
     shortDescription: "Continue with your connected Google account",
-    settingsDescription: "Use a connected Google account for future Multideck sign-ins.",
     logo: googleLogo,
   },
   {
@@ -41,21 +40,19 @@ export const authProviderDefinitions: AuthProviderDefinition[] = [
     id: "linkedin_oidc",
     label: "LinkedIn",
     shortDescription: "Continue with your connected LinkedIn account",
-    settingsDescription: "Use a connected LinkedIn identity for future Multideck sign-ins.",
     logo: linkedinLogo,
   },
   {
     id: "facebook",
     label: "Facebook",
     shortDescription: "Continue with your connected Facebook account",
-    settingsDescription: "Use a connected Facebook identity for future Multideck sign-ins.",
     logo: facebookLogo,
   },
   {
     id: "azure",
     label: "Microsoft",
     shortDescription: "Continue with your connected Microsoft account",
-    settingsDescription: "Use your Microsoft or Entra ID account for future sign-ins.",
+    settingsDescription: "Microsoft or Entra ID account.",
     logo: microsoftLogo,
   },
 ]
@@ -155,7 +152,7 @@ function SignInMethodRow({
 }: {
   provider: AuthProviderId | "password"
   connected: boolean
-  detail: string
+  detail?: string
   busy?: boolean
   onConnect?: () => void | Promise<void>
 }) {
@@ -174,7 +171,7 @@ function SignInMethodRow({
         )}
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
-          <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{detail}</p>
+          {detail ? <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{detail}</p> : null}
         </div>
       </div>
       <div className="flex items-center justify-between gap-3 sm:justify-end">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { AiEditing, Check, FileCheck2, LoaderCircle, RefreshCw, Settings, Sparkles, Trash2, TriangleAlert } from "@/components/icons/hugeicons"
+import { AiEditing, FileCheck2, LoaderCircle, RefreshCw, Settings, Trash2, TriangleAlert } from "@/components/icons/hugeicons"
+import { SuggestedUpdateIllustration } from "@/components/multideck/suggested-update-illustration"
 import { SuggestedUpdateReview } from "@/components/multideck/suggested-update-review"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -224,7 +225,7 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--md-bg)]">
-      <header className="flex shrink-0 flex-wrap items-center gap-2 px-[var(--md-page-pad)] py-2.5 ps-14 shadow-[var(--md-stroke-bottom)] lg:ps-[var(--md-page-pad)]">
+      <header className="flex shrink-0 flex-wrap items-center gap-2 px-[var(--md-page-pad)] py-2.5 ps-[76px] shadow-[var(--md-stroke-bottom)] lg:ps-[var(--md-page-pad)]">
         <AiEditing className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -281,7 +282,11 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
             ) : state === "error" && suggestions.length === 0 ? (
               <div className="px-3 py-8"><TriangleAlert className="size-5 text-[var(--md-red)]" /><p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("Suggested updates are unavailable")}</p><p className="mt-1 text-[11.5px] text-[var(--md-text)]">{error}</p></div>
             ) : visibleSuggestions.length === 0 ? (
-              <div className="px-3 py-8"><Check className="size-5 text-[var(--md-green)]" /><p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(filter === "review" ? "Nothing needs re-keying" : "No reviewed updates yet")}</p><p className="mt-1 text-[11.5px] leading-[1.5] text-[var(--md-text)]">{t(filter === "review" ? "Likely documents appear here only when there is something useful to review." : "Applied and dismissed suggestions will stay here as an audit trail.")}</p></div>
+              <div className="px-3 py-6 text-center">
+                <SuggestedUpdateIllustration key={filter} variant={filter === "review" ? "clear" : "history"} className="mx-auto mb-4" />
+                <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(filter === "review" ? "Nothing needs re-keying" : "No reviewed updates yet")}</p>
+                <p className="mt-1 text-[11.5px] leading-[1.5] text-[var(--md-text)]">{t(filter === "review" ? "Likely documents appear here only when there is something useful to review." : "Applied and dismissed suggestions will stay here as an audit trail.")}</p>
+              </div>
             ) : (
               <AnimatePresence initial={false}>
                 {visibleSuggestions.map((suggestion) => (
@@ -312,7 +317,13 @@ export function InboxSuggestedUpdatesWorkspace({ mailboxes }: { mailboxes: Mailb
           {selected ? (
             <SuggestedUpdateReview suggestion={selected} selectedFieldIds={selectedFieldIds} busy={busySuggestionId !== null} actionError={actionError} onToggleField={(fieldId, checked) => setSelectedFieldIds((current) => { const next = new Set(current); if (checked) next.add(fieldId); else next.delete(fieldId); return next })} onApply={() => void applySelected()} onAttachToBooking={(bookingId) => void attachSelected(bookingId)} onDismiss={() => void dismissSuggestion(selected)} onOpenSource={openSource} />
           ) : (
-            <div className="grid h-full min-h-[280px] place-items-center px-6 text-center"><div><Sparkles className="mx-auto size-6 text-[var(--md-accent)]" strokeWidth={1.35} /><h2 className="mt-3 text-[14px] font-medium text-[var(--md-ink)]">{t("Inbox work, without the re-keying")}</h2><p className="mx-auto mt-1 max-w-[420px] text-[12px] leading-[1.55] text-[var(--md-text)]">{t("When a useful document arrives, Multideck compares it with the live record and brings only the differences here.")}</p></div></div>
+            <div className="grid h-full min-h-[320px] place-items-center overflow-y-auto px-6 py-6 text-center">
+              <div>
+                <SuggestedUpdateIllustration variant="compare" className="mx-auto mb-5" />
+                <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Inbox work, without the re-keying")}</h2>
+                <p className="mx-auto mt-1 max-w-[420px] text-[12px] leading-[1.55] text-[var(--md-text)]">{t("When a useful document arrives, Multideck compares it with the live record and brings only the differences here.")}</p>
+              </div>
+            </div>
           )}
         </main>
       </div>

@@ -14,6 +14,8 @@ export function workspaceNotificationDestination(notification: Pick<WorkspaceNot
   const suggestionId = text(notification.metadata.suggestion_id) ?? (notification.targetTable === "AI_InboxSuggestedUpdates" ? id : null)
   if (suggestionId) return `/inbox?view=suggested&suggestion=${encodeURIComponent(suggestionId)}`
   if (notification.targetTable === "CRM_Leads" && id) return `/crm/leads/${encodeURIComponent(id)}`
+  if (notification.targetTable === "CRM_Opportunities" && id) return `/crm/deals/${encodeURIComponent(id)}`
+  if (notification.targetTable === "AI_CrmSalesBriefings" && id) return "/crm"
   if (notification.targetTable === "CRM_LeadTransferRequests") {
     const leadId = text(notification.metadata.leadId)
     return leadId ? `/crm/leads/${encodeURIComponent(leadId)}` : "/crm/leads"

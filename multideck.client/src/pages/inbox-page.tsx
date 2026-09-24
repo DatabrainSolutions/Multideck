@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   Archive,
@@ -501,7 +502,9 @@ function WorkspaceMessage({
   description,
   action,
   tone = "neutral",
+  illustration,
 }: {
+  illustration?: "mail"
   icon: typeof Mail
   title: string
   description: string
@@ -511,7 +514,7 @@ function WorkspaceMessage({
   return (
     <div className="grid h-full min-h-[220px] place-items-center px-6 py-10">
       <div className="max-w-[46ch] text-center">
-        <span
+        {illustration ? <EmptyStateIllustration variant={illustration} /> : <span
           className={cn(
             "mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] shadow-[var(--md-shadow-line)]",
             tone === "error"
@@ -522,7 +525,7 @@ function WorkspaceMessage({
           )}
         >
           <Icon className="size-[18px]" strokeWidth={1.4} aria-hidden="true" />
-        </span>
+        </span>}
         <p className="mt-3 text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
         <p className="mt-1.5 text-pretty text-[12.5px] leading-[1.55] text-[var(--md-text)]">{description}</p>
         {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
@@ -2185,6 +2188,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
           ) : (
             <WorkspaceMessage
               icon={folder === "archive" ? Archive : MailOpen}
+              illustration="mail"
               title={emptyFolderTitle}
               description={emptyFolderDescription}
             />
@@ -2306,6 +2310,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       ) : !selectedThreadId ? (
         <WorkspaceMessage
           icon={MailOpen}
+          illustration="mail"
           title={t("Choose a conversation")}
           description={t("Open a conversation to read its messages, ask Dexter for a summary, and reply.")}
         />
@@ -2548,42 +2553,45 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 px-[var(--md-page-pad)] py-2.5 ps-14 lg:ps-[var(--md-page-pad)]">
-        <Mail className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
-        <h2 className="shrink-0 text-[14px] font-medium text-[var(--md-ink)]">{t("Inbox")}</h2>
-        {activeMailbox ? (
-          <>
-            <span aria-hidden="true" className="text-[var(--md-subtle)]">·</span>
-            <bdi
-              data-i18n-skip
-              dir="ltr"
-              title={activeMailbox.address}
-              className="min-w-0 truncate text-[12.5px] text-[var(--md-text)]"
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 px-[var(--md-page-pad)] py-2.5 sm:flex sm:flex-wrap">
+        <div className="flex min-w-0 items-center gap-2 ps-14 sm:shrink-0 lg:ps-0">
+          <Mail className="hidden size-4 shrink-0 text-[var(--md-accent)] sm:block" strokeWidth={1.4} aria-hidden="true" />
+          <h2 className="shrink-0 text-[14px] font-medium text-[var(--md-ink)]">{t("Inbox")}</h2>
+        </div>
+        <div className="order-last col-span-3 flex min-w-0 items-center gap-2 sm:order-none sm:flex-1">
+          {activeMailbox ? (
+            <>
+              <bdi
+                data-i18n-skip
+                dir="ltr"
+                title={activeMailbox.address}
+                className="min-w-0 truncate text-[12.5px] text-[var(--md-text)]"
+              >
+                {activeMailbox.address}
+              </bdi>
+              {mailboxKindLabel(activeMailbox) ? (
+                <span className="shrink-0 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.05em] text-[var(--md-subtle)]">
+                  {t(mailboxKindLabel(activeMailbox))}
+                </span>
+              ) : null}
+            </>
+          ) : null}
+          {unreadTotal > 0 ? (
+            <span className="ms-auto shrink-0 rounded-full bg-[var(--md-accent-a10)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--md-accent)]">
+              <span data-i18n-skip dir="ltr" className="tabular-nums">{unreadTotal}</span> {t("unread")}
+            </span>
+          ) : null}
+          {activeAutomaticReply && activeAutomaticReply.status !== "disabled" ? (
+            <button
+              type="button"
+              className="hidden h-8 shrink-0 items-center gap-1.5 rounded-full bg-[rgba(47,133,90,0.09)] px-2.5 text-[11.5px] font-medium text-[var(--md-green)] shadow-[inset_0_0_0_1px_rgba(47,133,90,0.14)] transition-[background-color,scale] duration-150 hover:bg-[rgba(47,133,90,0.14)] active:scale-[0.97] sm:inline-flex"
+              onClick={() => setAutomaticReplyOpen(true)}
             >
-              {activeMailbox.address}
-            </bdi>
-            {mailboxKindLabel(activeMailbox) ? (
-              <span className="shrink-0 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.05em] text-[var(--md-subtle)]">
-                {t(mailboxKindLabel(activeMailbox))}
-              </span>
-            ) : null}
-          </>
-        ) : null}
-        {unreadTotal > 0 ? (
-          <span className="ms-auto shrink-0 rounded-full bg-[var(--md-accent-a10)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--md-accent)]">
-            <span data-i18n-skip dir="ltr" className="tabular-nums">{unreadTotal}</span> {t("unread")}
-          </span>
-        ) : null}
-        {activeAutomaticReply && activeAutomaticReply.status !== "disabled" ? (
-          <button
-            type="button"
-            className="hidden h-8 shrink-0 items-center gap-1.5 rounded-full bg-[rgba(47,133,90,0.09)] px-2.5 text-[11.5px] font-medium text-[var(--md-green)] shadow-[inset_0_0_0_1px_rgba(47,133,90,0.14)] transition-[background-color,scale] duration-150 hover:bg-[rgba(47,133,90,0.14)] active:scale-[0.97] sm:inline-flex"
-            onClick={() => setAutomaticReplyOpen(true)}
-          >
-            <CalendarClock className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
-            {t("Out of office on")}
-          </button>
-        ) : null}
+              <CalendarClock className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+              {t("Out of office on")}
+            </button>
+          ) : null}
+        </div>
         <PageSettingsMenu
           title={t("Inbox settings")}
           actions={[{
@@ -2600,10 +2608,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
           type="button"
           variant="ghost"
           disabled={!activeMailbox?.outboundEnabled}
-          className={cn(
-            "h-10 shrink-0 gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12.5px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] duration-150 hover:bg-[var(--md-accent-deep)] active:scale-[0.96] disabled:opacity-50 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
-            unreadTotal > 0 ? "" : "ms-auto",
-          )}
+          className="h-10 shrink-0 gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12.5px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] duration-150 hover:bg-[var(--md-accent-deep)] active:scale-[0.96] disabled:opacity-50 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
           onClick={() => {
             setStage("message")
             openComposer("new")

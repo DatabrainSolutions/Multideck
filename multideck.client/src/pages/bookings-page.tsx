@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { bookingLifecycleLabel } from "@/lib/booking-lifecycle"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
@@ -577,9 +578,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
           )}
           emptyState={bookingsLoading ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading bookings…" /></div> : (
             <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
-              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
-                <Search className="size-4" strokeWidth={1.3} aria-hidden="true" />
-              </span>
+              <EmptyStateIllustration variant="search" />
               <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(scope === "Mine" ? "No bookings assigned to you" : "No bookings match this search")}</p>
               <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(scope === "Mine" ? "Bookings appear here when you are recorded as their owner." : "Change or clear a filter to see more bookings.")}</p>
               <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={clearFilters}>

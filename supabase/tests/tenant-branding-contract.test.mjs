@@ -5,7 +5,7 @@ import test from "node:test"
 const branding = fs.readFileSync(new URL("../functions/tenant-branding/index.ts", import.meta.url), "utf8")
 const shared = fs.readFileSync(new URL("../functions/_shared/tenant-branding.ts", import.meta.url), "utf8")
 const migration = fs.readFileSync(new URL("../migrations/20260901103000_tenant_brand_assets.sql", import.meta.url), "utf8")
-const emailTemplate = fs.readFileSync(new URL("../functions/_shared/email-template.ts", import.meta.url), "utf8")
+const emailTemplate = fs.readFileSync(new URL("../functions/_shared/email-template.ts", import.meta.url), "utf8") + fs.readFileSync(new URL("../../shared/branded-email.ts", import.meta.url), "utf8")
 const notificationEmail = fs.readFileSync(new URL("../functions/send-notification-email/index.ts", import.meta.url), "utf8")
 const authEmail = fs.readFileSync(new URL("../functions/send-auth-email/index.ts", import.meta.url), "utf8")
 const contactProfile = fs.readFileSync(new URL("../functions/contact-card-profile/index.ts", import.meta.url), "utf8")
@@ -77,7 +77,7 @@ test("logo uploads prefer SVG and safely support PNG and JPEG", () => {
 })
 
 test("operational emails use tenant branding while auth emails keep Multideck defaults", () => {
-  assert.match(emailTemplate, /brand\?: TenantBrand \| null/)
+  assert.match(emailTemplate, /brand\?: EmailBrand \| null/)
   assert.match(shared, /Existing tenants keep the Multideck email template until Branding is saved once/)
   assert.match(shared, /isTenantBrandConfigured\(settings\) \? tenantBrandFromRow\(admin, row\) : null/)
   assert.match(notificationEmail, /readConfiguredTenantBrand/)

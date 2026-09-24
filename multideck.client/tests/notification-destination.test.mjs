@@ -18,6 +18,8 @@ test("links cannot navigate into another tenant or run script", () => {
   }
 })
 test("record references resolve without confusing transfer IDs with lead IDs", () => {
+  assert.equal(destination({ metadata: {}, targetTable: "CRM_Opportunities", targetId: "deal-1" }, origin), "/crm/deals/deal-1")
+  assert.equal(destination({ metadata: {}, targetTable: "AI_CrmSalesBriefings", targetId: "workspace-1" }, origin), "/crm")
   assert.equal(destination({ metadata: {}, targetTable: "CRM_Leads", targetId: "lead-1" }, origin), "/crm/leads/lead-1")
   assert.equal(destination({ metadata: { leadId: "lead-1" }, targetTable: "CRM_LeadTransferRequests", targetId: "request-1" }, origin), "/crm/leads/lead-1")
   assert.equal(destination({ metadata: {} }, origin), null)

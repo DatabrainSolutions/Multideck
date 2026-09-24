@@ -1,3 +1,4 @@
+import { InlineNotice } from "@/components/multideck/inline-notice"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { AdminCustomsPreferences } from "@/pages/admin-customs-preferences"
 import { collectExportPages } from "@/lib/table-export"
@@ -757,9 +758,9 @@ function SystemPreferencesContent() {
           </div>
           <AnimatePresence initial={false}>
             {expanded && (ruleError || ruleDraft) ? (
-              <motion.div initial={{ opacity: 0, y: -3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }} transition={motionTransition} className="mt-2 border-s-2 border-[var(--md-red)] ps-3">
-                {ruleError ? <p className="text-[12px] text-[var(--md-red)]" role="alert">{ruleError}</p> : null}
-                {ruleDraft ? <div role="status"><p className="text-[12px] font-medium text-[var(--md-ink)]">{ruleDraft.summary || t("Dexter refused this rule")}</p>{ruleDraft.message ? <p className="mt-1 text-[11px] leading-[1.45] text-[var(--md-text)]">{ruleDraft.message}</p> : null}</div> : null}
+              <motion.div initial={{ opacity: 0, y: -3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }} transition={motionTransition} className="mt-2 space-y-2">
+                {ruleError ? <InlineNotice tone="error">{ruleError}</InlineNotice> : null}
+                {ruleDraft ? <InlineNotice tone="warning" title={ruleDraft.summary || t("Dexter refused this rule")}>{ruleDraft.message}</InlineNotice> : null}
               </motion.div>
             ) : null}
           </AnimatePresence>

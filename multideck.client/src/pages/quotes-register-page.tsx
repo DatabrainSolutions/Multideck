@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
@@ -387,14 +388,13 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
           <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading quotes…" /></div>
         ) : scope === "Mine" && !quickSearch && filterQueryIsEmpty(search) ? (
           <div className="mx-auto grid max-w-sm place-items-center py-5 text-center">
+            <EmptyStateIllustration variant="documents" className="mb-3" />
             <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No quotes assigned to you")}</p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Quotes appear here when you are set as the sales or operations owner.")}</p>
           </div>
         ) : (
           <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
-            <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
-              <Search className="size-4" strokeWidth={1.3} />
-            </span>
+            <EmptyStateIllustration variant="search" />
             <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No quotes match this search")}</p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Change or clear the search to see more quotes.")}</p>
             <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={clearSearch}>

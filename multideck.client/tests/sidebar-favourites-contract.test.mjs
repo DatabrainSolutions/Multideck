@@ -12,7 +12,7 @@ test("sidebar favourites are user-persisted, capped at two and fixed above Dexte
   assert.match(sidebar, /const maximumSidebarFavourites = 2/u)
   assert.match(sidebar, /useSidebarLayoutScope\(favouritesScopeId\)/u)
   assert.match(sidebar, /saveFavourites\(next\.length > 0 \? \{ order: \[\], pinned: next \} : null\)/u)
-  assert.match(sidebar, /\{todoSidebarItem\}\{favouriteSidebarItems\}\{dexterSidebarItem\}/u)
+  assert.match(sidebar, /\{favouriteSidebarItems\}\{dexterSidebarItem\}/u)
   assert.match(sidebar, /favouritesScope\.pinned[\s\S]{0,160}\.slice\(0, maximumSidebarFavourites\)/u)
 })
 

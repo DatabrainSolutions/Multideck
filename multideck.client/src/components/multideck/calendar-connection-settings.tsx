@@ -21,9 +21,9 @@ import { useLanguage } from "@/i18n/language-provider"
 type ConnectionProvider = CalendarConnection["provider"]
 
 const providers: Array<{ provider: ConnectionProvider; title: string; description: string }> = [
-  { provider: "google", title: "Google Calendar + Meet", description: "Use Google availability, calendar invitations and Google Meet links." },
-  { provider: "microsoft", title: "Microsoft Calendar + Teams", description: "Use Microsoft 365 availability, calendar invitations and Teams links." },
-  { provider: "zoom", title: "Zoom", description: "Create Zoom meeting links alongside your connected calendars." },
+  { provider: "google", title: "Google Calendar + Meet", description: "Availability, invitations and Meet links." },
+  { provider: "microsoft", title: "Microsoft Calendar + Teams", description: "Microsoft 365 availability, invitations and Teams links." },
+  { provider: "zoom", title: "Zoom", description: "Meeting links for your connected calendars." },
 ]
 
 const providerLogos: Record<ConnectionProvider, string> = { google: googleMeetLogo, microsoft: microsoftTeamsLogo, zoom: zoomLogo }
@@ -157,7 +157,7 @@ export function CalendarConnectionSettings({ navigate }: { navigate: (path: stri
         const connected = Boolean(connection && connection.status !== "disconnected")
         const needsAttention = connection?.status === "attention"
         const status = statusLabel(connection)
-        const detail = connection?.error || (connection?.email ? `${description} Connected as ${connection.email}.` : description)
+        const detail = connection?.error || (connected && connection?.email ? connection.email : description)
         const actionLabel = connected && !needsAttention ? "Disconnect" : needsAttention ? "Reconnect" : "Connect"
         const busyLabel = connected && !needsAttention ? "Disconnecting" : needsAttention ? "Reconnecting" : "Connecting"
         return (

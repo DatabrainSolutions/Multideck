@@ -79,8 +79,6 @@ const QueueRow = memo(function QueueRow({
 
   return (
     <div className="md-queue-row" data-tone={item.tone} data-overdue={overdue ? "true" : undefined}>
-      <span className="md-queue-row-rule" aria-hidden="true" />
-
       <button type="button" className="md-queue-row-open" onClick={onOpen}>
         <span className="md-queue-row-glyph" aria-hidden="true">
           <Icon className="size-[13px]" strokeWidth={1.4} />

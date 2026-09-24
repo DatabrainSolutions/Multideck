@@ -1,5 +1,8 @@
+import { useSettingsAutosave } from "@/lib/use-settings-autosave"
+import { BellToggle } from "@/components/multideck/bell-toggle"
+import { CodeSlots } from "@/components/multideck/code-slots"
 import { defaultPaginationPageSize } from "@/lib/pagination"
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
@@ -221,12 +224,13 @@ function compactAction(label: string, onClick?: () => void) {
   )
 }
 
-function primaryAction(label: string, onClick?: () => void) {
+function primaryAction(label: string, onClick?: () => void, disabled = false) {
   return (
     <Button
       type="button"
       className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
       onClick={onClick}
+      disabled={disabled}
     >
       {label}
     </Button>
@@ -321,15 +325,15 @@ function ClockDisplaySetting() {
 
 function LanguageSettingField({
   label = "Language",
-  description = "Choose the language and regional format Multideck uses across the app.",
+  description,
 }: {
   label?: string
   description?: string
 }) {
   const { language, setLanguage } = useLanguage()
   const selectedLanguage = getLanguageOption(language)
-  const languageLabels = languageOptions.map((option) => `${option.label} - ${option.nativeLabel}`)
-  const selectedLabel = `${selectedLanguage.label} - ${selectedLanguage.nativeLabel}`
+  const languageLabels = languageOptions.map((option) => option.label)
+  const selectedLabel = selectedLanguage.label
 
   return (
     <SettingsFieldRow label={label} description={description}>
@@ -484,7 +488,6 @@ function ProfileTab({
   const [profile, setProfile] = useState<ProfileFormState>(emptyProfileForm)
   const [savedProfile, setSavedProfile] = useState<ProfileFormState>(emptyProfileForm)
   const [isProfileLoading, setIsProfileLoading] = useState(true)
-  const [isProfileSaving, setIsProfileSaving] = useState(false)
   const [profileDepartments, setProfileDepartments] = useState<string[]>([])
   const initialProfilePhoto = currentUser?.profilePhoto ?? null
   const initialCoverPhoto = currentUser?.coverPhoto ?? null
@@ -694,16 +697,10 @@ function ProfileTab({
     setProfile((current) => ({ ...current, [field]: value }))
   }
 
-  function discardProfileChanges() {
-    setProfile(savedProfile)
-    toast.info("Changes discarded")
-  }
-
-  async function saveProfileChanges() {
-    if (!supabase || isProfileSaving) return
+  async function saveProfileChanges(profile: ProfileFormState) {
+    if (!supabase) throw new Error("Sign in again before saving your profile.")
 
     const nextFullName = getProfileFullName(profile)
-    setIsProfileSaving(true)
 
     try {
       const { data, error } = await authSupabase!.auth.updateUser({
@@ -729,16 +726,15 @@ function ProfileTab({
 
       const nextProfile = data.user ? createProfileFormFromUser(data.user) : profile
       nextProfile.roleTitle = savedUser.jobTitle ?? ""
-      setProfile(nextProfile)
+      setProfile((current) => JSON.stringify(current) === JSON.stringify(profile) ? nextProfile : current)
       setSavedProfile(nextProfile)
-      toast.success("Profile settings saved")
     } catch (error) {
       console.error(error)
-      toast.error("Could not save profile")
-    } finally {
-      setIsProfileSaving(false)
+      throw error
     }
   }
+
+  const profileSaveStatus = useSettingsAutosave(profile, profileDirty && !isProfileLoading, saveProfileChanges)
 
   async function changeProfilePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -914,7 +910,7 @@ function ProfileTab({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="size-9 rounded-[var(--md-radius-lg)] bg-black/45 text-white opacity-0 shadow-[var(--md-shadow-line)] backdrop-blur-md transition-opacity hover:bg-black/60 focus-visible:opacity-100 group-hover/cover:opacity-100"
+                  className="size-9 rounded-[var(--md-radius-lg)] bg-black/45 text-white opacity-0 shadow-[var(--md-shadow-line)] backdrop-blur-md transition-opacity hover:bg-black/60 focus-visible:opacity-100 group-hover/cover:opacity-100 [@media(hover:none)]:opacity-100"
                   aria-label={t("Remove cover photo")}
                   disabled={coverPhotoBusy}
                   onClick={() => void removeCoverPhoto()}
@@ -927,7 +923,7 @@ function ProfileTab({
                 variant="ghost"
                 className={cn(
                   "h-9 rounded-[var(--md-radius-lg)] bg-black/45 px-3 text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] backdrop-blur-md transition-opacity hover:bg-black/60 focus-visible:opacity-100",
-                  coverPhoto ? "opacity-0 group-hover/cover:opacity-100" : "opacity-100",
+                  coverPhoto ? "opacity-0 group-hover/cover:opacity-100 [@media(hover:none)]:opacity-100" : "opacity-100",
                 )}
                 disabled={coverPhotoBusy}
                 onClick={() => coverPhotoInputRef.current?.click()}
@@ -1008,7 +1004,7 @@ function ProfileTab({
                 aria-label="First name"
                 autoComplete="given-name"
                 placeholder="First name"
-                disabled={isProfileLoading || isProfileSaving}
+                disabled={isProfileLoading}
                 onChange={(event) => updateProfileField("firstName", event.target.value)}
               />
               <SettingsInput
@@ -1016,18 +1012,18 @@ function ProfileTab({
                 aria-label="Last name"
                 autoComplete="family-name"
                 placeholder="Last name"
-                disabled={isProfileLoading || isProfileSaving}
+                disabled={isProfileLoading}
                 onChange={(event) => updateProfileField("lastName", event.target.value)}
               />
             </div>
             </SettingsFieldRow>
-            <SettingsFieldRow label="Preferred name" description="What Dexter and your team call you.">
+            <SettingsFieldRow label="Preferred name">
             <SettingsInput
               value={profile.preferredName}
               aria-label="Preferred name"
               autoComplete="nickname"
               placeholder="Preferred name"
-              disabled={isProfileLoading || isProfileSaving}
+              disabled={isProfileLoading}
               onChange={(event) => updateProfileField("preferredName", event.target.value)}
             />
             </SettingsFieldRow>
@@ -1052,7 +1048,7 @@ function ProfileTab({
               placeholder="+44 20 7123 4567"
               dir="ltr"
               data-i18n-skip
-              disabled={isProfileLoading || isProfileSaving}
+              disabled={isProfileLoading}
               onChange={(event) => updateProfileField("phone", event.target.value)}
             />
             </SettingsFieldRow>
@@ -1065,41 +1061,22 @@ function ProfileTab({
               placeholder="https://example.com"
               dir="ltr"
               data-i18n-skip
-              disabled={isProfileLoading || isProfileSaving}
+              disabled={isProfileLoading}
               onChange={(event) => updateProfileField("website", event.target.value)}
             />
             </SettingsFieldRow>
-            <SettingsFieldRow label={t("Job title")} description={t("Shown beneath your name across Multideck.")}>
+            <SettingsFieldRow label={t("Job title")}>
             <SettingsInput
               value={profile.roleTitle}
               aria-label={t("Job title")}
               autoComplete="organization-title"
               placeholder={t("Operations Manager")}
               maxLength={120}
-              disabled={isProfileLoading || isProfileSaving}
+              disabled={isProfileLoading}
               onChange={(event) => updateProfileField("roleTitle", event.target.value)}
             />
             </SettingsFieldRow>
-            <div className="flex flex-col-reverse gap-2 border-t border-[color-mix(in_srgb,var(--md-ink)_7%,transparent)] px-5 py-4 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={!profileDirty || isProfileSaving}
-                className="h-10 rounded-[var(--md-radius-lg)] px-4 text-[13px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
-                onClick={discardProfileChanges}
-              >
-                {t("Discard")}
-              </Button>
-              <Button
-                type="button"
-                disabled={isProfileLoading || isProfileSaving || !profileDirty}
-                className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-55"
-                onClick={() => void saveProfileChanges()}
-              >
-                {isProfileSaving ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-                {t(isProfileSaving ? "Saving changes" : "Save changes")}
-              </Button>
-            </div>
+            <p role="status" className="px-5 py-3 text-[12px] text-[var(--md-subtle)]">{t(profileSaveStatus)}</p>
         </SettingsPanel>
 
         <SettingsPanel title="Account control">
@@ -1355,21 +1332,17 @@ function TwoFactorControl({
           <code className="mt-1 block overflow-x-auto rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 py-2 text-[12px] text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
             {enrollment.secret}
           </code>
-          <form className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-start" onSubmit={verifyEnrollment}>
-            <div className="min-w-0 flex-1">
-              <label className="sr-only" htmlFor="settings-totp-code">{t("Authenticator code")}</label>
-              <SettingsInput
+          <form className="mt-4 flex flex-wrap items-start gap-2" onSubmit={verifyEnrollment}>
+            <div className="w-full min-w-0">
+              <label className="mb-2 block text-[12px] text-[var(--md-text)]" htmlFor="settings-totp-code">{t("Authenticator code")}</label>
+              <CodeSlots
                 id="settings-totp-code"
                 value={verificationCode}
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                placeholder="123456"
-                aria-invalid={verificationError ? true : undefined}
-                aria-describedby={verificationError ? "settings-totp-error" : undefined}
-                data-i18n-skip
-                onChange={(event) => setVerificationCode(event.target.value)}
+                ariaLabel={t("Authenticator code")}
+                status={verificationError ? "error" : "idle"}
+                disabled={status === "verifying"}
+                describedBy={verificationError ? "settings-totp-error" : undefined}
+                onChange={(code) => { setVerificationCode(code); setVerificationError(null) }}
               />
               {verificationError ? <p id="settings-totp-error" className="mt-1 text-[12px] leading-5 text-[var(--md-red)]">{verificationError}</p> : null}
             </div>
@@ -1526,7 +1499,7 @@ function SecurityTab() {
               description={`${navigator.platform || "Current device"} · active now`}
               right={<StatusPill tone="teal">Current</StatusPill>}
             />
-            <SettingsFieldRow label="Other sessions" description="Sign out phones, tablets, and browsers without closing this session.">
+            <SettingsFieldRow label="Other sessions" description="Keep this browser signed in.">
               <Button
                 type="button"
                 variant="ghost"
@@ -1545,7 +1518,6 @@ function SecurityTab() {
             <SettingsProgressRing
               value={securityPosture}
               label="Security posture"
-              detail={securityPosture === 100 ? "Email verification and two-factor protection are active." : "Complete the checks below to strengthen this account."}
               tone={securityPosture === 100 ? "green" : "amber"}
             />
             <div className="mt-5 space-y-2">
@@ -1752,7 +1724,7 @@ function CustomisationTab() {
         </div>
       </SettingsPanel>
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title="Interface" description="Personal display choices update immediately on this browser.">
+        <SettingsPanel title="Interface" description="Changes apply immediately in this browser.">
           <SettingsFieldRow label="Appearance">
             <div className="max-w-[320px]">
               <ThemeToggle className="bg-[var(--md-glass)]" />
@@ -1799,11 +1771,47 @@ function CustomisationTab() {
   )
 }
 
+function NotificationPreferenceRow({
+  title, description, checked, onCheckedChange, disabled,
+}: {
+  title: string
+  description?: string
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  disabled: boolean
+}) {
+  const { t } = useLanguage()
+  const id = useId()
+  return (
+    <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)] md:items-center">
+      <div className="min-w-0">
+        <label htmlFor={id} className="cursor-pointer text-[13px] font-medium text-[var(--md-ink)]">{title}</label>
+        {description ? <p id={`${id}-description`} className="mt-1 max-w-[260px] text-[12px] leading-5 text-[var(--md-text)]">{description}</p> : null}
+      </div>
+      <div className="flex justify-end">
+        <BellToggle
+          id={id}
+          label={title}
+          aria-describedby={description ? `${id}-description` : undefined}
+          offLabel={t("Off")}
+          onLabel={t("On")}
+          pressed={checked}
+          onChange={onCheckedChange}
+          disabled={disabled}
+          badge={false}
+          size="sm"
+          className="bell-toggle--preference"
+        />
+      </div>
+    </div>
+  )
+}
+
 function NotificationsTab() {
   const { language, t } = useLanguage()
   const [preferences, setPreferences] = useState<NotificationEmailPreferences>(defaultNotificationEmailPreferences)
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
+  const [savedPreferences, setSavedPreferences] = useState<NotificationEmailPreferences>(defaultNotificationEmailPreferences)
   const [isTesting, setIsTesting] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -1814,6 +1822,7 @@ function NotificationsTab() {
       .then((savedPreferences) => {
         if (cancelled) return
         setPreferences(savedPreferences)
+        setSavedPreferences(savedPreferences)
         setLoadError(null)
       })
       .catch((error) => {
@@ -1834,23 +1843,12 @@ function NotificationsTab() {
     setPreferences((current) => ({ ...current, [eventType]: isEnabled }))
   }
 
-  async function savePreferences() {
-    setIsSaving(true)
-    try {
-      await saveNotificationEmailPreferences(preferences)
-      setLoadError(null)
-      toast.success("Notification settings saved", {
-        description: "Future operational emails will follow these preferences.",
-      })
-    } catch (error) {
-      console.error("Notification preferences could not be saved.", error)
-      toast.error("Notification settings were not saved", {
-        description: "Your previous preferences are still in place. Please try again.",
-      })
-    } finally {
-      setIsSaving(false)
-    }
-  }
+  const notificationSaveStatus = useSettingsAutosave(preferences,
+    !isLoading && !loadError && JSON.stringify(preferences) !== JSON.stringify(savedPreferences),
+    async (next) => {
+      await saveNotificationEmailPreferences(next)
+      setSavedPreferences(next)
+    })
 
   async function sendTestEmail() {
     setIsTesting(true)
@@ -1886,14 +1884,7 @@ function NotificationsTab() {
               <Mail className="me-2 size-3.5" strokeWidth={1.5} />
               {isTesting ? "Sending test" : "Send test email"}
             </Button>
-            <Button
-              type="button"
-              disabled={isLoading || isSaving}
-              className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
-              onClick={() => void savePreferences()}
-            >
-              {isSaving ? "Saving" : "Save notifications"}
-            </Button>
+            <span role="status" className="text-[12px] text-[var(--md-subtle)]">{t(notificationSaveStatus)}</span>
           </>
         }
       />
@@ -1905,52 +1896,59 @@ function NotificationsTab() {
       ) : null}
       <div className="mt-[var(--md-page-stack-gap)]">
         <div className="space-y-[var(--md-page-stack-gap)]">
-          <SettingsPanel title="Operational alerts" description="Email the updates that need attention away from the Multideck workspace.">
-            <SettingsToggleRow
+          <SettingsPanel title="Operational emails">
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title={t("Note mentions")}
-              description={t("Email when a person or department tags you in a note. In-app alerts remain on.")}
+              description={t("Includes department mentions. In-app alerts stay on.")}
               checked={preferences.lifecycle_note_mention}
               onCheckedChange={(checked) => setEmailPreference("lifecycle_note_mention", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title={t("Dexter watch alerts")}
-              description={t("Email when one of your personal Dexter watch conditions becomes true. In-app alerts remain on.")}
+              description={t("When a personal watch condition is met. In-app alerts stay on.")}
               checked={preferences.dexter_watch}
               onCheckedChange={(checked) => setEmailPreference("dexter_watch", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Customs holds"
-              description="Email when a hold is raised or a required licence is missing."
+              description="Includes missing required licences."
               checked={preferences.customs_hold}
               onCheckedChange={(checked) => setEmailPreference("customs_hold", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="ETA slips over 6 hours"
-              description="Email the booking owner before a customer update is prepared."
+              description="Notifies the booking owner before a customer update is prepared."
               checked={preferences.eta_delay}
               onCheckedChange={(checked) => setEmailPreference("eta_delay", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Customer message unanswered"
-              description="Escalate when a customer has waited more than two working hours."
+              description="After two working hours without a reply."
               checked={preferences.customer_message}
               onCheckedChange={(checked) => setEmailPreference("customer_message", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Document parse below 80%"
-              description="Email when a document needs a person to check the extracted data."
+              description="Review the extracted data."
               checked={preferences.document_parse}
               onCheckedChange={(checked) => setEmailPreference("document_parse", checked)}
             />
           </SettingsPanel>
-          <SettingsPanel title="Digest and reminders">
-            <SettingsToggleRow
+          <SettingsPanel title="Email digest and reminders">
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Daily digest"
               description="Open exceptions, due work, and customer risk."
               checked={preferences.daily_digest}
               onCheckedChange={(checked) => setEmailPreference("daily_digest", checked)}
             />
-            <SettingsFieldRow label="Digest delivery time" description="Uses the timezone saved below.">
+            <SettingsFieldRow label="Digest delivery time">
               <SettingsSelect
                 value={preferences.digestTime}
                 options={["06:30", "07:00", "07:30", "08:00", "08:30", "09:00"]}
@@ -1966,15 +1964,16 @@ function NotificationsTab() {
                 ariaLabel="Digest timezone"
               />
             </SettingsFieldRow>
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Quote reminders"
-              description="Email when an open quote needs a follow-up."
+              description="Open quotes due for follow-up."
               checked={preferences.quote_reminder}
               onCheckedChange={(checked) => setEmailPreference("quote_reminder", checked)}
             />
-            <SettingsToggleRow
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Product updates"
-              description="Occasional release notes for changes that affect your work."
               checked={preferences.product_updates}
               onCheckedChange={(checked) => setEmailPreference("product_updates", checked)}
             />
@@ -2080,7 +2079,6 @@ function AgentDexterTab() {
   const dictionaryMountedRef = useRef(true)
 
   const terms = normalizeTagTerms(dictionary, maximumTranscriptionTerms)
-  const agentNameDirty = agentNameDraft.trim().length > 0 && agentNameDraft.trim() !== aiAgentName
   const personalised = useCallback((copy: string) => t(copy).replaceAll("Dexter", aiAgentName), [aiAgentName, t])
 
   const loadProfile = useCallback(async () => {
@@ -2197,19 +2195,15 @@ function AgentDexterTab() {
     }
   }
 
-  async function saveProfile() {
-    if (!profile || operation) return
-    setOperation("save")
-    setProfileError(null)
-    try {
-      acceptProfile(await updateDexterWritingProfile(profile.enabled, profileText))
-      toast.success(t("Email writing profile saved"))
-    } catch (saveError) {
-      setProfileError(writingProfileErrorCopy(saveError, "Dexter could not save your writing profile. Try again.", t).replaceAll("Dexter", aiAgentName))
-    } finally {
-      setOperation(null)
-    }
-  }
+  const writingSaveStatus = useSettingsAutosave(profileText,
+    Boolean(profile?.exists && !profileLoading && profileText !== profile.profileText),
+    async (text) => {
+      if (!profile) return
+      const next = await updateDexterWritingProfile(profile.enabled, text)
+      setProfile(next)
+      setProfileText((current) => current === text ? next.profileText : current)
+      setProfileError(null)
+    })
 
   async function refreshProfile() {
     if (operation) return
@@ -2240,12 +2234,9 @@ function AgentDexterTab() {
     }
   }
 
-  function saveAgentName() {
-    const nextName = agentNameDraft.trim()
-    if (!nextName) return
-    writeAiAgentName(nextName)
-    toast.success(t("Assistant name updated"), { description: t("The new name now appears across Multideck on this device.") })
-  }
+  useSettingsAutosave(agentNameDraft, Boolean(agentNameDraft.trim() && agentNameDraft.trim() !== aiAgentName), async (name) => {
+    writeAiAgentName(name.trim())
+  })
 
   async function flushDictionarySaves() {
     if (dictionarySaveInFlightRef.current) return
@@ -2285,8 +2276,7 @@ function AgentDexterTab() {
     void flushDictionarySaves()
   }
 
-  const busy = operation !== null
-  const dirty = Boolean(profile && profileText !== profile.profileText)
+  const busy = operation !== null || Boolean(profile && profileText !== profile.profileText) || writingSaveStatus === "Saving changes…"
   const profileNotice = profileError
     ?? (profile?.status === "processing" || operation === "consent" || operation === "refresh"
       ? personalised("Dexter is updating your writing profile. You can leave this page.")
@@ -2355,7 +2345,7 @@ function AgentDexterTab() {
             id="dexter-writing-profile"
             value={profileText}
             maxLength={2400}
-            disabled={profileLoading || busy || !profile?.exists}
+            disabled={profileLoading || operation !== null || !profile?.exists}
             aria-describedby="dexter-writing-profile-description dexter-writing-profile-count"
             className="min-h-[220px] resize-y text-[16px] leading-[1.6] sm:text-[14px]"
             placeholder={t("Your tone, structure, greetings, sign-offs and preferred terminology will appear here.")}
@@ -2363,10 +2353,7 @@ function AgentDexterTab() {
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <span id="dexter-writing-profile-count" className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{profileText.length.toLocaleString(language)} / 2,400</span>
-            <Button type="button" disabled={!dirty || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100" onClick={() => void saveProfile()}>
-              {operation === "save" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-              {t(operation === "save" ? "Saving profile" : "Save profile")}
-            </Button>
+            <span role="status" className="text-[12px] text-[var(--md-subtle)]">{t(writingSaveStatus)}</span>
           </div>
         </div>
       </DexterFieldGroup>
@@ -2382,12 +2369,10 @@ function AgentDexterTab() {
         <SettingsPanel title={t("Personal assistant")}>
           <div className="px-5 py-5">
             <DexterFieldGroup label={t("Assistant name")} description={t("Only on this device.")} labelFor="dexter-assistant-name" className="max-w-[640px]">
-              <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={(event) => { event.preventDefault(); saveAgentName() }}>
+              <div className="grid gap-2">
                 <SettingsInput id="dexter-assistant-name" aria-describedby="dexter-assistant-name-description" value={agentNameDraft} maxLength={32} onChange={(event) => setAgentNameDraft(event.target.value)} />
-                <Button type="submit" disabled={!agentNameDirty} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100">
-                  {t("Save name")}
-                </Button>
-              </form>
+
+              </div>
             </DexterFieldGroup>
           </div>
         </SettingsPanel>
@@ -2448,9 +2433,7 @@ function AgentDexterTab() {
                   duplicateMessage={t("That term is already in the dictionary.")}
                   limitMessage={t("The dictionary can contain up to 100 terms.")}
                 />
-                <div className="mt-2 flex items-center">
-                  <span className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{terms.length} / {maximumTranscriptionTerms} {t("terms")}</span>
-                </div>
+                {terms.length >= maximumTranscriptionTerms - 10 ? <p role="status" className="mt-2 text-[11.5px] tabular-nums text-[var(--md-subtle)]">{terms.length} / {maximumTranscriptionTerms} {t("terms")}</p> : null}
               </div>
             </DexterFieldGroup>
           </div>
@@ -3377,12 +3360,12 @@ export function AdminUsersContent() {
         <div className="flex items-center justify-end gap-1">
           <UserActionTooltip label={user.authUserId === currentAuthUserId ? t("Use Security settings to change your own password") : user.status !== "Active" || !user.authUserId ? t("Reactivate this user before resetting their password") : t("Reset password")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId || user.status !== "Active" || !user.authUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Reset password")} ${user.displayName}`} onClick={() => openPasswordReset(user)}><KeyRound className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
           <UserActionTooltip label={t("Edit")}><Button type="button" variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Edit")} ${user.displayName}`} onClick={() => openUserEditor(user)}><EditUser02 className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
-          <UserActionTooltip label={t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")} ${user.displayName}`} onClick={() => setStatusCandidate(user)}>{user.status === "Deactivated" ? <UserRoundCheck className="size-3.5" strokeWidth={1.5} aria-hidden="true" /> : <Ban className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}</Button></UserActionTooltip>
+          <UserActionTooltip label={t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId || (user.status === "Deactivated" && !team?.subscription?.canAddUser)} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")} ${user.displayName}`} onClick={() => setStatusCandidate(user)}>{user.status === "Deactivated" ? <UserRoundCheck className="size-3.5" strokeWidth={1.5} aria-hidden="true" /> : <Ban className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}</Button></UserActionTooltip>
           <UserActionTooltip label={user.authUserId === currentAuthUserId ? t("You cannot remove your own access") : t("Delete user")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]" aria-label={`${t("Delete user")} ${user.displayName}`} onClick={() => void openDeleteUser(user)}><Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
         </div>
       ),
     },
-  ], [currentAuthUserId, deletingInvite, resendingUserId, roles, t, teamPhotoUrl])
+  ], [currentAuthUserId, deletingInvite, resendingUserId, roles, t, teamPhotoUrl, team?.subscription?.canAddUser])
 
   return (
     <>
@@ -3396,11 +3379,15 @@ export function AdminUsersContent() {
             {primaryAction(t("Invite user"), () => {
               setRoleComposerTarget(null)
               setInviteOpen(true)
-            })}
+            }, loading || !team?.subscription?.canAddUser)}
           </div>
         )}
       />
       <div className="mt-[var(--md-page-stack-gap)]">
+        {team?.subscription ? <div className="mb-4 text-[13px] text-[var(--md-text)]" role="status">
+          <p>{team.subscription.planName} · {team.subscription.occupiedSeats} / {team.subscription.seatLimit ?? "Unconfirmed"} seats occupied</p>
+          <p className="mt-1 text-[12px]">Active users and pending invitations count towards your seat limit. {team.subscription.canAddUser ? `${team.subscription.remainingSeats} seats available.` : "No seats available."} <a className="underline" href="mailto:support@multideck.co.uk?subject=Multideck%20paid%20seats">Request more seats</a></p>
+        </div> : !loading && !loadError ? <p role="status" className="mb-4 text-[13px] text-[var(--md-text)]">Seat limits could not be confirmed. Contact Multideck before adding users.</p> : null}
         {loadError ? (
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]" role="alert">
             <p className="text-[13px] font-medium text-[var(--md-red)]">{t("Users could not be loaded.")}</p>
@@ -3554,7 +3541,7 @@ export function AdminUsersContent() {
                   </div>
                   {selectedInviteRole ? <div className="flex items-start justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3.5 py-3 shadow-[var(--md-shadow-line)]"><div className="min-w-0"><p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedInviteRole.name}</p><p className="mt-1 text-[11.5px] leading-5 text-[var(--md-text)]">{t(selectedInviteRole.description || "Reusable workspace role.")}</p></div><StatusPill tone={selectedInviteRole.isSystem ? "blue" : "teal"}>{t(selectedInviteRole.isSystem ? "Predefined" : "Saved role")}</StatusPill></div> : null}
                   <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Invite expires")}<Select value={inviteForm.invitationExpiry} onValueChange={(invitationExpiry) => setInviteForm((current) => ({ ...current, invitationExpiry: invitationExpiry as ApiInvitationExpiry }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="3d">{t("3 days")}</SelectItem><SelectItem value="7d">{t("7 days")}</SelectItem><SelectItem value="30d">{t("30 days")}</SelectItem><SelectItem value="never">{t("Never (until accepted)")}</SelectItem></SelectContent></Select></label>
-                  <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={inviting} onClick={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button type="submit" disabled={inviting || !team?.offices.length || !assignableRoles.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{inviting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}{t(inviting ? "Sending invitation" : "Send invitation")}</Button></DialogFooter>
+                  <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={inviting} onClick={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button type="submit" disabled={inviting || !team?.subscription?.canAddUser || !team?.offices.length || !assignableRoles.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{inviting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}{t(inviting ? "Sending invitation" : "Send invitation")}</Button></DialogFooter>
                 </form>
               </motion.div>
             )}
@@ -4098,7 +4085,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
             <>
               <SettingsFieldRow
                 label={t("Default mail provider")}
-                description={t("Opens first in Inbox and new emails. You can switch at any time.")}
+                description={t("Opens first in Inbox and new emails.")}
                 align="start"
               >
                 <div>
@@ -4237,7 +4224,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                     {provider === "gmail" && connection && !needsConnection ? (
                     <SettingsFieldRow
                       label={t("Google Group inboxes")}
-                      description={t("Add a Google Group delivered to this Gmail account. Multideck creates a separate view across Inbox, Spam and Trash; replies still send from your connected Gmail account.")}
+                      description={t("Separate Inbox, Spam and Trash views for groups delivered to this Gmail account.")}
                       align="start"
                       labelFor="gmail-group-mailbox-address"
                     >
@@ -4298,7 +4285,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                           <p id="gmail-group-mailbox-error" className="mt-2 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{groupMailboxError}</p>
                         ) : (
                           <p id="gmail-group-mailbox-help" className="mt-2 text-[11.5px] leading-5 text-[var(--md-subtle)]">
-                            {t("This view is read-only as the group address. Reply from the connected personal Gmail mailbox unless Google separately configures the address as a send-as identity.")}
+                            {t("Read-only as the group address. Replies use your Gmail account unless Google has configured a send-as identity.")}
                           </p>
                         )}
                       </div>
@@ -4307,7 +4294,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                   {provider === "outlook" && connection && !needsConnection ? (
                     <SettingsFieldRow
                       label={t("Shared Outlook mailboxes")}
-                      description={t("Add shared Outlook addresses you are authorised to use. Sending also requires Microsoft Send As or Send on Behalf permission.")}
+                      description={t("Requires mailbox access and Microsoft Send As or Send on Behalf permission to send.")}
                       align="start"
                       labelFor={connection.sharedMailboxAccess ? "outlook-shared-mailbox-address" : undefined}
                     >
@@ -4493,106 +4480,33 @@ function ApiTab() {
 }
 
 export function AdminBillingContent() {
-  const invoices = [
-    ["INV-2026-0618", "18 Jun 2026", "EUR 1,284", "Paid"],
-    ["INV-2026-0518", "18 May 2026", "EUR 1,196", "Paid"],
-    ["INV-2026-0418", "18 Apr 2026", "EUR 1,142", "Paid"],
-  ]
-
-  return (
-    <>
-      <SettingsPageHeader
-        eyebrow="Workspace / Billing"
-        title="Billing"
-        actions={compactAction("Download invoices", () => toast.success("Invoices prepared"))}
-      />
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-3 sm:grid-cols-3">
-        {[
-          [CreditCard, "Current plan", "Operations", "Annual billing"],
-          [Users, "Seats", "14 / 18", "4 seats available"],
-          [CalendarClock, "Renews", "14 Jan 2027", "EUR 18,400 annual"],
-        ].map(([Icon, label, value, detail]) => (
-          <section key={label as string} className="group rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
-            <div className="flex items-start justify-between gap-3">
-              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-transform duration-200 group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100">
-                <Icon className="size-4" strokeWidth={1.35} aria-hidden="true" />
-              </span>
-              <span className="text-[11px] text-[var(--md-subtle)]">{label as string}</span>
-            </div>
-            <p className="mt-5 text-[20px] font-medium tracking-[-0.02em] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{value as string}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{detail as string}</p>
-          </section>
-        ))}
-      </div>
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-[var(--md-page-stack-gap)]">
-          <SettingsPanel title="Plan and seats">
-            <SettingsFieldRow label="Seats">
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                <div>
-                  <div className="h-2 overflow-hidden rounded-full bg-[var(--md-surface-tint)]">
-                    <span className="block h-full w-[77.8%] rounded-full bg-[var(--md-accent)]" />
-                  </div>
-                  <p className="mt-2 text-[12px] tabular-nums text-[var(--md-text)]">14 active · 18 included</p>
-                </div>
-                {compactAction("Manage seats")}
-              </div>
-            </SettingsFieldRow>
-            <SettingsFieldRow label="Billing cadence">
-              <ChoiceSetting options={["Monthly", "Annual"]} initialValue="Annual" />
-            </SettingsFieldRow>
-            <SettingsFieldRow label="Renewal">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
-                <span className="text-[13px] text-[var(--md-text)]">14 Jan 2027</span>
-                <span className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]">EUR 18,400</span>
-              </div>
-            </SettingsFieldRow>
-          </SettingsPanel>
-          <SettingsPanel title="Invoices">
-            {invoices.map(([number, date, amount, status]) => (
-              <div key={number} className="grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_110px_110px_auto] sm:items-center">
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{number}</p>
-                  <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{date}</p>
-                </div>
-                <p className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{amount}</p>
-                <StatusPill tone="teal">{status}</StatusPill>
-                <Button type="button" variant="ghost" size="icon" aria-label={`Download ${number}`} className="size-9 rounded-[var(--md-radius-lg)] hover:bg-[var(--md-hover)]">
-                  <FileText className="size-4" strokeWidth={1.3} aria-hidden="true" />
-                </Button>
-              </div>
-            ))}
-          </SettingsPanel>
-        </div>
-        <aside className="space-y-[var(--md-page-stack-gap)] xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <section className="rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Payment method</p>
-            <div className="mt-4 rounded-[var(--md-radius-xl)] bg-[var(--md-ink)] p-4 text-white shadow-[var(--md-shadow-soft)]">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-white/60">Company card</span>
-                <CreditCard className="size-4 text-white/70" strokeWidth={1.3} aria-hidden="true" />
-              </div>
-              <p className="mt-8 text-[14px] font-medium tracking-[0.12em]" dir="ltr" data-i18n-skip>•••• 4242</p>
-              <div className="mt-3 flex items-center justify-between text-[11px] text-white/60">
-                <span>Northwind Forwarding</span>
-                <span>01/29</span>
-              </div>
-            </div>
-            <div className="mt-3">{compactAction("Update payment method")}</div>
-          </section>
-          <SettingsSummaryCard
-            title="Next invoice"
-            rows={[
-              ["Forecast", "EUR 1,284"],
-              ["Billing date", "18 Jul 2026"],
-              ["Tax", "Calculated at checkout"],
-              ["Payment status", "Healthy"],
-            ]}
-          />
-        </aside>
-      </div>
-    </>
-  )
+  const [usage, setUsage] = useState<DexterUsage | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try { setUsage(await getDexterUsage()) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Subscription could not be loaded.") }
+    finally { setLoading(false) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+  const subscription = usage?.subscription
+  const money = (value: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(value)
+  return <>
+    <SettingsPageHeader eyebrow="Workspace / Billing" title="Billing" />
+    <div className="mt-[var(--md-page-stack-gap)] space-y-4">
+      {loading ? <p role="status">Loading subscription…</p> : error ? <div role="alert"><p>{error}</p><Button variant="outline" onClick={() => void load()}>Retry</Button></div> :
+        <SettingsPanel title={subscription?.planName ?? "Subscription"} description="Your contracted users and monthly platform price.">
+          <SettingsFieldRow label="Paid seats"><span>{subscription?.paidSeats ?? "Awaiting contract confirmation"}</span></SettingsFieldRow>
+          <SettingsFieldRow label="Occupied seats"><span>{subscription?.occupiedSeats ?? "Unavailable"} · includes pending invitations</span></SettingsFieldRow>
+          <SettingsFieldRow label="Monthly price"><span>{subscription?.monthlyGbp != null ? money(subscription.monthlyGbp) + " excluding VAT and optional add-ons" : "Confirmed in your agreement"}</span></SettingsFieldRow>
+          {subscription?.baseMonthlyGbp != null && subscription?.paidSeats != null ? <SettingsFieldRow label="Price breakdown"><span>{money(subscription.baseMonthlyGbp)} platform + {subscription.paidSeats} × £149</span></SettingsFieldRow> : null}
+          <SettingsFieldRow label="Manage subscription"><a href="mailto:support@multideck.co.uk?subject=Multideck%20subscription" className="underline">Request seats or discuss your plan</a></SettingsFieldRow>
+        </SettingsPanel>}
+      <p className="text-[12px] text-[var(--md-text)]">Enterprise pricing, invoices, payment terms and any existing agreement are managed with Multideck. Changes to seats or plans require confirmation before they take effect.</p>
+    </div>
+  </>
 }
 
 function AiUsageOverviewScreen({
@@ -4968,7 +4882,7 @@ function DocsTab() {
         </section>
         <aside className="space-y-[var(--md-page-stack-gap)] xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
           {filteredGuides.length > 0 ? (
-            <SettingsPanel title={selectedGuide.title} description={selectedGuide.detail}>
+            <SettingsPanel title={selectedGuide.title}>
               {selectedGuide.steps.map((step, index) => (
                 <div key={step} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 px-5 py-3.5">
                   <span className="grid size-7 place-items-center rounded-full bg-[var(--md-accent-a09)] text-[11px] font-medium tabular-nums text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
@@ -5083,9 +4997,9 @@ function LegacySupportTab() {
         eyebrow={t("Resources / Support")}
         title={t("Support")}
       />
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
+      <div className="mt-[var(--md-page-stack-gap)]">
         <form onSubmit={submitSupportTicket}>
-          <SettingsPanel title={t("Create a support ticket")} description={t("Include a booking ID, customer, or visible error when the issue is workflow-specific.")}>
+          <SettingsPanel title={t("Create a support ticket")}>
             <SettingsFieldRow label={t("Topic")}>
               <SettingsSelect
                 value={topic}
@@ -5115,7 +5029,7 @@ function LegacySupportTab() {
             </SettingsFieldRow>
             <SettingsFieldRow
               label={t("What happened?")}
-              description={t("Describe what you did, what you expected, and what you saw.")}
+              description={t("Include the steps, expected result and any error or record reference.")}
               align="start"
               labelFor="support-message"
             >
@@ -5125,7 +5039,7 @@ function LegacySupportTab() {
                 disabled={isSubmitting}
                 aria-invalid={Boolean(formError && message.trim().length < 20) || undefined}
                 aria-describedby={formError ? "support-form-error" : undefined}
-                placeholder={t("Include the booking ID, customer, or error message if you have one.")}
+                placeholder={t("Describe the issue")}
                 onChange={(event) => setMessage(event.target.value)}
               />
             </SettingsFieldRow>
@@ -5142,7 +5056,7 @@ function LegacySupportTab() {
                     <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
                       {ticketResult.duplicate
                         ? t("No duplicate was created. Your original ticket is still active.")
-                        : t("Multideck support confirmed the ticket and the support team can now act on it.")}
+                        : t("The support team has received your ticket.")}
                     </p>
                     {ticketResult.ticket.statusUrl ? (
                       <a
@@ -5160,10 +5074,10 @@ function LegacySupportTab() {
               </div>
             ) : null}
             <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p id="support-form-error" role={formError ? "alert" : "status"} className={cn("text-[12px] leading-5", formError ? "text-[var(--md-red)]" : "text-[var(--md-text)]")}>
-                  {formError ?? t("Your ticket is sent securely to Multideck support. Nothing is marked successful until a ticket number is confirmed.")}
-                </p>
+              {formError || canStartNewTicket ? <div className="min-w-0">
+                {formError ? <p id="support-form-error" role="alert" className="text-[12px] leading-5 text-[var(--md-red)]">
+                  {formError}
+                </p> : null}
                 {canStartNewTicket ? (
                   <button
                     type="button"
@@ -5173,11 +5087,11 @@ function LegacySupportTab() {
                     {t("Use these details for a new ticket")}
                   </button>
                 ) : null}
-              </div>
+              </div> : null}
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)]"
+                className="h-10 shrink-0 sm:ms-auto rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)]"
               >
                 {isSubmitting
                   ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.4} aria-hidden="true" />
@@ -5187,15 +5101,6 @@ function LegacySupportTab() {
             </div>
           </SettingsPanel>
         </form>
-        <aside className="xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <SettingsPanel title={t("What to include")}>
-            <ul className="grid gap-3 px-5 py-5 text-[12px] leading-5 text-[var(--md-text)]">
-              <li><span className="font-medium text-[var(--md-ink)]">{t("Reference")}</span><br />{t("Booking, quote, shipment, customer, or invoice ID.")}</li>
-              <li><span className="font-medium text-[var(--md-ink)]">{t("Expected result")}</span><br />{t("What you expected Multideck to do.")}</li>
-              <li><span className="font-medium text-[var(--md-ink)]">{t("Visible result")}</span><br />{t("What happened instead, including the exact error message.")}</li>
-            </ul>
-          </SettingsPanel>
-        </aside>
       </div>
     </>
   )

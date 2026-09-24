@@ -159,7 +159,7 @@ export function HomeDeckAction({
     <motion.button
       type="button"
       aria-label={label}
-      className="rounded-[var(--md-radius-sm)] text-[11.5px] font-medium leading-4 text-[var(--md-text)] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-bg)]"
+      className="min-h-11 min-w-11 rounded-[var(--md-radius-sm)] text-[11.5px] sm:min-h-0 sm:min-w-0 font-medium leading-4 text-[var(--md-text)] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-bg)]"
       whileTap={shouldReduceMotion ? undefined : { scale: 0.96 }}
       transition={reduceMotion(shouldReduceMotion, mdMotion.micro)}
       onClick={onClick}
@@ -174,4 +174,4 @@ export function HomeDeckAction({
  * lifts it off the recessed panel, and a focus ring that clears the block's
  * own edge.
  */
-export const homeDeckRowButtonClass = "flex w-full min-w-0 items-center gap-2 rounded-[var(--md-radius-md)] px-1.5 py-1.5 text-start transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--md-deck-surface)]"
+export const homeDeckRowButtonClass = "flex w-full min-h-11 min-w-0 items-center gap-2 sm:min-h-0 rounded-[var(--md-radius-md)] px-1.5 py-1.5 text-start transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--md-deck-surface)]"

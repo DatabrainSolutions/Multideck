@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { useEffect, useId, useMemo, useState } from "react"
 import {
   ArrowRightLeft,
@@ -12,7 +13,6 @@ import {
   MailCheck,
   MapPinned,
   RotateCcw,
-  SearchX,
   ShieldCheck,
   Ship,
   UserRound,
@@ -317,9 +317,7 @@ function AuditEmptyState({ onReset, hasFilters }: { onReset: () => void; hasFilt
       aria-live="polite"
     >
       <div className="max-w-sm">
-        <span className="mx-auto grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
-          {hasFilters ? <SearchX className="size-5" strokeWidth={1.4} /> : <FileClock className="size-5" strokeWidth={1.4} />}
-        </span>
+        <EmptyStateIllustration variant={hasFilters ? "search" : "activity"} />
         <h3 className="mt-4 text-[14px] font-medium text-[var(--md-ink)]">
           {t(hasFilters ? "No audit events match these filters" : "No audit events yet")}
         </h3>

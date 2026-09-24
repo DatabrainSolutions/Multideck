@@ -46,6 +46,11 @@ export function agentHasUpdate(agent: TaskAgent) {
     ['ready', 'needs_input', 'failed', 'completed'].includes(agent.status)
   )
 }
+export function isPastTaskAgent(agent: TaskAgent) {
+  if (agent.status === 'completed' || agent.status === 'cancelled') return true
+  // A completed deliverable still needs attention until its result is reviewed.
+  return agent.taskStatus === 'completed' && !(agent.status === 'ready' && agentHasUpdate(agent))
+}
 export function isSidebarTaskAgent(agent: TaskAgent) {
   if (agent.taskStatus === 'completed') return agent.status === 'ready' && agentHasUpdate(agent)
   return ['working', 'queued'].includes(agent.status) ||

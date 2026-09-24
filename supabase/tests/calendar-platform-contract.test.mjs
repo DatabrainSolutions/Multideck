@@ -254,7 +254,7 @@ test("calendar colours are bounded, editable and remain visual-only", () => {
 
 test("verification stays Multideck-owned while operational meeting emails remain tenant-brandable", () => {
   const emailTemplates = fs.readFileSync(new URL("../functions/_shared/calendar-email-templates.ts", import.meta.url), "utf8")
-  const emailRenderer = fs.readFileSync(new URL("../functions/_shared/email-template.ts", import.meta.url), "utf8")
+  const emailRenderer = fs.readFileSync(new URL("../functions/_shared/email-template.ts", import.meta.url), "utf8") + fs.readFileSync(new URL("../../shared/branded-email.ts", import.meta.url), "utf8")
   const templateSettings = fs.readFileSync(new URL("../../multideck.client/src/components/multideck/meeting-email-template-settings.tsx", import.meta.url), "utf8")
   assert.match(emailTemplates, /TENANT_CUSTOMISABLE_CALENDAR_EMAIL_TEMPLATE_KINDS[\s\S]*kind !== "booking_verification"/)
   assert.match(emailTemplates, /return TENANT_CUSTOMISABLE_CALENDAR_EMAIL_TEMPLATE_KINDS\.map/)

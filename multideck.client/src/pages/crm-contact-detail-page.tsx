@@ -267,7 +267,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
                   variant="ghost"
                   size="icon"
                   aria-label={`${t("Remove")} ${field.label}`}
-                  className="mt-0.5 size-7 shrink-0 rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-opacity duration-150 hover:text-[var(--md-red)] focus-visible:opacity-100 group-hover:opacity-100"
+                  className="mt-0.5 size-7 shrink-0 rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-opacity duration-150 hover:text-[var(--md-red)] focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                   onClick={() => void patch({ customFields: customFields.filter((item) => item.id !== field.id) }).catch((cause) => toast.error(cause instanceof Error ? cause.message : t("That field could not be removed.")))}
                 >
                   <Trash2 className="size-3.5" strokeWidth={1.5} />

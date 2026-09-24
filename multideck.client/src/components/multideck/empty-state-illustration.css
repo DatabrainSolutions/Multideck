@@ -1,0 +1,52 @@
+.md-empty-art {
+  --empty-outline: color-mix(in srgb, var(--md-subtle) 42%, var(--md-surface));
+  --empty-ease: cubic-bezier(0.45, 0, 0.2, 1);
+  display: block;
+  width: 168px;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+  overflow: visible;
+  pointer-events: none;
+}
+.md-empty-art--compact { width: 112px; }
+.md-empty-art__paper { fill: var(--md-surface); stroke: var(--empty-outline); }
+.md-empty-art__back { fill: var(--md-surface-tint); stroke: var(--empty-outline); }
+.md-empty-art__outline { stroke: var(--empty-outline); }
+.md-empty-art__lines { stroke: var(--md-subtle); opacity: 0.65; }
+.md-empty-art__accent { stroke: var(--md-accent); }
+.md-empty-art__solid { fill: var(--md-accent); }
+.md-empty-art__wash { fill: var(--md-accent-a09); }
+.md-empty-art__glass { fill: color-mix(in srgb, var(--md-surface) 88%, transparent); stroke: var(--md-accent); }
+.md-empty-art__float { animation: md-empty-float 7s var(--empty-ease) infinite; }
+.md-empty-art__search { animation: md-empty-search 7s var(--empty-ease) infinite; }
+.md-empty-art__draw { animation: md-empty-draw 7s var(--empty-ease) infinite; }
+.md-empty-art__breathe { animation: md-empty-breathe 7s ease-in-out infinite; }
+.md-empty-art__bar { transform-origin: 114px 85px; animation: md-empty-bar 7s var(--empty-ease) infinite; }
+
+/* Each illustration moves briefly, then rests. No player UI or progress track. */
+@keyframes md-empty-float {
+  0%, 12%, 68%, 100% { transform: translateY(0); }
+  30%, 46% { transform: translateY(-5px); }
+}
+@keyframes md-empty-search {
+  0%, 12%, 78%, 100% { transform: translate(0, 0); }
+  34%, 48% { transform: translate(-10px, -5px); }
+}
+@keyframes md-empty-draw {
+  0%, 12%, 100% { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
+  18% { opacity: 1; }
+  40%, 80% { stroke-dasharray: 1; stroke-dashoffset: 0; opacity: 1; }
+  94% { stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes md-empty-breathe {
+  0%, 12%, 78%, 100% { opacity: 0.45; }
+  34%, 55% { opacity: 1; }
+}
+@keyframes md-empty-bar {
+  0%, 12%, 78%, 100% { transform: scaleY(0.85); }
+  34%, 55% { transform: scaleY(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-empty-art * { animation: none; }
+}

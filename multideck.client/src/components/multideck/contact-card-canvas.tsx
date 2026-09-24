@@ -146,7 +146,7 @@ function InsertPoint({
               "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a22)]",
               "motion-reduce:transition-none motion-reduce:hover:scale-100",
               compact ? "mt-[-2px]" : "mt-2",
-              open || active ? "scale-110 text-[var(--md-accent)] opacity-100" : "opacity-0 group-hover/flow:opacity-100",
+              open || active ? "scale-110 text-[var(--md-accent)] opacity-100" : "opacity-0 group-hover/flow:opacity-100 [@media(hover:none)]:opacity-100",
             )}
           >
             <Plus className="size-3.5" strokeWidth={2} />

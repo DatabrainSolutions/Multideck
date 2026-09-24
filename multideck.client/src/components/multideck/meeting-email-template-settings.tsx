@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { Check, Mail, RefreshCw, Send, TriangleAlert } from "@/components/icons/hugeicons"
+import { Check, RefreshCw, Send, TriangleAlert } from "@/components/icons/hugeicons"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { SettingsPanel } from "@/components/multideck/settings-components"
 import { Button } from "@/components/ui/button"
@@ -16,13 +16,16 @@ import {
   type MeetingEmailTemplateKind,
 } from "@/lib/calendar-api"
 import { toast } from "sonner"
+import { renderEmailDocument } from "../../../../shared/branded-email"
+import { meetingEmailPresentation } from "../../../../shared/meeting-email-presentation"
+import type { TenantBranding } from "@/lib/tenant-branding-api"
 
 const sampleValues: Record<string, string> = {
   meeting_title: "Freight planning call",
   meeting_date: "Tuesday, 8 September 2026 at 10:30",
   organiser_name: "Alex Morgan",
   attendee_name: "Sam Taylor",
-  manage_url: "workspace.multideck.app/meetings/manage/…",
+  manage_url: "https://workspace.multideck.app/meetings/manage/example",
   join_url: "meet.example.com/…",
   verification_code: "482193",
   workspace_name: "Your company",
@@ -199,11 +202,14 @@ function MeetingTemplateField({ label, value, onChange, disabled, multiline = fa
   </div>
 }
 
-function renderSample(value: string) {
-  return value.replace(/\{([a-z_]+)\}/g, (_match, name: string) => sampleValues[name] ?? `{${name}}`)
+function renderSample(value: string, workspaceName: string) {
+  return value.replace(/\{([a-z_]+)\}/g, (_match, name: string) => name === "workspace_name" ? workspaceName : sampleValues[name] ?? `{${name}}`)
 }
 
-export function MeetingEmailTemplateSettings({ disabled = false }: { disabled?: boolean }) {
+export function MeetingEmailTemplateSettings({ disabled = false, branding = null }: { disabled?: boolean; branding?: TenantBranding | null }) {
+  const brand = branding?.configured ? branding : null
+  const previewRef = useRef<HTMLIFrameElement>(null)
+  const [previewHeight, setPreviewHeight] = useState(620)
   const [templates, setTemplates] = useState<MeetingEmailTemplate[]>([])
   const [selectedKind, setSelectedKind] = useState<MeetingEmailTemplateKind>("management")
   const [subject, setSubject] = useState("")
@@ -225,6 +231,35 @@ export function MeetingEmailTemplateSettings({ disabled = false }: { disabled?: 
     return [...new Set(names.filter((name) => !(meetingEmailTemplateVariables as readonly string[]).includes(name)))]
   }, [message, subject])
   const dirty = Boolean(selected && (selected.subject !== subject || selected.body !== message))
+
+  const previewSubject = renderSample(subject, brand?.displayName || "Multideck")
+  const previewHtml = useMemo(() => {
+    if (!selected) return ""
+    const paragraphs = renderSample(message, brand?.displayName || "Multideck").split(/\n\n+/).filter(Boolean)
+    return renderEmailDocument({
+      subject: previewSubject,
+      preview: paragraphs[0] || previewSubject,
+      ...meetingEmailPresentation[selected.kind],
+      body: paragraphs,
+      buttonLabel: selected.kind === "cancelled" ? "View meeting" : selected.kind === "group_reschedule_request" ? "Review request" : "Manage meeting",
+      buttonUrl: sampleValues.manage_url,
+      brand,
+    }, { bannerUrl: `${window.location.origin}/email/multideck-email-banner.jpg` }).html
+      // Sample links are illustrative; keep preview navigation inside the editor.
+      .replace(/href="[^"]*"/g, 'aria-disabled="true" tabindex="-1"')
+  }, [selected, message, previewSubject, brand])
+
+  function measurePreview() {
+    const body = previewRef.current?.contentDocument?.body
+    if (body) setPreviewHeight(Math.min(1200, Math.ceil(body.getBoundingClientRect().height)))
+  }
+  useEffect(() => {
+    const frame = previewRef.current
+    if (!frame) return
+    const observer = new ResizeObserver(measurePreview)
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [loading])
 
   async function save() {
     if (!selected || busy) return
@@ -255,7 +290,7 @@ export function MeetingEmailTemplateSettings({ disabled = false }: { disabled?: 
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The test email could not be sent.") } finally { setBusy(null) }
   }
 
-  return <SettingsPanel title="Meeting email templates" description="English-only tenant copy for operational meeting updates. Verification and provider invitations remain owned by Multideck, Google or Microsoft.">
+  return <SettingsPanel title="Meeting email templates" description="Meeting updates use Multideck branding by default, or your saved Admin branding. Verification emails stay Multideck-branded; Google and Microsoft invitations keep their provider design.">
     {loading ? <div className="grid min-h-48 place-items-center"><DotGridLoader label="Loading meeting email templates…" /></div> : selected ? <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(300px,.8fr)]">
       <div className="grid content-start gap-4">
         <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">Template<Select value={selectedKind} onValueChange={(value) => setSelectedKind(value as MeetingEmailTemplateKind)}><SelectTrigger className="h-10 rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent>{templates.map((template) => <SelectItem key={template.kind} value={template.kind}>{template.name}</SelectItem>)}</SelectContent></Select><span className="text-[10.5px] font-normal leading-4 text-[var(--md-subtle)]">{selected.description}</span></label>
@@ -265,7 +300,15 @@ export function MeetingEmailTemplateSettings({ disabled = false }: { disabled?: 
         {error ? <p role="alert" className="text-[11px] leading-5 text-[var(--md-red)]">{error}</p> : null}
         <div className="flex flex-wrap gap-2"><Button type="button" disabled={disabled || Boolean(busy) || !dirty || !subject.trim() || !message.trim() || subject.length > 240 || message.length > 8000 || Boolean(unsupported.length)} onClick={() => void save()}>{busy === "save" ? "Saving…" : <><Check className="size-3.5" />Save template</>}</Button><Button type="button" variant="ghost" disabled={disabled || Boolean(busy) || !subject.trim() || !message.trim() || subject.length > 240 || message.length > 8000 || Boolean(unsupported.length)} onClick={() => void sendTest()}><Send className="size-3.5" />{busy === "test" ? "Sending…" : "Send test to me"}</Button><Button type="button" variant="ghost" disabled={disabled || Boolean(busy) || !selected.custom} onClick={() => void reset()}><RefreshCw className="size-3.5" />{busy === "reset" ? "Resetting…" : "Reset"}</Button></div>
       </div>
-      <div className="mx-auto w-full min-w-0 max-w-[440px] self-center lg:px-3"><div className="flex items-center justify-between gap-3 px-1"><p className="text-[10px] font-medium uppercase tracking-[.06em] text-[var(--md-subtle)]">Preview</p><span className="text-[10.5px] text-[var(--md-subtle)]">{selected.custom ? `Custom · v${selected.version}` : "Multideck default"}</span></div><div className="mt-3 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-6 shadow-[var(--md-shadow-soft)]"><Mail className="size-4 text-[var(--md-accent)]" /><p className="mt-3 break-words text-[11px] font-medium text-[var(--md-subtle)]">{renderSample(subject) || "Email subject"}</p><h3 className="mt-2 text-[17px] font-medium text-[var(--md-ink)]">{selected.name}</h3><div className="mt-3 whitespace-pre-wrap break-words text-[12px] leading-5 text-[var(--md-text)]">{renderSample(message) || "Your message preview appears here."}</div></div></div>
+      <div className="w-full min-w-0 self-start">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <p className="text-[10px] font-medium uppercase tracking-[.06em] text-[var(--md-subtle)]">Preview</p>
+          <span className="text-[10.5px] text-[var(--md-subtle)]">{brand?.displayName || "Multideck default"}</span>
+        </div>
+        <p className="mt-2 break-words px-1 text-[11px] text-[var(--md-text)]"><span className="font-medium">Subject:</span> {previewSubject || "Email subject"}</p>
+        <iframe ref={previewRef} title="Branded meeting email preview" sandbox="allow-same-origin" srcDoc={previewHtml} onLoad={measurePreview} className="mt-3 block w-full border-0" style={{ height: previewHeight, colorScheme: brand?.appearanceMode || "light" }} />
+        <p className="mt-2 px-1 text-[10.5px] text-[var(--md-subtle)]">{selected.custom ? `Custom wording · v${selected.version}` : "Default wording"} · Sample meeting details</p>
+      </div>
     </div> : <div className="p-5 text-[12px] text-[var(--md-red)]">{error || "No meeting email templates are available."}</div>}
   </SettingsPanel>
 }

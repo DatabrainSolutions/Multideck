@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { bookingLifecycle, bookingLifecycleLabel, type BookingLifecycle } from "@/lib/booking-lifecycle"
 import { bookingDraftConflicts, rebaseBookingDraft } from "@/lib/booking-draft"
 import { hasPermission } from "@/lib/auth-user"
@@ -1184,7 +1185,7 @@ export function BookingsTable({
       onRowClick={onOpenBooking}
       rowAriaLabel={(booking) => `Open ${booking.id}`}
       rowClassName="h-[78px]"
-      emptyState={<div className="mx-auto max-w-[360px]"><p className="text-[14px] font-medium text-[var(--md-ink)]">No bookings match this search</p><p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">Remove a criterion or switch back to Open to widen the list.</p></div>}
+      emptyState={<div className="mx-auto max-w-[360px]"><EmptyStateIllustration variant="search" className="mb-3" /><p className="text-[14px] font-medium text-[var(--md-ink)]">No bookings match this search</p><p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">Remove a criterion or switch back to Open to widen the list.</p></div>}
     />
   )
 }

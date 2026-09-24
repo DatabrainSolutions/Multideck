@@ -67,6 +67,7 @@ export function SegmentedControl<T extends string>({
   return (
     <div
       role="radiogroup"
+      data-slot="segmented-control"
       aria-label={ariaLabel}
       className={cn(
         "relative isolate inline-flex max-w-full rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]",

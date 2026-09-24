@@ -1,5 +1,5 @@
 import { useId } from "react"
-import { Check, LoaderCircle, Minus, Pencil, Plus, X } from "@/components/icons/hugeicons"
+import { Check, LoaderCircle, Minus, Plus, X } from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
 
 import { Button } from "@/components/ui/button"
@@ -7,6 +7,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import type { DexterActionChange, DexterPendingAction } from "@/lib/dexter-api"
 import { cn } from "@/lib/utils"
 import { mdEaseOut } from "@/lib/motion"
+import { presentDexterApproval, formatDexterApprovalValue } from "@/lib/dexter-approval-presentation"
 
 export type DexterActionDecision = "approve" | "decline"
 
@@ -35,27 +36,18 @@ function ChangeValue({
   field: string
 }) {
   const { language, t } = useLanguage()
-  const isDateTime = ["next action due at", "next_action_due_at", "next action due"].includes(field.toLowerCase())
-    && typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
-  const displayValue = isDateTime ? new Intl.DateTimeFormat(language, {
-    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC", timeZoneName: "short",
-  }).format(new Date(value!)) : value
+  const displayValue = formatDexterApprovalValue(value, language)
   const Icon = tone === "before" ? Minus : Plus
 
   return (
     <div
-      className={cn(
-        "min-w-0 rounded-[var(--md-radius-md)] px-3 py-2.5",
-        tone === "before"
-          ? "bg-[color-mix(in_srgb,var(--md-red)_9%,var(--md-surface))] text-[var(--md-red)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-red)_13%,transparent)]"
-          : "bg-[color-mix(in_srgb,var(--md-green)_9%,var(--md-surface))] text-[var(--md-green)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-green)_13%,transparent)]",
-      )}
+      className="min-w-0"
     >
-      <span className="flex items-center gap-1.5 text-[11px] font-medium">
+      <span className="flex items-center gap-1.5 text-[11px] text-[var(--md-subtle)]">
         <Icon className="size-3" strokeWidth={1.6} aria-hidden="true" />
         {label}
       </span>
-      <span className="mt-1.5 block break-words text-[12.5px] leading-5 text-[var(--md-ink)]">
+      <span className="mt-1 block whitespace-pre-wrap break-words text-[13px] leading-5 text-[var(--md-ink)]">
         <bdi>{value === null || value === undefined || value === "" ? t("Not set") : displayValue}</bdi>
       </span>
     </div>
@@ -71,6 +63,7 @@ export function DexterActionApproval({
 }: DexterActionApprovalProps) {
   const { t } = useLanguage()
   const shouldReduceMotion = Boolean(useReducedMotion())
+  const review = presentDexterApproval(action.changes)
   const titleId = useId()
   const descriptionId = useId()
   const errorId = useId()
@@ -114,22 +107,21 @@ export function DexterActionApproval({
         </div>
       </div>
 
-      {action.changes.length > 0 ? (
+      {review.changes.length > 0 ? (
         <div className="mt-4">
           <p className="text-[11.5px] font-medium text-[var(--md-subtle)]">
             {t("Review proposed changes")}
           </p>
-          <dl className="mt-2 grid gap-2">
-            {action.changes.map((change, index) => {
+          <dl className="mt-2 divide-y divide-[var(--md-line)]">
+            {review.changes.map((change, index) => {
               const kind = changeKind(change)
-              const after = change.after ?? change.value
+              const after = change.after !== undefined ? change.after : change.value
               const beforeKnown = change.beforeKnown ?? change.before !== undefined
-              const KindIcon = kind === "added" ? Plus : kind === "removed" ? Minus : Pencil
 
               return (
                 <motion.div
                   key={`${change.field}-${change.before ?? "unknown"}-${after ?? "removed"}`}
-                  className="rounded-[var(--md-radius-lg)] bg-[var(--md-bg)] p-3 shadow-[var(--md-shadow-line)]"
+                  className="grid min-w-0 gap-2 py-3 sm:grid-cols-[minmax(120px,0.65fr)_minmax(0,2fr)] sm:gap-4"
                   initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 7, filter: "blur(5px)" }}
                   animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                   transition={shouldReduceMotion ? { duration: 0 } : {
@@ -138,21 +130,11 @@ export function DexterActionApproval({
                     ease: mdEaseOut,
                   }}
                 >
-                  <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
-                    <dt className="min-w-0 capitalize text-[12px] font-medium text-[var(--md-ink)]">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <dt className="min-w-0 text-[12px] font-medium text-[var(--md-text)]">
                       {change.field}
                     </dt>
-                    <span
-                      className={cn(
-                        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10.5px] font-medium",
-                        kind === "removed"
-                          ? "bg-[color-mix(in_srgb,var(--md-red)_10%,var(--md-surface))] text-[var(--md-red)]"
-                          : "bg-[color-mix(in_srgb,var(--md-green)_10%,var(--md-surface))] text-[var(--md-green)]",
-                      )}
-                    >
-                      <KindIcon className="size-2.5" strokeWidth={1.7} aria-hidden="true" />
-                      {t(kind === "added" ? "Added" : kind === "removed" ? "Removed" : "Changed")}
-                    </span>
+
                   </div>
                   <dd
                     className={cn(
@@ -163,6 +145,7 @@ export function DexterActionApproval({
                     {kind !== "added" && beforeKnown ? (
                       <ChangeValue field={change.field} label={t(kind === "removed" ? "Removed" : "Previous value")} value={change.before} tone="before" />
                     ) : null}
+                    {kind === "removed" && !beforeKnown ? <ChangeValue field={change.field} label={t("Change")} value={t("Clear this value")} tone="after" /> : null}
                     {kind !== "removed" ? (
                       <ChangeValue field={change.field} label={t(kind === "added" ? "Added" : "New value")} value={after} tone="after" />
                     ) : null}
@@ -173,6 +156,8 @@ export function DexterActionApproval({
           </dl>
         </div>
       ) : null}
+
+      {review.issue && !resolvedStatus ? <p className="mt-3 text-[12.5px] leading-5 text-[var(--md-text)]" role="status">{t(review.issue)}</p> : null}
 
       {error ? (
         <p
@@ -210,7 +195,7 @@ export function DexterActionApproval({
         <Button
           type="button"
           className="min-h-11 rounded-[var(--md-radius-lg)] px-4"
-          disabled={isDisabled}
+          disabled={isDisabled || Boolean(review.issue)}
           data-decision="approve"
           onClick={() => onDecision("approve")}
         >

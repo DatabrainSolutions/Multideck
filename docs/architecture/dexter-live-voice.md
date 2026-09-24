@@ -10,7 +10,7 @@ Voice uses GPT-Live-1 over a server-authenticated WebSocket, with mono PCM16 at 
 
 Caption fragments join only adjacent same-speaker speech. They never join across the other speaker. Delegation takes the latest unanswered request, excluding greetings already answered aloud. A longer pause within an unanswered request does not lose its earlier clauses.
 
-The text conversation branch is selected before adding speech. Voice utterances do not enter retry-version grouping. Saved request metadata attaches to the final matching spoken request and answer, preserving all earlier exchanges and stable render keys. Legacy combined requests are reconstructed for display from their original private captions; their underlying audit history is not rewritten.
+The text conversation branch is selected before adding speech. Voice utterances do not enter retry-version grouping. Saved request metadata attaches to the final matching spoken request and answer, preserving all earlier exchanges and stable render keys. The written backend answer remains the displayed content, including its complete Markdown links and inline citations; spoken captions are a concise audio summary and must not overwrite that evidence. Requests to show or repeat links also delegate to the backend before voice claims a result is available. Legacy combined requests are reconstructed for display from their original private captions; their underlying audit history is not rewritten.
 
 ## Access, storage and cost
 

@@ -1,3 +1,4 @@
+import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
@@ -185,7 +186,7 @@ function EmptyCalls({ filtered, onClear }: { filtered?: boolean; onClear?: () =>
   const { t } = useLanguage()
   return (
     <div className="grid min-h-[300px] place-items-center px-6 py-10 text-center">
-      <div className="max-w-[390px]"><span className="mx-auto grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><Phone aria-hidden="true" className="size-5" /></span><h2 className="mt-4 text-[15px] font-medium text-[var(--md-ink)]">{t(filtered ? "No calls match these filters" : "No calls in this period")}</h2><p className="mt-2 text-[12.5px] leading-5 text-[var(--md-text)]">{t(filtered ? "Try a broader date range or clear the active call filters." : "Choose a broader call period or wait for the next authorised provider sync.")}</p>{filtered && onClear ? <Button variant="outline" size="sm" className="mt-4" onClick={onClear}>{t("Clear filters")}</Button> : null}</div>
+      <div className="max-w-[390px]"><EmptyStateIllustration variant={filtered ? "search" : "phone"} /><h2 className="mt-4 text-[15px] font-medium text-[var(--md-ink)]">{t(filtered ? "No calls match these filters" : "No calls in this period")}</h2><p className="mt-2 text-[12.5px] leading-5 text-[var(--md-text)]">{t(filtered ? "Try a broader date range or clear the active call filters." : "Choose a broader call period or wait for the next authorised provider sync.")}</p>{filtered && onClear ? <Button variant="outline" size="sm" className="mt-4" onClick={onClear}>{t("Clear filters")}</Button> : null}</div>
     </div>
   )
 }

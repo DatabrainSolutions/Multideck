@@ -1,0 +1,12 @@
+:root { --crm-qa-bar-height: 60px; }
+.crm-qa-bar { height: var(--crm-qa-bar-height); display:flex; gap:16px; align-items:center; padding:10px 20px; background:var(--md-surface); color:var(--md-ink); font-size:11px; position:relative; z-index:60; }
+.crm-qa-controls-desktop { display:flex; align-items:center; gap:16px; }
+.crm-qa-options { display:none; }
+@media(max-width:700px) {
+ :root { --crm-qa-bar-height:44px; }
+ .crm-qa-bar { padding:8px 12px; justify-content:space-between; font-size:10px; }
+ .crm-qa-controls-desktop { display:none; }
+ .crm-qa-options { display:block; }
+ .crm-qa-options summary { cursor:pointer; padding:5px; }
+ .crm-qa-options>div { position:absolute; right:8px; top:40px; padding:16px; border:1px solid var(--md-hairline); border-radius:var(--md-radius-lg); background:var(--md-surface); box-shadow:var(--md-shadow-md); display:grid; gap:14px; min-width:200px; }
+}

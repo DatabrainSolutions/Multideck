@@ -6,7 +6,10 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
-      className="md-table-scroll relative w-full overflow-x-auto"
+      tabIndex={0}
+      role="region"
+      aria-label={props["aria-label"] || "Scrollable table"}
+      className="md-table-scroll relative w-full min-w-0 overflow-x-auto overscroll-x-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent)]"
     >
       <table
         data-slot="table"

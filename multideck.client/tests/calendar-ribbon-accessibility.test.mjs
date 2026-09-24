@@ -32,13 +32,13 @@ test("operational ribbons remain native, labelled record links with a compact we
   assert.match(ribbon, /event.button !== 0/)
   assert.match(ribbon, /\{ribbon.title\}/)
   assert.match(ribbon, /title=\{ribbon.title\}/)
-  assert.match(ribbon, /compact \? "h-8 truncate whitespace-nowrap" : "min-h-8 py-1\.5 whitespace-normal \[overflow-wrap:anywhere\]"/)
-  assert.match(ribbon, /text-\[12px\]/)
+  assert.match(ribbon, /compact \? "h-\[25\.6px\] whitespace-nowrap" : "min-h-\[25\.6px\] py-1\.5 whitespace-normal \[overflow-wrap:anywhere\]"/)
+  assert.match(ribbon, /text-\[11px\]/)
   assert.doesNotMatch(ribbon, /outline-none|active:scale|<button/)
 })
 
 test("the week dates band uses compact, top-packed ribbons", () => {
-  assert.match(source, /min-h-10 content-start gap-1/)
+  assert.match(source, /min-h-10 min-w-0 content-start gap-1/)
   assert.match(source, /<CalendarDayRibbon key=\{ribbon.id\} ribbon=\{ribbon\} navigate=\{navigate\} compact \/>/)
 })
 

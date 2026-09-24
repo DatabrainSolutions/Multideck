@@ -1,0 +1,32 @@
+.md-text-shimmer {
+  display: inline-block;
+  color: var(--md-text);
+  background-image: linear-gradient(110deg,
+    var(--md-text) calc(50% - var(--shimmer-spread)),
+    var(--md-ink) 50%,
+    var(--md-text) calc(50% + var(--shimmer-spread)));
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: md-text-shimmer-sweep var(--shimmer-duration) ease-in-out infinite;
+}
+
+@keyframes md-text-shimmer-sweep {
+  from { background-position: 150% center; }
+  to { background-position: -50% center; }
+}
+
+.md-text-shimmer[data-disabled="true"] {
+  animation: none;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .md-text-shimmer {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}

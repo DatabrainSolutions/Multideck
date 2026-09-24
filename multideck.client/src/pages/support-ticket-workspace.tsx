@@ -197,7 +197,7 @@ export function SupportTicketWorkspace({ ticketId, navigate }: { ticketId: strin
     {!loading && !error && !ticketId ? <div className="mt-4 divide-y divide-[var(--md-hairline)]">
       {tickets.length ? tickets.map((ticket) => <button key={ticket.id} type="button" onClick={() => navigate(`/settings?tab=support&ticket=${encodeURIComponent(ticket.id)}`)} className="flex w-full flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] px-3 py-4 text-left outline-none transition-colors duration-150 hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] motion-reduce:transition-none">
         <span className="min-w-0 flex-1"><span data-i18n-skip className="block text-sm font-medium break-words">{ticket.reference} · {ticket.title}</span><span className="mt-1 block text-xs text-[var(--md-subtle)]">{date(ticket.updatedAt)}</span></span>{showStatus(ticket)}
-      </button>) : <p className="py-5 text-sm text-[var(--md-text)]">{t("You have no support tickets yet. Submit a ticket above or from the sidebar.")}</p>}
+      </button>) : <p className="py-5 text-sm text-[var(--md-text)]">{t("No support tickets yet.")}</p>}
     </div> : null}
     {ticketId && conversation ? <div className="mt-4 grid min-h-0 flex-1 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
       <section aria-label={t("Conversation")} className="flex min-h-0 min-w-0 flex-col">

@@ -1,0 +1,60 @@
+.md-suggestion-art {
+  position: relative;
+  width: 144px;
+  max-width: 100%;
+  --suggestion-loop: 8s;
+  --suggestion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --suggestion-outline: color-mix(in srgb, var(--md-subtle) 42%, var(--md-surface));
+}
+
+.md-suggestion-art--compare { width: 264px; }
+.md-suggestion-art > svg { display: block; width: 100%; height: auto; overflow: visible; }
+.md-suggestion-art__paper { fill: var(--md-surface); stroke: var(--suggestion-outline); }
+.md-suggestion-art__back { fill: var(--md-surface-tint); stroke: var(--suggestion-outline); }
+.md-suggestion-art__outline { stroke: var(--suggestion-outline); }
+.md-suggestion-art__lines { stroke: var(--md-subtle); opacity: 0.65; }
+.md-suggestion-art__accent { stroke: var(--md-accent); }
+.md-suggestion-art__solid { fill: var(--md-accent); }
+.md-suggestion-art__tint { fill: var(--md-accent-a09); }
+
+/* A short story, then a long rest. The two visible scenes take turns moving. */
+.md-suggestion-art__arrival { animation: md-suggestion-arrive var(--suggestion-loop) var(--suggestion-ease) infinite; }
+.md-suggestion-art__check { animation: md-suggestion-check var(--suggestion-loop) var(--suggestion-ease) infinite; }
+.md-suggestion-art__clock { animation: md-suggestion-clock var(--suggestion-loop) var(--suggestion-ease) infinite; transform-origin: 116px 36px; }
+.md-suggestion-art__scan { animation: md-suggestion-scan var(--suggestion-loop) var(--suggestion-ease) infinite; opacity: 0; }
+.md-suggestion-art__transfer { animation: md-suggestion-transfer var(--suggestion-loop) var(--suggestion-ease) infinite; opacity: 0; }
+.md-suggestion-art__difference { animation: md-suggestion-difference var(--suggestion-loop) ease-in-out infinite; }
+@keyframes md-suggestion-arrive {
+  0%, 5%, 100% { transform: translateY(-5px); }
+  20%, 85% { transform: translateY(0); }
+}
+@keyframes md-suggestion-check {
+  0%, 15%, 100% { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
+  17% { opacity: 1; }
+  30%, 88% { stroke-dasharray: 1; stroke-dashoffset: 0; opacity: 1; }
+  96% { stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes md-suggestion-clock {
+  0%, 15%, 100% { transform: rotate(-25deg); }
+  30%, 88% { transform: rotate(0); }
+}
+@keyframes md-suggestion-scan {
+  0%, 35%, 65%, 100% { opacity: 0; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(0); }
+  56% { opacity: 1; transform: translateY(34px); }
+  60% { opacity: 0; transform: translateY(34px); }
+}
+@keyframes md-suggestion-transfer {
+  0%, 56%, 76%, 100% { opacity: 0; transform: translateX(0); }
+  59% { opacity: 1; transform: translateX(0); }
+  70% { opacity: 1; transform: translateX(34px); }
+  74% { opacity: 0; transform: translateX(34px); }
+}
+@keyframes md-suggestion-difference {
+  0%, 62%, 100% { opacity: 0.2; }
+  74%, 89% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-suggestion-art > svg * { animation: none; }
+}

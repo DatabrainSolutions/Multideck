@@ -453,7 +453,7 @@ function StageCard({
                   aria-label={`${t("Rename stage")}: ${t(stage.name)}`}
                   title={t("Rename stage")}
                   onClick={onStartRename}
-                  className="relative z-10 grid size-6 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:opacity-100 focus-visible:outline-none group-hover/card:opacity-100"
+                  className="relative z-10 grid size-6 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] opacity-0 transition-[opacity,background,color] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:opacity-100 focus-visible:outline-none group-hover/card:opacity-100 [@media(hover:none)]:opacity-100"
                 >
                   <Pencil className="size-3.5" strokeWidth={1.4} />
                 </button>

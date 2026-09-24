@@ -281,3 +281,7 @@ Dropdowns should feel anchored, compact, and unambiguous:
 ## Build Rule
 
 Keep all client UI work inside `multideck.client`. Do not place client components, design docs, or frontend config in the server folder.
+
+## Feedback and emphasis
+
+Coloured left-edge stripes on notices, cards or callouts are classified as "AI slop" and must not be used. Use `InlineNotice` for persistent feedback: a compact neutral rounded surface, a softly tinted status icon, readable neutral text and a recovery action beneath the message when needed. Use a small unread dot for unread status. Do not replace real layout dividers, timeline connectors or source-authored email quotation formatting with decorative notification styling.

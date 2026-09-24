@@ -83,6 +83,18 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
     )
   }
 
+  if (route === "/warehouse/items" || route === "/warehouse/locations") {
+    const items = route === "/warehouse/items"
+    const label = items ? "New item" : "New location"
+    return <DropdownMenu>
+      <DropdownMenuTrigger asChild><Button aria-label={t(label)} className={topBarPrimaryActionClass}><Plus data-icon="inline-start" /><span className="hidden sm:inline">{t(label)}</span><ChevronDown className="size-3" /></Button></DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => dispatchTopBarAction(items ? topBarActionEvents.createWarehouseItem : topBarActionEvents.createWarehouseLocation)}><Plus className="size-3.5" />{t(label)}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => dispatchTopBarAction(items ? topBarActionEvents.importWarehouseItems : topBarActionEvents.importWarehouseLocations)}><Upload className="size-3.5" />{t(items ? "Import items" : "Import locations")}</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  }
+
   const action = warehouseCreateActions[route]
   if (action) {
     return (
@@ -111,6 +123,7 @@ function FinanceTopBarAction({ route, currentUser }: { route: string; currentUse
     if (!hasPermission(currentUser, "Finance.Management.Prepare")) return null
     return <Button aria-label={t("New journal")} title={t("New journal")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createJournal)}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("New journal")}</span></Button>
   }
+  if (route.startsWith("/finance/mileage")) return null
   if (/^\/finance\/(receivables|payables)\/documents\/[^/]+$/.test(route)) return null
   if (route === "/finance/payables/intake") {
     if (!hasPermission(currentUser, "Finance.Payables.Draft")) return null
@@ -242,7 +255,7 @@ export function TopBar({
   }, [route])
 
   return (
-    <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl">
+    <header className="md-topbar sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] flex-wrap items-center gap-2 bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl sm:gap-[var(--md-gap-lg)]">
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetTrigger asChild>
           <Button
@@ -278,7 +291,7 @@ export function TopBar({
       {isPartyDetail ? (
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="md-topbar-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Button
               variant="ghost"
               className={topBarGhostActionClass}
@@ -307,7 +320,7 @@ export function TopBar({
       ) : isCrmLeadDetail ? (
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
-          {currentRecordName ? <div className="ml-auto flex items-center gap-2">
+          {currentRecordName ? <div className="md-topbar-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Button
               variant="ghost"
               className={topBarGhostActionClass}
@@ -326,7 +339,7 @@ export function TopBar({
       ) : isCrmAccountDetail ? (
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
-          {currentRecordName ? <div className="ml-auto flex items-center gap-2">
+          {currentRecordName ? <div className="md-topbar-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Button
               className={topBarPrimaryActionClass}
               onClick={() => openMeetingComposer({ source: "crm", linkedRecord: { type: "account", id: route.split("/").at(-1)!, name: currentRecordName } })}
@@ -402,6 +415,8 @@ export function TopBar({
               <Plus data-icon="inline-start" strokeWidth={1.2} />
               <span className="hidden sm:inline">New {partyRegisterType}</span>
             </Button>
+          ) : route === "/crm/trips" && currentUser?.actorType === "internal" ? (
+            <Button className={topBarPrimaryActionClass} onClick={() => navigate("/crm/trips/new")}><Plus data-icon="inline-start" />New trip</Button>
           ) : isCrmRoute && crmCreateAction && canWriteCrm ? (
             <>
               <Button

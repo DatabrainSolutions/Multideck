@@ -619,3 +619,15 @@ verify_jwt = false
 
 [functions.finance-ledger]
 verify_jwt = false
+
+# Validates the bearer with Supabase Auth and the active mileage actor in the handler.
+[functions.mileage-route]
+verify_jwt = false
+
+# Authenticates every request and checks the active claimant/claim reader before private evidence access.
+[functions.mileage-evidence]
+verify_jwt = false
+
+# Validates Auth, active CRM access and current scoped evidence before analysis.
+[functions.crm-sales-insights]
+verify_jwt = false

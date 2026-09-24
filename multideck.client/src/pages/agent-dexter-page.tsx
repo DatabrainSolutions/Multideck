@@ -1,15 +1,13 @@
-import { useTaskAgents, controlTaskAgent } from "@/lib/task-agent-store"
-import { useTaskResultViewed } from "@/lib/use-task-conversation"
-import { TaskAgentIcon, TaskAgentControls } from "@/components/multideck/task-agent-components"
 import { TicketAttachmentList } from "@/components/multideck/ticket-attachments"
 import type { TicketAttachment } from "@/lib/ticket-attachments"
-import { previewDexterDocument } from "@/lib/dexter-api"
+import { DexterApiError, previewDexterDocument } from "@/lib/dexter-api"
 import { deferredWorkState, deferredWorkPrompt } from "@/lib/dexter-deferred-work"
 import { readDexterRecovery, writeDexterRecovery, clearDexterRecovery, type DexterRecovery } from "@/lib/dexter-request-recovery"
 import { mergeSteeringStatus } from "@/lib/dexter-steering-status"
 import { mergeVoiceTranscript } from "@/lib/dexter-voice-transcript"
 import { useDexterVoice } from "@/hooks/use-dexter-voice"
 import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck/dexter-voice-controls"
+import { shouldShowDexterJumpToLatest } from "@/lib/dexter-scroll-presentation"
 import { hasReachedDailyVoiceLimit } from "@/lib/dexter-voice-presentation"
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
 import { dexterArtifactReferences, retainDexterRenderKeys, structureDexterMeetingBrief } from "@/lib/dexter-response-presentation"
@@ -51,11 +49,8 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/r
 import ReactMarkdown, { type Components as MarkdownComponents } from "react-markdown"
 import { createAnimatePlugin } from "streamdown"
 import remarkGfm from "remark-gfm"
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from "@/components/ai-elements/reasoning"
+import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"
+import { mergeDexterActivity, type DexterActivity } from "../../../shared/dexter-activity"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import {
   DexterAttachmentPalette,
@@ -139,8 +134,10 @@ import {
   readDexterConversationIdFromLocation,
   rememberOpenDexterConversation,
   shouldReuseDexterConversation,
+  shouldSendDexterTodoHandoff,
   takeDexterConversationHandoff,
   takeDexterTaskHandoff,
+  takeDexterTodoHandoff,
   type DexterConversationsChangedDetail,
 } from "@/lib/dexter-navigation"
 import { listAccountsPage } from "@/lib/customer-api"
@@ -157,7 +154,6 @@ import { dexterTodoSuggestion, type DexterTodoSuggestion } from "@/lib/dexter-to
 import { createTodoTask } from "@/lib/todo-api"
 
 const DEXTER_CONTEXT_WINDOW_TOKENS = 128_000
-const DEXTER_JUMP_TO_LATEST_DISTANCE = 180
 const MotionMessageScrollerViewport = motion.create(MessageScroller.Viewport)
 
 function estimateContextTokens(
@@ -301,91 +297,6 @@ function DexterConversationHeader({
           expanded={watchersOpen}
         />
       </div>
-    </div>
-  )
-}
-
-function DexterReasoningDisclosure({
-  content,
-  isStreaming,
-  open,
-  onOpenChange,
-  onCollapsed,
-}: {
-  content: string
-  isStreaming: boolean
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onCollapsed: () => void
-}) {
-  const { t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
-  const hasReasoning = content.trim().length > 0
-  if (!isStreaming && !hasReasoning) return null
-
-  return (
-    <div className="max-w-[680px]">
-      <AnimatePresence initial={false}>
-        {isStreaming && !hasReasoning ? (
-          <motion.div
-            key="thinking"
-            className="flex min-h-8 items-center py-1 text-[12.5px] font-medium text-[var(--md-text)]"
-            initial={shouldReduceMotion ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0 }}
-            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
-            role="status"
-            aria-live="polite"
-          >
-            {shouldReduceMotion ? (
-              <span>{t("Thinking")}</span>
-            ) : (
-              <Shimmer duration={1.2} spread={2}>{t("Thinking")}</Shimmer>
-            )}
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      <AnimatePresence initial={false}>
-        {hasReasoning ? (
-          <motion.div
-            key="reasoning"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -3 }}
-            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.enter)}
-          >
-            <Reasoning
-              open={open}
-              onOpenChange={onOpenChange}
-              isStreaming={isStreaming}
-              className="mb-0 py-1"
-              data-reasoning-state={isStreaming ? "streaming" : "complete"}
-            >
-              <ReasoningTrigger
-                className="min-h-8 text-[12.5px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]"
-                getThinkingMessage={() => (
-                  <span>{isStreaming ? t("Reasoning") : t("Reasoning summary")}</span>
-                )}
-              />
-              <motion.div
-                initial={false}
-                animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0, filter: open || shouldReduceMotion ? "blur(0px)" : "blur(6px)" }}
-                transition={reduceMotion(Boolean(shouldReduceMotion), open ? mdMotion.smooth : { duration: 0.24, ease: [0.4, 0, 1, 1] })}
-                onAnimationComplete={() => { if (!open) onCollapsed() }}
-                className="overflow-hidden"
-                aria-hidden={!open}
-                inert={!open || undefined}
-                data-dexter-reasoning-panel
-              >
-                <ReasoningContent forceMount className="mt-0 pt-3 pb-6 text-[13px] leading-5 text-[var(--md-text)] data-[state=closed]:animate-none data-[state=open]:animate-none">
-                  {content}
-                </ReasoningContent>
-              </motion.div>
-            </Reasoning>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
     </div>
   )
 }
@@ -805,7 +716,7 @@ const dexterMarkdownComponents: MarkdownComponents = {
           p: ({ children }) => <p dir="auto" className="my-4 max-w-[68ch] whitespace-normal text-pretty first:mt-0 last:mb-0">{children}</p>,
           ul: ({ children }) => <ul dir="auto" className="my-4 max-w-[70ch] list-disc space-y-2 ps-[1.35rem] first:mt-0 last:mb-0 marker:text-[var(--md-accent)]">{children}</ul>,
           ol: ({ children }) => <ol dir="auto" className="my-4 max-w-[70ch] list-decimal space-y-2 ps-[1.35rem] first:mt-0 last:mb-0 marker:text-[var(--md-accent)]">{children}</ol>,
-          blockquote: ({ children }) => <blockquote dir="auto" className="my-5 max-w-[68ch] rounded-e-[var(--md-radius-md)] border-s-2 border-[var(--md-accent-a36)] bg-[var(--md-accent-a08)] px-4 py-3 text-[var(--md-text)] first:mt-0 last:mb-0">{children}</blockquote>,
+          blockquote: ({ children }) => <blockquote dir="auto" className="my-5 max-w-[68ch] rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-[var(--md-text)] first:mt-0 last:mb-0">{children}</blockquote>,
           a: ({ children, href, title }) => isDexterCitationUrl(href)
             ? <DexterInlineCitation href={href} title={title ?? undefined}>{children}</DexterInlineCitation>
             : <span>{children}</span>,
@@ -846,7 +757,8 @@ function DexterMarkdown({
   )
 }
 
-function DexterResponseBody({ content, reasoning, isStreaming, children }: {
+function DexterResponseBody({ content, reasoning, activities = [], isStreaming, children }: {
+  activities?: DexterActivity[]
   content: string
   reasoning: string
   isStreaming: boolean
@@ -881,8 +793,8 @@ function DexterResponseBody({ content, reasoning, isStreaming, children }: {
   }, [thinking])
 
   useLayoutEffect(() => {
-    if (!thinking && !reasoningOpen && (!reasoning.trim() || reasoningCollapsed || reduce)) setAnswerReleased(true)
-  }, [thinking, reasoning, reasoningOpen, reasoningCollapsed, reduce])
+    if (!thinking && !reasoningOpen && ((!reasoning.trim() && !activities.length) || reasoningCollapsed || reduce)) setAnswerReleased(true)
+  }, [thinking, reasoning, activities.length, reasoningOpen, reasoningCollapsed, reduce])
 
   useEffect(() => {
     if (!answerReleased || isStreaming || !wasStreaming || reduce) return
@@ -898,7 +810,7 @@ function DexterResponseBody({ content, reasoning, isStreaming, children }: {
 
   return (
     <div ref={root} className="min-w-0" data-dexter-response-state={ready ? "complete" : "streaming"} data-dexter-animate={wasStreaming && !reduce ? "true" : undefined}>
-      <DexterReasoningDisclosure content={reasoning} isStreaming={thinking} open={reasoningOpen}
+      <DexterActivityTrail content={reasoning} activities={activities} isStreaming={isStreaming} answerStarted={Boolean(content.trim())} open={reasoningOpen}
         onOpenChange={onReasoningOpenChange} onCollapsed={onReasoningCollapsed} />
       <DexterArtifactVisibility.Provider value={artifactVisibility}>
         {answerReleased && content.trim() ? <DexterMarkdown content={content} isStreaming={!ready} animateText={wasStreaming && !reduce && !ready} /> : null}
@@ -1286,6 +1198,7 @@ function ConversationStream({
   onRetryMessage,
   onRetryError,
   onDismissError,
+  recoveryStatus,
   onSelectResponse,
   onEmailDraftChange,
 }: {
@@ -1308,6 +1221,7 @@ function ConversationStream({
   onRetryMessage?: (message: DexterMessage) => void
   onRetryError?: () => void
   onDismissError: () => void
+  recoveryStatus?: ReactNode
   onSelectResponse: (userMessageId: string, assistantMessageId: string) => void
   onEmailDraftChange: (messageId: string, draft: DexterEmailDraft) => void
 }) {
@@ -1380,9 +1294,6 @@ function ConversationStream({
     const reasoning = isStreamingMessage
       ? reasoningContent || message.reasoningSummary || ""
       : message.reasoningSummary || ""
-    const isAwaitingFirstResponse = isStreamingMessage &&
-      !reasoning.trim() &&
-      !message.content.trim()
     const messageIndex = messages.findIndex((candidate) => candidate.id === message.id)
     const sourceUserMessage = message.responseToUserMessageId
       ? messages.find((candidate) => candidate.id === message.responseToUserMessageId && candidate.role === "user")
@@ -1409,45 +1320,12 @@ function ConversationStream({
       >
         <DexterBrandMark className="mt-1" />
         <div className="min-w-0">
-          <AnimatePresence initial={false} mode="popLayout">
-            {isAwaitingFirstResponse ? (
-              <motion.div
-                key="dexter-preparing-response"
-                className="py-1.5"
-                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 5, filter: "blur(5px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -3, filter: "blur(4px)" }}
-                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
-                role="status"
-                aria-live="polite"
-              >
-                <p className="text-[12px] text-[var(--md-subtle)]">
-                  {t("Dexter is checking your connected workspace data...")}
-                </p>
-                <div className="mt-2.5 flex gap-1.5" aria-hidden="true">
-                  {[0, 1, 2].map((index) => (
-                    <motion.span
-                      key={index}
-                      className="size-1.5 rounded-full bg-[var(--md-accent)]"
-                      animate={shouldReduceMotion ? { opacity: 0.55 } : { opacity: [0.25, 1, 0.25] }}
-                      transition={shouldReduceMotion ? { duration: 0 } : {
-                        duration: 1.1,
-                        repeat: Infinity,
-                        delay: index * 0.13,
-                        ease: "easeInOut",
-                      }}
-                    />
-                  ))}
-                </div>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
           {message.steeringInputs?.length ? <div className="mb-3 space-y-1 text-[13px] text-[var(--md-text)]" aria-label={t("Request corrections")}>
             {message.steeringInputs.map((correction, index) => <p key={`${correction.responseId}-${index}`}>
               <span className="font-medium">{t("Your correction")}: </span>{correction.input}
             </p>)}
           </div> : null}
-          <DexterResponseBody content={dexterArtifactReferences(message.content, Boolean(message.recordTables?.length))} reasoning={reasoning} isStreaming={isStreamingMessage}>
+          <DexterResponseBody content={dexterArtifactReferences(message.content, Boolean(message.recordTables?.length))} reasoning={reasoning} activities={message.activities} isStreaming={isStreamingMessage}>
           {message.recordTables?.map(table => <DexterRecordTable key={table.id} table={table} />)}
           {message.emailAttachments?.length ? (
             <div className="mt-3 grid gap-2" aria-label={t("Email attachments")}>
@@ -1731,26 +1609,12 @@ function ConversationStream({
         })}
       </AnimatePresence>
 
-      {isWorking && !streamingMessageId && !pendingActionDecision ? (
+      {isWorking && !streamingMessageId && !pendingActionDecision && !recoveryStatus ? (
         <MessageScroller.Item className="min-w-0 shrink-0">
           <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4" role="status" aria-live="polite">
             <DexterBrandMark className="mt-1" />
             <div className="min-w-0 pt-2">
-              <p className="text-[12px] text-[var(--md-subtle)]">{t("Dexter is checking your connected workspace data...")}</p>
-              <div className="mt-3 flex gap-1.5" aria-hidden>
-                {[0, 1, 2].map((index) => (
-                  <motion.span
-                    key={index}
-                    className="size-1.5 rounded-full bg-[var(--md-accent)]"
-                    animate={{ opacity: [0.25, 1, 0.25] }}
-                    transition={{
-                      duration: 1.2,
-                      repeat: Infinity,
-                      delay: index * 0.16,
-                    }}
-                  />
-                ))}
-              </div>
+              <Shimmer className="text-[12px]">{t("Thinking…")}</Shimmer>
             </div>
           </div>
         </MessageScroller.Item>
@@ -1794,6 +1658,7 @@ function ConversationStream({
           </div>
         </MessageScroller.Item>
       ) : null}
+      {recoveryStatus ? <MessageScroller.Item className="min-w-0 shrink-0">{recoveryStatus}</MessageScroller.Item> : null}
     </MessageScroller.Content>
   )
 }
@@ -1846,20 +1711,6 @@ export function AgentDexterPage({
     id: initialConversationIdRef.current,
     version: 0,
   })
-  const taskAgents = useTaskAgents()
-  const taskAgent = taskAgents.agents.find(agent => agent.conversation_id === conversationIntentRef.current.id)
-  useTaskResultViewed(taskAgent, (activeConversation?.messages ?? []).map(message => persistedDexterMessageId(message) ?? message.id))
-  useEffect(() => {
-    if (!taskAgent?.message_id || activeConversation?.messages.some(message => persistedDexterMessageId(message) === taskAgent.message_id)) return
-    const intentVersion = conversationIntentRef.current.version
-    let cancelled = false
-    const isCurrent = () => !cancelled && conversationIntentRef.current.version === intentVersion
-    void getDexterConversation(taskAgent.conversation_id).then(conversation => {
-      if (isCurrent()) setActiveConversation(conversation)
-    }).catch(() => { if (isCurrent()) setError(t('The task result could not be loaded. Reopen the conversation to try again.')) })
-    return () => { cancelled = true }
-  }, [taskAgent?.conversation_id, taskAgent?.message_id, activeConversation?.id])
-
   const [isLoadingEarlierMessages, setIsLoadingEarlierMessages] = useState(false)
   const [earlierMessagesError, setEarlierMessagesError] = useState<string | null>(null)
   const [selectedResponseMessageIds, setSelectedResponseMessageIds] = useState<Record<string, string>>({})
@@ -1911,6 +1762,7 @@ export function AgentDexterPage({
   const taskHandoffRef = useRef(false)
   const homeHandoffConsumedRef = useRef(false)
   const [pendingHomePrompt, setPendingHomePrompt] = useState<string | null>(null)
+  const [pendingTodoHandoff, setPendingTodoHandoff] = useState<{ conversationId: string; prompt: string } | null>(null)
   const voice = useDexterVoice({
     conversationId: activeConversation?.id,
     onConversation: id => {
@@ -1971,6 +1823,23 @@ export function AgentDexterPage({
     setDexterMode("chat")
     setComposerValue(prompt)
   }, [])
+
+  useEffect(() => {
+    const handoff = takeDexterTodoHandoff()
+    if (!handoff || handoff.conversationId !== readDexterConversationIdFromLocation()) return
+    setDexterMode("chat")
+    setComposerValue(handoff.prompt)
+    setPendingTodoHandoff(handoff)
+  }, [])
+
+  useEffect(() => {
+    if (!pendingTodoHandoff || activeConversation?.id !== pendingTodoHandoff.conversationId || isLoadingConversation) return
+    setPendingTodoHandoff(null)
+    // If a previous request already reached the server, opening the chat must
+    // never send the same To Do request again.
+    if (shouldSendDexterTodoHandoff(pendingTodoHandoff.conversationId, activeConversation.id, activeConversation.messages.length, isLoadingConversation)) void submitPrompt(pendingTodoHandoff.prompt)
+    else setComposerValue("")
+  }, [pendingTodoHandoff, activeConversation?.id, activeConversation?.messages.length, isLoadingConversation])
 
   // A prompt written on Home arrives already composed. Restore its context
   // first and send on the following render, so the request carries the records
@@ -2235,35 +2104,53 @@ export function AgentDexterPage({
   function updateJumpToLatestVisibility(stream = streamRef.current) {
     if (!stream) return
 
-    const distanceFromLatest = Math.max(
-      0,
-      stream.scrollHeight - stream.scrollTop - stream.clientHeight,
-    )
-    const revealDistance = Math.max(
-      DEXTER_JUMP_TO_LATEST_DISTANCE,
-      stream.clientHeight * 0.2,
-    )
-    setShowJumpToLatest(distanceFromLatest > revealDistance)
+    const content = stream.querySelector('[role="log"]')
+    // The scroller adds a spacer to anchor replies. Neither it nor the
+    // composer's clearance is unread content, especially during voice updates.
+    const latestItem = content ? Array.from(content.children).reverse().find(item =>
+      item instanceof HTMLElement && !item.hasAttribute("data-message-scroller-spacer") && !item.hidden,
+    ) : null
+    const viewport = stream.getBoundingClientRect()
+    const visibleBottom = Math.min(viewport.bottom, composerRef.current?.getBoundingClientRect().top ?? viewport.bottom)
+    setShowJumpToLatest(shouldShowDexterJumpToLatest({
+      latestBottom: latestItem?.getBoundingClientRect().bottom ?? null,
+      visibleBottom,
+      visibleHeight: Math.max(0, visibleBottom - viewport.top),
+      remainingScroll: stream.scrollHeight - stream.scrollTop - stream.clientHeight,
+    }))
   }
 
   useEffect(() => {
     const stream = streamRef.current
     const content = stream?.querySelector('[role="log"]')
+    setShowJumpToLatest(false)
     if (!stream || !content) return
-    // Artifacts can grow below the reading position without causing a scroll
-    // event. Keep the explicit jump control available without moving the view.
-    let frame = 0
-    const observer = new ResizeObserver(() => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => updateJumpToLatestVisibility(stream))
-    })
+    // Wait for auto-follow and composer/voice layout to settle before revealing
+    // navigation. A transient frame must not flash a floating control.
+    let timer = 0
+    const update = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => updateJumpToLatestVisibility(stream), 160)
+    }
+    const observer = new ResizeObserver(update)
+    const mutations = new MutationObserver(update)
     observer.observe(content)
     observer.observe(stream)
-    return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+    if (composerRef.current) observer.observe(composerRef.current)
+    mutations.observe(content, { childList: true, subtree: true, characterData: true })
+    stream.addEventListener("scroll", update)
+    update()
+    return () => {
+      observer.disconnect()
+      mutations.disconnect()
+      stream.removeEventListener("scroll", update)
+      window.clearTimeout(timer)
+    }
   }, [stage, conversationRenderKey])
 
   function handleConversationScroll(event: React.UIEvent<HTMLDivElement>) {
-    updateJumpToLatestVisibility(event.currentTarget)
+    // Hide immediately when caught up; the settled observer reveals it later.
+    if (event.currentTarget.scrollHeight - event.currentTarget.scrollTop - event.currentTarget.clientHeight < 2) setShowJumpToLatest(false)
   }
 
   function toggleAttachment(id: string) {
@@ -2625,22 +2512,6 @@ export function AgentDexterPage({
     }
     promptSubmissionInFlightRef.current = true
 
-    if (taskAgent && dexterMode === 'chat') {
-      const taskReferences=composerMessageAttachments()
-      if (taskReferences.some(item=>['uploaded_document','email_attachment'].includes(item.type))) {
-        setError(t('This background follow-up currently accepts text and record links. Remove the attached items before sending.'))
-        promptSubmissionInFlightRef.current = false
-        return
-      }
-      setIsSending(true); setError(null)
-      try {
-        await controlTaskAgent(taskAgent, 'followup', message + (taskReferences.length ? `\n\nUser-selected reference data: ${JSON.stringify(taskReferences)}` : ''))
-        setComposerValue('')
-      } catch(error) { setError(error instanceof Error ? error.message : t('Your follow-up could not be queued. Your text is kept.')) }
-      finally { setIsSending(false); promptSubmissionInFlightRef.current = false }
-      return
-    }
-
     if (dexterMode === "watch") {
       const messageAttachments = composerMessageAttachments()
       const createdAt = new Date().toISOString()
@@ -2890,6 +2761,11 @@ export function AgentDexterPage({
           })
 
         },
+        onActivity: (activity) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? { ...current, messages: current.messages.map(item =>
+            item.id === assistantStreamMessage.id ? { ...item, activities: mergeDexterActivity(item.activities, activity) } : item) } : current)
+        },
         onReasoningDelta: (delta) => {
           if (conversationIntentRef.current.version !== submissionIntent.version) return
           liveReasoningRef.current += delta
@@ -2955,7 +2831,7 @@ export function AgentDexterPage({
       setActiveConversation((current) => {
         const base = current ?? pendingConversation
         const streamingMessage = base.messages.find((item) => item.id === assistantStreamMessage.id)
-        if (!streamingMessage?.content.trim() && !liveReasoningRef.current.trim()) {
+        if (!streamingMessage?.content.trim() && !liveReasoningRef.current.trim() && !streamingMessage?.activities?.length) {
           return {
             ...base,
             messages: base.messages.filter((item) => item.id !== assistantStreamMessage.id),
@@ -2971,6 +2847,7 @@ export function AgentDexterPage({
           ),
         }
       })
+      if (requestError instanceof DexterApiError && requestError.retrySafe) forgetRequest()
       setFailedPrompt({
         input: requestInput,
         previousConversation,
@@ -3001,14 +2878,6 @@ export function AgentDexterPage({
   }
 
   async function retryPrompt(userMessage: DexterMessage) {
-    if (taskAgent) {
-      if (isWorking || taskAgent.status==='working' || promptSubmissionInFlightRef.current) return
-      promptSubmissionInFlightRef.current=true;setIsSending(true);setError(null)
-      try {await controlTaskAgent(taskAgent,'followup',userMessage.content)}
-      catch(error){setError(error instanceof Error?error.message:t('This task could not be retried.'))}
-      finally{promptSubmissionInFlightRef.current=false;setIsSending(false)}
-      return
-    }
     const retryMessageId = persistedDexterMessageId(userMessage)
     if (
       !activeConversation?.id ||
@@ -3128,6 +2997,11 @@ export function AgentDexterPage({
             }
           })
         },
+        onActivity: (activity) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
+          setActiveConversation(current => current ? { ...current, messages: current.messages.map(item =>
+            item.id === assistantStreamMessage.id ? { ...item, activities: mergeDexterActivity(item.activities, activity) } : item) } : current)
+        },
         onReasoningDelta: (delta) => {
           if (conversationIntentRef.current.version !== submissionIntent.version) return
           liveReasoningRef.current += delta
@@ -3200,7 +3074,7 @@ export function AgentDexterPage({
       setActiveConversation((current) => {
         const base = current ?? previousConversation
         const streamingMessage = base.messages.find((item) => item.id === assistantStreamMessage.id)
-        if (!streamingMessage?.content.trim() && !liveReasoningRef.current.trim()) {
+        if (!streamingMessage?.content.trim() && !liveReasoningRef.current.trim() && !streamingMessage?.activities?.length) {
           return previousConversation
         }
 
@@ -3221,6 +3095,7 @@ export function AgentDexterPage({
         }
         return next
       })
+      if (requestError instanceof DexterApiError && requestError.retrySafe) forgetRequest()
       setError(requestError instanceof Error ? requestError.message : t("Dexter could not answer this request."))
     } finally {
       if (activePromptAbortControllerRef.current !== requestController) return
@@ -3839,9 +3714,6 @@ export function AgentDexterPage({
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ ...mdMotion.page, delay: 0.12 }}
                     >
-                      {taskAgent ? <div className="mx-auto mb-4 flex w-full max-w-[860px] flex-wrap items-center gap-3 px-5" aria-label={t('Task agent')} data-task-agent-id={taskAgent.id}>
-                        <TaskAgentIcon icon={taskAgent.icon}/><div className="min-w-0 flex-1"><p className="text-[13px] font-medium text-[var(--md-ink)]">{taskAgent.name}<span className="ms-2 font-normal text-[var(--md-text)]">{taskAgent.title}</span></p>{(['working','queued'].includes(taskAgent.status) || (taskAgent.status==='failed' && !taskAgent.message_id))?<p className="mt-1 text-[12px] text-[var(--md-subtle)]">{taskAgent.summary}</p>:null}</div><TaskAgentControls agent={taskAgent}/>
-                      </div> : null}
                       {activeConversation?.hasOlderMessages || earlierMessagesError ? (
                         <div className="mx-auto flex w-full max-w-[860px] flex-col items-center gap-2 px-5 pb-2 pt-1">
                           {earlierMessagesError ? <p className="text-center text-[12px] text-[var(--md-red)]" role="status">{t(earlierMessagesError)}</p> : null}
@@ -3867,6 +3739,10 @@ export function AgentDexterPage({
                         selectedResponseMessageIds={selectedResponseMessageIds}
                         retryingMessageId={retryingMessageId}
                         error={error}
+                        recoveryStatus={recoveryNotice ? <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--md-text-muted)]" role="status">
+                          <p>{t(recoveryNotice)}</p>
+                          {recoveryNeedsCheck && recoveryRef.current ? <Button variant="ghost" size="sm" onClick={() => { if (recoveryRef.current) void recoverRequest(recoveryRef.current) }}>{t("Check request")}</Button> : null}
+                        </div> : null}
                         pendingActionDecision={pendingActionDecision}
                         actionDecisionError={actionDecisionError}
                         onActionDecision={(action, decision) => void handleActionDecision(action, decision)}
@@ -3905,11 +3781,6 @@ export function AgentDexterPage({
                           } : current)
                         }}
                       />
-                      {recoveryNotice ? <div className="mx-auto flex w-full max-w-[860px] flex-col items-start gap-2 px-5 py-2" role="status">
-                        {recoveryRef.current ? <p className="text-[12px] text-[var(--md-text)]">{recoveryRef.current.prompt}</p> : null}
-                        <p className="text-[12px] text-[var(--md-text-muted)]">{t(recoveryNotice)}</p>
-                        {recoveryNeedsCheck && recoveryRef.current ? <Button variant="ghost" size="sm" onClick={() => { if (recoveryRef.current) void recoverRequest(recoveryRef.current) }}>Check request</Button> : null}
-                      </div> : null}
                     </MotionMessageScrollerViewport>
 
                     {trailMessages.length > 5 ? (
@@ -3935,19 +3806,16 @@ export function AgentDexterPage({
                         opacity: 0,
                         y: 14,
                         scale: 0.9,
-                        filter: "blur(8px)",
                       }}
                       animate={{
                         opacity: 1,
                         y: 0,
                         scale: 1,
-                        filter: "blur(0px)",
                       }}
                       exit={shouldReduceMotion ? undefined : {
                         opacity: 0,
                         y: 9,
                         scale: 0.92,
-                        filter: "blur(6px)",
                       }}
                       transition={reduceMotion(shouldReduceMotion, mdMotion.enter)}
                     >
@@ -3980,8 +3848,6 @@ export function AgentDexterPage({
                       <DexterVoiceLimitNotice visible={voiceLimitReached} />
                       <DexterPromptComposer
                         compact
-                        taskAgentName={taskAgent?.name}
-                        placeholder={taskAgent ? "Add context, @ a record, or ask a follow-up…" : undefined}
                         value={composerValue}
                         specialists={defaultDexterSpecialists}
                         selectedSpecialistId={selectedSpecialistId}
@@ -4024,14 +3890,14 @@ export function AgentDexterPage({
                         onStartVoice={() => { setStage("conversation"); void voice.start() }}
                         voiceActive={voice.active}
                         voicePanel={showVoicePanel ? <DexterVoicePanel voice={voice} /> : undefined}
-                        isSending={isWorking || recoveryNeedsCheck || taskAgent?.status==='working'}
+                        isSending={isWorking || recoveryNeedsCheck}
                   isUploading={isUploadingDocument}
                   uploadError={uploadError}
                   hasFailedUploads={uploadingDocuments.length > 0 && !isUploadingDocument}
                   onRetryUpload={() => void handleDocumentUpload([...failedUploadFiles.current])}
                         canUpdateRequest={isSending && Boolean(activeRunId)}
                         updatePending={Boolean(isSending && steering && ["pending", "claimed", "submitted", "queued"].includes(steering.status))}
-                        updateStatus={taskAgent?.status==='working' ? 'Your agent is working in the background. You can send a follow-up when the result is ready.' : steeringStatusText}
+                        updateStatus={steeringStatusText}
                         className="shadow-[0_0_0_1px_var(--md-accent-a42),0_16px_38px_rgba(42,52,50,0.16)]"
                       />
                     </motion.div>
