@@ -43,6 +43,8 @@ import {
   approveFinanceConfigurationRun,
   createFinanceConfigurationRun,
   getErpNextCompanies,
+  getErpNextAccountCatalog,
+  getSage50NominalCatalog,
   getFinanceSetup,
   processFinanceIntegrationQueue,
   saveFinanceAdministration,
@@ -52,6 +54,7 @@ import {
   type FinanceSetup,
 } from "@/lib/finance-subledger-api"
 import { toast } from "sonner"
+import { suggestNominalAccount, type NominalMappingTarget } from "@/lib/nominal-mapping-suggestions"
 import { CustomsReadinessReview } from "@/components/multideck/customs-readiness-review"
 import { Surface, SectionHeader } from "@/components/multideck/surface"
 import {
@@ -63,6 +66,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import { DataTable } from "@/components/multideck/data-table"
+import { FinanceNominalStructurePanel } from "./finance-nominal-structure-panel"
+import { FinanceMigrationPanel } from "./finance-migration-panel"
+import { getFinanceCash, type FinanceCashTransaction } from "@/lib/finance-subledger-api"
 import erpNextLogo from "@/assets/integrations/erpnext.svg"
 import xeroLogo from "@/assets/integrations/xero.svg"
 import quickBooksLogo from "@/assets/integrations/quickbooks.svg"
@@ -516,9 +523,11 @@ function buildDraft(
   const existingNominals = administration.nominalAccounts.filter(
     (item) => item.FINNom_LegalEntityID === id,
   )
+  const preferredTemplate = administration.chartTemplateAccounts.some(
+    (item) => item.FINChartTemplate?.FINChartTemplate_Code === "freight-accrual-v1",
+  ) ? "freight-accrual-v1" : "freight-forwarder-v1"
   const templateNominals = administration.chartTemplateAccounts.filter(
-    (item) =>
-      item.FINChartTemplate?.FINChartTemplate_Code === "freight-forwarder-v1",
+    (item) => item.FINChartTemplate?.FINChartTemplate_Code === preferredTemplate,
   )
   const existingCurrencies = administration.currencies.filter(
     (item) => item.FINCurSet_LegalEntityID === id,
@@ -567,6 +576,7 @@ function buildDraft(
       effectiveFrom: localisation?.FINLocSet_EffectiveFrom || today(),
     },
     controls: {
+      bankStatementImportProfiles: text(administrationJson.bankStatementImportProfiles, "[]"),
       nativeLedgerEnabled: settings?.FINSET_NativeLedgerEnabled ?? true,
       externalMirrorModeCode:
         settings?.FINSET_ExternalMirrorModeCode || "optional",
@@ -714,6 +724,7 @@ function buildDraft(
           code: item.FINNom_Code,
           name: item.FINNom_Name,
           accountTypeCode: item.FINNom_AccountTypeCode,
+          reportCategoryCode: item.FINNom_ReportCategoryCode || "",
           externalMappingHint: item.FINNom_ExternalMappingHint || "",
           isControlAccount: item.FINNom_IsControlAccount,
           controlTypeCode: item.FINNom_ControlTypeCode || "",
@@ -725,7 +736,8 @@ function buildDraft(
           code: item.FINChartTemplateAccount_Code,
           name: item.FINChartTemplateAccount_Name,
           accountTypeCode: item.FINChartTemplateAccount_TypeCode,
-          externalMappingHint: item.FINChartTemplateAccount_Code,
+          reportCategoryCode: item.FINChartTemplateAccount_CategoryCode,
+          externalMappingHint: "",
           isControlAccount: item.FINChartTemplateAccount_IsControlAccount,
           controlTypeCode: item.FINChartTemplateAccount_IsControlAccount
             ? item.FINChartTemplateAccount_Name.toLowerCase().replaceAll(
@@ -1020,6 +1032,9 @@ export function FinanceSetupPage({
       setProviderForm((current) => ({
         ...current,
         legalEntityId: entityId,
+        chartTemplateCode: result.administration.chartTemplateAccounts.some(
+          (item) => item.FINChartTemplate?.FINChartTemplate_Code === "freight-accrual-v1",
+        ) ? "freight-accrual-v1" : current.chartTemplateCode,
         countryCode:
           entity?.LegalEntity_CountryCode || nextDraft.organisation.countryCode,
         taxRegistrationNo: entity?.LegalEntity_VATNumber || "",
@@ -1052,6 +1067,15 @@ export function FinanceSetupPage({
   }, [load])
   const tab = initialTab
   const bankAccountsSurface = tab === "banks"
+  const statementProfiles: Array<Record<string, string>> = (() => {
+    try {
+      const value = JSON.parse(String(draft?.controls.bankStatementImportProfiles || "[]"))
+      return Array.isArray(value) ? value.filter(item => item && typeof item === "object" && typeof item.id === "string") : []
+    } catch { return [] }
+  })()
+  const updateStatementProfile = (id: string, patch: Record<string, string>) => {
+    setDraft(current => current ? { ...current, controls: { ...current.controls, bankStatementImportProfiles: JSON.stringify(statementProfiles.map(profile => profile.id === id ? { ...profile, ...patch } : profile)) } } : current)
+  }
   useEffect(() => {
     document.title = `${t(financeSetupTitleByTab[tab])} · Finance · Multideck`
   }, [tab, t])
@@ -1482,6 +1506,7 @@ export function FinanceSetupPage({
         ) : null}
         {tab === "banks" ? (
           <BanksTab
+            key={selectedEntityId}
             setup={setup}
             draft={draft}
             patchRow={patchRow}
@@ -1491,6 +1516,7 @@ export function FinanceSetupPage({
           />
         ) : null}
         {tab === "ledger" ? (
+          <>
           <LedgerTab
             setup={setup}
             draft={draft}
@@ -1500,6 +1526,9 @@ export function FinanceSetupPage({
             setDraft={setDraft}
             t={t}
           />
+          <FinanceNominalStructurePanel key={selectedEntityId} entityId={selectedEntityId} accounts={setup.administration.nominalAccounts} chartDirty={Boolean(dirty)} />
+          <FinanceMigrationPanel key={`migration-${selectedEntityId}`} entityId={selectedEntityId} baseCurrency={selectedEntity?.LegalEntity_BaseCurrencyCodeSnapshot || ""} chartDirty={Boolean(dirty)} />
+          </>
         ) : null}
         {tab === "tax" ? (
           <TaxTab
@@ -1528,6 +1557,7 @@ export function FinanceSetupPage({
           <MappingsTab
             setup={setup}
             draft={draft}
+            connections={entityConnections.filter((item) => item.ACCIC_StatusCode === "active")}
             connection={activeConnection}
             patchRow={patchRow}
             addRow={addRow}
@@ -1552,6 +1582,31 @@ export function FinanceSetupPage({
             t={t}
           />
         ) : null}
+
+        {tab === "controls" && <FinancePanel
+          title={t("Bank statement imports")}
+          description={t("Bank-specific import profiles for this legal entity only. Review is always required; importing must not create ledger postings.")}
+          action={<Button type="button" variant="outline" onClick={() => setControls({ bankStatementImportProfiles: JSON.stringify([...statementProfiles, { id: crypto.randomUUID(), name: "New bank format", bankId: "", format: "excel", dateFormat: "DD/MM/YYYY", headerRow: "1", dateColumn: "Date", descriptionColumn: "Description", debitColumn: "Money out", creditColumn: "Money in", referenceColumn: "Reference", balanceColumn: "Balance", pdfNotes: "" }]) })}>{t("Add bank format")}</Button>}
+        >
+          <div className="divide-y divide-[var(--md-line)]">
+            {!statementProfiles.length && <p className="p-4 text-[13px] text-[var(--md-subtle)]">{t("Add a separate profile for each bank export layout. Different tenants can use different banks and formats.")}</p>}
+            {statementProfiles.map(profile => <div key={profile.id} className="space-y-3 p-4">
+              <div className="flex items-center justify-between gap-3"><p className="text-[13px] font-medium">{profile.name}</p><Button type="button" variant="ghost" aria-label={`${t("Remove format")} ${profile.name}`} onClick={() => setControls({ bankStatementImportProfiles: JSON.stringify(statementProfiles.filter(item => item.id !== profile.id)) })}>{t("Remove")}</Button></div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <Field id={`statement-name-${profile.id}`} label={t("Format name")} value={profile.name || ""} onChange={name => updateStatementProfile(profile.id, { name })} />
+                <SelectField id={`statement-bank-${profile.id}`} label={t("Bank account")} value={profile.bankId || ""} onChange={bankId => updateStatementProfile(profile.id, { bankId })} options={draft.banks.filter(bank => bank.id).map(bank => ({ value: text(bank.id), label: `${text(bank.code)} · ${text(bank.name)}` }))} />
+                <SelectField id={`statement-format-${profile.id}`} label={t("File format")} value={profile.format || "excel"} onChange={format => updateStatementProfile(profile.id, { format })} options={[{ value: "excel", label: "Excel (.xlsx)" }, { value: "csv", label: "CSV" }, { value: "pdf", label: "PDF" }]} />
+                <SelectField id={`statement-date-format-${profile.id}`} label={t("Date format")} value={profile.dateFormat || "DD/MM/YYYY"} onChange={dateFormat => updateStatementProfile(profile.id, { dateFormat })} options={["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"].map(value => ({ value, label: value }))} />
+                {profile.format !== "pdf" && <>
+                  <Field id={`statement-header-${profile.id}`} label={t("Header row")} type="number" value={profile.headerRow || "1"} onChange={headerRow => updateStatementProfile(profile.id, { headerRow })} />
+                  {([["dateColumn", "Date column"], ["descriptionColumn", "Description column"], ["debitColumn", "Money out column"], ["creditColumn", "Money in column"], ["referenceColumn", "Reference column"], ["balanceColumn", "Balance column"]] as const).map(([field, label]) => <Field key={field} id={`statement-${field}-${profile.id}`} label={t(label)} value={profile[field] || ""} onChange={value => updateStatementProfile(profile.id, { [field]: value })} />)}
+                </>}
+              </div>
+              {profile.format === "pdf" && <div className="space-y-1"><FieldLabel htmlFor={`statement-pdf-${profile.id}`}>{t("PDF layout notes")}</FieldLabel><textarea id={`statement-pdf-${profile.id}`} className="min-h-24 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] p-3 text-[13px]" value={profile.pdfNotes || ""} onChange={event => updateStatementProfile(profile.id, { pdfNotes: event.target.value })} placeholder={t("Describe date, transaction, money in/out and balance columns, repeated page headers and debit/credit markers.")} /></div>}
+              <p className="text-[12px] text-[var(--md-subtle)]">{t("Configuration only. Statement upload, extraction and reconciliation are not yet available. These profiles do not enable automatic posting.")}</p>
+            </div>)}
+          </div>
+        </FinancePanel>}
 
         <div
           className={`${dirty ? "sticky bottom-0 z-20" : ""} flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-4 py-3 shadow-[var(--md-shadow-soft)]`}
@@ -2426,6 +2481,24 @@ function BanksTab({
   removeRow,
   t,
 }: TabEditProps) {
+  const [selectedBank, setSelectedBank] = useState<string | null>(null)
+  const [bankView, setBankView] = useState<"transactions" | "settings">("transactions")
+  const [cash, setCash] = useState<FinanceCashTransaction[]>([])
+  const [cashLoading, setCashLoading] = useState(false)
+  const [cashError, setCashError] = useState("")
+  const [cashRefresh, setCashRefresh] = useState(0)
+  const selected = (draft.banks as DraftRow[]).find(row => rowKey(row) === selectedBank)
+  useEffect(() => {
+    if (!selectedBank || bankView !== "transactions") return
+    let active = true
+    setCashLoading(true); setCashError(""); setCash([])
+    void getFinanceCash().then(result => { if (active) setCash(result.cashTransactions) })
+      .catch(error => { if (active) setCashError(error instanceof Error ? error.message : "Could not load bank transactions.") })
+      .finally(() => { if (active) setCashLoading(false) })
+    return () => { active = false }
+  }, [selectedBank, bankView, cashRefresh])
+  const bankTransactions = selected?.id ? cash.filter(row => row.FINCash_BankAccountID === selected.id).sort((a,b) => b.FINCash_TransactionDate.localeCompare(a.FINCash_TransactionDate)) : []
+  const bankMoney = (value: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: text(selected?.currencyCode, "GBP") }).format(value)
   const activeCurrencies = activeRows(draft.currencies)
     .map((row) => text(row.code))
     .filter(Boolean)
@@ -2435,18 +2508,35 @@ function BanksTab({
       (text(row.accountTypeCode).toLowerCase().includes("bank") ||
         text(row.controlTypeCode).includes("bank")),
   )
+  if (selected && bankView === "transactions") return (
+    <FinancePanel title={text(selected.name)} description={text(selected.code)} action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setSelectedBank(null)}>{t("Back to banks")}</Button><Button variant="outline" onClick={() => setBankView("settings")}>{t("Bank settings")}</Button><Button variant="outline" disabled={cashLoading} onClick={() => setCashRefresh(value => value + 1)}>{t("Refresh")}</Button></div>}>
+      <div className="space-y-4 p-4">
+        <p className="text-[13px] text-[var(--md-text)]">{t("Recent cashbook transactions")} · {text(selected.currencyCode)}</p>
+        {cashError ? <div role="alert"><p>{t(cashError)}</p><Button variant="outline" onClick={() => setCashRefresh(value => value + 1)}>{t("Try again")}</Button></div> : cashLoading ? <DotGridLoader label="Loading bank transactions" /> : <DataTable rows={bankTransactions} getRowKey={row => row.FINCash_ID} ariaLabel={t("Bank transactions")} minimumWidth={760} columns={[
+          { id: "date", label: t("Date"), kind: "date", width: 110, cell: row => row.FINCash_TransactionDate },
+          { id: "number", label: t("Transaction"), width: 140, cell: row => row.FINCash_Number || "—" },
+          { id: "reference", label: t("Reference"), cell: row => row.FINCash_Reference || "—" },
+          { id: "party", label: t("Name"), cell: row => row.partyName },
+          { id: "in", label: t("Money in"), kind: "number", width: 120, cell: row => row.FINCash_TypeCode === "customer_receipt" ? bankMoney(row.FINCash_Amount) : "—" },
+          { id: "out", label: t("Money out"), kind: "number", width: 120, cell: row => row.FINCash_TypeCode === "supplier_payment" ? bankMoney(row.FINCash_Amount) : "—" },
+          { id: "status", label: t("Posting status"), cell: row => row.FINCash_NativePostingStatusCode },
+        ]} emptyState={<p>{t("No cashbook transactions for this bank account.")}</p>} />}
+      </div>
+    </FinancePanel>
+  )
   return (
     <FinancePanel
-      title={t("Bank accounts")}
+      title={selected ? text(selected.name) : t("Bank accounts")}
       description={t(
         "Enter only the last four characters of bank identifiers.",
       )}
       action={
-        <Button
+        <div className="flex gap-2">{bankView === "settings" && <Button variant="outline" onClick={() => setBankView("transactions")}>{t(selected ? "Back to transactions" : "Back to banks")}</Button>}<Button
           type="button"
           size="sm"
           variant="outline"
-          onClick={() =>
+          onClick={() => {
+            setSelectedBank(null); setBankView("settings")
             addRow("banks", {
               code: `BANK-${draft.banks.length + 1}`,
               name: "New bank account",
@@ -2464,16 +2554,23 @@ function BanksTab({
               allowPayments: true,
               isActive: true,
             })
-          }
+          }}
         >
           <Plus className="size-4" />
           {t("Add bank account")}
-        </Button>
+        </Button></div>
       }
     >
-      <div className="divide-y divide-[var(--md-line)]">
+      {!selected && bankView === "transactions" ? <div className="p-4"><DataTable rows={draft.banks as DraftRow[]} getRowKey={rowKey} ariaLabel={t("Bank accounts")} minimumWidth={760} columns={[
+        { id: "code", label: t("Code"), width: 140, cell: row => <Button variant="ghost" onClick={() => { setSelectedBank(rowKey(row)); setBankView(row.id ? "transactions" : "settings") }}>{text(row.code, t("New bank"))}</Button> },
+        { id: "name", label: t("Account name"), cell: row => text(row.name) },
+        { id: "bank", label: t("Bank name"), cell: row => text(row.institutionName) },
+        { id: "currency", label: t("Currency"), width: 100, cell: row => text(row.currencyCode) },
+        { id: "ending", label: t("Account ending"), width: 130, cell: row => text(row.accountNumberMasked) },
+        { id: "status", label: t("Status"), width: 100, cell: row => t(row.isActive === false ? "Disabled" : "Active") },
+      ]} emptyState={<p>{t("Add a bank account to get started.")}</p>} /></div> : <div className="divide-y divide-[var(--md-line)]">
         {draft.banks.length ? (
-          (draft.banks as DraftRow[]).map((row) => (
+          (draft.banks as DraftRow[]).filter(row => !selected || rowKey(row) === selectedBank).map((row) => (
             <RowShell
               key={rowKey(row)}
               persisted={Boolean(row.id)}
@@ -2652,7 +2749,7 @@ function BanksTab({
             </p>
           </div>
         )}
-      </div>
+      </div>}
     </FinancePanel>
   )
 }
@@ -2671,8 +2768,12 @@ function LedgerTab({
   >
 }) {
   const [search, setSearch] = useState("")
+  const [statementView, setStatementView] = useState("all")
+  const [showInactiveAccounts, setShowInactiveAccounts] = useState(false)
   const visibleAccounts = (draft.nominalAccounts as DraftRow[]).filter((row) =>
-    [row.code, row.name, row.accountTypeCode, row.externalMappingHint].some(
+    (showInactiveAccounts || row.isActive !== false) &&
+    (statementView === "all" || (statementView === "bs" ? ["asset", "liability", "equity"].includes(text(row.reportCategoryCode)) : statementView === "pl" ? ["income", "direct_cost", "expense", "finance"].includes(text(row.reportCategoryCode)) : !text(row.reportCategoryCode))) &&
+    [row.code, row.name, row.accountTypeCode, row.reportCategoryCode, row.externalMappingHint].some(
       (value) =>
         text(value).toLowerCase().includes(search.trim().toLowerCase()),
     ),
@@ -2694,7 +2795,8 @@ function LedgerTab({
           code: item.FINChartTemplateAccount_Code,
           name: item.FINChartTemplateAccount_Name,
           accountTypeCode: item.FINChartTemplateAccount_TypeCode,
-          externalMappingHint: item.FINChartTemplateAccount_Code,
+          reportCategoryCode: item.FINChartTemplateAccount_CategoryCode,
+          externalMappingHint: "",
           isControlAccount: item.FINChartTemplateAccount_IsControlAccount,
           controlTypeCode: item.FINChartTemplateAccount_IsControlAccount
             ? item.FINChartTemplateAccount_Name.toLowerCase().replaceAll(
@@ -2714,7 +2816,7 @@ function LedgerTab({
     <FinancePanel
       title={t("Chart of accounts")}
       description={t(
-        "Accounts system records are never renamed or deleted automatically. Control accounts do not allow manual posting.",
+        "Accounts system records are never renamed or deleted automatically. Map posting accounts on the Mappings tab. Control accounts do not allow manual posting.",
       )}
       action={
         <div className="flex flex-wrap gap-2">
@@ -2735,10 +2837,12 @@ function LedgerTab({
             variant="outline"
             onClick={() => {
               setSearch("")
-              loadTemplate("freight-forwarder-v1")
+              loadTemplate(setup.administration.chartTemplateAccounts.some(
+                (item) => item.FINChartTemplate?.FINChartTemplate_Code === "freight-accrual-v1",
+              ) ? "freight-accrual-v1" : "freight-forwarder-v1")
             }}
           >
-            {t("Add freight chart")}
+            {t("Add freight actual/accrued chart")}
           </Button>
           <Button
             type="button"
@@ -2777,6 +2881,8 @@ function LedgerTab({
             placeholder={t("Search by account code, name or type")}
           />
         </div>
+        <Select value={statementView} onValueChange={setStatementView}><SelectTrigger aria-label={t("Financial statement")} className="w-full sm:w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All accounts")}</SelectItem><SelectItem value="bs">{t("Balance sheet")}</SelectItem><SelectItem value="pl">{t("Profit and loss")}</SelectItem><SelectItem value="unclassified">{t("Category from type")}</SelectItem></SelectContent></Select>
+        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={showInactiveAccounts} onChange={(event) => setShowInactiveAccounts(event.target.checked)} />{t("Show inactive accounts")}</label>
         <p
           role="status"
           className="text-[12px] tabular-nums text-[var(--md-subtle)]"
@@ -2805,86 +2911,30 @@ function LedgerTab({
             ) : null}
           </div>
         ) : null}
-        {visibleAccounts.map((row) => (
-          <RowShell
-            compact
-            key={rowKey(row)}
-            persisted={Boolean(row.id)}
-            title={`${text(row.code, t("New account"))} · ${text(row.name)}`}
-            active={row.isActive !== false}
-            onRemove={() => removeRow("nominalAccounts", row)}
-          >
-            <div className="grid items-end gap-3 @min-[420px]/panel:grid-cols-2 @min-[920px]/panel:grid-cols-[minmax(64px,0.5fr)_minmax(160px,1.6fr)_minmax(130px,1.1fr)_minmax(90px,0.8fr)_76px_76px]">
-              <Field
-                id={`nominal-code-${rowKey(row)}`}
-                label={t("Account code")}
-                value={text(row.code)}
-                onChange={(code) => patchRow("nominalAccounts", row, { code })}
-                ltr
-              />
-              <Field
-                id={`nominal-name-${rowKey(row)}`}
-                label={t("Account name")}
-                value={text(row.name)}
-                onChange={(name) => patchRow("nominalAccounts", row, { name })}
-              />
-              <SelectField
-                id={`nominal-type-${rowKey(row)}`}
-                label={t("Account type")}
-                value={text(row.accountTypeCode, "Expense Account")}
-                onChange={(accountTypeCode) =>
-                  patchRow("nominalAccounts", row, { accountTypeCode })
-                }
-                options={[
-                  "Bank",
-                  "Receivable",
-                  "Payable",
-                  "Tax",
-                  "Current Asset",
-                  "Fixed Asset",
-                  "Current Liability",
-                  "Equity",
-                  "Income Account",
-                  "Cost of Goods Sold",
-                  "Expense Account",
-                ].map((value) => ({ value, label: t(value) }))}
-              />
-              <Field
-                id={`nominal-map-${rowKey(row)}`}
-                label={t("Accounts system mapping hint")}
-                value={text(row.externalMappingHint)}
-                onChange={(externalMappingHint) =>
-                  patchRow("nominalAccounts", row, { externalMappingHint })
-                }
-                ltr
-              />
-              <label className="flex min-h-8 items-center gap-2 self-end text-[12px] text-[var(--md-text)] @min-[920px]/panel:flex-col-reverse @min-[920px]/panel:items-start @min-[920px]/panel:gap-2">
-                <Switch
-                  checked={bool(row.isControlAccount)}
-                  onCheckedChange={(isControlAccount) =>
-                    patchRow("nominalAccounts", row, {
-                      isControlAccount,
-                      allowManualPosting: isControlAccount
-                        ? false
-                        : row.allowManualPosting,
-                    })
-                  }
-                />
-                {t("Control account")}
-              </label>
-              <label className="flex min-h-8 items-center gap-2 self-end text-[12px] text-[var(--md-text)] @min-[920px]/panel:flex-col-reverse @min-[920px]/panel:items-start @min-[920px]/panel:gap-2">
-                <Switch
-                  checked={bool(row.allowManualPosting, true)}
-                  disabled={bool(row.isControlAccount)}
-                  onCheckedChange={(allowManualPosting) =>
-                    patchRow("nominalAccounts", row, { allowManualPosting })
-                  }
-                />
-                {t("Manual posting")}
-              </label>
-            </div>
-          </RowShell>
-        ))}
+        {visibleAccounts.length > 0 && <div className="max-h-[70vh] overflow-auto overscroll-none" tabIndex={0} role="region" aria-label={t("Chart of accounts")}>
+          <table className="w-full min-w-[1160px] table-fixed text-[13px]">
+            <caption className="sr-only">{t("Chart of accounts")}</caption>
+            <colgroup><col className="w-[11%]" /><col className="w-[26%]" /><col className="w-[19%]" /><col className="w-[20%]" /><col className="w-[8%]" /><col className="w-[8%]" /><col className="w-[8%]" /></colgroup>
+            <thead className="sticky top-0 z-10 bg-[var(--md-surface-soft)] text-[var(--md-text)] shadow-[var(--md-stroke-bottom)]">
+              <tr>{["Account code", "Account name", "Account type", "Report category", "Control account", "Manual posting", "Actions"].map(label => <th key={label} scope="col" className="px-3 py-2 text-left text-[12px] font-medium">{t(label)}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--md-line)]">
+              {visibleAccounts.map(row => <tr key={rowKey(row)} className={row.isActive === false ? "bg-[var(--md-surface-soft)]" : ""}>
+                <td className="px-3 py-2 [&_label]:sr-only"><Field id={`nominal-code-${rowKey(row)}`} label={t("Account code")} value={text(row.code)} onChange={code => patchRow("nominalAccounts", row, { code })} ltr /></td>
+                <td className="px-3 py-2 [&_label]:sr-only"><Field id={`nominal-name-${rowKey(row)}`} label={t("Account name")} value={text(row.name)} onChange={name => patchRow("nominalAccounts", row, { name })} /></td>
+                <td className="px-3 py-2 [&_label]:sr-only"><SelectField id={`nominal-type-${rowKey(row)}`} label={t("Account type")} value={text(row.accountTypeCode, "Expense Account")} onChange={accountTypeCode => patchRow("nominalAccounts", row, { accountTypeCode })} options={["Bank", "Receivable", "Payable", "Tax", "Current Asset", "Fixed Asset", "Current Liability", "Equity", "Income Account", "Cost of Goods Sold", "Expense Account"].map(value => ({ value, label: t(value) }))} /></td>
+                <td className="px-3 py-2 [&_label]:sr-only"><SelectField id={`nominal-category-${rowKey(row)}`} label={t("Report category")} value={text(row.reportCategoryCode) || "automatic"} onChange={value => patchRow("nominalAccounts", row, { reportCategoryCode: value === "automatic" ? "" : value })} options={[
+                  { value: "automatic", label: t("From account type") },
+                  { value: "asset", label: t("BS · Assets") }, { value: "liability", label: t("BS · Liabilities") }, { value: "equity", label: t("BS · Equity") },
+                  { value: "income", label: t("P&L · Revenue") }, { value: "direct_cost", label: t("P&L · Direct costs") }, { value: "expense", label: t("P&L · Expenses") }, { value: "finance", label: t("P&L · Finance") },
+                ]} /></td>
+                <td className="px-3 py-2"><Switch aria-label={`${t("Control account")} ${text(row.code)}`} checked={bool(row.isControlAccount)} onCheckedChange={isControlAccount => patchRow("nominalAccounts", row, { isControlAccount, allowManualPosting: isControlAccount ? false : row.allowManualPosting })} /></td>
+                <td className="px-3 py-2"><Switch aria-label={`${t("Manual posting")} ${text(row.code)}`} checked={bool(row.allowManualPosting, true)} disabled={bool(row.isControlAccount)} onCheckedChange={allowManualPosting => patchRow("nominalAccounts", row, { allowManualPosting })} /></td>
+                <td className="px-3 py-2"><Button type="button" size="sm" variant="ghost" disabled={Boolean(row.id) && row.isActive === false} aria-label={`${t(!row.id ? "Remove" : row.isActive === false ? "Disabled" : "Disable")} ${text(row.code)} ${text(row.name)}`} onClick={() => removeRow("nominalAccounts", row)}>{t(!row.id ? "Remove" : row.isActive === false ? "Disabled" : "Disable")}</Button></td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
       </div>
     </FinancePanel>
   )
@@ -3497,31 +3547,164 @@ function DocumentsTab({
   )
 }
 
-function MappingsTab({
+function NominalAccountMappingTable({
+  setup,
   draft,
+  connections,
+  patchRow,
+  addRow,
+  removeRow,
+  t,
+}: TabEditProps & {
+  connections: FinanceSetup["connections"]
+}) {
+  const [search, setSearch] = useState("")
+  const [catalogs, setCatalogs] = useState<Record<string, { accounts: NominalMappingTarget[]; error?: string; loading?: boolean }>>({})
+  const catalogConnections = connections.filter((item) => item.ACCIC_ProviderCode === "erpnext" || item.ACCIC_ProviderCode === "sage_50").map((item) => `${item.ACCIC_ProviderCode}:${item.ACCIC_ID}`).join(",")
+
+  useEffect(() => {
+    let cancelled = false
+    const targets = catalogConnections ? catalogConnections.split(",").map((value) => {
+      const [provider, id] = value.split(":")
+      return { provider, id }
+    }) : []
+    setCatalogs(Object.fromEntries(targets.map(({ id }) => [id, { accounts: [], loading: true }])))
+    for (const { provider, id } of targets) {
+      const request = provider === "sage_50" ? getSage50NominalCatalog(id) : getErpNextAccountCatalog(id)
+      request.then((catalog) => {
+        if (!cancelled) setCatalogs((current) => ({ ...current, [id]: {
+          accounts: catalog.accounts.filter((account) => account.name && account.is_group !== true && account.is_group !== 1),
+        } }))
+      }).catch((cause) => {
+        if (!cancelled) setCatalogs((current) => ({ ...current, [id]: { accounts: [], error: cause instanceof Error ? cause.message : t("Accounts could not be loaded.") } }))
+      })
+    }
+    return () => { cancelled = true }
+  }, [catalogConnections, t])
+
+  const nominals = draft.nominalAccounts as DraftRow[]
+  const activeNominals = nominals.filter((row) => row.isActive !== false)
+  const visible = activeNominals.filter((row) => `${text(row.code)} ${text(row.name)} ${text(row.accountTypeCode)}`.toLowerCase().includes(search.trim().toLowerCase()))
+  const mappingFor = (nominal: DraftRow, connectionId: string) => (draft.accountMappings as DraftRow[])
+    .find((row) => row.connectionId === connectionId && row.localContextCode === `nominal:${text(nominal.id)}` && row.isActive !== false)
+  const activeConnection = connections.find((item) => item.ACCIC_StatusCode === "active")
+  const mappedCount = activeConnection ? activeNominals.filter((nominal) => mappingFor(nominal, activeConnection.ACCIC_ID)).length : 0
+
+  const choose = (nominal: DraftRow, connectionId: string, accountId: string) => {
+    const existing = mappingFor(nominal, connectionId)
+    if (!accountId) {
+      if (existing) removeRow("accountMappings", existing)
+      return
+    }
+    const account = catalogs[connectionId]?.accounts.find((item) => item.name === accountId)
+    if (!account || !nominal.id) return
+    const inactive = (draft.accountMappings as DraftRow[]).find((row) => row.connectionId === connectionId && row.localContextCode === `nominal:${nominal.id}`)
+    const patch = { providerAccountId: account.name, providerAccountCode: account.account_number || account.name, providerAccountName: account.account_name || account.name, isActive: true }
+    if (existing || inactive) patchRow("accountMappings", (existing || inactive)!, patch)
+    else addRow("accountMappings", {
+      connectionId,
+      directionCode: text(nominal.reportCategoryCode) === "income" ? "sales" : "purchase",
+      localContextCode: `nominal:${nominal.id}`,
+      ...patch,
+      isDefault: false,
+    })
+  }
+
+  const suggestClearMatches = () => {
+    let count = 0
+    for (const connection of connections) {
+      const catalog = catalogs[connection.ACCIC_ID]
+      if (!catalog?.accounts.length) continue
+      const candidates = activeNominals.map((nominal) => ({ nominal, account: suggestNominalAccount({
+        code: text(nominal.code), name: text(nominal.name), reportCategoryCode: text(nominal.reportCategoryCode),
+        accountTypeCode: text(nominal.accountTypeCode), isActive: nominal.isActive !== false,
+      }, catalog.accounts, draft.organisation.baseCurrencyCode) }))
+      const useCount = new Map<string, number>()
+      for (const candidate of candidates) if (candidate.account) useCount.set(candidate.account.name, (useCount.get(candidate.account.name) ?? 0) + 1)
+      for (const { nominal, account } of candidates) {
+        if (account && useCount.get(account.name) === 1 && !mappingFor(nominal, connection.ACCIC_ID)) {
+          choose(nominal, connection.ACCIC_ID, account.name)
+          count++
+        }
+      }
+    }
+    toast.info(count ? t(`${count} clear nominal matches added. Review and save settings.`) : t("No additional clear matches found. Create separate accounts for unmapped codes in the linked system."))
+  }
+
+  return <FinancePanel
+    title={t("Nominal code mappings")}
+    description={t("Map every Multideck nominal code to each connected accounts system. Save changes with the finance administration action.")}
+  >
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <label className="sr-only" htmlFor="nominal-mapping-search">{t("Search nominal codes")}</label>
+      <Input id="nominal-mapping-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("Search code or name")} className="w-full max-w-sm" />
+      <div className="flex items-center gap-3">
+        <span role="status" className="text-[12px] tabular-nums text-[var(--md-subtle)]">{visible.length} {t("of")} {activeNominals.length} {t("active codes")}{activeConnection ? ` · ${mappedCount} ${t("mapped")}` : ""}</span>
+        <Button type="button" variant="outline" size="sm" onClick={suggestClearMatches} disabled={!connections.some((connection) => catalogs[connection.ACCIC_ID]?.accounts.length)}>{t("Suggest clear matches")}</Button>
+      </div>
+    </div>
+    {!connections.length ? <div className="px-4 pb-4 text-[13px] text-[var(--md-subtle)]">{t("Connect an accounts system in Integrations to start mapping.")}</div> : null}
+    <div className="max-h-[70vh] overflow-auto overscroll-none" tabIndex={0} role="region" aria-label={t("Nominal code mapping table")}>
+      <table className="w-full min-w-[720px] text-left text-[13px]">
+        <caption className="sr-only">{t("Nominal code mappings by accounts system")}</caption>
+        <thead className="sticky top-0 z-10 bg-[var(--md-surface-soft)] text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-stroke-bottom)]"><tr>
+          <th scope="col" className="min-w-28 px-4 py-2">{t("Multideck code")}</th>
+          <th scope="col" className="min-w-52 px-4 py-2">{t("Account name")}</th>
+          {connections.map((connection) => <th key={connection.ACCIC_ID} scope="col" className="min-w-64 px-4 py-2" data-i18n-skip>{setup.providers.find((provider) => provider.code === connection.ACCIC_ProviderCode)?.name || connection.ACCIC_Name} · {connection.ACCIC_Name}</th>)}
+        </tr></thead>
+        <tbody className="divide-y divide-[var(--md-line)]">{visible.map((nominal) => <tr key={rowKey(nominal)} className={nominal.isActive === false ? "text-[var(--md-subtle)]" : undefined}>
+          <th scope="row" className="px-4 py-2 font-medium" data-i18n-skip dir="ltr">{text(nominal.code)}{nominal.isActive === false ? ` · ${t("Inactive")}` : ""}</th>
+          <td className="px-4 py-2" data-i18n-skip>{text(nominal.name)}</td>
+          {connections.map((connection) => {
+            const mapped = mappingFor(nominal, connection.ACCIC_ID)
+            const catalog = catalogs[connection.ACCIC_ID]
+            const supported = connection.ACCIC_ProviderCode === "erpnext" || connection.ACCIC_ProviderCode === "sage_50"
+            const options = catalog?.accounts.map((account) => ({ value: account.name, label: `${account.account_number || account.name} · ${account.account_name || account.name}${account.root_type ? ` · ${account.root_type}` : ""}${account.account_currency ? ` · ${account.account_currency}` : ""}` })) ?? []
+            return <td key={connection.ACCIC_ID} className="px-3 py-2 [&_label]:sr-only">
+              <SelectField
+                id={`nominal-target-${rowKey(nominal)}-${connection.ACCIC_ID}`}
+                label={`${text(nominal.code)} ${text(nominal.name)} · ${connection.ACCIC_Name}`}
+                value={text(mapped?.providerAccountId)}
+                onChange={(value) => choose(nominal, connection.ACCIC_ID, value)}
+                options={[{ value: "", label: t("Unmapped") }, ...options]}
+                disabled={!supported || Boolean(catalog?.loading) || Boolean(catalog?.error) || !nominal.id || nominal.isActive === false}
+              />
+              {!supported ? <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Account list unavailable for this connector")}</p> : catalog?.loading ? <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Loading accounts…")}</p> : catalog?.error ? <p role="alert" className="mt-1 text-[11px] text-[var(--md-red)]">{catalog.error}</p> : null}
+            </td>
+          })}
+        </tr>)}</tbody>
+      </table>
+      {!visible.length ? <p className="px-4 py-8 text-center text-[13px] text-[var(--md-subtle)]">{t("No nominal codes match your search.")}</p> : null}
+    </div>
+  </FinancePanel>
+}
+
+function MappingsTab({
+  setup,
+  draft,
+  connections,
   connection,
   patchRow,
   addRow,
   removeRow,
   t,
 }: TabEditProps & {
+  connections: FinanceSetup["connections"]
   connection: FinanceSetup["connections"][number] | undefined
 }) {
-  if (!connection)
-    return (
-      <Notice>
-        <div>
-          <p className="font-medium">{t("No external mirror connected")}</p>
-          <p className="mt-1">
-            {t(
-              "Multideck accounting continues normally. Connect external accounting in Integrations to configure account, charge and tax mappings.",
-            )}
-          </p>
-        </div>
-      </Notice>
-    )
   return (
     <div className="space-y-[var(--md-page-stack-gap-compact)]">
+      <NominalAccountMappingTable
+        setup={setup}
+        draft={draft}
+        connections={connections}
+        patchRow={patchRow}
+        addRow={addRow}
+        removeRow={removeRow}
+        t={t}
+      />
+      {!connection ? <Notice>{t("Connect external accounting in Integrations to configure account, charge and tax mappings.")}</Notice> : null}
+      {connection ? <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[12px]">
         <span className="text-[var(--md-subtle)]">{t("Mapping target")}</span>
         <span className="font-medium text-[var(--md-ink)]" data-i18n-skip>
@@ -3534,7 +3717,7 @@ function MappingsTab({
           "Receivables, payables, bank and tax controls → accounts system GL accounts.",
         )}
         collection="accountMappings"
-        rows={draft.accountMappings as DraftRow[]}
+        rows={(draft.accountMappings as DraftRow[]).filter((row) => row.connectionId === connection.ACCIC_ID && !text(row.localContextCode).startsWith("nominal:"))}
         add={() =>
           addRow("accountMappings", {
             connectionId: connection.ACCIC_ID,
@@ -3760,6 +3943,7 @@ function MappingsTab({
         )}
         t={t}
       />
+      </> : null}
     </div>
   )
 }

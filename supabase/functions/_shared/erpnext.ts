@@ -3,6 +3,7 @@ import { HttpError } from "./backend.ts"
 type ErpNextRequest = {
   method?: "GET" | "POST" | "PUT"
   body?: unknown
+  exactNumbers?: boolean
   timeoutMs?: number
 }
 
@@ -89,9 +90,15 @@ export async function erpNextRequest<T>(path: string, input: ErpNextRequest = {}
     ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
     signal: AbortSignal.timeout(input.timeoutMs ?? 15_000),
   })
-  const payload = await response.json().catch(() => null)
+  const raw = await response.text()
+  let payload: any = null
+  try { payload = input.exactNumbers ? parseErpNextExactJSON(raw) : JSON.parse(raw) } catch { /* Error handling below; malformed successful responses fail closed. */ }
+  if (response.ok && payload === null) throw new HttpError(502, "ERPNext returned invalid JSON.")
   if (!response.ok) {
-    const message = erpNextErrorMessage(payload)
+    const providerMessage = erpNextErrorMessage(payload)
+    const message = response.status === 403 && providerMessage === "ERPNext rejected this request."
+      ? "ERPNext denied this operation (HTTP 403). Check that the connected API user can submit this document and that the site permits API access."
+      : providerMessage
     console.error("[erpnext] request rejected", {
       method: input.method ?? "GET",
       path: path.split("?")[0],
@@ -122,4 +129,11 @@ export async function erpNextCreate(doctype: string, document: Record<string, un
 export async function erpNextSubmit(doctype: string, name: string) {
   const payload = await erpNextRequest<{ data?: Record<string, unknown> }>(`/api/v2/document/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}/method/submit`, { method: "POST", body: {} })
   return payload.data ?? { name }
+}
+
+/** Preserve decimal tokens before JavaScript can round provider evidence. */
+export function parseErpNextExactJSON(raw: string): unknown {
+  JSON.parse(raw) // Validate original syntax before token replacement.
+  return JSON.parse(raw.replace(/"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+    token => token.startsWith('"') ? token : JSON.stringify(token)))
 }

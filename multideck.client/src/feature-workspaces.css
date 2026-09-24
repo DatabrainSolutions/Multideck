@@ -813,10 +813,14 @@
   .md-booking-party-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.md-freight-container-row > .md-compact-field { flex: 1 1 260px; }
+.md-freight-container-row { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 24rem) 2rem; align-items: center; gap: 8px 16px; }
+.md-freight-container-row > .md-compact-field { min-width: 0; }
 .md-freight-container-row > button { margin-top: 0; }
-.md-freight-container-row > div[aria-hidden],
-.md-freight-container-row > div.hidden { display: none; }
+@container quote-details (max-width: 520px) {
+  .md-freight-container-row { grid-template-columns: minmax(0, 1fr) 2rem; row-gap: 6px; padding-block: 6px; }
+  .md-freight-container-row > .md-compact-field { grid-column: 1; }
+  .md-freight-container-row > button { grid-column: 2; grid-row: 1 / 3; }
+}
 
 /* Two compact field columns are based on each section's width. */
 .md-booking-job-groups { display: grid; gap: 16px; align-items: start; }

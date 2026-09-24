@@ -69,7 +69,7 @@ npx --yes deno test functions/inbox-api/core_test.ts
 node --test tests/inbox-api-contract.test.mjs
 ```
 
-Run these from `multideck.server`. Live provider verification additionally requires deploying the function and signing in through the real `/inbox` route.
+Run these from `supabase`. Live provider verification additionally requires deploying the function and signing in through the real `/inbox` route.
 
 ## Deployment coupling
 

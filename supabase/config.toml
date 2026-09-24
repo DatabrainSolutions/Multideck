@@ -613,3 +613,9 @@ verify_jwt = true
 # Both paths validate Auth and the active Dexter actor before provider access.
 [functions.dexter-voice]
 verify_jwt = false
+
+[functions.accounting-party-worker]
+verify_jwt = false
+
+[functions.finance-ledger]
+verify_jwt = false

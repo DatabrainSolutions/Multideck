@@ -19,6 +19,13 @@ operate without one.
 
 ## Provider-neutral contract
 
+Manual GL journals use the `finance-ledger` boundary and the dedicated ERPNext
+Journal Entry adapter. They post into the existing canonical batches/lines,
+then retain independent, retryable delivery state. See
+[GL journal scope and rollout](../verification/2026-09-18-general-ledger-journals.md)
+for the base-currency/non-control-account scope, exact readback, unique identity
+prerequisite and the distinction between local implementation and live rollout.
+
 Every enabled provider must implement the same product capabilities:
 
 - Validate a connection and list legal companies.
@@ -39,6 +46,24 @@ allocations, finance configuration runs, authorisation records and audited
 provider mappings) must not contain a provider-specific data model. Provider
 document payloads and external IDs are recorded as evidence alongside the
 canonical record.
+
+Finance > Mappings shows the full local nominal chart against each active
+connection. ERPNext account choices are read from the exact connected Company,
+including accounts beyond the first API page. Sage 50 choices come from the
+tenant HyperExt [`GET /api/nominal/`](https://www.postman.com/hypersage/sage-50-api-by-hyperext/documentation/ebvu2xu/hyperext-sage-50-api) response after checking connector health and
+the exact configured Sage company; inactive nominals are excluded. Other
+connectors still show their account-list limitation. Nominal mapping reads,
+writes and watches are deliberately unsupported in Dexter until a tenant-safe
+domain and deterministic change events are available.
+
+ERPNext Journal Entry delivery resolves each posted debit and credit through
+the active `nominal:<FINNom_ID>` mapping for its exact connection. The legacy
+free-text nominal mapping hint is not a posting link. A missing, inactive or
+conflicting mapping blocks delivery before an ERPNext document is created;
+ERPNext then validates the target Company, currency, posting-account status and
+balance-sheet/P&L root class before creating a Journal Entry.
+An already claimed journal keeps its frozen delivery payload and external
+identity on retry rather than silently changing the target after a mapping edit.
 
 ## Finance demonstration endpoint
 
@@ -84,9 +109,81 @@ Multideck owns one lifecycle whether or not a mirror is connected:
    document, blocks on a missing mapping, or records a retryable failure and
    reconciliation issue. No queue item is created for a disabled mirror or an
    optional mirror with no active connection.
-8. A provider-created draft reference is retained even when final submission
-   fails, so a retry resumes that exact provider record instead of duplicating
-   it.
+8. A provider-created reference is retained when submission or delivery
+   verification fails. A retry reads that exact record first; if it is already
+   submitted and matches, delivery is recovered without submitting again.
+
+ERPNext now reads back the exact draft before submission and the persisted
+document afterwards. The delivery comparison checks identity, Company, party,
+date, currency, exchange rate, invoice/credit polarity, document and base totals,
+line count, item/account mappings, quantities, rates, net amounts and aggregate
+tax. Cash checks also cover both accounts and their currencies, base amounts,
+exact allocations, unallocated amounts and unexpected deductions or taxes.
+Invoice rounding adjustments are blocked; there is no implicit tolerance.
+Decimal comparisons use integer arithmetic with up to nine decimal places and
+reject missing or malformed evidence.
+
+A mismatch retains the provider reference and structured differences, blocks
+delivery and creates a `provider_delivery_mismatch` issue. Native posting stays
+intact. A successful delivery retry resolves only delivery-related issues on
+the same connection, leaving independent reconciliation discrepancies open.
+The retained success evidence explicitly has scope `document_delivery`.
+
+This is a delivery check, not journal, tax-account, subledger-control or
+period reconciliation. The delivery check itself does not detect later provider changes, establish
+complete ledger parity, or remove the race between reading a draft and provider
+submission; the post-submit check detects discrepancies at that boundary.
+Provider-enforced unique Multideck identities recover create requests whose
+responses are lost. Signed inbound events now trigger fresh document reads and
+review exceptions for later changes. Missed-event catch-up and period
+reconciliation remain implementation work.
+
+Dexter document reads reuse existing posting-error/export-status evidence and
+document watches reuse the deterministic export-status event. Provider mutation
+and retry remain manual-only. Raw readback differences and cash delivery error
+details are explicitly unsupported as Dexter reads/watches in this increment:
+the existing cash adapter does not expose those fields or emit export-status
+events. Dexter must state the limitation and direct operators to Finance setup.
+Extending the cash evidence/event lifecycle requires its own database change
+and role-aware lifecycle tests before that capability can be advertised.
+
+### ERPNext inbound receipt boundary
+
+The receiver verifies Frappe's HMAC-SHA256 signature against the original body
+bytes and enforces a 256 KiB limit, including streamed requests. Supported
+events require string `doctype`, `name`, `company` and `modified` fields;
+`event` is optional and defaults to `updated`. `modified` is the provider's
+document timestamp, with seconds and up to six fractional digits. Configure
+the ERPNext webhook template to send these fields before deploying this
+receiver; incomplete older templates will receive an error rather than being
+silently accepted.
+
+The service-only `multideck_erpnext_receive_webhook` RPC parses the original
+signed text in PostgreSQL, preserving financial decimals beyond JavaScript's
+precision. It resolves the exact company to one active ERPNext connection and
+active legal entity. Missing, inactive, foreign or ambiguous connections fail
+closed. Raw receipt tables remain inaccessible to browser roles.
+
+Receipt identity consists of company, doctype, document ID, event and provider
+modification timestamp. A unique index makes concurrent deliveries idempotent.
+An equivalent retry returns the original event ID without changing evidence,
+receipt time or processing state. Conflicting payloads for the same identity
+return a conflict and retain the original evidence. The receipt includes its
+connection, original text, JSON, SHA-256 and source timestamp. Legacy rows are
+preserved without fabricating missing provenance.
+
+Acceptance means **durably queued**, not applied or reconciled. Late events are
+retained; no timestamp-based freshness assumption can update accounting records.
+The future consumer must recheck connection ownership and source versions,
+read authoritative provider records, prevent loops and stage discrepancies for
+review. Duplicate delivery protection is not a substitute for that consumer or
+for scheduled catch-up reconciliation. No accounting record is mutated by the
+receipt RPC.
+
+Raw webhook intake is intentionally not a Dexter read, write or watch
+capability: a signed notification is not verified accounting state. The future
+consumer must expose reviewed outcomes through tenant-safe finance evidence and
+deterministic events; chat must not claim that a queued receipt is reconciled.
 
 Blocked, failed and stale provider deliveries remain visible in Finance setup
 with their exact mapping or provider error. An authorised integration manager
@@ -268,11 +365,11 @@ editing statutory party settings or counterparty bank details.
 | External mirror | Connection model | Product state |
 | --- | --- | --- |
 | ERPNext | REST API token and signed webhooks | Enabled for invoices, credits, payment entries and allocations |
-| Xero | OAuth 2, Accounting API and webhooks | Planned next |
-| QuickBooks Online | OAuth 2 accounting API | Planned next |
+| Xero | OAuth 2, Accounting API and webhooks | Planned after Sage 50 |
+| QuickBooks Online | OAuth 2 accounting API | Planned after Sage 50 |
 | Sage Accounting | Cloud API | Planned |
 | Sage Intacct | REST, OAuth and signed webhooks | Planned |
-| Sage 50 | Tenant HyperExt Accounts API route backed by Sage SDO/ODBC | Customer onboarding wizard available for an active reviewed connection; document posting remains planned |
+| Sage 50 | Tenant HyperExt Accounts API route backed by Sage SDO/ODBC | Next after ERPNext acceptance; customer onboarding wizard available for an active reviewed connection; document posting remains planned |
 | Sage 200 | Tenant-installed Windows local agent | Planned; never a browser credential |
 | Dynamics 365 Business Central | OAuth / OData APIs | Planned |
 | Oracle NetSuite | SuiteTalk REST | Planned |
@@ -285,7 +382,7 @@ It does not mean creating another receivables, payables, cash or setup screen.
 
 The provider registry is deliberately broader than the enabled connector list.
 “Recognised” means the integration shape and connection model are known;
-“enabled” means the adapter has passed the full contract. The product must show
+“enabled” means the listed delivery capabilities are available; complete integration acceptance must be established separately by the recorded checks and limitations. The product must show
 that distinction and fail closed for a recognised but unavailable package.
 
 ## Safety boundary
@@ -301,3 +398,42 @@ writes are allowlisted draft actions routed through the real Finance Edge
 Function; chat approval never bypasses finance posting approval. Watching for
 you reacts to database document and cash changes through stored deterministic
 rules and event signals, with no recurring LLM calls.
+
+## Automatic customer/supplier lifecycle (16 September 2026)
+
+Account creation and changes now produce transactional, provider-neutral
+`ACCI_PartySyncQueue` intent per connection and role. The ERPNext worker uses
+provider-enforced unique identities, exact readback, source revision and lease
+fencing, controlled external-conflict handling and atomic mapping/audit completion.
+A daily catch-up checks previously verified accounts. Explicit account health and
+recheck controls are in the register's existing sync dialog. Enabled automatic
+sync requires a verified matching party before document or cash export.
+
+The flow is deployed to the named sandbox with explicit defaults and ERPNext
+identity fields. Sage automatic readback/recovery is unsupported;
+its existing manual connector remains separate. Full ledger reconciliation remains outstanding. The incoming document consumer is deployed and a real signed change to an unlinked ERP draft produced a review exception. See
+[scope, verification and rollout](../verification/2026-09-16-accounting-party-lifecycle.md).
+
+See [incoming checks, recovery and remaining sign-off work](../verification/2026-09-17-erpnext-inbound-and-recovery.md) for the current implementation and deployment boundary.
+
+### Fenced external export completion (17 September 2026)
+
+The finance Edge boundary checks user permissions and resolves the canonical
+export, then calls service-only `multideck_finance_begin_export`. It verifies
+the active actor/entity/connection, reserves a 15-minute UUID lease and creates
+the batch/item in one transaction. The reviewed ERP site must match the
+configured transport before financial export.
+
+`multideck_finance_finish_export` checks the lease and current source/connection
+again. Reference, batch, item, queue, mirror status, related delivery issues and
+audit commit together. A failed audit write rolls everything back; an expired
+worker cannot overwrite a replacement attempt. ERP success requires the exact
+retained canonical snapshot and matched readback. Provider failures can retain
+an external ID without a successful-sync timestamp. Native posting is preserved
+and independent ledger discrepancies remain open.
+
+These are internal safeguards for the existing permissioned export workflow,
+not new Dexter write actions. Existing document status reads and deterministic
+export-status watches remain the supported interface; raw attempt/lease controls
+and cash error watches remain explicitly unsupported. Full ledger reconciliation
+and automatic missed-event recovery are separate, unfinished capabilities.

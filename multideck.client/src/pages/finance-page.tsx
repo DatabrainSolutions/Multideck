@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { AlertCircle, ChartNoAxesCombined, Landmark, LoaderCircle, ReceiptText, RefreshCw, ShieldCheck, Wallet } from "@/components/icons/hugeicons"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { FinanceGeneralLedgerPage } from "@/pages/finance-general-ledger-page"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import {
   createFinanceDocumentLine,
@@ -81,6 +82,7 @@ export type FinanceAdministrationRoute =
   | "/finance/controls"
 export type FinanceDocumentRoute = `/finance/${FinanceLedger}/documents/${string}`
 export type FinanceRoute = FinanceLedgerRoute | FinanceAdministrationRoute | FinanceDocumentRoute | "/finance/setup"
+  | "/finance/general-ledger" | "/finance/general-ledger/accounts" | "/finance/general-ledger/journals"
   | "/finance/reports"
   | "/finance/payables/intake"
   | "/finance/management/accruals-wip"
@@ -197,6 +199,8 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
   const availableTaxTreatments = (options?.taxTreatments ?? []).filter((treatment) => treatment.FINLocTaxTreatment_LegalEntityID === tenantEntityId && ["both", ledger === "receivables" ? "sales" : "purchase"].includes(treatment.FINLocTaxTreatment_TransactionType) && treatment.FINLocTaxTreatment_EffectiveFrom <= documentDate && (!treatment.FINLocTaxTreatment_EffectiveTo || treatment.FINLocTaxTreatment_EffectiveTo >= documentDate))
   const approvedTaxCodes = new Set(availableTaxTreatments.map((treatment) => treatment.FINLocTaxTreatment_Code))
   const transactionDirection = ledger === "receivables" ? "sales" : "purchase"
+  const chargeOptions = (options?.chargeCodes ?? []).filter((charge) => ["both", "pass_through", transactionDirection === "sales" ? "sell" : "buy"].includes(charge.RATECharge_DefaultApplicabilityCode)).map((charge) => ({ id: charge.RATECharge_ID, code: charge.RATECharge_Code, name: charge.RATECharge_Name, description: charge.RATECharge_Description, defaultTaxCode: charge.RATECharge_DefaultTaxCode }))
+  const currencyOptions = [...new Set([currencyCode, baseCurrencyCode, ...(options?.currencies ?? []).map((item) => item.code)].filter(Boolean))]
   const suggestedTaxOptions = [...new Map((options?.taxSuggestions ?? [])
     .filter((suggestion) => ["both", transactionDirection].includes(suggestion.FINLocTaxTreatment_TransactionType) && !approvedTaxCodes.has(suggestion.FINLocTaxTreatment_Code))
     .map((suggestion) => [suggestion.FINLocTaxTreatment_Code, { id: suggestion.FINLocTaxTreatment_ID, code: suggestion.FINLocTaxTreatment_Code, name: suggestion.FINLocTaxTreatment_Name, ratePercent: 0, approved: false } as FinanceDocumentTaxOption])).values()]
@@ -312,6 +316,8 @@ function DocumentDraftDialog({ type, options, loading, onClose, onCreated }: { t
       lines={lines}
       onLinesChange={setLines}
       taxOptions={taxOptions}
+      chargeOptions={chargeOptions}
+      currencyOptions={currencyOptions}
       sourceKind="manual"
       currencyCode={currencyCode}
       credit={type === "credit_note" || type === "debit_note"}
@@ -567,6 +573,7 @@ function FinanceSetupPage({ navigate }: { navigate: (path: string) => void }) {
 }
 
 export function FinancePage({ route, navigate, currentUser }: { route: FinanceRoute; navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
+  if (route.startsWith("/finance/general-ledger")) return <FinanceGeneralLedgerPage route={route} navigate={navigate} currentUser={currentUser} />
   if (route === "/finance/reports") return <FinanceReportsPage navigate={navigate} />
   if (route === "/finance/management/accruals-wip") return <FinanceAccrualWipPage currentUser={currentUser} />
   if (route === "/finance/payables/intake") return <FinancePurchaseIntakePage navigate={navigate} currentUser={currentUser} />

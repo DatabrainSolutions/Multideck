@@ -107,6 +107,10 @@ function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (
 
 function FinanceTopBarAction({ route, currentUser }: { route: string; currentUser?: AuthUserSummary | null }) {
   const { t } = useLanguage()
+  if (route.startsWith("/finance/general-ledger")) {
+    if (!hasPermission(currentUser, "Finance.Management.Prepare")) return null
+    return <Button aria-label={t("New journal")} title={t("New journal")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createJournal)}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("New journal")}</span></Button>
+  }
   if (/^\/finance\/(receivables|payables)\/documents\/[^/]+$/.test(route)) return null
   if (route === "/finance/payables/intake") {
     if (!hasPermission(currentUser, "Finance.Payables.Draft")) return null

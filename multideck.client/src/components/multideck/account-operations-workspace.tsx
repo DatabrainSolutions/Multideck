@@ -64,19 +64,12 @@ const roleFields: Record<string, Array<[string, string]>> = {
     ["serviceLevel", "Default service level"],
     ["accountManagerNotes", "Customer handling notes"],
   ],
-  "key account": [
-    ["customerReference", "Customer reference"],
-    ["serviceLevel", "Default service level"],
-    ["escalationContact", "Escalation contact"],
-  ],
-  "key customer account": [
-    ["customerReference", "Customer reference"],
-    ["serviceLevel", "Default service level"],
-    ["escalationContact", "Escalation contact"],
-  ],
   "potential customer": [
-    ["customerReference", "Customer reference"],
+    ["leadSource", "Lead source"],
+    ["qualificationStage", "Qualification stage"],
     ["serviceInterest", "Service interest"],
+    ["estimatedAnnualValue", "Estimated annual value"],
+    ["nextReviewDate", "Next review date"],
     ["qualificationNotes", "Qualification notes"],
   ],
   supplier: [
@@ -117,6 +110,12 @@ const roleFields: Record<string, Array<[string, string]>> = {
     ["settlementArrangement", "Settlement arrangement"],
   ],
 };
+const keyAccountRequirementFields = [
+  ["accountManagerName", "Account manager name"],
+  ["accountManagerEmail", "Account manager email"],
+  ["serviceReviewCadence", "Service review cadence"],
+  ["escalationProcess", "Escalation process"],
+] as const;
 
 function roleKey(value: string) {
   return value.trim().toLowerCase().replace(/[_-]+/g, " ");
@@ -165,7 +164,7 @@ export function AccountDetailTabs({
   const roleTabs = useMemo(
     () =>
       account.types
-        .map(roleKey)
+        .map((type) => roleKey(type) === "key customer account" ? "customer" : roleKey(type))
         .filter(
           (role, index, roles) =>
             role && role !== "company" && roles.indexOf(role) === index,
@@ -247,6 +246,7 @@ export function AccountOperationsPanel({
   currencyOptions,
   financeReference,
   onChange,
+  onOpenContact,
 }: {
   account: ApiCustomerDetail;
   activeTab: Exclude<AccountDetailTab, "overview" | "details" | "live" | "notes">;
@@ -255,6 +255,7 @@ export function AccountOperationsPanel({
   currencyOptions: Array<{ code: string; name: string }>;
   financeReference: Pick<CustomerReference, "legalEntities" | "paymentTerms" | "taxTreatments">;
   onChange: (account: ApiCustomerDetail) => void;
+  onOpenContact: (contactId: string) => void;
 }) {
   const { t } = useLanguage();
   const [draft, setDraft] = useState<AccountOperations>(
@@ -278,9 +279,30 @@ export function AccountOperationsPanel({
     setError(null);
     setSaved(false);
     try {
+      const customerProfile = draft.roleProfiles.customer ?? {};
+      const keyAccountEnabled = customerProfile.keyAccount == null
+        ? account.strategic
+        : customerProfile.keyAccount === true;
+      if (keyAccountEnabled) {
+        const missing = keyAccountRequirementFields
+          .filter(([key]) => !value(customerProfile, key).trim())
+          .map(([, label]) => label.toLocaleLowerCase());
+        if (missing.length) {
+          throw new Error(`${t("Complete the Key Account requirements before saving")}: ${missing.join(", ")}.`);
+        }
+      }
+      const operationsInput = customerProfile.keyAccount == null
+        ? {
+            ...draft,
+            roleProfiles: {
+              ...draft.roleProfiles,
+              customer: { ...customerProfile, keyAccount: account.strategic },
+            },
+          }
+        : draft;
       const updated = await replaceAccountOperations(
         account.id,
-        draft,
+        operationsInput,
         account.editVersion,
       );
       onChange(updated);
@@ -298,7 +320,7 @@ export function AccountOperationsPanel({
 
   const body =
     activeTab === "contacts" ? (
-      <Contacts account={account} />
+      <Contacts account={account} onOpenContact={onOpenContact} />
     ) : activeTab === "addresses" ? (
       <Addresses account={account} draft={draft} setDraft={setDraft} />
     ) : activeTab === "financial" ? (
@@ -320,6 +342,7 @@ export function AccountOperationsPanel({
       <Privacy draft={draft} setDraft={setDraft} />
     ) : (
       <RoleProfile
+        account={account}
         role={activeTab.slice(5)}
         draft={draft}
         setDraft={setDraft}
@@ -411,7 +434,7 @@ function ControlField({
   );
 }
 
-function Contacts({ account }: { account: ApiCustomerDetail }) {
+function Contacts({ account, onOpenContact }: { account: ApiCustomerDetail; onOpenContact: (contactId: string) => void }) {
   const { t } = useLanguage();
   return (
     <>
@@ -445,7 +468,17 @@ function Contacts({ account }: { account: ApiCustomerDetail }) {
               {account.contacts.map((contact) => (
                 <tr
                   key={contact.id}
-                  className="border-t border-[var(--md-line)]"
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`${t("Open contact")} ${contact.name}`}
+                  onClick={() => onOpenContact(contact.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault()
+                      onOpenContact(contact.id)
+                    }
+                  }}
+                  className="cursor-pointer border-t border-[var(--md-line)] outline-none transition-colors hover:bg-[var(--md-surface-tint)] focus-visible:bg-[var(--md-accent-a08)] focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]"
                 >
                   <td
                     className="px-3 py-2.5 font-medium text-[var(--md-ink)]"
@@ -2363,10 +2396,11 @@ function Privacy({ draft, setDraft }: Omit<Props, "account">) {
 }
 
 function RoleProfile({
+  account,
   role,
   draft,
   setDraft,
-}: Omit<Props, "account"> & { role: string }) {
+}: Props & { role: string }) {
   const { t } = useLanguage();
   const data = draft.roleProfiles[role] ?? {};
   const fields = roleFields[role] ?? [
@@ -2374,11 +2408,12 @@ function RoleProfile({
     ["serviceScope", "Service scope"],
     ["handlingNotes", "Handling notes"],
   ];
-  const update = (key: string, next: string) =>
+  const update = (key: string, next: unknown) =>
     setDraft({
       ...draft,
       roleProfiles: { ...draft.roleProfiles, [role]: { ...data, [key]: next } },
     });
+  const keyAccount = data.keyAccount === true || (data.keyAccount == null && account.strategic);
   return (
     <>
       <SectionTitle
@@ -2398,6 +2433,38 @@ function RoleProfile({
           </Field>
         ))}
       </div>
+      {role === "customer" ? (
+        <div className="mt-5 border-t border-[var(--md-line)] pt-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Key Account")}</h3>
+              <p className="mt-1 max-w-2xl text-[11.5px] leading-4 text-[var(--md-subtle)]">
+                {t("Key Accounts require named account management, a regular service review and a documented escalation process.")}
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
+              <Switch checked={keyAccount} onCheckedChange={(checked) => update("keyAccount", checked)} />
+              <span>{t(keyAccount ? "Key Account enabled" : "Mark as Key Account")}</span>
+            </label>
+          </div>
+          {keyAccount ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {keyAccountRequirementFields.map(([key, label]) => (
+                <Field key={key} label={`${label} *`}>
+                  <Input
+                    type={key === "accountManagerEmail" ? "email" : "text"}
+                    value={value(data, key)}
+                    onChange={(event) => update(key, event.target.value)}
+                    className={fieldClass}
+                    required
+                    dir={key === "accountManagerEmail" ? "ltr" : "auto"}
+                  />
+                </Field>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {role === "consignee" ? (
         <p className="mt-4 text-[11.5px] text-[var(--md-subtle)]">
           {t(

@@ -1,0 +1,46 @@
+[
+  {
+    "doctype": "Custom Field",
+    "dt": "Journal Entry",
+    "fieldname": "custom_multideck_document_key",
+    "label": "Multideck document identity",
+    "fieldtype": "Data",
+    "unique": 1,
+    "no_copy": 1,
+    "hidden": 1,
+    "description": "Stable tenant and posted Multideck journal identity. Managed by the Multideck integration."
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Sales Invoice",
+    "fieldname": "custom_multideck_document_key",
+    "label": "Multideck document identity",
+    "fieldtype": "Data",
+    "unique": 1,
+    "no_copy": 1,
+    "hidden": 1,
+    "description": "Stable tenant and approved Multideck transaction identity. Managed by the Multideck integration."
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Purchase Invoice",
+    "fieldname": "custom_multideck_document_key",
+    "label": "Multideck document identity",
+    "fieldtype": "Data",
+    "unique": 1,
+    "no_copy": 1,
+    "hidden": 1,
+    "description": "Stable tenant and approved Multideck transaction identity. Managed by the Multideck integration."
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Payment Entry",
+    "fieldname": "custom_multideck_document_key",
+    "label": "Multideck document identity",
+    "fieldtype": "Data",
+    "unique": 1,
+    "no_copy": 1,
+    "hidden": 1,
+    "description": "Stable tenant and approved Multideck transaction identity. Managed by the Multideck integration."
+  }
+]

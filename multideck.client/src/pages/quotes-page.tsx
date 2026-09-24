@@ -119,6 +119,7 @@ import {
   type RecurrenceValue,
 } from "@/components/multideck/quote-details/quote-detail-model"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { organisationIsCustomer } from "@/lib/organisation-roles"
 import { calculateQuoteFreightDirection } from "@/lib/freight-direction"
 import { newQuoteCargoLine, quoteCargoSummary, quoteCargoSafety, quoteCargoHandlingSummary, readQuoteCargoLines, type QuoteCargoLine } from "@/lib/quote-cargo"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
@@ -136,7 +137,9 @@ import { useLanguage } from "@/i18n/language-provider"
 import { systemPeople, type StatusTone } from "@/data/operational-data"
 import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
 import { getSalesQuote } from "@/lib/quote-api"
+import { availableChargeChoices } from "@/lib/charge-catalogue"
 import {
+  getQuoteChargeCatalogue,
   getQuoteSources,
   getQuoteIssueReadiness,
   getQuoteIssueRecipients,
@@ -160,6 +163,7 @@ import {
   type QuoteOrganisationOption,
   type QuoteSavePayload,
   type QuoteWorkflowCharge,
+  type QuoteChargeCatalogue,
   type QuoteWorkflowSources,
   type QuoteWorkflowVersion,
   type QuoteWorkflowWorkspace,
@@ -1091,19 +1095,6 @@ const quoteParties: QuoteParty[] = [
   },
 ]
 
-const quoteCharges: QuoteCharge[] = [
-  { code: "ECCLR", description: "Export Customs Clearance Fee", creditor: "Harbourline Forwarding Ltd", costCurrency: "GBP", costAmount: 0, localCost: 0, sellCurrency: "GBP", sellAmount: 35, localSell: 35, costExchange: 1, sellExchange: 1, costRoeSource: "job", sellRoeSource: "job", department: "CES" },
-  { code: "VGM", description: "Verified Gross Mass - If required", creditor: "Quayline Port Services", costCurrency: "GBP", costAmount: 23.56, localCost: 23.56, sellCurrency: "GBP", sellAmount: 35, localSell: 35, costExchange: 1, sellExchange: 1, costRoeSource: "job", sellRoeSource: "job", department: "SEA" },
-  { code: "DTHC", description: "Destination Terminal Handling Charges", creditor: "Kobe Gateway Agency", costCurrency: "USD", costAmount: 380, localCost: 304, sellCurrency: "USD", sellAmount: 380, localSell: 304, costExchange: 1.25, sellExchange: 1.25, costRoeSource: "job", sellRoeSource: "job", department: "SEA" },
-  { code: "HAN", description: "Handling", creditor: "Kobe Gateway Agency", costCurrency: "USD", costAmount: 100, localCost: 80, sellCurrency: "USD", sellAmount: 100, localSell: 80, costExchange: 1.25, sellExchange: 1.25, costRoeSource: "job", sellRoeSource: "job", department: "SEA" },
-  { code: "DDOC", description: "AFR Filing", creditor: "Kobe Gateway Agency", costCurrency: "USD", costAmount: 35, localCost: 28, sellCurrency: "USD", sellAmount: 35, localSell: 28, costExchange: 1.25, sellExchange: 1.25, costRoeSource: "job", sellRoeSource: "job", department: "SEA" },
-  { code: "BHAN", description: "Broker Handling", creditor: "Harbourpoint Brokerage", costCurrency: "USD", costAmount: 125, localCost: 100, sellCurrency: "USD", sellAmount: 125, localSell: 100, costExchange: 1.25, sellExchange: 1.25, costRoeSource: "job", sellRoeSource: "job", department: "SEA" },
-  { code: "DCART", description: "Destination Haulage / Transport", creditor: "Eastgate Cartage", costCurrency: "USD", costAmount: 450, localCost: 360, sellCurrency: "USD", sellAmount: 495, localSell: 396, costExchange: 1.25, sellExchange: 1.25, costRoeSource: "job", sellRoeSource: "job", department: "SEA" },
-  { code: "FRT", description: "International Freight", creditor: "Carrier pending", costCurrency: "USD", costAmount: -200, localCost: -160, sellCurrency: "USD", sellAmount: 0, localSell: 0, costExchange: 1.25, sellExchange: 1.25, costRoeSource: "job", sellRoeSource: "job", department: "SEA" },
-  { code: "OCART", description: "Pick Up Transport", creditor: "Severn Road Logistics", costCurrency: "GBP", costAmount: 610, localCost: 610, sellCurrency: "GBP", sellAmount: 630, localSell: 630, costExchange: 1, sellExchange: 1, costRoeSource: "job", sellRoeSource: "job", department: "SEA" },
-]
-
-const chargeCatalogue = quoteCharges.map(({ code, description }) => ({ code, description }))
 const supportedQuoteCurrencies: QuoteCurrency[] = ["GBP", "USD", "EUR", "JPY", "AUD", "CAD"]
 const quoteChargeCurrencyDefinitions: readonly QuoteChargeCurrency[] = [
   { code: "GBP", name: "British pound", symbol: "£", decimalPlaces: 2, subUnitRatio: 100 },
@@ -1805,8 +1796,6 @@ function QuoteSetupPanel({
   )
 }
 
-type QuoteChargeEditableField = "code" | "description" | "creditor" | "costCurrency" | "costAmount" | "localCost" | "sellCurrency" | "sellAmount" | "localSell" | "costExchange" | "sellExchange" | "internalNotes" | "additionalDetail"
-
 function EditableChargeCell({
   value,
   editable,
@@ -1841,378 +1830,6 @@ function EditableChargeCell({
     <span data-i18n-skip dir={numeric ? "ltr" : "auto"} className={cn("block truncate text-[11px]", numeric && "text-right tabular-nums", className)}>
       {value || "–"}
     </span>
-  )
-}
-
-type ChargePanelSide = "in" | "out"
-
-type ChargeTableRow = {
-  id: number
-  code: string
-  description: string
-  currency: QuoteCurrency
-  amount: number
-  roe: number
-  local: number
-  party: string
-  detail: string
-}
-
-function ChargeSidePanel({
-  charges,
-  side,
-  customer,
-  editable,
-  onChargeChange,
-  onAddCharge,
-  onRemoveCharge,
-  toolbarTabs,
-  toolbarOptions,
-}: {
-  charges: QuoteCharge[]
-  side: ChargePanelSide
-  customer: string
-  editable: boolean
-  onChargeChange: (index: number, field: QuoteChargeEditableField, value: string) => void
-  onAddCharge: () => void
-  onRemoveCharge: (index: number) => void
-  toolbarTabs?: ReactNode
-  toolbarOptions?: ReactNode
-}) {
-  const { t } = useLanguage()
-  const isIncoming = side === "in"
-  const [selectedRow, setSelectedRow] = useState<number | null>(null)
-  const total = charges.reduce((sum, charge) => sum + (isIncoming ? charge.localCost : charge.localSell), 0)
-  const title = isIncoming ? "Supplier charges" : "Customer charges"
-  const description = isIncoming ? "Costs coming into the quote" : "Charges going out to the customer"
-  const partyHeading = isIncoming ? "Supplier" : "Customer"
-  const detailHeading = isIncoming ? "Internal notes" : "Additional detail"
-  const rows = useMemo<ChargeTableRow[]>(() => charges.map((charge, index) => ({
-    id: index,
-    code: charge.code,
-    description: charge.description,
-    currency: isIncoming ? charge.costCurrency : charge.sellCurrency,
-    amount: isIncoming ? charge.costAmount : charge.sellAmount,
-    roe: isIncoming ? charge.costExchange : charge.sellExchange,
-    local: isIncoming ? charge.localCost : charge.localSell,
-    party: isIncoming ? charge.creditor : customer,
-    detail: isIncoming ? charge.internalNotes ?? "" : charge.additionalDetail ?? "",
-  })), [charges, customer, isIncoming])
-
-  const columns = useMemo<DataTableColumn<ChargeTableRow>[]>(() => [
-    {
-      id: "code",
-      label: "Code",
-      width: 112,
-      minWidth: 96,
-      maxWidth: 180,
-      resizable: true,
-      sortValue: (row) => row.code,
-      cell: (row) => editable ? (
-        <Select value={row.code} onValueChange={(code) => onChargeChange(row.id, "code", code)}>
-          <SelectTrigger aria-label={t("Charge code")} size="sm" className="h-8 w-full rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] px-2 text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
-            <SelectValue>{row.code}</SelectValue>
-          </SelectTrigger>
-          <SelectContent className="w-[min(420px,calc(100vw-24px))] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)]">
-            {chargeCatalogue.map((charge) => (
-              <SelectItem key={charge.code} value={charge.code} className="min-h-10 rounded-[var(--md-radius-md)] py-2 text-[11px]">
-                <span className="grid w-full min-w-0 grid-cols-[58px_minmax(0,1fr)] items-start gap-2">
-                  <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{charge.code}</span>
-                  <span className="whitespace-normal break-words text-[11px] leading-4 text-[var(--md-text)]">{t(charge.description)}</span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ) : <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{row.code}</span>,
-    },
-    {
-      id: "description",
-      label: "Description",
-      width: 240,
-      minWidth: 180,
-      maxWidth: 420,
-      resizable: true,
-      sortValue: (row) => row.description,
-      cell: (row) => <EditableChargeCell value={row.description} editable={editable} onChange={(value) => onChargeChange(row.id, "description", value)} />,
-    },
-    {
-      id: "currency",
-      label: "Currency",
-      width: 112,
-      minWidth: 100,
-      maxWidth: 160,
-      resizable: true,
-      sortValue: (row) => row.currency,
-      cell: (row) => editable ? (
-        <Select value={row.currency} onValueChange={(currency) => onChargeChange(row.id, isIncoming ? "costCurrency" : "sellCurrency", currency)}>
-          <SelectTrigger aria-label={t("Currency")} size="sm" className="h-8 w-full rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] px-2 text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)]">
-            {supportedQuoteCurrencies.map((currency) => <SelectItem key={currency} value={currency}>{currency}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      ) : <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{row.currency}</span>,
-    },
-    {
-      id: "amount",
-      label: "Amount",
-      width: 126,
-      minWidth: 108,
-      resizable: true,
-      sortValue: (row) => row.amount,
-      cellClassName: "text-end",
-      cell: (row) => <EditableChargeCell value={row.amount} editable={editable} numeric onChange={(value) => onChargeChange(row.id, isIncoming ? "costAmount" : "sellAmount", value)} />,
-    },
-    {
-      id: "roe",
-      label: "ROE",
-      width: 108,
-      minWidth: 96,
-      resizable: true,
-      sortValue: (row) => row.roe,
-      cellClassName: "text-end",
-      cell: (row) => <EditableChargeCell value={row.roe} editable={editable} numeric onChange={(value) => onChargeChange(row.id, isIncoming ? "costExchange" : "sellExchange", value)} />,
-    },
-    {
-      id: "local",
-      label: "Local",
-      width: 126,
-      minWidth: 108,
-      resizable: true,
-      sortValue: (row) => row.local,
-      cellClassName: "text-end",
-      cell: (row) => <EditableChargeCell value={row.local} editable={editable} numeric onChange={(value) => onChargeChange(row.id, isIncoming ? "localCost" : "localSell", value)} />,
-    },
-    {
-      id: "party",
-      label: partyHeading,
-      width: 190,
-      minWidth: 150,
-      maxWidth: 320,
-      resizable: true,
-      sortValue: (row) => row.party,
-      cell: (row) => <EditableChargeCell value={row.party} editable={isIncoming && editable} onChange={(value) => onChargeChange(row.id, "creditor", value)} />,
-    },
-    {
-      id: "detail",
-      label: detailHeading,
-      width: 220,
-      minWidth: 170,
-      maxWidth: 380,
-      resizable: true,
-      sortValue: (row) => row.detail,
-      cell: (row) => <EditableChargeCell value={row.detail} editable={editable} placeholder={t("Add detail")} onChange={(value) => onChargeChange(row.id, isIncoming ? "internalNotes" : "additionalDetail", value)} />,
-    },
-  ], [detailHeading, editable, isIncoming, onChargeChange, partyHeading, t])
-
-  return (
-    <Surface padding="none" className="min-w-0 overflow-hidden rounded-[var(--md-radius-xl)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="min-w-0">
-            <h3 className="truncate text-[13px] font-medium text-[var(--md-ink)]">{t(title)}</h3>
-            <p className="truncate text-[10.5px] text-[var(--md-subtle)]">{t(description)}</p>
-          </div>
-        </div>
-        <div className="shrink-0 text-end">
-          <span className="block text-[10px] font-medium text-[var(--md-subtle)]">{t("Local total")}</span>
-          <span data-i18n-skip dir="ltr" className="block text-[13px] font-medium tabular-nums text-[var(--md-ink)]">{money(total)}</span>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button type="button" variant="ghost" size="sm" onClick={onAddCharge} disabled={!editable} className="text-[10.5px] shadow-[var(--md-shadow-line)]"><Plus data-icon="inline-start" className="size-3" />{t("Add")}</Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => selectedRow !== null && onRemoveCharge(selectedRow)} disabled={!editable || selectedRow === null} className="text-[10.5px] shadow-[var(--md-shadow-line)]"><Trash2 data-icon="inline-start" className="size-3" />{t("Remove")}</Button>
-        </div>
-      </div>
-      <DataTable
-        ariaLabel={title}
-        columnsButtonLabel={`Manage ${title} columns`}
-        toolbarTabs={toolbarTabs}
-        toolbarOptions={toolbarOptions}
-        columns={columns}
-        rows={rows}
-        getRowKey={(row) => String(row.id)}
-        storageKey={`quote-charges-${side}`}
-        selectedRowKey={selectedRow === null ? null : String(selectedRow)}
-        onRowClick={(row) => setSelectedRow(row.id)}
-        className="rounded-none bg-[var(--md-surface)] shadow-none"
-        tableClassName="text-[11px] [&_th]:h-9 [&_td]:h-11 [&_td]:px-2 [&_td]:py-1.5"
-      />
-    </Surface>
-  )
-}
-
-function QuoteChargesPanel({
-  charges,
-  customer,
-  editable,
-  jobRoePanel,
-  onChargeChange,
-  onAddCharge,
-  onRemoveCharge,
-}: {
-  charges: QuoteCharge[]
-  customer: string
-  editable: boolean
-  jobRoePanel?: ReactNode
-  onChargeChange: (index: number, field: QuoteChargeEditableField, value: string) => void
-  onAddCharge: () => void
-  onRemoveCharge: (index: number) => void
-}) {
-  const { direction, t } = useLanguage()
-  const totals = useMemo(() => getChargeTotals(charges), [charges])
-  const [chargeView, setChargeView] = useState<"split" | "tabs">("split")
-  const [activeChargeSide, setActiveChargeSide] = useState<ChargePanelSide>("in")
-  const [splitRatio, setSplitRatio] = useState(50)
-  const [isSplitResizing, setIsSplitResizing] = useState(false)
-  const [isSplitFullscreen, setIsSplitFullscreen] = useState(false)
-  const splitWorkspaceRef = useRef<HTMLDivElement>(null)
-
-  function updateSplitRatio(clientX: number) {
-    const bounds = splitWorkspaceRef.current?.getBoundingClientRect()
-    if (!bounds) return
-    const pointerRatio = ((clientX - bounds.left) / bounds.width) * 100
-    const nextRatio = direction === "rtl" ? 100 - pointerRatio : pointerRatio
-    setSplitRatio(Math.max(30, Math.min(70, nextRatio)))
-  }
-
-  function splitWorkspaceKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
-    event.preventDefault()
-    const visualDelta = event.key === "ArrowLeft" ? -5 : 5
-    const logicalDelta = direction === "rtl" ? -visualDelta : visualDelta
-    setSplitRatio((current) => Math.max(30, Math.min(70, current + logicalDelta)))
-  }
-
-  const chargeViewTabs = (
-    <>
-      <Tabs value={chargeView} onValueChange={(value) => setChargeView(value as "split" | "tabs")}>
-        <TabsList className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-0.5 shadow-[var(--md-shadow-line)]">
-          <TabsTrigger value="split" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none">{t("Side by side")}</TabsTrigger>
-          <TabsTrigger value="tabs" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none">{t("Tabbed")}</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      {chargeView === "tabs" ? (
-        <Tabs value={activeChargeSide} onValueChange={(value) => setActiveChargeSide(value as ChargePanelSide)}>
-          <TabsList className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-0.5 shadow-[var(--md-shadow-line)]">
-            <TabsTrigger value="in" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none">{t("Supplier")}</TabsTrigger>
-            <TabsTrigger value="out" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none">{t("Customer")}</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      ) : null}
-    </>
-  )
-
-  const chargeViewOptions = chargeView === "split" ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" onClick={() => setIsSplitFullscreen(true)} className="size-8 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] p-0 text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:opacity-90" aria-label={t("Expand charge workspace")}>
-          <Maximize2 className="size-3.5" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{t("Expand charge workspace")}</TooltipContent>
-    </Tooltip>
-  ) : null
-
-  const splitChargeWorkspace = (
-    <div className={cn("md-charge-split-workspace min-w-0", isSplitFullscreen && "md-charge-split-workspace--fullscreen")}>
-      <div
-        ref={splitWorkspaceRef}
-        className={cn("md-charge-split-workspace__panes", isSplitResizing && "md-charge-split-workspace__panes--resizing")}
-        style={{ "--md-charge-split-position": `${splitRatio}%` } as CSSProperties}
-      >
-        <ChargeSidePanel charges={charges} side="in" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} toolbarTabs={chargeViewTabs} toolbarOptions={chargeViewOptions} />
-        <button
-          type="button"
-          className="md-charge-split-workspace__divider"
-          aria-label={t("Resize supplier and customer charge tables")}
-          aria-orientation="vertical"
-          aria-valuemin={30}
-          aria-valuemax={70}
-          aria-valuenow={Math.round(splitRatio)}
-          onKeyDown={splitWorkspaceKeyDown}
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId)
-            setIsSplitResizing(true)
-            updateSplitRatio(event.clientX)
-          }}
-          onPointerMove={(event) => {
-            if (isSplitResizing) updateSplitRatio(event.clientX)
-          }}
-          onPointerUp={(event) => {
-            setIsSplitResizing(false)
-            event.currentTarget.releasePointerCapture(event.pointerId)
-          }}
-          onPointerCancel={() => setIsSplitResizing(false)}
-        >
-          <span aria-hidden="true" />
-        </button>
-        <ChargeSidePanel charges={charges} side="out" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} />
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="grid gap-[var(--md-page-stack-gap-compact)]">
-      <div className="grid items-start gap-2 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { label: "Cost", value: money(totals.cost), detail: "Estimated local cost" },
-            { label: "Revenue", value: money(totals.revenue), detail: "Customer sell total" },
-            { label: "Profit", value: money(totals.profit), detail: `Margin ${totals.margin}` },
-          ].map((metric) => (
-            <div key={metric.label} className="min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_0_1px_var(--md-accent-a10),0_8px_18px_var(--md-accent-a16)]">
-              <span className="block text-[10px] font-medium text-white/65">{t(metric.label)}</span>
-              <span data-i18n-skip dir="ltr" className="mt-0.5 block truncate text-[14px] font-semibold leading-4 tabular-nums text-white">{metric.value}</span>
-              <span className="mt-1 block truncate text-[10px] text-white/78">{t(metric.detail)}</span>
-            </div>
-          ))}
-        </div>
-        {jobRoePanel}
-      </div>
-      {chargeView === "split" ? (
-        isSplitFullscreen ? null : splitChargeWorkspace
-      ) : (
-        <Tabs value={activeChargeSide} onValueChange={(value) => setActiveChargeSide(value as ChargePanelSide)} className="min-w-0">
-          <TabsContent value="in" className="mt-0 min-w-0"><ChargeSidePanel charges={charges} side="in" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} toolbarTabs={chargeViewTabs} toolbarOptions={chargeViewOptions} /></TabsContent>
-          <TabsContent value="out" className="mt-0 min-w-0"><ChargeSidePanel charges={charges} side="out" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} toolbarTabs={chargeViewTabs} toolbarOptions={chargeViewOptions} /></TabsContent>
-        </Tabs>
-      )}
-
-      <div className="grid gap-2 xl:grid-cols-2">
-        <Surface padding="sm" className="rounded-[var(--md-radius-xl)]">
-          <SectionHeader title={t("Selected charge · Cost")} />
-          <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-            <QuoteField label="Charge code" value="ECCLR" />
-            <QuoteField label="Department" value="CES - Clearance Export Sea" />
-            <QuoteField label="Cost currency" value="GBP" />
-            <QuoteField label="Agent cost" value="0.00 GBP" />
-          </div>
-        </Surface>
-        <Surface padding="sm" className="rounded-[var(--md-radius-xl)]">
-          <SectionHeader title={t("Selected charge · Revenue")} />
-          <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-            <QuoteField label="Charge type" value="MJA" />
-            <QuoteField label="Chargeable" value="0.000 M3" />
-            <QuoteField label="Revenue currency" value="GBP" />
-            <QuoteField label="Agent revenue" value="35.00 GBP" />
-          </div>
-          <p className="mt-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 py-1.5 text-[10.5px] leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-            {t("Keep the line editable until carrier and overseas agent costs are locked.")}
-          </p>
-        </Surface>
-      </div>
-      <Dialog open={isSplitFullscreen} onOpenChange={setIsSplitFullscreen}>
-        <DialogContent className="!top-0 !right-0 !bottom-0 !left-0 !h-[100dvh] !w-[100dvw] !max-w-none !translate-x-0 !translate-y-0 overflow-hidden rounded-none border-0 p-0 sm:!max-w-none">
-          <DialogHeader className="sr-only">
-            <DialogTitle>{t("Charge workspace")}</DialogTitle>
-            <DialogDescription>{t("Compare supplier and customer charge tables with a resizable split view.")}</DialogDescription>
-          </DialogHeader>
-          {chargeView === "split" ? splitChargeWorkspace : null}
-        </DialogContent>
-      </Dialog>
-    </div>
   )
 }
 
@@ -2272,6 +1889,19 @@ function UnifiedQuoteChargesPanel({
 }) {
   const [financeCurrencies, setFinanceCurrencies] = useState<QuoteChargeCurrency[] | null>(null)
   const [financeRates, setFinanceRates] = useState<ApiFinanceExchangeRate[] | null>(null)
+  const [liveChargeCatalogue, setLiveChargeCatalogue] = useState<QuoteChargeCatalogue | null>(null)
+  const [chargeCatalogueError, setChargeCatalogueError] = useState("")
+
+  useEffect(() => {
+    let cancelled = false
+    setChargeCatalogueError("")
+    void getQuoteChargeCatalogue().then(result => { if (!cancelled) setLiveChargeCatalogue(result) })
+      .catch(error => { if (!cancelled) setChargeCatalogueError(error instanceof Error ? error.message : "Charge codes could not be loaded.") })
+    return () => { cancelled = true }
+  }, [])
+  const chargeChoices = useMemo(() => liveChargeCatalogue
+    ? availableChargeChoices(liveChargeCatalogue, "quote", quote.direction ?? "", quote.mode)
+    : [], [liveChargeCatalogue, quote.direction, quote.mode])
 
   useEffect(() => {
     let cancelled = false
@@ -2442,17 +2072,18 @@ function UnifiedQuoteChargesPanel({
   }
 
   return (
-    <UnifiedQuoteChargesWorkspace
+    <>{chargeCatalogueError ? <p role="alert" className="mb-3 text-[13px] text-[var(--md-red)]">{chargeCatalogueError}</p> : null}<UnifiedQuoteChargesWorkspace
       rows={rows}
       onRowsChange={updateCharges}
       createRow={() => newQuoteChargeRow(quote)}
+      chargeChoices={chargeChoices}
       parties={parties}
       currencies={currencies}
       exchangeRates={exchangeRates}
       baseCurrency={quote.currency}
       readOnly={!editable}
       storageKey={`quote-${quote.id}-charges`}
-    />
+    /></>
   )
 }
 
@@ -3885,7 +3516,7 @@ function QuoteDetailsPanelV2({
       const types = (organisation.types ?? []).map((type) => type.trim().toLocaleLowerCase())
       const matches = (role: OrganisationRole) => {
         if (!types.length) return role in fallbackIds && fallbackIds[role as keyof typeof fallbackIds].has(organisation.id)
-        if (role === "customer" || role === "payer") return types.includes("customer")
+        if (role === "customer" || role === "payer") return organisationIsCustomer(types)
         if (role === "supplier") return types.includes("supplier")
         if (role === "carrier") return types.some((type) => /^(carrier|shipping line|haulier|freight forwarder)$/.test(type))
         if (role === "agent") return types.some((type) => /\bagents?\b/.test(type))
@@ -4535,16 +4166,14 @@ function QuoteDetailsPanelV2({
         <div className="grid gap-2">
           {isSeaContainerised ? (
             <div className="grid gap-1.5" role="group" aria-label={t("Container requests")}>
+              <div className="md-quote-terms-grid">
+                <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
+                <QuoteCompactInput label={incotermNamedPlaceLabel} value={quote.incotermPlace ?? ""} width="full" required={Boolean(incotermDefinition)} invalid={requireCoreFields && validationAttempted && incotermNamedPlaceMissing} disabled={!editable} onChange={(value) => onQuoteChange("incotermPlace", value)} />
+              </div>
               {containerRequests.map((request, index) => {
                 const rowInvalid = requireCoreFields && validationAttempted && (!request.quantity || !request.type.trim())
                 return (
-                  <div key={request.id} className="md-freight-container-row flex min-w-0 flex-wrap items-center gap-2">
-                    {index === 0 ? (
-                      <>
-                        <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
-                        <QuoteCompactInput label={incotermNamedPlaceLabel} value={quote.incotermPlace ?? ""} width="full" required={Boolean(incotermDefinition)} invalid={requireCoreFields && validationAttempted && incotermNamedPlaceMissing} disabled={!editable} onChange={(value) => onQuoteChange("incotermPlace", value)} />
-                      </>
-                    ) : <div className="hidden xl:col-span-2 xl:block" aria-hidden="true" />}
+                  <div key={request.id} className="md-freight-container-row">
                     <QuoteCompactInput
                       label={index === 0 ? "Qty" : `Qty ${index + 1}`}
                       value={request.quantity}
@@ -4579,14 +4208,12 @@ function QuoteDetailsPanelV2({
                     >
                       <Trash2 className="size-3.5" aria-hidden="true" />
                     </Button>
-                    {index === 0 ? (
-                      <Button type="button" variant="ghost" size="sm" disabled={!editable || containerRequests.length >= 20} onClick={addContainerRequest} className="mt-5 h-8 justify-self-start rounded-[var(--md-radius-md)] px-2 text-[10.5px] sm:justify-self-end xl:justify-self-start">
-                        <Plus className="size-3" aria-hidden="true" />{t("Add container")}
-                      </Button>
-                    ) : <div className="hidden xl:block" aria-hidden="true" />}
                   </div>
                 )
               })}
+              <Button type="button" variant="ghost" size="sm" disabled={!editable || containerRequests.length >= 20} onClick={addContainerRequest} className="h-8 justify-self-start rounded-[var(--md-radius-md)] px-2 text-[10.5px]">
+                <Plus className="size-3" aria-hidden="true" />{t("Add container")}
+              </Button>
               {requireCoreFields && validationAttempted && !quote.container.trim() ? (
                 <p className="text-[10.5px] leading-4 text-[var(--md-red)]">{t("Add at least one complete container request")}</p>
               ) : null}
@@ -5368,7 +4995,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
 function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace): QuoteCharge[] {
   return workspace.charges.map((line) => ({
     id: line.id,
-    code: "",
+    code: line.code ?? "",
     description: line.description,
     creditor: line.sourceLabel || "",
     supplierId: line.supplierId,
@@ -5551,6 +5178,7 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
   const shipmentType = lookups?.shipmentTypes.find((option) => option.code === shipmentTypeLabel || option.name === quote.shipmentType)?.code ?? shipmentTypeLabel
   const mappedCharges: QuoteWorkflowCharge[] = charges.map((line) => ({
     id: line.id ?? crypto.randomUUID(),
+    code: line.code,
     description: line.description || line.code,
     // The compact charge workspace includes display-only party IDs for its
     // demo/current-party options. Only real organisation UUIDs can be sent
@@ -5885,7 +5513,7 @@ export function QuoteDetailPage({
   const shouldReduceMotion = useReducedMotion()
   const initialQuote = getInitialQuoteRecord(quoteId)
   const isNewQuote = quoteId?.toUpperCase() === "NEW"
-  const initialCharges = isNewQuote ? [] : quoteCharges
+  const initialCharges: QuoteCharge[] = []
   const [activeTab, setActiveTab] = useState<QuoteWorkspaceTab>(() => initialQuoteWorkspaceTab(quoteId, isNewQuote))
   const [tabTravelDirection, setTabTravelDirection] = useState(1)
   const [savedQuote, setSavedQuote] = useState<QuoteRecord>(initialQuote)
@@ -6345,79 +5973,6 @@ export function QuoteDetailPage({
       return
     }
     setPendingCustomerChange(change)
-  }
-
-  function updateDraftCharge(index: number, field: QuoteChargeEditableField, value: string) {
-    const getJobRate = (currency: QuoteCurrency, rateType: "costRate" | "revenueRate") => {
-      if (currency === "GBP") return 1
-      return draftQuote.jobRoes?.find((roe) => roe.currency === currency)?.[rateType] ?? 1
-    }
-
-    setDraftCharges((current) =>
-      current.map((line, lineIndex) => {
-        if (lineIndex !== index) return line
-        const numericValue = Number(value) || 0
-        if (field === "code") {
-          const option = chargeCatalogue.find((charge) => charge.code === value)
-          return { ...line, code: value, ...(option ? { description: option.description } : {}) }
-        }
-        if (field === "description") {
-          return { ...line, description: value }
-        }
-        if (field === "costCurrency") {
-          const currency = value as QuoteCurrency
-          const rate = getJobRate(currency, "costRate")
-          return { ...line, costCurrency: currency, costExchange: rate, costRoeSource: "job", localCost: line.costAmount / rate }
-        }
-        if (field === "sellCurrency") {
-          const currency = value as QuoteCurrency
-          const rate = getJobRate(currency, "revenueRate")
-          return { ...line, sellCurrency: currency, sellExchange: rate, sellRoeSource: "job", localSell: line.sellAmount / rate }
-        }
-        if (field === "costAmount") {
-          return { ...line, costAmount: numericValue, localCost: numericValue / line.costExchange }
-        }
-        if (field === "sellAmount") {
-          return { ...line, sellAmount: numericValue, localSell: numericValue / line.sellExchange }
-        }
-        if (field === "costExchange") {
-          return { ...line, costExchange: numericValue, costRoeSource: "override", localCost: numericValue ? line.costAmount / numericValue : line.costAmount }
-        }
-        if (field === "sellExchange") {
-          return { ...line, sellExchange: numericValue, sellRoeSource: "override", localSell: numericValue ? line.sellAmount / numericValue : line.sellAmount }
-        }
-        if (field === "localCost" || field === "localSell") {
-          return { ...line, [field]: numericValue }
-        }
-        return { ...line, [field]: value }
-      }),
-    )
-  }
-
-  function addDraftCharge() {
-    const template = chargeCatalogue[0]
-    setDraftCharges((current) => [...current, {
-      code: template.code,
-      description: template.description,
-      creditor: "Supplier pending",
-      costCurrency: "GBP",
-      costAmount: 0,
-      localCost: 0,
-      sellCurrency: "GBP",
-      sellAmount: 0,
-      localSell: 0,
-      costExchange: 1,
-      sellExchange: 1,
-      costRoeSource: "job",
-      sellRoeSource: "job",
-      department: "SEA",
-      internalNotes: "",
-      additionalDetail: "",
-    }])
-  }
-
-  function removeDraftCharge(index: number) {
-    setDraftCharges((current) => current.filter((_, lineIndex) => lineIndex !== index))
   }
 
   function updateJobRoe(currency: JobRoe["currency"], field: "costRate" | "revenueRate", value: string) {
