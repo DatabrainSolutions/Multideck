@@ -327,7 +327,7 @@ async function exportToErpNext(input: CanonicalFinanceExport): Promise<Accountin
       submitted = before
     } else {
       assertReadback(before, 0)
-      await erpNextSubmit(request.doctype, externalId)
+      await erpNextSubmit(request.doctype, externalId, before)
       submitted = await read()
       assertReadback(submitted, 1)
     }
