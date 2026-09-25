@@ -245,3 +245,7 @@ incremental application plan; local filename order is not proof of its state.
   provider period runs and accounting close reviews). No new Finance migration
   has been applied there in this workstream. The local test cannot be treated
   as an installed-tenant result.
+- A wider read-only check on 25 September found none of the 21 tables created
+  by the current 24-file Finance manifest on that development project. This
+  confirms the release tables are absent before rollout; it does not establish
+  identical definitions for the pre-existing functions those migrations replace.
