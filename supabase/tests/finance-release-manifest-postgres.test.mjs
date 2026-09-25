@@ -77,6 +77,7 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925083125_accounting_period_vat_control_signoff.sql',
       '20260925083450_finance_opening_fx_settlement.sql',
       '20260925083833_accounting_period_vat_control_dexter_parity.sql',
+      '20260925084337_opening_trade_control_fx_settlement_bridge.sql',
       '20260925085000_finance_opening_mirror_delivery.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',
