@@ -400,6 +400,7 @@ function DocumentStudioWorkspace({
   sampleData,
   onDataChange,
   onError,
+  onPreviewChange,
 }: {
   session: DocumentStudioSession | null
   request: DocumentStudioRequest | null
@@ -407,6 +408,7 @@ function DocumentStudioWorkspace({
   sampleData: Record<string, unknown> | null
   onDataChange: (data: Record<string, unknown>) => void
   onError: (message: string | null) => void
+  onPreviewChange: (ready: boolean) => void
 }) {
   const { t } = useLanguage()
   const hostRef = useRef<HTMLDivElement>(null)
@@ -414,10 +416,12 @@ function DocumentStudioWorkspace({
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const onDataChangeRef = useRef(onDataChange)
+  const onPreviewChangeRef = useRef(onPreviewChange)
 
   useEffect(() => {
     onDataChangeRef.current = onDataChange
   }, [onDataChange])
+  useEffect(() => { onPreviewChangeRef.current = onPreviewChange }, [onPreviewChange])
 
   useEffect(() => {
     if (!session || !request || !templateBase64 || !hostRef.current) return
@@ -456,6 +460,7 @@ function DocumentStudioWorkspace({
           const currentRequestId = ++previewRequestId
           latestSampleData = sampleData
           setPreviewLoading(true)
+          onPreviewChangeRef.current(false)
           try {
             const response = await renderDocumentStudioPreview({
               ...activeRequest,
@@ -469,10 +474,12 @@ function DocumentStudioWorkspace({
             if (activePreviewUrl) URL.revokeObjectURL(activePreviewUrl)
             activePreviewUrl = URL.createObjectURL(new Blob([bytes], { type: contentType }))
             setPreviewUrl(activePreviewUrl)
+            onPreviewChangeRef.current(true)
             onError(null)
             return { bytes, contentType }
           } catch (previewError) {
             if (!disposed && currentRequestId === previewRequestId) {
+              onPreviewChangeRef.current(false)
               onError(previewError instanceof Error ? previewError.message : t("The Studio preview could not be created."))
             }
             throw previewError
@@ -640,6 +647,7 @@ function DocumentStudioWorkspace({
     const startTimer = window.setTimeout(() => void startStudio(), 0)
     return () => {
       disposed = true
+      onPreviewChangeRef.current(false)
       window.clearTimeout(startTimer)
       previewRequestId += 1
       studioDataObserver?.disconnect()
@@ -906,6 +914,7 @@ function CreateDocumentWorkspace({
   const [studioData, setStudioData] = useState<Record<string, unknown> | null>(null)
   const [studioLoading, setStudioLoading] = useState(false)
   const [studioError, setStudioError] = useState<string | null>(null)
+  const [studioPreviewReady, setStudioPreviewReady] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [publishingSource, setPublishingSource] = useState(false)
   const [savedTemplate, setSavedTemplate] = useState<SaveDocumentStudioTemplateResponse | null>(null)
@@ -934,6 +943,7 @@ function CreateDocumentWorkspace({
     setStudioTemplateBase64(null)
     setStudioData(null)
     setStudioError(null)
+    setStudioPreviewReady(false)
     setSavedTemplate(null)
   }, [initialTemplateCode, templates[0]?.code])
 
@@ -1123,6 +1133,7 @@ function CreateDocumentWorkspace({
     setError(null)
     setDraftPreviewUrl(null)
     setDraftReviewed(false)
+    setStudioPreviewReady(false)
     clearStudio()
   }
 
@@ -1132,6 +1143,7 @@ function CreateDocumentWorkspace({
     if (!preserveTemplate) setStudioTemplateBase64(null)
     setStudioData(null)
     setStudioError(null)
+    setStudioPreviewReady(false)
     if (!preserveTemplate) setSavedTemplate(null)
   }
 
@@ -1210,6 +1222,7 @@ function CreateDocumentWorkspace({
       const base64 = await readTemplateFile(file)
       setStudioTemplateBase64(base64)
       setSavedTemplate(null)
+      setStudioPreviewReady(false)
       toast.success(t("Edited template loaded"), { description: t("The live preview is updating with your current JSON data.") })
     } catch (uploadError) {
       setStudioError(uploadError instanceof Error ? uploadError.message : t("The edited template could not be loaded."))
@@ -1366,8 +1379,8 @@ function CreateDocumentWorkspace({
                 </Button>
               ) : null}
               {canManageTemplates && savedTemplate?.status === "draft" ? <>
-                <label className="flex items-center gap-1.5 text-[11px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label>
-                <Button type="button" variant="ghost" disabled={!draftReviewed || approvingTemplate} onClick={() => void approveTemplate()} className="h-9 text-[11px]">{approvingTemplate ? t("Publishing…") : t("Publish version")}</Button>
+                <label className="flex items-center gap-1.5 text-[11px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} disabled={!studioPreviewReady} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label>
+                <Button type="button" variant="ghost" disabled={!studioPreviewReady || !draftReviewed || approvingTemplate} onClick={() => void approveTemplate()} className="h-9 text-[11px]">{approvingTemplate ? t("Publishing…") : t("Publish version")}</Button>
               </> : null}
               {savedTemplate ? (
                 <Button type="button" variant="ghost" size="icon-lg" onClick={() => void copyTemplateId()} aria-label={t("Copy Carbone template ID")} title={t("Copy Carbone template ID")} className="rounded-[var(--md-radius-md)]">
@@ -1429,6 +1442,7 @@ function CreateDocumentWorkspace({
               sampleData={studioData}
               onDataChange={setStudioData}
               onError={setStudioError}
+              onPreviewChange={(ready) => { setStudioPreviewReady(ready); if (!ready) setDraftReviewed(false) }}
             />
           </div>
           <div className="sr-only" role="status" aria-live="polite">
