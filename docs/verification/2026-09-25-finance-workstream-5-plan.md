@@ -93,9 +93,11 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 13. `20260925073708_charge_event_initial_recognition.sql`
 14. `20260925074532_charge_lifecycle_review_replay.sql`
 15. `20260925075054_reviewed_charge_lifecycle_corrections.sql`
-16. `20260925080000_bank_statement_reconciliation.sql`
-17. `20260925090000_finance_provider_period_reconciliation.sql`
-18. `20260925100000_finance_reconciliation_dexter.sql`
+16. `20260925075621_opening_source_items_and_operational_markers.sql`
+17. `20260925080000_bank_statement_reconciliation.sql`
+18. `20260925085000_finance_opening_mirror_delivery.sql`
+19. `20260925090000_finance_provider_period_reconciliation.sql`
+20. `20260925100000_finance_reconciliation_dexter.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -143,7 +145,8 @@ incremental application plan; local filename order is not proof of its state.
   posting, initial event recognition and Dexter reconciliation were added after
   that full access run. The now sixteen-file manifest installed in isolation on
   PostgreSQL at the next checkpoint; lifecycle replay and reviewed correction
-  migrations then brought the provisional manifest to eighteen files. The full access suite must run again after
+  migrations, source-item intake and opening-mirror delivery then brought the
+  provisional manifest to twenty files. The full access suite must run again after
   workstream handoff.
 - The 25 September combined client `npm run build` passed TypeScript and Vite
   after Finance 3 completed its in-progress components. Broad
@@ -189,3 +192,14 @@ incremental application plan; local filename order is not proof of its state.
   with posted batches. No provider API was called and no reconciliation run
   was recorded. This is candidate test context, not selection of a safe period
   or proof of ERPNext/Sage parity.
+- A second read-only schema preflight found all eighteen sampled prerequisites
+  for this Finance chain present on the development project, including native
+  journals/posting batches, accrual and WIP tables, cost controls, nominal
+  mappings, bank statement tables, Dexter signals and the core access/posting
+  functions. This resolves basic object absence, not the divergent historical
+  migration-name/content comparison or actor-level access proof.
+- The same development project has none of six sampled new Finance 1–4 tables
+  (opening packages, supplier POs, AI proposals, charge lifecycle queue,
+  provider period runs and accounting close reviews). No new Finance migration
+  has been applied there in this workstream. The local test cannot be treated
+  as an installed-tenant result.

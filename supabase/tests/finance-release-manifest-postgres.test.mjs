@@ -63,7 +63,9 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925073708_charge_event_initial_recognition.sql',
       '20260925074532_charge_lifecycle_review_replay.sql',
       '20260925075054_reviewed_charge_lifecycle_corrections.sql',
+      '20260925075621_opening_source_items_and_operational_markers.sql',
       '20260925080000_bank_statement_reconciliation.sql',
+      '20260925085000_finance_opening_mirror_delivery.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',
     ]
@@ -95,8 +97,10 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       'event_recognitions', to_regclass('public."FIN_ChargeEventRecognitions"') is not null,
       'lifecycle_recheck', to_regprocedure('public.multideck_finance_charge_lifecycle_requeue(uuid,uuid,uuid,text)') is not null,
       'charge_corrections', to_regclass('public."FIN_ChargeCorrections"') is not null,
+      'opening_source_items', to_regclass('public."FIN_OpeningSourceItems"') is not null,
       'bank_reconciliation_watch', exists(select 1 from pg_trigger where tgname='bank_reconciliation_watch' and not tgisinternal),
       'bank_control', exists(select 1 from pg_proc where proname='multideck_bank_statement_control'),
+      'opening_mirror_delivery', to_regclass('public."FIN_OpeningMirrorDeliveries"') is not null,
       'provider_period_runs', to_regclass('public."ACCI_PeriodReconciliationRuns"') is not null,
       'provider_period_differences', to_regclass('public."ACCI_PeriodReconciliationDifferences"') is not null,
       'bank_control_service_only', not has_function_privilege('authenticated','public.multideck_bank_statement_control(uuid,uuid,uuid,uuid)','EXECUTE')
