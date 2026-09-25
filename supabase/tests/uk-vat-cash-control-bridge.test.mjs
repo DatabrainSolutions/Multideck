@@ -70,6 +70,18 @@ const fixture = () => ({
     expectedInputVatGbp: "40.0000", postedInputVatGbp: "40.0000",
     lines: [{ id: "input-tax-posting-1", classification: "matched_invoice" }],
   },
+  acceptedHistory: {
+    status: "accepted_history_matched", digest: "6".repeat(64),
+    periodCount: 1, uncoveredDays: 0, unacceptedPeriods: 0,
+    outsideTermPeriods: 0, sourceLineCount: 2, uncoveredSourceLines: 0,
+    periods: [{ periodId: "prior-cash-period", status: "accepted",
+      environment: "production", attemptId: "accepted-attempt-1",
+      calculationId: "prior-calc-1", acceptanceKind: "receipt" }],
+    sourceLines: [
+      { invoiceId: "sale-1", lineId: "sale-taxable", allocationId: "alloc-a", matched: true },
+      { invoiceId: "sale-1", lineId: "sale-zero", allocationId: "alloc-a", matched: true },
+    ],
+  },
   paymentPreview: {
     status: "preview_only_no_cash_return_effect", amountEncoding: "decimal_strings",
     projectionId: "projection-1", legalEntityId: "entity-1",
@@ -181,4 +193,10 @@ test("Cash bridge surfaces payment mismatch and blocks incomplete source coverag
   const controlMismatch = fixture()
   controlMismatch.ledgerMovements.postedInputVatGbp = "39.9999"
   assert.equal(previewUkVatCashControlBridge(controlMismatch).streams, null)
+  const unacceptedPrior = fixture()
+  unacceptedPrior.acceptedHistory.periods[0].status = "unaccepted"
+  assert.equal(previewUkVatCashControlBridge(unacceptedPrior).streams, null)
+  const omittedPriorEvent = fixture()
+  omittedPriorEvent.acceptedHistory.sourceLines.pop()
+  assert.equal(previewUkVatCashControlBridge(omittedPriorEvent).streams, null)
 })

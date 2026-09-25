@@ -88,6 +88,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   const journal = object(source?.journalEvidence)
   const accounting = object(source?.accountingControls)
   const ledger = object(source?.ledgerMovements)
+  const history = object(source?.acceptedHistory)
   const issues: string[] = []
   let issueCount = 0
   const issue = (message: string) => { issueCount++; if (issues.length < 30) issues.push(message) }
@@ -100,7 +101,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   if (!source || source.status !== "cash_control_source_only"
     || source.returnReady !== false || source.truncated !== false
     || !digestPattern.test(String(source.sourceDigest ?? ""))
-    || !context || !inventory || !projection || !anomalies || !journal || !accounting || !ledger
+    || !context || !inventory || !projection || !anomalies || !journal || !accounting || !ledger || !history
     || inventory.truncated !== false || inventory.amountEncoding !== "decimal_strings"
     || projection.amountEncoding !== "decimal_strings"
     || projection.status !== "preview_only_no_cash_return_effect"
@@ -124,7 +125,11 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     || !Array.isArray(accounting.periods)
     || ledger.status !== "period_movements_matched"
     || !digestPattern.test(String(ledger.digest ?? ""))
-    || !Array.isArray(ledger.lines)) {
+    || !Array.isArray(ledger.lines)
+    || history.status !== "accepted_history_matched"
+    || !digestPattern.test(String(history.digest ?? ""))
+    || !Array.isArray(history.periods)
+    || !Array.isArray(history.sourceLines)) {
     issue("A complete invoice and payment inventory bound to one Cash VAT period is required.")
     return empty()
   }
@@ -165,6 +170,22 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
           .includes(String(posting.classification ?? ""))
       })) {
       issue("Cash invoice VAT does not cover the posted VAT-control movements.")
+    }
+    if (errorCount(history.uncoveredDays) !== 0
+      || errorCount(history.unacceptedPeriods) !== 0
+      || errorCount(history.outsideTermPeriods) !== 0
+      || errorCount(history.uncoveredSourceLines) !== 0
+      || errorCount(history.periodCount) !== history.periods.length
+      || errorCount(history.sourceLineCount) !== history.sourceLines.length
+      || history.periods.some((item) => {
+        const period = object(item)
+        return !period || period.status !== "accepted"
+          || period.environment !== "production"
+          || typeof period.attemptId !== "string"
+          || typeof period.calculationId !== "string"
+          || !["receipt", "matched_readback"].includes(String(period.acceptanceKind ?? ""))
+      })) {
+      issue("Earlier Cash VAT periods need accepted HMRC returns and complete event coverage.")
     }
     start = date(context.periodStart)
     end = date(context.periodEnd)
@@ -244,6 +265,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   const closing = { outputVatGbp: 0n, inputVatGbp: 0n }
   const seenInvoices = new Set<string>()
   const seenAllocations = new Set<string>()
+  const priorSourceKeys = new Set<string>()
   const periodAllocations = new Map<string, { invoiceId: string; side: "sale" | "purchase" }>()
   for (const item of inventory.invoices) {
     const invoice = object(item)
@@ -319,6 +341,11 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
             { invoiceId, side })
         }
         if (effectiveDate < start) paidOpening += amount
+        if (effectiveDate < start) {
+          for (const line of lines) {
+            priorSourceKeys.add(`${invoiceId}:${line.lineId}:${allocation.allocationId}`)
+          }
+        }
         if (effectiveDate <= end) paidClosing += amount
       }
       if (paidClosing > gross || paidClosing !== units(invoice.paid_through_exit)
@@ -355,6 +382,18 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   if (journalLines.size !== inventory.invoices.reduce((total, invoice) =>
     total + (Array.isArray(object(invoice)?.lines) ? (object(invoice)?.lines as unknown[]).length : 0), 0)) {
     issue("Posted VAT journal evidence does not cover every Cash invoice line.")
+  }
+  const historyKeys = new Set<string>()
+  for (const item of history.sourceLines) {
+    const row = object(item)
+    const key = `${String(row?.invoiceId)}:${String(row?.lineId)}:${String(row?.allocationId)}`
+    if (!row || row.matched !== true || historyKeys.has(key) || !priorSourceKeys.has(key)) {
+      issue("An earlier payment has no matching accepted Cash return event.")
+    }
+    historyKeys.add(key)
+  }
+  if (historyKeys.size !== priorSourceKeys.size) {
+    issue("Accepted Cash return events do not cover every earlier payment line.")
   }
   if (issueCount) return empty()
   try {
