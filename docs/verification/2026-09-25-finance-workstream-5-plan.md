@@ -98,9 +98,10 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 18. `20260925080000_bank_statement_reconciliation.sql`
 19. `20260925080343_opening_trade_control_bridge.sql`
 20. `20260925080746_finance_lifecycle_dexter_parity.sql`
-21. `20260925085000_finance_opening_mirror_delivery.sql`
-22. `20260925090000_finance_provider_period_reconciliation.sql`
-23. `20260925100000_finance_reconciliation_dexter.sql`
+21. `20260925081349_finance_charge_case_no_balance_resolution.sql`
+22. `20260925085000_finance_opening_mirror_delivery.sql`
+23. `20260925090000_finance_provider_period_reconciliation.sql`
+24. `20260925100000_finance_reconciliation_dexter.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -166,6 +167,18 @@ incremental application plan; local filename order is not proof of its state.
   is denied throughout. Authenticated execution is allowed only for the two
   explicitly reviewed reconciliation-watch readers, which check the signed-in
   user's company and Finance view permission; all other new functions deny it.
+- The twenty-fourth file adds approved, audited resolution of charge cases
+  whose reviewed source change has no balance effect. The 24-file manifest
+  installed and passed the table/function privilege audit locally on 25
+  September; it remains provisional until the peer handoffs settle.
+- `FINANCE_FULL_MIGRATIONS=1 node --test
+  supabase/tests/finance-daily-operations-postgres.test.mjs` now exercises the
+  ordered non-VAT Finance chain on local PostgreSQL through supplier invoice,
+  PO match, prepared payment run, independent approval and native cash posting.
+  Its first run found a close trigger reading a batch-only field on a posting
+  line. After Finance 3 patched that trigger, the integrated run passed 1/1 on
+  25 September. Finance 3 is adding a focused line and locked-period regression;
+  rerun this integration check after the remaining workstream changes settle.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.

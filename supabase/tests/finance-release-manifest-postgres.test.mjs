@@ -71,6 +71,7 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925080000_bank_statement_reconciliation.sql',
       '20260925080343_opening_trade_control_bridge.sql',
       '20260925080746_finance_lifecycle_dexter_parity.sql',
+      '20260925081349_finance_charge_case_no_balance_resolution.sql',
       '20260925085000_finance_opening_mirror_delivery.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',
@@ -121,6 +122,11 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       assert.equal(access.browser_execute, authenticatedWatchReaders.has(access.signature),
         `${access.signature} has an unexpected authenticated execution grant`)
     }
+    const watchGuard = sql(`select pg_get_functiondef('public.multideck_dexter_can_read_finance_reconciliation_watch(uuid)'::regprocedure)`)
+    assert.match(watchGuard, /auth\.uid\(\)/)
+    assert.match(watchGuard, /_multideck_dexter_has_permission/)
+    const watchList = sql(`select pg_get_functiondef('public.multideck_dexter_list_watches()'::regprocedure)`)
+    assert.match(watchList, /multideck_dexter_can_read_finance_reconciliation_watch/)
 
     const installed = JSON.parse(sql(`select jsonb_build_object(
       'lifecycle_queue', to_regclass('public."FIN_ChargeLifecycleQueue"') is not null,
