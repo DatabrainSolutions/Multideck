@@ -151,7 +151,11 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
   const when = formatEventWhen(startsAt, endsAt, timezone, language)
   const going = rsvp === "going"
   const answered = rsvp === "going" || rsvp === "maybe" || rsvp === "not_going"
-  const height = 252
+  const roomy = width >= 560
+  // Grow the whole ticket as one composition on wider surfaces. The image,
+  // content area and date stub retain their proportions instead of stretching
+  // a 252px-high mobile card across the desktop column.
+  const height = Math.round(Math.max(252, Math.min(332, width * 0.5)))
   return (
     <div ref={rootRef} className={cn("md-event-ticket min-w-0", className)} data-rsvp={rsvp} data-closed={closedLabel ? true : undefined} data-muted={muted || undefined}>
       {width > 0 ? (
@@ -160,12 +164,12 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
           width={width}
           height={height}
           stubSize={width < 300 ? 84 : width < 380 ? 96 : width < 720 ? 116 : 148}
-          radius={14}
-          holes={12}
+          radius={roomy ? 16 : 14}
+          holes={roomy ? 14 : 12}
           holeSize={6}
-          notch={9}
-          imageSpan={0.62}
-          imageRadius={8}
+          notch={roomy ? 10 : 9}
+          imageSpan={roomy ? 0.64 : 0.62}
+          imageRadius={roomy ? 10 : 8}
           image={imageUrl ?? ""}
           imageAlt=""
           scrim={false}
@@ -175,16 +179,16 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
           color="var(--md-ink)"
           borderColor="var(--md-line-strong)"
           stub={
-            <div className="flex h-full flex-col items-center justify-between px-2 py-5 text-center">
+            <div className={cn("flex h-full flex-col items-center justify-between text-center", roomy ? "px-3 py-7" : "px-2 py-5")}>
               <div className="grid gap-0.5" aria-hidden="true">
-                <span className="text-[11px] font-medium text-[var(--md-text)]">{parts.month}</span>
-                <span className="text-[26px] font-medium leading-none tracking-[-0.02em] text-[var(--md-ink)] [font-variant-numeric:tabular-nums]">{parts.day}</span>
-                <span className="text-[11px] text-[var(--md-subtle)]">{parts.weekday}</span>
+                <span className={cn("font-medium text-[var(--md-text)]", roomy ? "text-[12px]" : "text-[11px]")}>{parts.month}</span>
+                <span className={cn("font-medium leading-none tracking-[-0.02em] text-[var(--md-ink)] [font-variant-numeric:tabular-nums]", roomy ? "text-[30px]" : "text-[26px]")}>{parts.day}</span>
+                <span className={cn("text-[var(--md-subtle)]", roomy ? "text-[12px]" : "text-[11px]")}>{parts.weekday}</span>
               </div>
               {closedLabel ? <span className="text-[11px] text-[var(--md-subtle)]">{closedLabel}</span> : (
 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" size="sm" variant={rsvp === "none" ? "default" : "outline"} disabled={rsvp === "saving"} className="w-full max-w-[92px]"
+                    <Button type="button" size="sm" variant={rsvp === "none" ? "default" : "outline"} disabled={rsvp === "saving"} className={cn("w-full", roomy ? "max-w-[110px]" : "max-w-[92px]")}
                       aria-label={rsvp === "none" || rsvp === "saving" ? `${t("RSVP to")} ${title}` : `${t("Your RSVP")}: ${t(rsvpLabels[rsvp].short)}. ${t("Change")}`}>
                       {rsvp === "saving" ? t("Saving…") : rsvp === "none" ? t("RSVP") : t(rsvpLabels[rsvp].short)}
                     </Button>
@@ -204,17 +208,17 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
               <Ticket className="size-6 text-[var(--md-accent)]" strokeWidth={1.3} />
             </span>
           ) : null}
-          <button type="button" onClick={onOpen} className="md-event-ticket__open absolute inset-0 flex flex-col justify-end px-4 pb-4 text-start">
-            <span className="grid min-w-0 gap-1">
-              <span className="truncate text-[15px] font-medium leading-5 text-[var(--md-ink)]" dir="auto" data-i18n-skip>{title}</span>
-              <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--md-text)]">
-                <CalendarDays className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+          <button type="button" onClick={onOpen} className={cn("md-event-ticket__open absolute inset-0 flex flex-col justify-end text-start", roomy ? "px-5 pb-5" : "px-4 pb-4")}>
+            <span className={cn("grid min-w-0", roomy ? "gap-1.5" : "gap-1")}>
+              <span className={cn("truncate font-medium text-[var(--md-ink)]", roomy ? "text-[17px] leading-6" : "text-[15px] leading-5")} dir="auto" data-i18n-skip>{title}</span>
+              <span className={cn("flex min-w-0 items-center gap-1.5 text-[var(--md-text)]", roomy ? "text-[13px]" : "text-[12px]")}>
+                <CalendarDays className={cn("shrink-0 text-[var(--md-subtle)]", roomy ? "size-4" : "size-3.5")} strokeWidth={1.4} aria-hidden="true" />
                 <span className="truncate">{when}</span>
               </span>
-              <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--md-text)]">
-                <MapPin className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+              <span className={cn("flex min-w-0 items-center gap-1.5 text-[var(--md-text)]", roomy ? "text-[13px]" : "text-[12px]")}>
+                <MapPin className={cn("shrink-0 text-[var(--md-subtle)]", roomy ? "size-4" : "size-3.5")} strokeWidth={1.4} aria-hidden="true" />
                 <span className="truncate" dir="auto" data-i18n-skip>{location}</span>
-                {goingCount > 0 ? <span className="ms-auto shrink-0 text-[11px] text-[var(--md-subtle)] [font-variant-numeric:tabular-nums]">{goingCount} {t("going")}</span> : null}
+                {goingCount > 0 ? <span className={cn("ms-auto shrink-0 text-[var(--md-subtle)] [font-variant-numeric:tabular-nums]", roomy ? "text-[12px]" : "text-[11px]")}>{goingCount} {t("going")}</span> : null}
               </span>
             </span>
           </button>

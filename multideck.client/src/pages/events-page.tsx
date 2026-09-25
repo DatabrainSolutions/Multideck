@@ -107,7 +107,7 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
   }
 
   const ticketList = (list: CompanyEvent[]) => (
-    <ol className="mx-auto grid w-full gap-5 md:w-1/2 md:min-w-[360px]">
+    <ol className="mx-auto grid w-full max-w-[760px] gap-6 sm:w-[92%] lg:w-[82%]">
       {list.map((event, index) => (
         <motion.li key={event.id} className="grid gap-2"
           initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
