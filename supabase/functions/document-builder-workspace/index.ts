@@ -68,17 +68,6 @@ Deno.serve(async (request) => {
       p_offset: page.offset,
     })
 
-    if (payload.action === "library") {
-      const { data, error } = await admin.schema("document_api").rpc("unified_documents_page", {
-        caller_auth_user_id: userId,
-        p_search: page.search || null,
-        p_limit: page.limit,
-        p_offset: page.offset,
-      })
-      if (error || !data) throw error ?? new Error("Document library returned no data")
-      return jsonResponse(request, data)
-    }
-
     if (payload.action === "documents") {
       const documentPage = await readDocumentPage()
       if (!documentPage.error && documentPage.data) return jsonResponse(request, documentPage.data)

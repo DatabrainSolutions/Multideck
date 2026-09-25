@@ -47,8 +47,6 @@ import {
   createDocumentStudioTemplate,
   getDocumentBuilderWorkspace,
   getDocumentStudioDraftSource,
-  getDocumentLibraryPage,
-  getLibraryDocumentDownload,
   previewDraftDocumentStudioTemplate,
   getGeneratedDocumentsPage,
   getDocumentStudioComponent,
@@ -58,7 +56,6 @@ import {
   renderDocumentStudioPreview,
   saveDocumentStudioTemplate,
   type DocumentBuilderWorkspace,
-  type DocumentLibraryRow,
   type DocumentContentSectionCode,
   type DocumentOutputFormat,
   type DocumentStudioRequest,
@@ -1683,17 +1680,6 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const [previewDocumentUrl, setPreviewDocumentUrl] = useState<string | null>(null)
   const [previewDocumentLoading, setPreviewDocumentLoading] = useState(false)
   const [previewDocumentError, setPreviewDocumentError] = useState<string | null>(null)
-  const [libraryRows, setLibraryRows] = useState<DocumentLibraryRow[]>([])
-  const [libraryTotal, setLibraryTotal] = useState(0)
-  const [libraryOffset, setLibraryOffset] = useState(0)
-  const [libraryQuery, setLibraryQuery] = useState("")
-  const [librarySearch, setLibrarySearch] = useState("")
-  const [libraryLoading, setLibraryLoading] = useState(false)
-  const [libraryError, setLibraryError] = useState<string | null>(null)
-  const [libraryDownloading, setLibraryDownloading] = useState<string | null>(null)
-  const [libraryPreview, setLibraryPreview] = useState<DocumentLibraryRow | null>(null)
-  const [libraryPreviewUrl, setLibraryPreviewUrl] = useState<string | null>(null)
-  const [libraryPreviewError, setLibraryPreviewError] = useState<string | null>(null)
   const createTriggerTemplateRef = useRef<string | null>(null)
   const previewRequestIdRef = useRef(0)
 
@@ -1732,31 +1718,6 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   }, [documentQuery])
 
   useEffect(() => setDocumentOffset(0), [debouncedDocumentQuery, documentSort])
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setLibrarySearch(libraryQuery.trim()), 250)
-    return () => window.clearTimeout(timeout)
-  }, [libraryQuery])
-
-  useEffect(() => setLibraryOffset(0), [librarySearch])
-
-  useEffect(() => {
-    if (preview) return
-    let cancelled = false
-    setLibraryLoading(true)
-    setLibraryError(null)
-    void getDocumentLibraryPage({ offset: libraryOffset, limit: 20, search: librarySearch })
-      .then((page) => {
-        if (cancelled) return
-        setLibraryRows(page.rows)
-        setLibraryTotal(page.total)
-      })
-      .catch((cause) => {
-        if (!cancelled) setLibraryError(cause instanceof Error ? cause.message : t("The document library could not be loaded."))
-      })
-      .finally(() => { if (!cancelled) setLibraryLoading(false) })
-    return () => { cancelled = true }
-  }, [libraryOffset, librarySearch, preview, t])
 
   useEffect(() => {
     if (!workspace) return
@@ -1843,30 +1804,6 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
       })
     } finally {
       setDownloadingId(null)
-    }
-  }
-
-  async function downloadLibraryDocument(document: DocumentLibraryRow) {
-    setLibraryDownloading(document.id)
-    try {
-      const result = await getLibraryDocumentDownload(document)
-      await startSignedDownload(result.signedUrl, result.fileName)
-    } catch (cause) {
-      toast.error(t("Download unavailable"), { description: cause instanceof Error ? cause.message : t("A secure download link could not be created.") })
-    } finally {
-      setLibraryDownloading(null)
-    }
-  }
-
-  async function previewLibraryDocument(document: DocumentLibraryRow) {
-    setLibraryPreview(document)
-    setLibraryPreviewUrl(null)
-    setLibraryPreviewError(null)
-    try {
-      const result = await getLibraryDocumentDownload(document, true)
-      setLibraryPreviewUrl(result.signedUrl)
-    } catch (cause) {
-      setLibraryPreviewError(cause instanceof Error ? cause.message : t("The document preview could not be opened."))
     }
   }
 
@@ -1957,9 +1894,9 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-2xl">
           <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-accent)]">{t("Documents")}</p>
-          <h1 className="mt-1 text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t("Create the right document in seconds")}</h1>
+          <h1 className="mt-1 text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t("Document templates")}</h1>
           <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
-            {t("Choose a template and a job. Multideck takes care of the data, audit trail and secure delivery.")}
+            {t("Manage reusable templates here, then create a document from the relevant job or workflow.")}
           </p>
         </div>
         <Button
@@ -1982,34 +1919,6 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           </Button>
         }>{error}</InlineNotice>
       ) : null}
-
-      {!preview ? <section className="md-section-stack" aria-label={t("Document library")}>
-        <div>
-          <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Document library")}</h2>
-          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Sent Quotes, Booking files and Customs documents in one secure place.")}</p>
-        </div>
-        <label className="block max-w-sm"><span className="sr-only">{t("Search document library")}</span><Input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder={t("Search file, customer or reference…")} /></label>
-        {libraryError ? <InlineNotice tone="error">{libraryError}</InlineNotice> : null}
-        <Surface tone="soft" className="divide-y divide-[color-mix(in_srgb,var(--md-ink),transparent_94%)] overflow-hidden">
-          {libraryRows.map((document) => <div key={`${document.kind}:${document.id}`} className="flex flex-col items-start justify-between gap-2 px-4 py-3 sm:flex-row sm:items-center">
-            <div className="min-w-0"><p className="truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{document.file_name}</p><p className="mt-1 truncate text-[11px] text-[var(--md-subtle)]"><span>{t(document.type_name)}</span> · <span className="capitalize">{t(document.source_kind)}</span> <span data-i18n-skip>{document.source_reference}</span> · <span data-i18n-skip>{document.customer_name ?? ""}</span>{document.version_no ? <> · v<span data-i18n-skip>{document.version_no}</span></> : null} · <span className="capitalize">{t(document.status)}</span></p></div>
-            <div className="flex w-full shrink-0 flex-wrap items-center gap-1 sm:w-auto">
-              {navigate ? <Button type="button" variant="ghost" onClick={() => navigate(document.source_kind === "quote" ? `/quotes/${encodeURIComponent(document.source_reference.toLowerCase())}` : document.source_kind === "customs" ? `/customs/job-related/${document.source_direction === "import" ? "import" : "export"}/${document.source_id}` : document.source_kind === "finance" ? `/finance/receivables/documents/${document.source_id}` : `/bookings/${encodeURIComponent(document.source_reference.toLowerCase())}`)}>{t("Open record")}</Button> : null}
-              {document.mime_type === "application/pdf" ? <Button type="button" variant="ghost" onClick={() => void previewLibraryDocument(document)}>{t("Preview")}</Button> : null}
-              <Button type="button" variant="ghost" disabled={libraryDownloading === document.id} onClick={() => void downloadLibraryDocument(document)} aria-label={`${t("Download document")}: ${document.file_name}`}><Download className="size-4" aria-hidden="true" /></Button>
-            </div>
-          </div>)}
-          {!libraryRows.length ? <p className="px-4 py-8 text-center text-[12px] text-[var(--md-subtle)]">{libraryLoading ? t("Loading documents…") : librarySearch ? t("No documents match this search.") : t("No documents yet.")}</p> : null}
-        </Surface>
-        {libraryTotal > 20 ? <div className="flex items-center justify-end gap-2"><Button type="button" variant="ghost" disabled={libraryOffset === 0 || libraryLoading} onClick={() => setLibraryOffset(Math.max(0, libraryOffset - 20))}>{t("Previous")}</Button><span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip>{libraryOffset + 1}–{Math.min(libraryOffset + 20, libraryTotal)} / {libraryTotal}</span><Button type="button" variant="ghost" disabled={libraryOffset + 20 >= libraryTotal || libraryLoading} onClick={() => setLibraryOffset(libraryOffset + 20)}>{t("Next")}</Button></div> : null}
-      </section> : null}
-
-      <Dialog open={Boolean(libraryPreview)} onOpenChange={(open) => { if (!open) { setLibraryPreview(null); setLibraryPreviewUrl(null); setLibraryPreviewError(null) } }}>
-        <DialogContent className="h-[min(90dvh,920px)] w-[min(1120px,calc(100vw-2rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-none">
-          <DialogHeader className="px-5 py-4 text-start shadow-[var(--md-stroke-bottom)]"><DialogTitle className="truncate text-[15px]" data-i18n-skip>{libraryPreview?.file_name}</DialogTitle><DialogDescription>{libraryPreview?.source_reference}</DialogDescription></DialogHeader>
-          <div className="grid min-h-0 place-items-center bg-[var(--md-report-preview-bg)] p-3 sm:p-5">{libraryPreviewError ? <p className="text-[12px] text-[var(--md-text)]">{libraryPreviewError}</p> : libraryPreviewUrl ? <iframe src={libraryPreviewUrl} title={t("Document preview")} className="h-full min-h-[480px] w-full rounded-[var(--md-radius-lg)] bg-white" /> : <LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" aria-label={t("Loading preview…")} />}</div>
-        </DialogContent>
-      </Dialog>
 
       <section className="md-section-stack">
         <div className="flex items-end justify-between gap-3">
@@ -2084,7 +1993,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
       <section className="md-section-stack">
         <div>
           <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Recent documents")}</h2>
-          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Every file is private and downloaded through a short-lived secure link.")}</p>
+          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Recent files generated from Job templates. Quote, Booking, Customs and Finance documents stay with their source records.")}</p>
         </div>
         {documentPageError ? <InlineNotice tone="error" className="mb-3" action={<Button type="button" variant="ghost" onClick={() => { lastDocumentPageKeyRef.current = null; setDocumentSort((current) => current ? { ...current } : { id: "created", direction: "desc" }) }}>{t("Try again")}</Button>}>{documentPageError}</InlineNotice> : null}
         <DataTable

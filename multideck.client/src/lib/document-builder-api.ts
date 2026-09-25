@@ -75,30 +75,6 @@ export type GeneratedDocumentPageRequest = {
   sort?: { id: string; direction: "asc" | "desc" }
 }
 
-export type DocumentLibraryRow = {
-  id: string
-  kind: "generated" | "booking_attachment" | "quote_pdf" | "customs_declaration" | "finance_pdf"
-  type_name: string
-  file_name: string
-  source_id: string
-  source_reference: string
-  source_kind: "booking" | "quote" | "customs" | "finance"
-  source_direction: "import" | "export" | null
-  customer_name: string | null
-  created_at: string
-  status: string
-  version_no: number | null
-  mime_type: string
-  file_size: number | null
-}
-
-export type DocumentLibraryPage = {
-  rows: DocumentLibraryRow[]
-  total: number
-  offset: number
-  limit: number
-}
-
 export type RenderDocumentRequest = {
   templateCode: string
   targetType: "Job_Header"
@@ -267,22 +243,6 @@ export async function getGeneratedDocumentsPage(options: GeneratedDocumentPageRe
   throw new Error("Paged document history is still being prepared. Try again shortly.")
 }
 
-export async function getDocumentLibraryPage(options: Pick<GeneratedDocumentPageRequest, "offset" | "limit" | "search"> = {}): Promise<DocumentLibraryPage> {
-  const client = requireDocumentClient()
-  const { data, error } = await client.functions.invoke<DocumentLibraryPage>("document-builder-workspace", {
-    method: "POST",
-    body: {
-      action: "library",
-      documentOffset: options.offset ?? 0,
-      documentLimit: options.limit ?? 20,
-      documentSearch: options.search ?? "",
-    },
-  })
-  if (error) throw await toFunctionError(error, "The document library could not be loaded.")
-  if (!data || !Array.isArray(data.rows)) throw new Error("The document library is waiting for the backend update.")
-  return data
-}
-
 export async function createDocumentStudioTemplate(code: string, name: string): Promise<CreateDocumentStudioTemplateResponse> {
   const client = requireDocumentClient()
   const { data, error } = await client.functions.invoke<CreateDocumentStudioTemplateResponse>("document-studio", {
@@ -310,17 +270,6 @@ export async function previewDraftDocumentStudioTemplate(templateId: string, tem
     throw new Error(message)
   }
   return response.blob()
-}
-
-export async function getLibraryDocumentDownload(document: Pick<DocumentLibraryRow, "id" | "kind">, preview = false): Promise<DocumentDownloadResponse> {
-  const client = requireDocumentClient()
-  const { data, error } = await client.functions.invoke<DocumentDownloadResponse>("document-download", {
-    method: "POST",
-    body: { libraryDocumentId: document.id, libraryKind: document.kind, preview },
-  })
-  if (error) throw await toFunctionError(error, "A secure document link could not be created.")
-  if (!data) throw new Error("The document service returned no link.")
-  return data
 }
 
 export async function renderDocument(request: RenderDocumentRequest): Promise<RenderDocumentResponse> {

@@ -47,7 +47,6 @@ const tests = [
   'finance-export-atomic-postgres.test.mjs',
   'erpnext-webhook-receipt-postgres.test.mjs',
   'operational-shared-access-postgres.test.mjs',
-  'unified-document-register-postgres.test.mjs',
   'document-template-review-postgres.test.mjs',
   'customs-consistent-workspace-read-postgres.test.mjs',
   'customs-original-retention-postgres.test.mjs',

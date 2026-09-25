@@ -13,7 +13,8 @@ begin
   select template."DOCBT_Code" template_code, version."DOCBTV_VersionNo" version_no,
     version."DOCBTV_TemplateSnapshotJSON" #>> '{carbone,templateId}' provider_template_id,
     version."DOCBTV_TemplateSnapshotJSON" #>> '{carbone,versionId}' provider_version_id,
-    stored."DOCStoredObject_Container" bucket, stored."DOCStoredObject_BlobName" path
+    stored."DOCStoredObject_Container" bucket, stored."DOCStoredObject_BlobName" path,
+    stored."DOCStoredObject_OriginalFileName" file_name, stored."DOCStoredObject_MimeType" mime_type
   into selected
   from public."DOCB_DocumentTemplates" template
   join public."DOCB_TemplateVersions" version on version."DOCBTV_TemplateID" = template."DOCBT_ID"
@@ -34,7 +35,8 @@ begin
     'multideckVersion', selected.version_no,
     'carboneTemplateId', selected.provider_template_id,
     'carboneVersionId', selected.provider_version_id,
-    'bucket', selected.bucket, 'path', selected.path);
+    'bucket', selected.bucket, 'path', selected.path,
+    'fileName', selected.file_name, 'mimeType', selected.mime_type);
 end $$;
 
 revoke all on function document_api.studio_template_draft_source(uuid,uuid) from public,anon,authenticated;

@@ -13,10 +13,14 @@ import {
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
 type StudioRequest = {
-  action?: "component" | "open" | "preview" | "preview-draft" | "save" | "bootstrap" | "approve" | "create" | "draft-source"
+  action?: "component" | "open" | "preview" | "preview-draft" | "draft-source" | "save" | "bootstrap" | "create" | "approve"
   templateCode?: string
-  templateName?: string
   multideckTemplateId?: string
+  templateName?: string
+  templateDescription?: string
+  templateLanguageCode?: string
+  templateFileName?: string
+  templateMimeType?: string
   jobNumber?: string
   contentSections?: unknown
   templateBase64?: string
@@ -31,6 +35,8 @@ type StudioSession = {
   carboneTemplateReference: string
   carboneTemplateId?: string
   carboneVersionId?: string
+  templateFileName?: string
+  templateMimeType?: string
   dataModuleCode?: string
   dataModuleName?: string
   languageCode: string
@@ -119,7 +125,7 @@ function toBase64(bytes: Uint8Array) {
   return btoa(binary)
 }
 
-function fromBase64(value: string) {
+function fromBase64(value: string, sourceFileName = "template.docx") {
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value) || value.length > Math.ceil(maximumStudioTemplateBytes / 3) * 4 + 4) {
     throw new FunctionError(400, "The Studio template is invalid.", "Studio template base64 validation failed")
   }
@@ -132,10 +138,31 @@ function fromBase64(value: string) {
   }
 
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
-  if (!bytes.byteLength || bytes.byteLength > maximumStudioTemplateBytes || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
-    throw new FunctionError(400, "Choose a valid Word template.", "Studio accepts ZIP-based Office templates up to 15 MiB")
+  const extension = sourceFileName.toLowerCase().split(".").pop() ?? ""
+  const isPdf = new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-"
+  const isZipOfficeFile = bytes[0] === 0x50 && bytes[1] === 0x4b
+  const allowedExtension = ["pdf", "doc", "docx", "xls", "xlsx"].includes(extension)
+  const validSignature = extension === "pdf" ? isPdf : ["docx", "xlsx"].includes(extension) ? isZipOfficeFile : allowedExtension
+  if (!bytes.byteLength || bytes.byteLength > maximumStudioTemplateBytes || !validSignature) {
+    throw new FunctionError(400, "Choose a valid PDF, Word or Excel template.", "Studio accepts PDF, DOC, DOCX, XLS and XLSX templates up to 15 MiB")
   }
   return bytes
+}
+
+function sourceExtension(fileName: string) {
+  const extension = fileName.toLowerCase().split(".").pop() ?? "docx"
+  return ["pdf", "doc", "docx", "xls", "xlsx"].includes(extension) ? extension : "docx"
+}
+
+function sourceMimeType(fileName: string, requestedMimeType?: string) {
+  if (requestedMimeType?.trim()) return requestedMimeType.trim().slice(0, 120)
+  return {
+    pdf: "application/pdf",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  }[sourceExtension(fileName)] ?? "application/octet-stream"
 }
 
 async function sha256Hex(bytes: Uint8Array) {
@@ -273,13 +300,16 @@ async function recordTemplateSource(
   registration: TemplateRegistration,
   bytes: Uint8Array,
   sha256: string,
+  sourceFileName: string,
+  sourceMimeType: string,
 ) {
-  const sourcePath = `templates/${registration.multideckTemplateId}/source/${sha256}.docx`
-  const sourceFileName = `${registration.carboneTemplateId}-${registration.carboneVersionId}.docx`
+  const extension = sourceExtension(sourceFileName)
+  const storedFileName = `${registration.carboneTemplateId}-${registration.carboneVersionId}.${extension}`
+  const sourcePath = `templates/${registration.multideckTemplateId}/source/${sha256}.${extension}`
   const { error: uploadError } = await context.admin.storage
     .from(templateSourcesBucket)
     .upload(sourcePath, bytes, {
-      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      contentType: sourceMimeType,
       cacheControl: "31536000",
       upsert: true,
     })
@@ -293,8 +323,8 @@ async function recordTemplateSource(
       requested_version_no: registration.multideckVersion,
       source_bucket: templateSourcesBucket,
       source_path: sourcePath,
-      source_file_name: sourceFileName,
-      source_mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      source_file_name: storedFileName,
+      source_mime_type: sourceMimeType,
       source_size_bytes: bytes.byteLength,
       source_sha256: sha256,
     })
@@ -307,6 +337,8 @@ async function saveTemplateToCarbone(
   templateBase64: string,
   templateBytes: Uint8Array,
   comment: string,
+  sourceFileName = "template.docx",
+  sourceMimeTypeValue = sourceMimeType(sourceFileName),
 ) {
   const templateSha256 = await sha256Hex(templateBytes)
   const authorisedTemplate = await authorizeTemplateSave(context, templateId)
@@ -351,8 +383,45 @@ async function saveTemplateToCarbone(
     providerTemplateId,
     providerVersionId,
   )
-  await recordTemplateSource(context, registration, templateBytes, templateSha256)
+  await recordTemplateSource(context, registration, templateBytes, templateSha256, sourceFileName, sourceMimeTypeValue)
   return registration
+}
+
+async function createTemplate(
+  context: Awaited<ReturnType<typeof authenticateRequest>>,
+  templateCode: string,
+  templateName: string,
+  templateDescription: string | null,
+  templateLanguageCode: string,
+) {
+  const { data, error } = await context.admin
+    .schema("document_api")
+    .rpc("create_studio_template", {
+      caller_auth_user_id: context.userId,
+      requested_template_code: templateCode,
+      requested_template_name: templateName,
+      requested_description: templateDescription,
+      requested_language_code: templateLanguageCode,
+    })
+  if (error || !data) throw error ?? new Error("Document template creation returned no data")
+  return data as { multideckTemplateId: string; templateCode: string; templateName: string; multideckVersion: number; status: "draft" }
+}
+
+async function addTemplateSourceMetadata(
+  context: Awaited<ReturnType<typeof authenticateRequest>>,
+  session: StudioSession,
+) {
+  if (!session.multideckTemplateId) return session
+  const { data } = await context.admin
+    .from("DOCB_TemplateVersions")
+    .select('DOCBTV_TemplateSnapshotJSON')
+    .eq("DOCBTV_TemplateID", session.multideckTemplateId)
+    .eq("DOCBTV_VersionNo", session.templateVersion)
+    .maybeSingle()
+  const snapshot = data?.DOCBTV_TemplateSnapshotJSON as { source?: { fileName?: unknown; mimeType?: unknown } } | null
+  const fileName = typeof snapshot?.source?.fileName === "string" ? snapshot.source.fileName : undefined
+  const mimeType = typeof snapshot?.source?.mimeType === "string" ? snapshot.source.mimeType : undefined
+  return { ...session, templateFileName: fileName, templateMimeType: mimeType }
 }
 
 async function approveTemplate(
@@ -381,21 +450,61 @@ Deno.serve(async (request) => {
       return await studioComponentResponse(request)
     }
 
+    if (payload.action === "bootstrap") {
+      if (!isUuid(payload.multideckTemplateId) || typeof payload.templateBase64 !== "string") {
+        throw new FunctionError(400, "Choose a valid template source.", "Studio bootstrap request was invalid")
+      }
+      const templateBytes = fromBase64(payload.templateBase64, payload.templateFileName ?? "template.docx")
+      return jsonResponse(request, await saveTemplateToCarbone(
+        context,
+        payload.multideckTemplateId,
+        payload.templateBase64,
+        templateBytes,
+        "Initial source saved from Multideck",
+        payload.templateFileName ?? "template.docx",
+        sourceMimeType(payload.templateFileName ?? "template.docx", payload.templateMimeType),
+      ))
+    }
+
     if (payload.action === "create") {
-      const templateCode = parseTemplateCode(payload.templateCode)
-      const templateName = typeof payload.templateName === "string" ? payload.templateName.trim() : ""
-      if (templateName.length < 2 || templateName.length > 180) {
+      if (typeof payload.templateCode !== "string"
+        || typeof payload.templateName !== "string") {
+        throw new FunctionError(400, "Complete the template details.", "Studio create request was invalid")
+      }
+      if (payload.templateName.trim().length < 2 || payload.templateName.trim().length > 180) {
         throw new FunctionError(400, "Enter a template name between 2 and 180 characters.", "Studio template name validation failed")
       }
-      const { data, error } = await context.admin.schema("document_api").rpc("create_studio_template", {
-        caller_auth_user_id: context.userId,
-        requested_template_code: templateCode,
-        requested_template_name: templateName,
-        requested_description: null,
-        requested_language_code: "en",
-      })
-      if (error || !data) throw error ?? new Error("Document template creation returned no data")
-      return jsonResponse(request, data)
+      const templateCode = parseTemplateCode(payload.templateCode)
+      const templateName = payload.templateName.trim()
+      const templateDescription = typeof payload.templateDescription === "string" ? payload.templateDescription.trim() || null : null
+      const templateLanguageCode = typeof payload.templateLanguageCode === "string" ? payload.templateLanguageCode.trim() || "en" : "en"
+      if (!payload.templateBase64 && !payload.templateFileName) {
+        return jsonResponse(request, await createTemplate(context, templateCode, templateName, templateDescription, templateLanguageCode))
+      }
+      if (typeof payload.templateBase64 !== "string" || typeof payload.templateFileName !== "string") {
+        throw new FunctionError(400, "Choose a valid template source.", "Studio create source was incomplete")
+      }
+      const templateBytes = fromBase64(payload.templateBase64, payload.templateFileName)
+      const template = await createTemplate(
+        context,
+        templateCode, templateName, templateDescription, templateLanguageCode,
+      )
+      return jsonResponse(request, await saveTemplateToCarbone(
+        context,
+        template.multideckTemplateId,
+        payload.templateBase64,
+        templateBytes,
+        "Initial source saved from the Multideck template upload flow",
+        payload.templateFileName,
+        sourceMimeType(payload.templateFileName, payload.templateMimeType),
+      ))
+    }
+
+    if (payload.action === "approve") {
+      if (!isUuid(payload.multideckTemplateId)) {
+        throw new FunctionError(400, "Choose a valid document template.", "Studio approval request was invalid")
+      }
+      return jsonResponse(request, await approveTemplate(context, payload.multideckTemplateId))
     }
 
     if (payload.action === "draft-source") {
@@ -412,7 +521,11 @@ Deno.serve(async (request) => {
       if (downloadError || !source) throw new FunctionError(502, "The saved template source is unavailable.", downloadError?.message ?? "Draft source was missing")
       if (source.size > maximumStudioTemplateBytes) throw new FunctionError(502, "The saved template source is too large.", "Draft source exceeded 15 MiB")
       const bytes = new Uint8Array(await source.arrayBuffer())
-      if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new FunctionError(502, "The saved template source is invalid.", "Draft source was not a DOCX archive")
+      const fileName = typeof data.fileName === "string" ? data.fileName : "template.docx"
+      const extension = sourceExtension(fileName)
+      if (!bytes.byteLength || (extension === "pdf" ? new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-" : ["docx", "xlsx"].includes(extension) && (bytes[0] !== 0x50 || bytes[1] !== 0x4b))) {
+        throw new FunctionError(502, "The saved template source is invalid.", "Draft source signature was invalid")
+      }
       return jsonResponse(request, { draft: {
         multideckTemplateId: payload.multideckTemplateId,
         templateCode: data.templateCode,
@@ -421,28 +534,9 @@ Deno.serve(async (request) => {
         carboneVersionId: data.carboneVersionId,
         status: "draft",
         templateBase64: toBase64(bytes),
+        templateFileName: fileName,
+        templateMimeType: data.mimeType,
       } })
-    }
-
-    if (payload.action === "bootstrap") {
-      if (!isUuid(payload.multideckTemplateId) || typeof payload.templateBase64 !== "string") {
-        throw new FunctionError(400, "Choose a valid template source.", "Studio bootstrap request was invalid")
-      }
-      const templateBytes = fromBase64(payload.templateBase64)
-      return jsonResponse(request, await saveTemplateToCarbone(
-        context,
-        payload.multideckTemplateId,
-        payload.templateBase64,
-        templateBytes,
-        "Initial source saved from Multideck",
-      ))
-    }
-
-    if (payload.action === "approve") {
-      if (!isUuid(payload.multideckTemplateId)) {
-        throw new FunctionError(400, "Choose a valid document template.", "Studio approval request was invalid")
-      }
-      return jsonResponse(request, await approveTemplate(context, payload.multideckTemplateId))
     }
 
     if (payload.action === "preview-draft") {
@@ -450,11 +544,8 @@ Deno.serve(async (request) => {
         throw new FunctionError(400, "Choose a valid template source.", "Draft preview request was invalid")
       }
       await authorizeTemplateSave(context, payload.multideckTemplateId)
-      const templateBytes = fromBase64(payload.templateBase64)
-      if (!templateBytes.byteLength || templateBytes.byteLength > maximumStudioTemplateBytes
-        || templateBytes[0] !== 0x50 || templateBytes[1] !== 0x4b) {
-        throw new FunctionError(400, "Choose a valid Word template.", "Draft preview source was invalid")
-      }
+      const templateFileName = payload.templateFileName ?? "template.docx"
+      fromBase64(payload.templateBase64, templateFileName)
       const sampleData = parseSampleData(payload.sampleData)
       if (!sampleData) throw new FunctionError(400, "Enter safe sample data to preview this template.", "Draft preview had no sample data")
       const controller = new AbortController()
@@ -494,7 +585,7 @@ Deno.serve(async (request) => {
     const contentSections = parseContentSections(payload.contentSections)
     const jobNumber = parseJobNumber(payload.jobNumber)
 
-    const session = await prepareSession(context, templateCode, jobNumber, contentSections)
+    const session = await addTemplateSourceMetadata(context, await prepareSession(context, templateCode, jobNumber, contentSections))
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), renderTimeout())
 
@@ -521,13 +612,20 @@ Deno.serve(async (request) => {
         }
 
         const bytes = new Uint8Array(await response.arrayBuffer())
-        if (!bytes.byteLength || bytes.byteLength > maximumStudioTemplateBytes || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
-          throw new FunctionError(502, "The Studio template is not a valid Word file.", "Carbone returned an invalid ZIP-based Office template")
+        const templateExtension = sourceExtension(session.templateFileName ?? "template.docx")
+        const isPdfTemplate = templateExtension === "pdf"
+        const isZipOfficeTemplate = ["docx", "xlsx"].includes(templateExtension)
+        const isValidPdf = new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-"
+        const isValidZipOfficeFile = bytes[0] === 0x50 && bytes[1] === 0x4b
+        if (!bytes.byteLength || bytes.byteLength > maximumStudioTemplateBytes || (isPdfTemplate ? !isValidPdf : isZipOfficeTemplate ? !isValidZipOfficeFile : false)) {
+          throw new FunctionError(502, "The Studio template is invalid.", "Carbone returned an invalid template source")
         }
 
         return jsonResponse(request, {
           templateBase64: toBase64(bytes),
-          templateType: "docx",
+          templateType: sourceExtension(session.templateFileName ?? "template.docx") === "xlsx" || sourceExtension(session.templateFileName ?? "template.docx") === "xls" ? "xlsx" : sourceExtension(session.templateFileName ?? "template.docx") === "pdf" ? "pdf" : "docx",
+          templateFileName: session.templateFileName,
+          templateMimeType: session.templateMimeType,
           templateName: session.templateName,
           templateVersion: session.templateVersion,
           multideckTemplateId: session.multideckTemplateId,
@@ -556,8 +654,10 @@ Deno.serve(async (request) => {
           context,
           session.multideckTemplateId,
           payload.templateBase64,
-          fromBase64(payload.templateBase64),
+          fromBase64(payload.templateBase64, session.templateFileName ?? "template.docx"),
           `Saved from Multideck · ${session.jobReference}`,
+          session.templateFileName ?? "template.docx",
+          session.templateMimeType ?? sourceMimeType(session.templateFileName ?? "template.docx"),
         )
         return jsonResponse(request, registration)
       }
@@ -566,8 +666,9 @@ Deno.serve(async (request) => {
         throw new FunctionError(400, "Choose a valid Studio action.", "Studio action validation failed")
       }
 
-      fromBase64(payload.templateBase64)
+      fromBase64(payload.templateBase64, session.templateFileName ?? "template.docx")
       const sampleData = parseSampleData(payload.sampleData)
+      const templateExtension = sourceExtension(session.templateFileName ?? "template.docx")
       const response = await fetch(`${getCarboneBaseUrl()}/render/template?download=true`, {
         method: "POST",
         headers: {
@@ -578,7 +679,7 @@ Deno.serve(async (request) => {
         body: JSON.stringify({
           data: sampleData ?? session.dataset,
           template: payload.templateBase64,
-          convertTo: "pdf",
+          ...(templateExtension === "pdf" ? {} : { convertTo: "pdf" }),
           converter: "L",
           lang: session.languageCode,
           reportName: `${session.templateCode}-${session.jobReference}-preview`,
