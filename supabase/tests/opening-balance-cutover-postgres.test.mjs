@@ -63,6 +63,7 @@ test('CargoWise clean-ledger opening balances stage, approve, post once and agre
         return result; end$$;
       ${enquiry}
       ${read('migrations/20260921072027_enforce_balanced_ledger_postings.sql')}
+      ${read('migrations/20260925072611_immutable_committed_native_postings.sql')}
       ${read('migrations/20260925071153_opening_balance_gl_cutover.sql')}
       insert into "cmp_Users" values('${id(1)}','${id(2)}','active'),('${id(4)}','${id(2)}','active'),('${id(5)}','${id(6)}','active'),('${id(7)}','${id(2)}','inactive');
       insert into "cmp_LegalEntities" values('${id(3)}','${id(2)}',true,'GBP'),('${id(9)}','${id(6)}',true,'EUR');
@@ -97,6 +98,9 @@ test('CargoWise clean-ledger opening balances stage, approve, post once and agre
     assert.equal(bank.closing,100.25)
     assert.equal(bank.rows[0].source,'FIN_OpeningBalancePackages')
     assert.match(bank.rows[0].description,/source row 5/)
+    reject(`update "FIN_PostingLines" set "FINPostLine_Description"='changed' where "FINPostLine_BatchID"='${posted.posting_batch_id}';`,/immutable/)
+    reject(`delete from "FIN_PostingLines" where "FINPostLine_BatchID"='${posted.posting_batch_id}';`,/immutable/)
+    reject(`update "FIN_PostingBatches" set "FINPostBatch_Number"='changed' where "FINPostBatch_ID"='${posted.posting_batch_id}';`,/immutable/)
     assert.equal(JSON.parse(sql(call('read',{},4)))[0].rowCount,2)
     assert.equal(JSON.parse(sql(call('read',{id:staged.id},4)))[0].rows.length,2)
     reject(call('post',{id:staged.id},4),/stages in order/)

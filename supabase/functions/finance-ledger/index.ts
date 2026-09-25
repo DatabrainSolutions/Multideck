@@ -36,6 +36,19 @@ Deno.serve(async request => {
       }
       return json(request, reconcileAccountingMigration(input, accounts, entities.find((row: any) => row.LegalEntity_ID === entity).LegalEntity_BaseCurrencyCodeSnapshot))
     }
+    if (parts[0] === "opening-balances" && parts[1] === "items" && request.method === "GET") {
+      if (!uuid(input.id)) throw new HttpError(400, "Choose an opening balance package.")
+      const offset = Number(input.offset ?? 0)
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 50000) throw new HttpError(400, "Choose a valid source-item page.")
+      const packageRow = checked(await admin.from("FIN_OpeningBalancePackages")
+        .select("id,source_items_count,package_kind").eq("id", input.id).eq("legal_entity_id", entity).maybeSingle())
+      if (!packageRow) throw new HttpError(404, "Opening balance package not found.")
+      if (packageRow.package_kind !== "full_open_items") throw new HttpError(400, "This package has no source open items.")
+      const rows = checked(await admin.from("FIN_OpeningSourceItems")
+        .select("source_row_number,source_id,source_party_code,party_org_id,source_reference,kind,document_date,due_date,currency_code,original_amount,original_base_amount,outstanding_amount,outstanding_base_amount,historical_vat_evidence_ref,control_nominal_id")
+        .eq("package_id", input.id).order("source_row_number").range(offset, offset + 99))
+      return json(request, { rows, total: packageRow.source_items_count, offset })
+    }
     if (parts[0] === "opening-balances" && (request.method === "GET" || request.method === "POST")) {
       const action = request.method === "GET" ? "read" : input.action
       if (!["read", "stage", "approve", "post"].includes(action)) throw new HttpError(400, "Choose an opening balance action.")
@@ -121,9 +134,12 @@ Deno.serve(async request => {
     }
     if (request.method === "POST" && parts[0] === "journals") {
       const action = parts[1]
-      if (!["save", "post", "retry"].includes(action)) throw new HttpError(404, "Journal action not found.")
-      await requirePermission(admin, current.User_ID, action === "save" ? "Finance.Management.Prepare" : "Finance.Management.Post")
+      if (!["save", "post", "retry", "reverse"].includes(action)) throw new HttpError(404, "Journal action not found.")
+      await requirePermission(admin, current.User_ID, ["save", "reverse"].includes(action) ? "Finance.Management.Prepare" : "Finance.Management.Post")
       if (!uuid(input.id)) throw new HttpError(400, "A valid journal identity is required.")
+      if (action === "reverse") return json(request, publicJournal(checked(await admin.rpc("multideck_finance_prepare_journal_reversal", {
+        p_actor: current.User_ID, p_entity: entity, p_source: input.id, p_reason: input.reason,
+      }))))
       if (action === "retry") return json(request, await attemptDelivery(admin, current.User_ID, entity, input.id))
       const journal = checked(await admin.rpc("multideck_finance_journal", { p_actor: current.User_ID, p_entity: entity, p_action: action, p_input: input }))
       if (action === "post" && journal.mirror_status !== "not_required") {

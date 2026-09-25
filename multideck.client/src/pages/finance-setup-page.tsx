@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { useLanguage } from "@/i18n/language-provider"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import {
   approveFinanceConfigurationRun,
   createFinanceConfigurationRun,
@@ -973,9 +974,11 @@ function completeness(
 export function FinanceSetupPage({
   navigate,
   initialTab = "overview",
+  currentUser,
 }: {
   navigate: (path: string) => void
   initialTab?: FinanceSetupTab
+  currentUser?: AuthUserSummary | null
 }) {
   const { t } = useLanguage()
   const [setup, setSetup] = useState<FinanceSetup | null>(null)
@@ -1527,7 +1530,7 @@ export function FinanceSetupPage({
             t={t}
           />
           <FinanceNominalStructurePanel key={selectedEntityId} entityId={selectedEntityId} accounts={setup.administration.nominalAccounts} chartDirty={Boolean(dirty)} />
-          <FinanceMigrationPanel key={`migration-${selectedEntityId}`} entityId={selectedEntityId} baseCurrency={selectedEntity?.LegalEntity_BaseCurrencyCodeSnapshot || ""} chartDirty={Boolean(dirty)} />
+          <FinanceMigrationPanel key={`migration-${selectedEntityId}`} entityId={selectedEntityId} baseCurrency={selectedEntity?.LegalEntity_BaseCurrencyCodeSnapshot || ""} chartDirty={Boolean(dirty)} canDeliverOpeningMirror={hasPermission(currentUser, "Finance.Integration.Manage")} />
           </>
         ) : null}
         {tab === "tax" ? (

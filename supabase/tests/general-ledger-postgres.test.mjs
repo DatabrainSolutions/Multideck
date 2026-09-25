@@ -70,6 +70,7 @@ test('GL journals: posting, enquiries, permissions, rollback, period locks and f
       alter table "Audit_Events" add constraint audit_record_type_fk foreign key("AuditEvent_RecordTypeCode") references "sys_WorkflowRecordTypes"("WorkflowRecordType_Code");
       ${read('20260921075603_finance_journal_audit_registration')}
       ${read('20260921075745_finance_transaction_audit_snapshots')}
+      ${read('20260925072009_linked_journal_reversals')}
       create trigger evaluate after insert on "AI_DexterWatchSignals" for each row execute function _multideck_dexter_evaluate_watch_signal();`)
     const saved = JSON.parse(sql(command('save', draft(20))))
     assert.equal(saved.version, 1)
@@ -127,5 +128,15 @@ test('GL journals: posting, enquiries, permissions, rollback, period locks and f
     sql(`insert into "AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON") values('${id(2)}','general_ledger','FIN_Journals','${id(20)}','{"mirrorStatus":"failed"}','{"mirrorStatus":"synced"}');`)
     assert.equal(sql('select count(*) from "AI_DexterWatchEvents";'), '3')
     assert.ok(Number(sql('select count(*) from "Audit_Events";')) >= 7)
+    const reversal = JSON.parse(sql(`select multideck_finance_prepare_journal_reversal('${id(1)}','${id(3)}','${id(20)}','Correct duplicate accrual');`))
+    assert.equal(reversal.reversal_of_id,id(20))
+    assert.equal(reversal.status,'draft')
+    reject(`select multideck_finance_prepare_journal_reversal('${id(1)}','${id(3)}','${id(20)}','Second reversal');`,/already has a linked reversal/)
+    reject(command('save', {...reversal,accountingDate:'2026-10-01',lines:[{...reversal.lines[0],accountId:id(11)},reversal.lines[1]]}),/exactly oppose/)
+    const reversed = JSON.parse(sql(command('post',{id:reversal.id,version:reversal.version})))
+    assert.equal(reversed.status,'posted')
+    assert.equal(reversed.reversal_of_id,id(20))
+    assert.equal(JSON.parse(sql(enquiry(1))).closing,0)
+    reject(`update "FIN_Journals" set reversal_of_id=null where id='${reversal.id}';`,/immutable/)
   } finally { if (started) run('pg_ctl', ['-D', join(dir, 'data'), '-m', 'immediate', '-w', 'stop']); rmSync(dir, { recursive: true, force: true }) }
 })

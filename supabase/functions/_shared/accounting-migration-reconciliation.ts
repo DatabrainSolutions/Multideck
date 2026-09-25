@@ -6,7 +6,7 @@ export type OpeningItem = {
   sourceId: string; partyCode: string; reference: string; accountCode: string
   kind: "customer_invoice" | "customer_credit" | "customer_receipt" | "supplier_invoice" | "supplier_credit" | "supplier_payment"
   documentDate: string; dueDate?: string; currency: string
-  originalAmount: string; outstandingAmount: string; outstandingBaseAmount: string
+  originalAmount: string; originalBaseAmount: string; outstandingAmount: string; outstandingBaseAmount: string
 }
 export type MigrationReconciliationInput = { cutoffDate: string; baseCurrency: string; trialBalance: TrialBalanceRow[]; openItems: OpeningItem[] }
 type Issue = { area: "batch" | "trial_balance" | "open_items" | "control"; row?: number; message: string }
@@ -81,10 +81,16 @@ export function reconcileAccountingMigration(input: MigrationReconciliationInput
     if (item.dueDate && !date(item.dueDate)) add("open_items", "Due date must be a valid YYYY-MM-DD date.", row)
     if (typeof item.currency !== "string" || !/^[A-Z]{3}$/.test(item.currency)) add("open_items", "Retain the three-letter transaction currency.", row)
     const original = amount(item.originalAmount, "open_items", row, "Original amount")
+    const originalBase = amount(item.originalBaseAmount, "open_items", row, "Original base amount")
     const outstanding = amount(item.outstandingAmount, "open_items", row, "Outstanding amount")
     const base = amount(item.outstandingBaseAmount, "open_items", row, "Outstanding base amount")
-    if (original === 0n || outstanding === 0n || outstanding > original || base === 0n) add("open_items", "Import a positive unpaid amount no greater than the original amount, with a positive base-currency carrying amount.", row)
-    if (item.currency === entityBaseCurrency && base !== outstanding) add("open_items", "A base-currency transaction must have equal outstanding and base amounts.", row)
+    if (original === 0n || originalBase === 0n || outstanding === 0n || outstanding > original || base === 0n) add("open_items", "Import positive original and unpaid amounts with source base-currency carrying values.", row)
+    if (item.currency === entityBaseCurrency && (base !== outstanding || originalBase !== original)) add("open_items", "A base-currency transaction must have equal source and base amounts.", row)
+    if (outstanding > 0n && base > 0n) {
+      const exchangeRate = (base * 10000000000n + outstanding / 2n) / outstanding
+      const represented = (outstanding * exchangeRate + 5000000000n) / 10000000000n
+      if (represented !== base) add("open_items", "The source FX carrying value cannot be represented at the ledger exchange-rate precision.", row)
+    }
     const kind = kinds.get(item.kind), account = accountFor(item.accountCode, "open_items", row)
     if (!kind) add("open_items", "Choose a supported invoice, credit or unapplied cash transaction type.", row)
     else if (account && account.control !== kind.control) add("open_items", "Use the corresponding receivables or payables control account.", row)

@@ -39,16 +39,21 @@ test('charge mapping cutover requires independent review and pins actual nominal
       create table "cmp_LegalEntities"("LegalEntity_ID" uuid primary key,"Company_ID" uuid,"LegalEntity_IsActive" boolean);
       create table permissions(actor uuid,permission text);
       create function _multideck_dexter_has_permission(uuid,text) returns boolean language sql as $$select exists(select 1 from permissions where actor=$1 and permission=$2)$$;
-      ${['FIN_NominalAccounts','RATE_ChargeCodes','FIN_Documents','FIN_DocumentLines','FIN_DocumentLineJobLinks','Job_Costing_Lines','Audit_Events','sys_WorkflowRecordTypes'].map(table).join('\n')}
+      ${['FIN_NominalAccounts','RATE_ChargeCodes','FIN_Documents','FIN_DocumentLines','FIN_DocumentLineJobLinks','Job_Costing_Lines','FIN_PostingBatches','FIN_PostingLines','FIN_Periods','FIN_PeriodCloseRuns','FIN_PeriodCloseRunItems','FIN_JobChargePeriodAllocations','FIN_Accruals','FIN_WIPItems','Audit_Events','sys_WorkflowRecordTypes'].map(table).join('\n')}
       alter table "FIN_NominalAccounts" add primary key("FINNom_ID");
       alter table "RATE_ChargeCodes" add primary key("RATECharge_ID");
       alter table "FIN_Documents" add primary key("FINDoc_ID");
       alter table "FIN_DocumentLines" add primary key("FINDocLine_ID");
       alter table "Job_Costing_Lines" add primary key("JobCostingLine_ID");
+      alter table "FIN_PostingBatches" add primary key("FINPostBatch_ID");
+      alter table "FIN_Periods" add primary key("FINPeriod_ID");
       alter table "sys_WorkflowRecordTypes" add primary key("WorkflowRecordType_Code");
       create function public._multideck_journal_access${access}
       ${read('migrations/20260922091752_nominal_groups_charge_relationships.sql')}
       ${read('migrations/20260925070532_charge_mapping_cutover_posting.sql')}
+      ${read('migrations/20260925072611_immutable_committed_native_postings.sql')}
+      ${read('migrations/20260925073046_versioned_charge_mapping_cutovers.sql')}
+      ${read('migrations/20260925073707_dated_charge_group_accrual_posting.sql')}
       insert into "cmp_Users" values('${id(1)}','${id(2)}','active'),('${id(4)}','${id(2)}','active'),('${id(5)}','${id(6)}','active'),('${id(7)}','${id(2)}','inactive');
       insert into "cmp_LegalEntities" values('${id(3)}','${id(2)}',true),('${id(9)}','${id(6)}',true);
       insert into permissions values('${id(1)}','Finance.Configuration.Manage'),('${id(1)}','Finance.Management.View'),('${id(1)}','Finance.Management.Post'),('${id(4)}','Finance.Management.View'),('${id(4)}','Finance.Management.Post'),('${id(5)}','Finance.Management.Post');
@@ -60,7 +65,8 @@ test('charge mapping cutover requires independent review and pins actual nominal
         ('${id(13)}','${id(3)}','4000','Actual revenue','Income Account','income',false),
         ('${id(14)}','${id(3)}','4001','Accrued revenue','Income Account','income',false),
         ('${id(15)}','${id(3)}','1400','WIP control','Asset','asset',true),
-        ('${id(16)}','${id(3)}','5099','Legacy cost','Cost of Goods Sold','direct_cost',false);`)
+        ('${id(16)}','${id(3)}','5099','Legacy cost','Cost of Goods Sold','direct_cost',false),
+        ('${id(17)}','${id(3)}','1010.20.20','New chart marker','Asset','asset',false);`)
     const cost = JSON.parse(sql(`select multideck_finance_nominal_structure('${id(1)}','${id(3)}','create_group','${JSON.stringify({code:'COST',name:'Freight cost',kind:'cost',actualAccountId:id(10),accruedAccountId:id(11),controlAccountId:id(12)})}');`))
     const revenue = JSON.parse(sql(`select multideck_finance_nominal_structure('${id(1)}','${id(3)}','create_group','${JSON.stringify({code:'REV',name:'Freight revenue',kind:'revenue',actualAccountId:id(13),accruedAccountId:id(14),controlAccountId:id(15)})}');`))
     sql(`select multideck_finance_nominal_structure('${id(1)}','${id(3)}','map_charge','${JSON.stringify({chargeId:id(30),costGroupId:cost.id,revenueGroupId:revenue.id,version:0})}');`)
@@ -72,6 +78,9 @@ test('charge mapping cutover requires independent review and pins actual nominal
     sql(cutover('approve', {id:plan.id}, 4))
     sql(cutover('activate', {id:plan.id}, 4))
     assert.equal(JSON.parse(sql(cutover('read')))[0].status, 'active')
+    sql(`insert into "FIN_Documents"("FINDoc_ID","FINDoc_TypeCode","FINDoc_LegalEntityID","FINDoc_AccountingDate") values('${id(38)}','pl_invoice','${id(3)}','2026-08-31');
+      insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID","FINDocLine_LineNo","FINDocLine_ChargeID","FINDocLine_Description") values('${id(39)}','${id(38)}',1,'${id(30)}','Before cutover');`)
+    reject(`update "FIN_Documents" set "FINDoc_StatusCode"='approved' where "FINDoc_ID"='${id(38)}';`,/Activate a reviewed dated charge mapping/)
     sql(`insert into "FIN_Documents"("FINDoc_ID","FINDoc_TypeCode","FINDoc_LegalEntityID","FINDoc_AccountingDate") values('${id(40)}','pl_invoice','${id(3)}','2026-09-05');
       insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID","FINDocLine_LineNo","FINDocLine_ChargeID","FINDocLine_Description","FINDocLine_NominalAccountID") values('${id(41)}','${id(40)}',1,'${id(30)}','Sea freight','${id(16)}');
       update "FIN_Documents" set "FINDoc_StatusCode"='approved' where "FINDoc_ID"='${id(40)}';`)
@@ -85,8 +94,37 @@ test('charge mapping cutover requires independent review and pins actual nominal
     assert.equal(sql(`select "FINDocLine_NominalAccountID" from "FIN_DocumentLines" where "FINDocLine_ID"='${id(43)}';`),id(10))
     sql(`insert into "FIN_Documents"("FINDoc_ID","FINDoc_TypeCode","FINDoc_LegalEntityID","FINDoc_AccountingDate") values('${id(44)}','pl_invoice','${id(3)}','2026-09-07');
       insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID","FINDocLine_LineNo","FINDocLine_ChargeID","FINDocLine_Description") values('${id(45)}','${id(44)}',1,'${id(30)}','Another freight');`)
-    reject(`update "FIN_Documents" set "FINDoc_StatusCode"='approved' where "FINDoc_ID"='${id(44)}';`,/Map charge/)
-    assert.equal(sql(`select "FINDoc_StatusCode" from "FIN_Documents" where "FINDoc_ID"='${id(44)}';`),'draft')
+    sql(`update "FIN_Documents" set "FINDoc_StatusCode"='approved' where "FINDoc_ID"='${id(44)}';`)
+    assert.equal(sql(`select "FINDocLine_NominalAccountID" from "FIN_DocumentLines" where "FINDocLine_ID"='${id(45)}';`),id(10),'later editable mapping changes do not rewrite an active dated snapshot')
+    sql(`insert into "FIN_Periods"("FINPeriod_ID","FINPeriod_LegalEntityID","FINPeriod_Code","FINPeriod_Name","FINPeriod_StartDate","FINPeriod_EndDate") values('${id(60)}','${id(3)}','202609A','Early September','2026-09-01','2026-09-07');
+      insert into "FIN_PeriodCloseRuns"("FINCloseRun_ID","FINCloseRun_PeriodID","FINCloseRun_RunTypeCode","FINCloseRun_LegalEntityID","FINCloseRun_StatusCode") values('${id(61)}','${id(60)}','accrual_wip','${id(3)}','approved');
+      insert into "FIN_PeriodCloseRunItems"("FINCloseItem_ID","FINCloseItem_CloseRunID","FINCloseItem_ItemTypeCode","FINCloseItem_JobID") values('${id(62)}','${id(61)}','job','${id(20)}');
+      insert into "Job_Costing_Lines"("JobCostingLine_ID","Job_ID","JobCostingLine_Number","JobCostingLine_Description","JobCostingLine_DomainCode","JobCostingLine_ChargeCodeID") values('${id(63)}','${id(20)}',1,'Early freight','freight','${id(30)}');
+      insert into "FIN_JobChargePeriodAllocations"("FINChargePeriod_CloseRunItemID","FINChargePeriod_JobID","FINChargePeriod_JobCostingLineID","FINChargePeriod_LineNoSnapshot","FINChargePeriod_DescriptionSnapshot","FINChargePeriod_ApprovedAccrual") values('${id(62)}','${id(20)}','${id(63)}',1,'Early freight',5);`)
+    assert.equal(JSON.parse(sql(`select multideck_finance_post_accrual_wip('${id(2)}','${id(1)}','${id(61)}');`)).status,'posted')
+    assert.equal(sql(`select "FINPostLine_NominalAccountID" from "FIN_PostingLines" where "FINPostLine_AccrualID" is not null and "FINPostLine_DebitAmount">0;`),id(11),'accrual uses the approved dated group after editable mapping changes')
+    reject(cutover('propose',{effectiveDate:'2026-09-01'}),/after the latest active/)
+    const later=JSON.parse(sql(cutover('propose',{effectiveDate:'2026-09-08'})))
+    sql(cutover('approve',{id:later.id},4))
+    sql(`insert into "FIN_Documents"("FINDoc_ID","FINDoc_TypeCode","FINDoc_LegalEntityID","FINDoc_AccountingDate","FINDoc_NativePostingStatusCode") values('${id(48)}','pl_invoice','${id(3)}','2026-09-09','posted');
+      insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID","FINDocLine_LineNo","FINDocLine_ChargeID","FINDocLine_Description") values('${id(49)}','${id(48)}',1,'${id(30)}','Earlier charge posting');`)
+    reject(cutover('activate',{id:later.id},4),/Posted charge documents/)
+    sql(`delete from "FIN_DocumentLines" where "FINDocLine_ID"='${id(49)}'; delete from "FIN_Documents" where "FINDoc_ID"='${id(48)}';`)
+    sql(`begin;
+      insert into "FIN_Periods"("FINPeriod_ID","FINPeriod_LegalEntityID","FINPeriod_Code","FINPeriod_Name","FINPeriod_StartDate","FINPeriod_EndDate") values('${id(50)}','${id(3)}','202609','September','2026-09-01','2026-09-30');
+      insert into "FIN_PostingBatches"("FINPostBatch_ID","FINPostBatch_PeriodID","FINPostBatch_LegalEntityID","FINPostBatch_StatusCode","FINPostBatch_SourceTable") values('${id(51)}','${id(50)}','${id(3)}','posted','FIN_PeriodCloseRuns');
+      do $$begin begin
+        perform multideck_finance_charge_mapping_cutover('${id(4)}','${id(3)}','activate','{"id":"${later.id}"}');
+        raise exception 'Activation wrongly accepted';
+      exception when sqlstate '22023' then
+        if sqlerrm not like 'Posted accrual or WIP%' then raise; end if;
+      end; end$$;
+      rollback;`)
+    sql(cutover('activate',{id:later.id},4))
+    sql(`insert into "FIN_Documents"("FINDoc_ID","FINDoc_TypeCode","FINDoc_LegalEntityID","FINDoc_AccountingDate") values('${id(46)}','pl_invoice','${id(3)}','2026-09-08');
+      insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID","FINDocLine_LineNo","FINDocLine_ChargeID","FINDocLine_Description") values('${id(47)}','${id(46)}',1,'${id(30)}','Unmapped new cost');`)
+    reject(`update "FIN_Documents" set "FINDoc_StatusCode"='approved' where "FINDoc_ID"='${id(46)}';`,/Map charge/)
+    assert.equal(sql(`select "FINDoc_StatusCode" from "FIN_Documents" where "FINDoc_ID"='${id(46)}';`),'draft')
     for (const role of ['anon','authenticated']) {
       reject(`set role ${role}; select * from "FIN_ChargeMappingCutovers";`,/permission denied/)
       reject(`set role ${role}; ${cutover('read')}`,/permission denied/)
