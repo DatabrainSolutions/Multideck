@@ -42,6 +42,8 @@ const tests = [
   'email-tracking-postgres.test.mjs',
   'crm-contact-communication-access-postgres.test.mjs',
   'general-ledger-postgres.test.mjs',
+  'finance-baseline-install-postgres.test.mjs',
+  'finance-release-manifest-postgres.test.mjs',
   'uk-vat-period-foundation-postgres.test.mjs',
   'uk-vat-staged-provisioning-postgres.test.mjs',
   'finance-nonrecoverable-posting-postgres.test.mjs',

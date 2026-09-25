@@ -72,6 +72,31 @@ unapproved automation posts, intended-tenant identity is ambiguous, or deployed
 versions and connected outcomes are unverified. An implementation can be accepted
 as a local increment while the release remains no-go.
 
+## Local Finance 1–4 migration manifest
+
+The committed schema snapshot already contains the earlier Finance cost,
+nominal, journal, charge, management and reporting patches. After its documented
+journal split and reporting-access fix, apply these Finance 1–4 files in order:
+
+1. `20260925070431_finance_accrual_wip_event_queue.sql`
+2. `20260925070458_finance_daily_operations.sql`
+3. `20260925070532_charge_mapping_cutover_posting.sql`
+4. `20260925071010_finance_accounting_period_close.sql`
+5. `20260925071153_opening_balance_gl_cutover.sql`
+6. `20260925072009_linked_journal_reversals.sql`
+7. `20260925072017_finance_trade_control_reconciliation.sql`
+8. `20260925072611_immutable_committed_native_postings.sql`
+9. `20260925080000_bank_statement_reconciliation.sql`
+10. `20260925090000_finance_provider_period_reconciliation.sql`
+
+`supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
+on a local PostgreSQL instance and checks the resulting tables, functions,
+triggers and service-only grants. The manifest is **provisional** while the four
+workstreams are active. It excludes UK VAT, the Cloud-owned tenant identity
+contract, Edge Function packages and hosted Auth settings. On an existing tenant,
+compare installed objects and migration content before choosing the actual
+incremental application plan; local filename order is not proof of its state.
+
 ## Inventory on 25 September
 
 - The checkout has extensive uncommitted UK VAT work; no VAT file is owned by this
@@ -89,6 +114,17 @@ as a local increment while the release remains no-go.
   supabase/tests/run-data-access-regression.mjs` passed 102 PostgreSQL/access
   cases and 10 boundary contracts. This run predates stable Finance 1–4
   migrations and therefore does not satisfy the final integrated gate.
+- An additional real PostgreSQL fixture now installs the schema-only baseline
+  in its documented journal order and checks current Finance management,
+  release, charge, customer projection, trigger, uniqueness and service-role
+  boundaries; it passes locally. Five broad contract suites that previously
+  expected historical `BEGIN MIGRATION` text in the schema dump now assert
+  current snapshot objects as well; their 25 focused cases pass together.
+  The fixture is now included in the shared access runner.
+- A second PostgreSQL fixture installs the current ten-file Finance 1–4 manifest
+  over that snapshot and verifies representative objects and service-only
+  boundaries. It passed locally on 25 September and is included in the shared
+  regression runner. This does not install a complete hosted Supabase tenant.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.
@@ -104,6 +140,12 @@ as a local increment while the release remains no-go.
   `multideck-app-dev` production target was READY at Git commit `73b42b00`,
   whereas this checkout was `395c0edf` plus uncommitted work. Those versions
   do not establish deployment of the new workstreams.
+- Finance migration names in the local checkout and demo project are not a
+  one-to-one timestamp match. Several older local Finance migrations are also
+  absent by name from the demo history, including accounting-party profile
+  guards and provider catch-up. A release manifest must compare installed
+  objects and migration content, resolve those historical gaps and order new
+  Finance 1–4 files explicitly; `db push` by filename alone is unsafe.
 - The existing `Multideck Provisioning Test Sep 2026` project already has
   migration history and cannot serve as an empty-project baseline proof.
 - Chrome opened both the latest Vercel deployment URL and its project alias.
