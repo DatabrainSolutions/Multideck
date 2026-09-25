@@ -67,8 +67,8 @@ export async function projectFinancePeriod(local: RawLocal, provider: RawProvide
   const openingExternal = new Map((local.openingPackages ?? []).map(row => [row.id, row.mirrorStatus === "matched" && row.readbackHash ? row.externalId : null]))
   const localDocs = new Map(local.documents.map(row => [row.id, row]))
   const providerDocs = [...(provider.details["Sales Invoice"] ?? []), ...(provider.details["Purchase Invoice"] ?? [])]
-  const localRows: Record<PeriodDomain, EvidenceRecord[]> = Object.fromEntries(PERIOD_DOMAINS.map(domain => [domain, []])) as Record<PeriodDomain, EvidenceRecord[]>
-  const providerRows: Record<PeriodDomain, EvidenceRecord[]> = Object.fromEntries(PERIOD_DOMAINS.map(domain => [domain, []])) as Record<PeriodDomain, EvidenceRecord[]>
+  const localRows: Record<PeriodDomain, EvidenceRecord[]> = Object.fromEntries(PERIOD_DOMAINS.map(domain => [domain, []])) as unknown as Record<PeriodDomain, EvidenceRecord[]>
+  const providerRows: Record<PeriodDomain, EvidenceRecord[]> = Object.fromEntries(PERIOD_DOMAINS.map(domain => [domain, []])) as unknown as Record<PeriodDomain, EvidenceRecord[]>
   const refFor = (table: string, id: string) => refs.get(`${table}:${id}`) ?? `unexported:${table}:${id}`
   const partyFor = (id: string, type: string) => parties.get(`${id}:${type}`) ?? parties.get(`${id}:both`) ?? (() => { warnings.push(`Party ${id} has no pinned ${type} mapping.`); return `unmapped:${id}` })()
   for (const doc of local.documents) {
