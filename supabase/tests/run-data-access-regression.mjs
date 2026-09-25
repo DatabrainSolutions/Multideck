@@ -62,6 +62,7 @@ const tests = [
   'uk-vat-cash-exit-inventory-postgres.test.mjs',
   'uk-vat-cash-exit-context-postgres.test.mjs',
   'uk-vat-cash-calculation-event-lines-postgres.test.mjs',
+  'uk-vat-cash-event-reconciliation-postgres.test.mjs',
   'uk-vat-cash-control-journals-postgres.test.mjs',
   'uk-vat-cash-accepted-history-postgres.test.mjs',
   'uk-vat-cash-balance-rollforward-postgres.test.mjs',

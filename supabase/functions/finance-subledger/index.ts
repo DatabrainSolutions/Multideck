@@ -2307,6 +2307,23 @@ Deno.serve(async (request) => {
       return json(request, { source: data, preview: previewUkVatCashControlBridge(data) })
     }
     if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "cash-reconciliations" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "Cash VAT period was not found.")
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647) {
+        throw new HttpError(400, "Choose a valid Cash VAT reconciliation page.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_cash_event_reconciliations", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+        p_offset: offset, p_limit: 100,
+      })
+      rpcFailure(error, "Cash VAT reconciliation history could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
       && parts[4] === "cash-calculate" && request.method === "POST") {
       await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
       await legalEntity(admin, current, parts[1])
@@ -2642,6 +2659,27 @@ Deno.serve(async (request) => {
         p_source_digest: digest, p_evidence_ids: evidenceIds, p_reason: reason,
       })
       rpcFailure(error, "UK VAT transactions could not be reconciled.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "cash-reconcile" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "Cash VAT calculation was not found.")
+      const input = await body<{ sourceDigest?: unknown; eventIds?: unknown; reason?: unknown }>(request)
+      const digest = typeof input.sourceDigest === "string" ? input.sourceDigest : ""
+      const eventIds = input.eventIds
+      const reason = clean(input.reason, 2000)
+      if (!/^[a-f0-9]{64}$/.test(digest) || !Array.isArray(eventIds)
+        || eventIds.length < 1 || eventIds.length > 100
+        || !eventIds.every((id) => typeof id === "string" && isUuid(id))
+        || new Set(eventIds).size !== eventIds.length || reason.length < 10) {
+        throw new HttpError(400, "Choose up to 100 Cash VAT payment events, the reviewed draft and a reason.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_reconcile_cash_events", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3],
+        p_source_digest: digest, p_event_ids: eventIds, p_reason: reason,
+      })
+      rpcFailure(error, "Cash VAT payment events could not be reconciled.")
       return json(request, data)
     }
     if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "control-review" && request.method === "POST") {

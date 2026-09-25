@@ -852,6 +852,17 @@ export type UkVatCashControlPreview = {
 export const getUkVatCashControl = (legalEntityId: string, periodId: string, projectionId: string) =>
   call<{ source: unknown; preview: UkVatCashControlPreview }>(
     `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/cash-control?projectionId=${encodeURIComponent(projectionId)}`)
+export type UkVatCashReconciliationHistory = {
+  periodId: string; total: number; offset: number;
+  items: Array<{ eventId: string; paymentDate: string; cashId: string;
+    allocationId: string; invoiceId: string; invoiceLineId: string;
+    evidenceId: string; calculationId: string; sourceDigest: string;
+    reconciliationId: string; vatReconciledAt: string;
+    vatReconciledBy: string; reason: string }>;
+}
+export const getUkVatCashReconciliations = (legalEntityId: string, periodId: string, offset = 0) =>
+  call<UkVatCashReconciliationHistory>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/cash-reconciliations?offset=${offset}`)
 export const calculateUkVatCashDraft = (legalEntityId: string, periodId: string, projectionId: string) =>
   post<{ calculationId: string; revision: number; periodId: string; sourceDigest: string;
     boxes: Record<string, number>; cashProjectionId: string; eventBoxLineCount: number;
@@ -967,6 +978,13 @@ export const reconcileUkVatTransactions = (legalEntityId: string, calculationId:
     transactions: Array<{ evidenceId: string; decisionId: string; reconciliationId: string; vatReconciledAt: string }> }>(
     `${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/reconcile`,
     { sourceDigest, evidenceIds, reason })
+export const reconcileUkVatCashEvents = (legalEntityId: string, calculationId: string,
+  sourceDigest: string, eventIds: string[], reason: string) =>
+  post<{ periodId: string; calculationId: string; sourceDigest: string; inserted: number;
+    events: Array<{ eventId: string; reconciliationId: string; vatReconciledAt: string }>;
+    status: "cash_events_reconciled_no_return_lock" }>(
+    `${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/cash-reconcile`,
+    { sourceDigest, eventIds, reason })
 export const reviewUkVatControl = (legalEntityId: string, calculationId: string, sourceDigest: string, reason: string) =>
   post<{ reviewId: string; periodId: string; calculationId: string; reviewCalculationId: string;
     sourceDigest: string; controlFingerprint: string; reviewedAt: string; inserted: boolean;
