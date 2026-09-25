@@ -5,7 +5,10 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-const migration = new URL("../migrations/20260925113000_uk_vat_cash_exit_invoice_inventory.sql", import.meta.url).pathname
+const migrations = [
+  new URL("../migrations/20260925113000_uk_vat_cash_exit_invoice_inventory.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925114500_uk_vat_cash_exit_price_change_guard.sql", import.meta.url).pathname,
+]
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 
 test("Cash exit inventory includes wholly unpaid invoices and rejects unsupported source", () => {
@@ -76,13 +79,17 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
       insert into public."FIN_IndirectTaxCashPaymentDateReviews" values
         ('${id(30)}','${id(2)}',1,'2026-03-01'),
         ('${id(31)}','${id(2)}',1,'2026-04-01');`)
-    const apply = spawnSync(join(bin, "psql"), [...args, "-f", migration],
-      { encoding: "utf8", timeout: 30000 })
-    assert.equal(apply.status, 0, apply.stderr)
+    for (const migration of migrations) {
+      const apply = spawnSync(join(bin, "psql"), [...args, "-f", migration],
+        { encoding: "utf8", timeout: 30000 })
+      assert.equal(apply.status, 0, apply.stderr)
+    }
     const call = `public.multideck_uk_vat_cash_exit_invoice_inventory('${id(1)}','${id(2)}','2026-01-01','2026-03-31')`
     const result = JSON.parse(sql(`select ${call};`))
     assert.equal(result.invoiceCount, 3)
     assert.equal(result.allocationCount, 2)
+    assert.equal(result.postedPriceChangeCount, 0)
+    assert.equal(result.requiresPriceChangeReview, false)
     assert.equal(result.unpostedInvoiceCount, 1)
     assert.equal(result.truncated, false)
     assert.match(result.sourceDigest, /^[0-9a-f]{64}$/)
@@ -103,6 +110,14 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(changed.allocationCount, 3)
     assert.equal(changed.invoices.find((invoice) => invoice.invoice_id === id(10)).unsupported_allocation_count, 1)
     assert.equal(changed.invoices.find((invoice) => invoice.invoice_id === id(10)).source_exception, true)
+    sql(`insert into public."FIN_Documents" values
+      ('${id(15)}','${id(2)}','credit_note','2026-03-15','posted',
+        '2026-03-15 12:00Z','${id(25)}','GBP',1,-12,-12);`)
+    const changedPrice = JSON.parse(sql(`select ${call};`))
+    assert.equal(changedPrice.postedPriceChangeCount, 1)
+    assert.equal(changedPrice.requiresPriceChangeReview, true)
+    assert.equal(changedPrice.priceChanges[0].document_id, id(15))
+    assert.notEqual(changedPrice.sourceDigest, changed.sourceDigest)
     reject(`select public.multideck_uk_vat_cash_exit_invoice_inventory('${id(4)}','${id(2)}','2026-01-01','2026-03-31');`, /VAT access denied/)
     reject(`select public.multideck_uk_vat_cash_exit_invoice_inventory('${id(1)}','${id(3)}','2026-01-01','2026-03-31');`, /VAT access denied/)
     reject(`set role authenticated; select ${call};`, /permission denied/)
