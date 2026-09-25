@@ -61,6 +61,7 @@ const tests = [
   'uk-vat-retire-annual-postgres.test.mjs',
   'uk-vat-cash-exit-inventory-postgres.test.mjs',
   'uk-vat-cash-exit-context-postgres.test.mjs',
+  'uk-vat-cash-calculation-event-lines-postgres.test.mjs',
   'finance-nonrecoverable-posting-postgres.test.mjs',
   'uk-vat-hmrc-connection-postgres.test.mjs',
   'accounting-party-lifecycle-postgres.test.mjs',
