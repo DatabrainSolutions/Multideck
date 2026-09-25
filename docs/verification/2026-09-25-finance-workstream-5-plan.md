@@ -59,8 +59,8 @@ auditable independently of the model.
 legal entity under the existing development company, with GB/GBP identity,
 no company registration or VAT number invented, and a clear non-statutory demo
 marker. Keep **Databrain Test** and its ERPNext connection unchanged. Verify
-the new entity has zero `ACCI_Connections` and an optional or disabled mirror
-mode that produces no delivery queue. Initialise its chart from the existing
+the new entity has zero `ACCI_Connections` and reviewed mirror mode `disabled`,
+so a later connection cannot silently enable delivery. Initialise its chart from the existing
 `freight-forwarder-v1` template (including 1000 bank, 1100 AR, 2000 AP,
 1200/2100 tax and 4000/5000 trading nominals), then add the actual/accrued
 accounts needed for WIP. Configure one explicitly synthetic GBP clearing bank
@@ -86,7 +86,8 @@ be claimed as connected end-to-end proof for that entity.
 connection, and restore the setting after the demonstration. The queue trigger
 would suppress *new* document/cash mirror rows while disabled, but existing
 queued rows remain independently processable. That book already has three
-approved historical documents/cash records outside the native ledger and an
+approved or submitted documents outside the native ledger (zero cash gaps),
+three blocked mirror queue rows and an
 implausible historic WIP test job. Its trial balance and management totals
 therefore cannot substantiate a clean Accounts close even if new labelled
 native transactions post successfully. Review the queue and snapshot before
@@ -281,6 +282,11 @@ incremental application plan; local filename order is not proof of its state.
   queued under older code. GL-only opening delivery remains available. Finance
   1's separate batch-post guard is under focused regression; both guard the
   unresolved provider double-count risk.
+- Finance 1 committed `e829a8ee` after full opening/FX review. Its real
+  PostgreSQL cutover fixture passes customer gain and supplier loss settlement,
+  closed-period correction denial, exact source-control GL and the verified
+  trade bridge. The migration manifest installs and client TypeScript passes;
+  authenticated App review and dev rollout remain outstanding.
 - The only active development legal entity, **Databrain Test**
   (`a8e98266-f5f4-4620-b45a-e3d991a38209`), has an active sandbox ERPNext
   connection. A native-only demonstration therefore needs an isolated entity
