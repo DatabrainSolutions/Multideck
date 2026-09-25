@@ -1,7 +1,5 @@
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { InlineNotice } from "@/components/multideck/inline-notice"
-import { defaultPaginationPageSize } from "@/lib/pagination"
-import { collectExportPages } from "@/lib/table-export"
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
@@ -19,7 +17,6 @@ import {
   Paperclip,
   RefreshCw,
   Save,
-  Search,
   ShieldCheck,
   TriangleAlert,
 } from "@/components/icons/hugeicons"
@@ -29,7 +26,6 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Select,
   SelectContent,
@@ -37,9 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { Surface } from "@/components/multideck/surface"
-import { StatusPill } from "@/components/multideck/status-pill"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   approveDocumentStudioTemplate,
@@ -48,7 +42,6 @@ import {
   getDocumentBuilderWorkspace,
   getDocumentStudioDraftSource,
   previewDraftDocumentStudioTemplate,
-  getGeneratedDocumentsPage,
   getDocumentStudioComponent,
   getDocumentStudioSession,
   getGeneratedDocumentDownload,
@@ -94,13 +87,6 @@ type CreateDocumentWorkspaceProps = {
   onRendered: () => Promise<void>
   onTemplateCreated: (code: string) => Promise<void>
   preview: boolean
-}
-
-const statusTone: Record<GeneratedDocumentSummary["status"], "blue" | "amber" | "green" | "red"> = {
-  queued: "blue",
-  rendering: "amber",
-  ready: "green",
-  failed: "red",
 }
 
 const templatePreviewCache = new Map<string, RenderedPdfPage>()
@@ -284,13 +270,6 @@ function downloadBlob(blob: Blob, fileName: string) {
   anchor.click()
   anchor.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-function formatBytes(value: number | null) {
-  if (value === null) return "–"
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
 type CarboneStudioElement = HTMLElement & {
@@ -1656,49 +1635,24 @@ function CreateDocumentWorkspace({
 }
 
 export function DocumentsPage({ navigate, initialWorkspace, preview = false }: DocumentsPageProps) {
-  const { language, t } = useLanguage()
+  const { t } = useLanguage()
   const [workspace, setWorkspace] = useState<DocumentBuilderWorkspace | null>(initialWorkspace ?? documentWorkspaceCache)
   const [loading, setLoading] = useState(!initialWorkspace && !documentWorkspaceCache)
   const [error, setError] = useState<string | null>(null)
-  const [documentOffset, setDocumentOffset] = useState(0)
-  const [documentPageSize, setDocumentPageSize] = useState(defaultPaginationPageSize)
-  const [documentQuery, setDocumentQuery] = useState("")
-  const [debouncedDocumentQuery, setDebouncedDocumentQuery] = useState("")
-  const [documentSort, setDocumentSort] = useState<{ id: string; direction: "asc" | "desc" } | null>({ id: "created", direction: "desc" })
-  const [documentPageLoading, setDocumentPageLoading] = useState(false)
-  const [documentPageError, setDocumentPageError] = useState<string | null>(null)
-  const documentRequestIdRef = useRef(0)
-  const lastDocumentPageKeyRef = useRef<string | null>(initialWorkspace ? `0|${defaultPaginationPageSize}||created:desc` : null)
   // Entering Documents is always an overview. A retained local draft is only
   // considered after the operator explicitly starts document creation.
   const [createOpen, setCreateOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(() => window.location.pathname === "/documents/templates")
   const [resumeActiveDraft, setResumeActiveDraft] = useState(false)
   const [selectedTemplateCode, setSelectedTemplateCode] = useState<string | null>(null)
-  const [downloadingId, setDownloadingId] = useState<string | null>(null)
-  const [previewDocument, setPreviewDocument] = useState<GeneratedDocumentSummary | null>(null)
-  const [previewDocumentUrl, setPreviewDocumentUrl] = useState<string | null>(null)
-  const [previewDocumentLoading, setPreviewDocumentLoading] = useState(false)
-  const [previewDocumentError, setPreviewDocumentError] = useState<string | null>(null)
   const createTriggerTemplateRef = useRef<string | null>(null)
   const previewRequestIdRef = useRef(0)
-
-  const dateFormatter = useMemo(
-    () => new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
-    [language],
-  )
 
   async function loadWorkspace() {
     setLoading(true)
     setError(null)
     try {
-      const nextWorkspace = await getDocumentBuilderWorkspace({
-        offset: documentOffset,
-        limit: documentPageSize,
-        search: debouncedDocumentQuery,
-        sort: documentSort ?? { id: "created", direction: "desc" },
-      })
-      lastDocumentPageKeyRef.current = `${documentOffset}|${documentPageSize}|${debouncedDocumentQuery}|${documentSort?.id ?? "created"}:${documentSort?.direction ?? "desc"}`
+      const nextWorkspace = await getDocumentBuilderWorkspace()
       documentWorkspaceCache = nextWorkspace
       setWorkspace(nextWorkspace)
     } catch (loadError) {
@@ -1711,48 +1665,6 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   useEffect(() => {
     if (!initialWorkspace) void loadWorkspace()
   }, [initialWorkspace])
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setDebouncedDocumentQuery(documentQuery.trim()), 250)
-    return () => window.clearTimeout(timeout)
-  }, [documentQuery])
-
-  useEffect(() => setDocumentOffset(0), [debouncedDocumentQuery, documentSort])
-
-  useEffect(() => {
-    if (!workspace) return
-    const key = `${documentOffset}|${documentPageSize}|${debouncedDocumentQuery}|${documentSort?.id ?? "created"}:${documentSort?.direction ?? "desc"}`
-    if (lastDocumentPageKeyRef.current === key) return
-    lastDocumentPageKeyRef.current = key
-    const requestId = documentRequestIdRef.current + 1
-    documentRequestIdRef.current = requestId
-    setDocumentPageLoading(true)
-    setDocumentPageError(null)
-    void getGeneratedDocumentsPage({
-      offset: documentOffset,
-      limit: documentPageSize,
-      search: debouncedDocumentQuery,
-      sort: documentSort ?? { id: "created", direction: "desc" },
-    }).then((page) => {
-      if (documentRequestIdRef.current !== requestId) return
-      setWorkspace((current) => current ? {
-        ...current,
-        generatedDocuments: page.rows,
-        generatedDocumentTotal: page.total,
-        generatedDocumentOffset: page.offset,
-        generatedDocumentLimit: page.limit,
-      } : current)
-    }).catch((pageError) => {
-      if (documentRequestIdRef.current !== requestId) return
-      setDocumentPageError(pageError instanceof Error ? pageError.message : t("Document history could not be loaded."))
-    }).finally(() => {
-      if (documentRequestIdRef.current === requestId) setDocumentPageLoading(false)
-    })
-  }, [debouncedDocumentQuery, documentOffset, documentPageSize, documentSort, t, workspace?.permissions.canGenerate])
-
-  useEffect(() => () => {
-    if (previewDocumentUrl) URL.revokeObjectURL(previewDocumentUrl)
-  }, [previewDocumentUrl])
 
   function openCreate(templateCode: string | null = null) {
     createTriggerTemplateRef.current = templateCode
@@ -1788,75 +1700,8 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     await loadWorkspace()
   }
 
-  async function download(document: GeneratedDocumentSummary) {
-    if (preview) {
-      toast.info(t("Preview only"), { description: t("Secure downloads are enabled after the service is deployed.") })
-      return
-    }
-
-    setDownloadingId(document.id)
-    try {
-      const result = await getGeneratedDocumentDownload(document.id)
-      await startSignedDownload(result.signedUrl, result.fileName)
-    } catch (downloadError) {
-      toast.error(t("Download unavailable"), {
-        description: downloadError instanceof Error ? downloadError.message : t("A secure download link could not be created."),
-      })
-    } finally {
-      setDownloadingId(null)
-    }
-  }
-
-  function closeDocumentPreview() {
-    previewRequestIdRef.current += 1
-    setPreviewDocument(null)
-    setPreviewDocumentLoading(false)
-    setPreviewDocumentError(null)
-    setPreviewDocumentUrl(null)
-  }
-
-  async function openDocumentPreview(document: GeneratedDocumentSummary) {
-    if (document.status !== "ready") return
-
-    const requestId = previewRequestIdRef.current + 1
-    previewRequestIdRef.current = requestId
-    setPreviewDocument(document)
-    setPreviewDocumentLoading(true)
-    setPreviewDocumentError(null)
-    setPreviewDocumentUrl(null)
-
-    if (preview) {
-      setPreviewDocumentLoading(false)
-      setPreviewDocumentError(t("Secure previews are enabled after the service is deployed."))
-      return
-    }
-
-    try {
-      const result = await getGeneratedDocumentDownload(document.id)
-      const blob = await fetchSignedDocument(result.signedUrl)
-      if (previewRequestIdRef.current !== requestId) return
-      setPreviewDocumentUrl(URL.createObjectURL(blob))
-    } catch (previewError) {
-      if (previewRequestIdRef.current !== requestId) return
-      setPreviewDocumentError(previewError instanceof Error ? previewError.message : t("The document preview could not be opened."))
-    } finally {
-      if (previewRequestIdRef.current === requestId) setPreviewDocumentLoading(false)
-    }
-  }
-
   // Booking confirmations need the Booking Documents price/scope review first.
   const publishedTemplates = workspace?.templates.filter((template) => template.status === "published" && template.code !== "JOB_CONFIRMATION") ?? []
-  const generatedDocuments = workspace?.generatedDocuments ?? []
-  const generatedDocumentTotal = workspace?.generatedDocumentTotal ?? generatedDocuments.length
-  const generatedDocumentColumns = useMemo<DataTableColumn<GeneratedDocumentSummary>[]>(() => [
-    { id: "document", label: "Document", kind: "long-text", width: 280, minWidth: 210, resizable: true, sortValue: (document) => document.fileName, cellTitle: (document) => document.fileName, cell: (document) => <div className="min-w-0"><p className="truncate text-[11.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.fileName}</p><p className="mt-0.5 text-[10px] text-[var(--md-subtle)]"><span>{t(document.templateName)}</span> · <span data-i18n-skip>{formatBytes(document.fileSizeBytes)}</span></p></div> },
-    { id: "job", label: "Job", kind: "text", width: 140, sortValue: (document) => document.targetReference, cell: (document) => <span className="text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.targetReference}</span> },
-    { id: "customer", label: "Customer", kind: "long-text", width: 190, resizable: true, sortValue: (document) => document.customerName ?? "", cellTitle: (document) => document.customerName ?? undefined, cell: (document) => <span className="block truncate text-[11px] text-[var(--md-text)]" data-i18n-skip dir="auto">{document.customerName ?? "–"}</span> },
-    { id: "created", label: "Created", kind: "date", width: 150, sortValue: (document) => document.createdAt, cell: (document) => <span className="tabular-nums text-[10.5px] text-[var(--md-text)]" data-i18n-skip>{dateFormatter.format(new Date(document.createdAt))}</span> },
-    { id: "status", label: "Status", kind: "status", width: 112, sortValue: (document) => document.status, cell: (document) => <StatusPill kind="status" tone={statusTone[document.status]} className="capitalize">{t(document.status)}</StatusPill> },
-    { id: "actions", label: "Actions", kind: "actions", width: 64, canHide: false, canPin: false, cell: (document) => <Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon-sm" disabled={document.status !== "ready" || downloadingId === document.id} onClick={(event) => { event.stopPropagation(); void download(document) }} aria-label={t("Download document")} className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100">{downloadingId === document.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}</Button></TooltipTrigger><TooltipContent>{t("Download document")}</TooltipContent></Tooltip> },
-  ], [dateFormatter, downloadingId, t])
-
   if (manageOpen && workspace) {
     return (
       <CreateDocumentWorkspace
@@ -1990,73 +1835,6 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
         )}
       </section>
 
-      <section className="md-section-stack">
-        <div>
-          <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Recent documents")}</h2>
-          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Recent files generated from Job templates. Quote, Booking, Customs and Finance documents stay with their source records.")}</p>
-        </div>
-        {documentPageError ? <InlineNotice tone="error" className="mb-3" action={<Button type="button" variant="ghost" onClick={() => { lastDocumentPageKeyRef.current = null; setDocumentSort((current) => current ? { ...current } : { id: "created", direction: "desc" }) }}>{t("Try again")}</Button>}>{documentPageError}</InlineNotice> : null}
-        <DataTable
-          ariaLabel="Recent documents"
-          exportConfig={{ fileName: "generated-documents", register: {
-            busy: preview || documentQuery.trim() !== debouncedDocumentQuery,
-            dateLabel: "Document created date", dateValue: (document) => document.createdAt,
-            loadAllRows: (signal) => collectExportPages((page) => getGeneratedDocumentsPage({
-              search: debouncedDocumentQuery, sort: documentSort ?? { id: "created", direction: "desc" }, ...page,
-            }), (document) => document.id, signal),
-          } }}
-          columnsButtonLabel="Manage document columns"
-          columns={generatedDocumentColumns}
-          rows={generatedDocuments}
-          getRowKey={(document) => document.id}
-          storageKey="generated-documents"
-          minimumWidth={760}
-          onRowClick={(document) => void openDocumentPreview(document)}
-          isRowInteractive={(document) => document.status === "ready"}
-          rowAriaLabel={(document) => `Preview document: ${document.fileName}`}
-          rowClassName="group/row"
-          serverSorting={{ value: documentSort, onChange: (next) => setDocumentSort(next ?? { id: "created", direction: "desc" }) }}
-          pagination={{ offset: documentOffset, limit: documentPageSize, total: generatedDocumentTotal, loading: documentPageLoading, onOffsetChange: setDocumentOffset, onLimitChange: setDocumentPageSize, error: Boolean(documentPageError) }}
-          toolbarSearch={<label className="relative min-w-0 sm:w-[240px]"><span className="sr-only">{t("Search documents")}</span><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" /><Input value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className="h-8 ps-9 text-base sm:text-[12px]" placeholder={t("Document, job or customer…")} /></label>}
-          emptyState={<div className="py-4 text-center">{!documentPageLoading && !documentPageError ? <EmptyStateIllustration variant={debouncedDocumentQuery ? "search" : "documents"} className="mb-3" /> : null}<p className="text-[11px] text-[var(--md-subtle)]">{documentPageLoading ? t("Loading documents…") : debouncedDocumentQuery ? t("No documents match this search.") : t("No documents have been generated yet.")}</p></div>}
-        />
-      </section>
-
-      <Dialog open={Boolean(previewDocument)} onOpenChange={(open) => { if (!open) closeDocumentPreview() }}>
-        <DialogContent
-          className="h-[min(90dvh,920px)] w-[min(1120px,calc(100vw-2rem))] max-w-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-none"
-          dir="inherit"
-        >
-          <DialogHeader className="shrink-0 ps-5 pe-14 py-4 text-start shadow-[var(--md-stroke-bottom)]">
-            <DialogTitle className="truncate text-[15px]" data-i18n-skip dir="auto">{previewDocument?.fileName}</DialogTitle>
-            <DialogDescription className="truncate text-[11px]">
-              {previewDocument ? <><span>{t(previewDocument.templateName)}</span> · <span>{t("Job")}</span> <span data-i18n-skip dir="auto">{previewDocument.targetReference}</span> · <span data-i18n-skip>{formatBytes(previewDocument.fileSizeBytes)}</span></> : null}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid min-h-0 place-items-center bg-[var(--md-report-preview-bg)] p-3 sm:p-5">
-            {previewDocumentLoading ? <LoaderCircle className="size-5 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" aria-label={t("Loading preview…")} /> : null}
-            {previewDocumentError ? <p className="max-w-md text-center text-[12px] text-[var(--md-text)]">{previewDocumentError}</p> : null}
-            {!previewDocumentLoading && !previewDocumentError && previewDocumentUrl && previewDocument?.mimeType === "application/pdf" ? (
-              <iframe src={previewDocumentUrl} title={t("Document preview")} className="h-full min-h-[480px] w-full rounded-[var(--md-radius-lg)] bg-white shadow-[var(--md-shadow-float)]" />
-            ) : null}
-            {!previewDocumentLoading && !previewDocumentError && previewDocumentUrl && previewDocument?.mimeType !== "application/pdf" ? (
-              <p className="text-[12px] text-[var(--md-text)]">{t("Preview is available for PDF documents.")}</p>
-            ) : null}
-          </div>
-          <div className="flex shrink-0 justify-end px-5 py-3 shadow-[var(--md-stroke-top)]">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={!previewDocument || previewDocument.status !== "ready" || downloadingId === previewDocument.id}
-              onClick={() => { if (previewDocument) void download(previewDocument) }}
-              className="h-9 rounded-[var(--md-radius-md)] px-3 text-[11px]"
-            >
-              {previewDocument && downloadingId === previewDocument.id ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : <Download className="size-3.5" />}
-              {t("Download document")}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
     </div>
   )
