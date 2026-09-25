@@ -1,5 +1,9 @@
 begin;
 
+insert into public."sys_WorkflowRecordTypes"("WorkflowRecordType_Code","WorkflowRecordType_Name","WorkflowRecordType_SourceTable","WorkflowRecordType_Description","WorkflowRecordType_IsActive","WorkflowRecordType_SortOrder")
+values('finance_daily_operation','Finance daily operation','FIN_PaymentRuns','Reviewed supplier PO, invoice match, collection action or payment-run event.',true,128)
+on conflict ("WorkflowRecordType_Code") do update set "WorkflowRecordType_Description"=excluded."WorkflowRecordType_Description","WorkflowRecordType_IsActive"=true;
+
 -- These records are tenant-local. Browser roles have no table access; the
 -- authenticated Finance Edge boundary checks current company and permissions.
 create table public."FIN_SupplierPurchaseOrders" (
@@ -34,6 +38,25 @@ create table public."FIN_SupplierInvoiceMatches" (
 );
 create index "IX_FIN_SupplierInvoiceMatches_po" on public."FIN_SupplierInvoiceMatches"("FINPOMatch_PurchaseOrderID");
 
+create table public."FIN_SupplierMatchProposals" (
+  "FINMatchProposal_ID" uuid primary key default gen_random_uuid(),
+  "FINMatchProposal_LegalEntityID" uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
+  "FINMatchProposal_DocumentID" uuid not null references public."FIN_Documents"("FINDoc_ID"),
+  "FINMatchProposal_PurchaseOrderID" uuid references public."FIN_SupplierPurchaseOrders"("FINPO_ID"),
+  "FINMatchProposal_StatusCode" varchar(24) not null default 'pending' check ("FINMatchProposal_StatusCode" in ('pending','approved','rejected','stale')),
+  "FINMatchProposal_Model" varchar(120) not null,
+  "FINMatchProposal_PromptVersion" varchar(60) not null,
+  "FINMatchProposal_SourceJSON" jsonb not null check (jsonb_typeof("FINMatchProposal_SourceJSON")='object'),
+  "FINMatchProposal_ResultJSON" jsonb not null check (jsonb_typeof("FINMatchProposal_ResultJSON")='object'),
+  "FINMatchProposal_CreatedAt" timestamptz not null default now(),
+  "FINMatchProposal_CreatedBy" uuid not null references public."cmp_Users"("User_ID"),
+  "FINMatchProposal_ReviewedAt" timestamptz,
+  "FINMatchProposal_ReviewedBy" uuid references public."cmp_Users"("User_ID"),
+  "FINMatchProposal_ReviewReason" text,
+  constraint "CK_FIN_SupplierMatchProposals_review" check (("FINMatchProposal_StatusCode"='pending' and "FINMatchProposal_ReviewedAt" is null and "FINMatchProposal_ReviewedBy" is null) or ("FINMatchProposal_StatusCode"<>'pending' and "FINMatchProposal_ReviewedAt" is not null and "FINMatchProposal_ReviewedBy" is not null and length(btrim("FINMatchProposal_ReviewReason"))>0))
+);
+create index "IX_FIN_SupplierMatchProposals_document" on public."FIN_SupplierMatchProposals"("FINMatchProposal_LegalEntityID","FINMatchProposal_DocumentID","FINMatchProposal_CreatedAt" desc);
+
 create table public."FIN_CollectionActions" (
   "FINCollect_ID" uuid primary key default gen_random_uuid(),
   "FINCollect_LegalEntityID" uuid not null references public."cmp_LegalEntities"("LegalEntity_ID"),
@@ -61,11 +84,13 @@ create index if not exists "IX_FIN_PaymentRunItems_cash" on public."FIN_PaymentR
 
 alter table public."FIN_SupplierPurchaseOrders" enable row level security;
 alter table public."FIN_SupplierInvoiceMatches" enable row level security;
+alter table public."FIN_SupplierMatchProposals" enable row level security;
 alter table public."FIN_CollectionActions" enable row level security;
 alter table public."FIN_PaymentRuns" enable row level security;
 alter table public."FIN_PaymentRunItems" enable row level security;
-revoke all on public."FIN_SupplierPurchaseOrders", public."FIN_SupplierInvoiceMatches", public."FIN_CollectionActions", public."FIN_PaymentRuns", public."FIN_PaymentRunItems" from public, anon, authenticated;
+revoke all on public."FIN_SupplierPurchaseOrders", public."FIN_SupplierInvoiceMatches", public."FIN_SupplierMatchProposals", public."FIN_CollectionActions", public."FIN_PaymentRuns", public."FIN_PaymentRunItems" from public, anon, authenticated;
 grant select,insert,update on public."FIN_SupplierPurchaseOrders", public."FIN_PaymentRuns" to service_role;
+grant select,insert,update on public."FIN_SupplierMatchProposals" to service_role;
 grant select,insert on public."FIN_SupplierInvoiceMatches", public."FIN_CollectionActions", public."FIN_PaymentRunItems" to service_role;
 
 -- Immutable collection/match records and durable status history also feed the
@@ -79,24 +104,77 @@ begin
   elsif tg_table_name='FIN_SupplierInvoiceMatches' then
     select "FINPO_LegalEntityID" into v_entity from public."FIN_SupplierPurchaseOrders" where "FINPO_ID"=new."FINPOMatch_PurchaseOrderID";
     v_actor:=new."FINPOMatch_ApprovedBy"; v_record:=new."FINPOMatch_ID";
+  elsif tg_table_name='FIN_SupplierMatchProposals' then
+    v_entity:=new."FINMatchProposal_LegalEntityID"; v_actor:=coalesce(new."FINMatchProposal_ReviewedBy",new."FINMatchProposal_CreatedBy"); v_record:=new."FINMatchProposal_ID";
   elsif tg_table_name='FIN_CollectionActions' then
     v_entity:=new."FINCollect_LegalEntityID"; v_actor:=new."FINCollect_CreatedBy"; v_record:=new."FINCollect_ID";
   else
     v_entity:=new."FINPayRun_LegalEntityID"; v_actor:=coalesce(new."FINPayRun_ReviewedBy",new."FINPayRun_CreatedBy"); v_record:=new."FINPayRun_ID";
   end if;
   insert into public."Audit_Events"("AuditEvent_EventTypeCode","AuditEvent_UserID","AuditEvent_LegalEntityID","AuditEvent_SourceApp","AuditEvent_SourceModule","AuditEvent_SourceTableSchema","AuditEvent_SourceTableName","AuditEvent_RecordTypeCode","AuditEvent_RecordID","AuditEvent_Action","AuditEvent_Title","AuditEvent_MetadataJSON")
-  values('finance_lifecycle',v_actor,v_entity,'multideck-app','finance','public',tg_table_name,'daily_operation',v_record,lower(tg_op),'Finance daily operation reviewed',jsonb_build_object('row',to_jsonb(new),'previous',case when tg_op='UPDATE' then to_jsonb(old) else null end));
+  values('finance_lifecycle',v_actor,v_entity,'multideck-app','finance','public',tg_table_name,'finance_daily_operation',v_record,lower(tg_op),'Finance daily operation reviewed',jsonb_build_object('row',to_jsonb(new),'previous',case when tg_op='UPDATE' then to_jsonb(old) else null end));
   return new;
 end; $$;
 revoke all on function public._multideck_finance_daily_audit() from public,anon,authenticated;
 create trigger "TR_FIN_SupplierPurchaseOrders_audit" after insert or update on public."FIN_SupplierPurchaseOrders" for each row execute function public._multideck_finance_daily_audit();
 create trigger "TR_FIN_SupplierInvoiceMatches_audit" after insert on public."FIN_SupplierInvoiceMatches" for each row execute function public._multideck_finance_daily_audit();
+create trigger "TR_FIN_SupplierMatchProposals_audit" after insert or update on public."FIN_SupplierMatchProposals" for each row execute function public._multideck_finance_daily_audit();
 create trigger "TR_FIN_CollectionActions_audit" after insert on public."FIN_CollectionActions" for each row execute function public._multideck_finance_daily_audit();
 create trigger "TR_FIN_PaymentRuns_audit" after insert or update on public."FIN_PaymentRuns" for each row execute function public._multideck_finance_daily_audit();
 
+create function public._multideck_finance_validate_match_proposal() returns trigger
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare v_doc public."FIN_Documents"%rowtype; v_po public."FIN_SupplierPurchaseOrders"%rowtype;
+begin
+  select * into v_doc from public."FIN_Documents" where "FINDoc_ID"=new."FINMatchProposal_DocumentID";
+  if not found or v_doc."FINDoc_LegalEntityID"<>new."FINMatchProposal_LegalEntityID"
+    or v_doc."FINDoc_TypeCode"<>'pl_invoice' or v_doc."FINDoc_StatusCode" not in ('draft','awaiting_approval')
+    or (new."FINMatchProposal_SourceJSON"#>>'{document,updatedAt}')::timestamptz is distinct from v_doc."FINDoc_UpdatedAt"
+    or not exists(select 1 from public."cmp_Users" actor join public."cmp_LegalEntities" entity on entity."Company_ID"=actor."Company_ID" where actor."User_ID"=new."FINMatchProposal_CreatedBy" and entity."LegalEntity_ID"=new."FINMatchProposal_LegalEntityID" and coalesce(actor."User_AccessStatus",'active')='active') then
+    raise exception 'AI proposal must cite a current supplier invoice in the creator workspace.' using errcode='22023';
+  end if;
+  if new."FINMatchProposal_PurchaseOrderID" is not null then
+    select * into v_po from public."FIN_SupplierPurchaseOrders" where "FINPO_ID"=new."FINMatchProposal_PurchaseOrderID";
+    if not found or v_po."FINPO_LegalEntityID"<>new."FINMatchProposal_LegalEntityID" or v_po."FINPO_StatusCode"<>'approved'
+      or v_po."FINPO_SupplierOrgID"<>v_doc."FINDoc_PartyOrgID" or v_po."FINPO_CurrencyCode"<>v_doc."FINDoc_CurrencyCodeSnapshot"
+      or (v_po."FINPO_JobID" is not null and v_doc."FINDoc_SourceJobID" is not null and v_po."FINPO_JobID"<>v_doc."FINDoc_SourceJobID")
+      or (new."FINMatchProposal_SourceJSON"#>>'{purchaseOrder,updatedAt}')::timestamptz is distinct from v_po."FINPO_ReviewedAt" then
+      raise exception 'AI proposal cannot cite a mismatched or stale purchase order.' using errcode='22023';
+    end if;
+  end if;
+  if jsonb_typeof(new."FINMatchProposal_ResultJSON"->'citations')<>'array' or jsonb_array_length(new."FINMatchProposal_ResultJSON"->'citations')<1 then
+    raise exception 'AI proposal requires source-field citations.' using errcode='22023';
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_validate_match_proposal() from public,anon,authenticated;
+create trigger "TR_FIN_SupplierMatchProposals_validate" before insert on public."FIN_SupplierMatchProposals" for each row execute function public._multideck_finance_validate_match_proposal();
+
+create function public._multideck_finance_guard_match_proposal() returns trigger
+language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+  if old."FINMatchProposal_StatusCode"<>'pending' or new."FINMatchProposal_StatusCode" not in ('approved','rejected','stale')
+    or new."FINMatchProposal_LegalEntityID" is distinct from old."FINMatchProposal_LegalEntityID"
+    or new."FINMatchProposal_DocumentID" is distinct from old."FINMatchProposal_DocumentID"
+    or new."FINMatchProposal_PurchaseOrderID" is distinct from old."FINMatchProposal_PurchaseOrderID"
+    or new."FINMatchProposal_Model" is distinct from old."FINMatchProposal_Model"
+    or new."FINMatchProposal_PromptVersion" is distinct from old."FINMatchProposal_PromptVersion"
+    or new."FINMatchProposal_SourceJSON" is distinct from old."FINMatchProposal_SourceJSON"
+    or new."FINMatchProposal_ResultJSON" is distinct from old."FINMatchProposal_ResultJSON"
+    or new."FINMatchProposal_CreatedAt" is distinct from old."FINMatchProposal_CreatedAt"
+    or new."FINMatchProposal_CreatedBy" is distinct from old."FINMatchProposal_CreatedBy"
+    or new."FINMatchProposal_ReviewedBy" is null
+    or new."FINMatchProposal_ReviewReason" is null then
+    raise exception 'AI proposal evidence is immutable; only a reviewed decision may be recorded.' using errcode='22023';
+  end if;
+  return new;
+end; $$;
+revoke all on function public._multideck_finance_guard_match_proposal() from public,anon,authenticated;
+create trigger "TR_FIN_SupplierMatchProposals_guard" before update on public."FIN_SupplierMatchProposals" for each row execute function public._multideck_finance_guard_match_proposal();
+
 create function public._multideck_finance_validate_supplier_match() returns trigger
 language plpgsql security definer set search_path=pg_catalog,public as $$
-declare v_po public."FIN_SupplierPurchaseOrders"%rowtype; v_doc public."FIN_Documents"%rowtype; v_used numeric;
+declare v_po public."FIN_SupplierPurchaseOrders"%rowtype; v_doc public."FIN_Documents"%rowtype; v_used numeric; v_proposal public."FIN_SupplierMatchProposals"%rowtype; v_proposal_id uuid;
 begin
   select * into v_po from public."FIN_SupplierPurchaseOrders" where "FINPO_ID"=new."FINPOMatch_PurchaseOrderID" for update;
   select * into v_doc from public."FIN_Documents" where "FINDoc_ID"=new."FINPOMatch_DocumentID" for update;
@@ -112,6 +190,20 @@ begin
   select coalesce(sum("FINPOMatch_NetAmount"),0) into v_used from public."FIN_SupplierInvoiceMatches" where "FINPOMatch_PurchaseOrderID"=v_po."FINPO_ID";
   if v_used+new."FINPOMatch_NetAmount">v_po."FINPO_NetAmount"+0.01 then
     raise exception 'Matched invoices exceed the approved PO net amount.' using errcode='22023';
+  end if;
+  if new."FINPOMatch_EvidenceJSON" ? 'proposalId' then
+    begin v_proposal_id:=(new."FINPOMatch_EvidenceJSON"->>'proposalId')::uuid;
+    exception when invalid_text_representation then raise exception 'Choose a valid AI proposal.' using errcode='22023'; end;
+    select * into v_proposal from public."FIN_SupplierMatchProposals" where "FINMatchProposal_ID"=v_proposal_id for update;
+    if not found or v_proposal."FINMatchProposal_StatusCode"<>'pending'
+      or v_proposal."FINMatchProposal_DocumentID"<>v_doc."FINDoc_ID"
+      or v_proposal."FINMatchProposal_PurchaseOrderID"<>v_po."FINPO_ID"
+      or v_proposal."FINMatchProposal_LegalEntityID"<>v_doc."FINDoc_LegalEntityID"
+      or (v_proposal."FINMatchProposal_SourceJSON"#>>'{document,updatedAt}')::timestamptz is distinct from v_doc."FINDoc_UpdatedAt"
+      or (v_proposal."FINMatchProposal_SourceJSON"#>>'{purchaseOrder,updatedAt}')::timestamptz is distinct from v_po."FINPO_ReviewedAt" then
+      raise exception 'The AI proposal is stale or does not cite these exact records. Generate a new proposal.' using errcode='22023';
+    end if;
+    update public."FIN_SupplierMatchProposals" set "FINMatchProposal_StatusCode"='approved',"FINMatchProposal_ReviewedAt"=now(),"FINMatchProposal_ReviewedBy"=new."FINPOMatch_ApprovedBy","FINMatchProposal_ReviewReason"=new."FINPOMatch_ReviewerNote" where "FINMatchProposal_ID"=v_proposal_id;
   end if;
   return new;
 end; $$;
@@ -141,6 +233,9 @@ begin
   join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=bank."FINBank_LegalEntityID"
   where bank."FINBank_ID"=p_bank_id and bank."FINBank_IsActive" and bank."FINBank_AllowPayments" and entity."Company_ID"=p_company_id;
   if not found then raise exception 'Choose an active payment bank in this workspace.' using errcode='42501'; end if;
+  if v_bank."FINBank_CurrencyCode"=(select "LegalEntity_BaseCurrencyCodeSnapshot" from public."cmp_LegalEntities" where "LegalEntity_ID"=v_bank."FINBank_LegalEntityID") and p_exchange_rate<>1 then
+    raise exception 'The exchange rate for a base-currency payment run must be 1.' using errcode='22023';
+  end if;
   for v_id_text in select value from jsonb_array_elements_text(p_document_ids) loop
     if v_id_text::uuid=any(v_ids) then raise exception 'Each supplier invoice can appear only once.' using errcode='22023'; end if;
     select document.* into v_document from public."FIN_Documents" document
@@ -152,6 +247,18 @@ begin
       or v_document."FINDoc_CurrencyCodeSnapshot"<>v_bank."FINBank_CurrencyCode"
       or v_document."FINDoc_OutstandingAmount"<=0 then
       raise exception 'A selected supplier invoice is no longer payable from this bank.' using errcode='22023';
+    end if;
+    if exists(select 1 from public."FIN_PaymentRunItems" item join public."FIN_PaymentRuns" run on run."FINPayRun_ID"=item."FINPayRunItem_RunID"
+      where item."FINPayRunItem_DocumentID"=v_document."FINDoc_ID" and run."FINPayRun_StatusCode"='awaiting_approval') then
+      raise exception 'A selected supplier invoice is already in a payment run awaiting review.' using errcode='22023';
+    end if;
+    if exists(select 1 from public."FIN_Documents" credit where credit."FINDoc_LegalEntityID"=v_document."FINDoc_LegalEntityID"
+      and credit."FINDoc_PartyOrgID"=v_document."FINDoc_PartyOrgID" and credit."FINDoc_CurrencyCodeSnapshot"=v_document."FINDoc_CurrencyCodeSnapshot"
+      and credit."FINDoc_TypeCode"='debit_note' and credit."FINDoc_StatusCode" in ('approved','submitted') and credit."FINDoc_OutstandingAmount"<0)
+      or exists(select 1 from public."FIN_CashTransactions" cash where cash."FINCash_LegalEntityID"=v_document."FINDoc_LegalEntityID"
+      and cash."FINCash_PartyOrgID"=v_document."FINDoc_PartyOrgID" and cash."FINCash_CurrencyCodeSnapshot"=v_document."FINDoc_CurrencyCodeSnapshot"
+      and cash."FINCash_TypeCode"='supplier_payment' and cash."FINCash_StatusCode" in ('approved','submitted') and cash."FINCash_UnallocatedAmount">0) then
+      raise exception 'Apply the supplier credit or unapplied payment before preparing this payment run.' using errcode='22023';
     end if;
     v_ids:=array_append(v_ids,v_document."FINDoc_ID");
     v_total:=v_total+v_document."FINDoc_OutstandingAmount";
@@ -218,6 +325,11 @@ grant execute on function public.multideck_finance_review_payment_run(uuid,uuid,
 create function public.multideck_dexter_domain_finance_operations(p_company_id uuid,p_search text default null,p_take integer default 10)
 returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
   with evidence as (
+    select proposal."FINMatchProposal_CreatedAt" observed_at,
+      jsonb_build_object('recordId',proposal."FINMatchProposal_ID",'kind','supplier_match_proposal','status',proposal."FINMatchProposal_StatusCode",'documentId',proposal."FINMatchProposal_DocumentID",'purchaseOrderId',proposal."FINMatchProposal_PurchaseOrderID",'model',proposal."FINMatchProposal_Model",'promptVersion',proposal."FINMatchProposal_PromptVersion",'citations',proposal."FINMatchProposal_ResultJSON"->'citations','source',jsonb_build_object('table','FIN_SupplierMatchProposals','id',proposal."FINMatchProposal_ID",'observedAt',proposal."FINMatchProposal_CreatedAt")) value
+    from public."FIN_SupplierMatchProposals" proposal join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=proposal."FINMatchProposal_LegalEntityID"
+    where entity."Company_ID"=p_company_id and (nullif(btrim(p_search),'') is null or proposal."FINMatchProposal_DocumentID"::text ilike '%'||btrim(p_search)||'%')
+    union all
     select po."FINPO_CreatedAt" observed_at,
       jsonb_build_object('recordId',po."FINPO_ID",'kind','supplier_purchase_order','number',po."FINPO_Number",'status',po."FINPO_StatusCode",'supplier',supplier."Org_Name",'currency',po."FINPO_CurrencyCode",'netAmount',po."FINPO_NetAmount",'jobId',po."FINPO_JobID",'source',jsonb_build_object('table','FIN_SupplierPurchaseOrders','id',po."FINPO_ID",'observedAt',po."FINPO_CreatedAt")) value
     from public."FIN_SupplierPurchaseOrders" po join public."cmp_LegalEntities" entity on entity."LegalEntity_ID"=po."FINPO_LegalEntityID" left join public."Org_Master" supplier on supplier."Org_id"=po."FINPO_SupplierOrgID"
@@ -239,11 +351,11 @@ revoke all on function public.multideck_dexter_domain_finance_operations(uuid,te
 grant execute on function public.multideck_dexter_domain_finance_operations(uuid,text,integer) to service_role;
 
 insert into public."sys_AIDexterDataDomains"("AIDexterDomain_Code","AIDexterDomain_Name","AIDexterDomain_Description","AIDexterDomain_QueryFunction","AIDexterDomain_SortOrder","AIDexterDomain_IsActive","AIDexterDomain_UpdatedAt","AIDexterDomain_RequiredPermissionsJSON","AIDexterDomain_DataCategoriesJSON","AIDexterDomain_ScopeStrategy")
-values('finance_operations','Finance operations','Tenant-safe supplier POs, payment runs and recorded collection actions with source IDs. Daily ageing and job profitability are calculated in the Finance workspace.','multideck_dexter_domain_finance_operations',27,true,now(),'["Finance.Receivables.View","Finance.Payables.View"]'::jsonb,'["financial","customer","supplier"]'::jsonb,'company')
+values('finance_operations','Finance operations','Tenant-safe supplier POs, source-cited AI match proposals, payment runs and recorded collection actions with source IDs. Daily ageing and job profitability are calculated in the Finance workspace.','multideck_dexter_domain_finance_operations',27,true,now(),'["Finance.Receivables.View","Finance.Payables.View"]'::jsonb,'["financial","customer","supplier"]'::jsonb,'company')
 on conflict ("AIDexterDomain_Code") do update set "AIDexterDomain_Description"=excluded."AIDexterDomain_Description","AIDexterDomain_QueryFunction"=excluded."AIDexterDomain_QueryFunction","AIDexterDomain_IsActive"=true,"AIDexterDomain_UpdatedAt"=now();
 
 insert into public."sys_AIDexterWatchCapabilities"("AIDexterWatchCapability_Code","AIDexterWatchCapability_Name","AIDexterWatchCapability_Description","AIDexterWatchCapability_FieldsJSON","AIDexterWatchCapability_IsActive","AIDexterWatchCapability_SortOrder","AIDexterWatchCapability_RequiredPermissionsJSON","AIDexterWatchCapability_ScopeStrategy")
-values('finance_operations','Finance operations','Event-driven supplier PO, payment-run and collection-action changes.','["kind","status","number","supplierId","customerId","amount","followUpDate"]'::jsonb,true,46,'["Finance.Receivables.View","Finance.Payables.View"]'::jsonb,'company')
+values('finance_operations','Finance operations','Event-driven supplier PO, AI proposal, payment-run and collection-action changes.','["kind","status","number","supplierId","customerId","amount","followUpDate"]'::jsonb,true,46,'["Finance.Receivables.View","Finance.Payables.View"]'::jsonb,'company')
 on conflict ("AIDexterWatchCapability_Code") do update set "AIDexterWatchCapability_Description"=excluded."AIDexterWatchCapability_Description","AIDexterWatchCapability_FieldsJSON"=excluded."AIDexterWatchCapability_FieldsJSON","AIDexterWatchCapability_IsActive"=true,"AIDexterWatchCapability_UpdatedAt"=now();
 
 create function public._multideck_finance_daily_watch() returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
@@ -253,6 +365,10 @@ begin
     v_entity:=new."FINPO_LegalEntityID"; v_record:=new."FINPO_ID";
     v_new:=jsonb_build_object('kind','supplier_purchase_order','status',new."FINPO_StatusCode",'number',new."FINPO_Number",'supplierId',new."FINPO_SupplierOrgID",'amount',new."FINPO_NetAmount");
     if tg_op='UPDATE' then v_old:=jsonb_build_object('kind','supplier_purchase_order','status',old."FINPO_StatusCode",'number',old."FINPO_Number",'supplierId',old."FINPO_SupplierOrgID",'amount',old."FINPO_NetAmount"); end if;
+  elsif tg_table_name='FIN_SupplierMatchProposals' then
+    v_entity:=new."FINMatchProposal_LegalEntityID"; v_record:=new."FINMatchProposal_ID";
+    v_new:=jsonb_build_object('kind','supplier_match_proposal','status',new."FINMatchProposal_StatusCode",'documentId',new."FINMatchProposal_DocumentID",'purchaseOrderId',new."FINMatchProposal_PurchaseOrderID");
+    if tg_op='UPDATE' then v_old:=jsonb_build_object('kind','supplier_match_proposal','status',old."FINMatchProposal_StatusCode",'documentId',old."FINMatchProposal_DocumentID",'purchaseOrderId',old."FINMatchProposal_PurchaseOrderID"); end if;
   elsif tg_table_name='FIN_PaymentRuns' then
     v_entity:=new."FINPayRun_LegalEntityID"; v_record:=new."FINPayRun_ID";
     v_new:=jsonb_build_object('kind','payment_run','status',new."FINPayRun_StatusCode",'number',new."FINPayRun_Number",'amount',new."FINPayRun_TotalAmount");
@@ -269,6 +385,7 @@ begin
 end; $$;
 revoke all on function public._multideck_finance_daily_watch() from public,anon,authenticated;
 create trigger "TR_FIN_SupplierPurchaseOrders_watch" after insert or update on public."FIN_SupplierPurchaseOrders" for each row execute function public._multideck_finance_daily_watch();
+create trigger "TR_FIN_SupplierMatchProposals_watch" after insert or update on public."FIN_SupplierMatchProposals" for each row execute function public._multideck_finance_daily_watch();
 create trigger "TR_FIN_PaymentRuns_watch" after insert or update on public."FIN_PaymentRuns" for each row execute function public._multideck_finance_daily_watch();
 create trigger "TR_FIN_CollectionActions_watch" after insert on public."FIN_CollectionActions" for each row execute function public._multideck_finance_daily_watch();
 

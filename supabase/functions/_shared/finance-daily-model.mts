@@ -30,19 +30,34 @@ const asDay = (value: string) => {
  * automated priority; the operator reviews those human records separately. */
 export function ageOpenItems(rows: OpenItem[], asOf: string): AgedItem[] {
   const cutoff = asDay(asOf)
-  return rows.filter((row) => Number.isFinite(row.outstanding) && row.outstanding > 0).map((row) => {
+  return rows.filter((row) => Number.isFinite(row.outstanding) && row.outstanding > 0).map((row): AgedItem => {
     const daysOverdue = row.dueDate ? Math.max(0, Math.floor((cutoff - asDay(row.dueDate)) / day)) : 0
-    const bucket = daysOverdue > 90 ? "90+" : daysOverdue > 60 ? "61–90" : daysOverdue > 30 ? "31–60" : daysOverdue > 0 ? "1–30" : "current"
+    const bucket: AgedItem["bucket"] = daysOverdue > 90 ? "90+" : daysOverdue > 60 ? "61–90" : daysOverdue > 30 ? "31–60" : daysOverdue > 0 ? "1–30" : "current"
     const priorityReasons = [
       daysOverdue > 60 ? `Invoice is ${daysOverdue} days overdue` : daysOverdue > 0 ? `Invoice is ${daysOverdue} days overdue` : "Not overdue",
       `Outstanding ${row.currency} ${row.outstanding.toFixed(2)}`,
     ]
-    const priority = daysOverdue > 60 ? "urgent" : daysOverdue > 0 ? "review" : "routine"
+    const priority: AgedItem["priority"] = daysOverdue > 60 ? "urgent" : daysOverdue > 0 ? "review" : "routine"
     return { ...row, daysOverdue, bucket, priority, priorityReasons, evidence: { sourceTable: "FIN_Documents", sourceId: row.id, observedAt: row.updatedAt } }
   }).sort((a, b) => {
     const rank = { urgent: 0, review: 1, routine: 2 }
     return rank[a.priority] - rank[b.priority] || b.daysOverdue - a.daysOverdue || b.outstanding - a.outstanding || a.id.localeCompare(b.id)
   })
+}
+
+export function summariseOpenBalances(items: Array<{ currency: string; outstanding: number }>, offsets: Array<{ currency: string; amount: number }>) {
+  const totals: Record<string, { grossInvoices: number; unappliedOffsets: number; net: number }> = {}
+  for (const item of items) {
+    if (!Number.isFinite(item.outstanding) || item.outstanding < 0) throw new Error("Invoice balances must be non-negative.")
+    const row = totals[item.currency] ?? { grossInvoices: 0, unappliedOffsets: 0, net: 0 }
+    row.grossInvoices += item.outstanding; row.net += item.outstanding; totals[item.currency] = row
+  }
+  for (const item of offsets) {
+    if (!Number.isFinite(item.amount) || item.amount > 0) throw new Error("Unapplied offsets must be non-positive.")
+    const row = totals[item.currency] ?? { grossInvoices: 0, unappliedOffsets: 0, net: 0 }
+    row.unappliedOffsets += item.amount; row.net += item.amount; totals[item.currency] = row
+  }
+  return totals
 }
 
 export type MatchCandidate = {
@@ -75,4 +90,34 @@ export function proposePurchaseOrderMatches(input: { supplierId: string; currenc
       evidence: { sourceTable: "FIN_SupplierPurchaseOrders" as const, sourceId: order.id },
     }
   }).sort((a, b) => a.conflicts.length - b.conflicts.length || b.score - a.score || a.number.localeCompare(b.number))
+}
+
+export const matchCitationFields = ["invoice.supplier", "invoice.currency", "invoice.netAmount", "invoice.job", "invoice.number", "po.supplier", "po.currency", "po.availableNet", "po.job", "po.number"] as const
+
+type MatchSource = {
+  document: { table: string; id: string; fileId: string | null; sha256: string | null; fields: Record<string, string | number | null> }
+  purchaseOrders: Array<{ table: string; id: string; fields: Record<string, string | number | null> }>
+}
+
+/** Treat the model response as an untrusted suggestion. Every citation value is
+ * resolved from the current canonical snapshot rather than copied from text. */
+export function validateMatchModelProposal(output: unknown, source: MatchSource, eligibleIds: string[]) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) throw new Error("AI matching returned an invalid proposal.")
+  const value = output as Record<string, unknown>
+  const selectedId = value.purchaseOrderId === null ? null : typeof value.purchaseOrderId === "string" ? value.purchaseOrderId : undefined
+  if (selectedId === undefined || (selectedId && !eligibleIds.includes(selectedId))) throw new Error("AI matching selected an ineligible PO.")
+  const rationale = typeof value.rationale === "string" ? value.rationale.trim().slice(0, 600) : ""
+  if (!rationale || !Array.isArray(value.citationFields) || !value.citationFields.length || value.citationFields.length > 8) throw new Error("AI matching must explain and cite the proposal.")
+  const fields = [...new Set(value.citationFields)]
+  if (fields.some((field) => typeof field !== "string" || !matchCitationFields.includes(field as typeof matchCitationFields[number]))) throw new Error("AI matching cited an unknown source field.")
+  if (!fields.some((field) => String(field).startsWith("invoice.")) || (selectedId && !fields.some((field) => String(field).startsWith("po.")))) throw new Error("AI matching must cite both records for a proposed PO match.")
+  const selectedOrder = source.purchaseOrders.find((order) => order.id === selectedId)
+  if (selectedId && !selectedOrder) throw new Error("AI matching selected a PO outside the source snapshot.")
+  const citations = fields.map((field) => {
+    const [record, key] = String(field).split(".")
+    const owner = record === "invoice" ? source.document : selectedOrder
+    if (!owner || !(key in owner.fields)) throw new Error("AI matching cited a field absent from the source snapshot.")
+    return { field, table: owner.table, recordId: owner.id, fileId: record === "invoice" ? source.document.fileId : null, fileSha256: record === "invoice" ? source.document.sha256 : null, page: null, value: owner.fields[key] }
+  })
+  return { selectedId, rationale, citations }
 }

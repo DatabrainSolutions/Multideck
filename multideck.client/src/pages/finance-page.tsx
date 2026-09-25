@@ -4,6 +4,7 @@ import { AlertCircle, ChartNoAxesCombined, Landmark, LoaderCircle, ReceiptText, 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { FinanceGeneralLedgerPage } from "@/pages/finance-general-ledger-page"
 import { FinanceBankReconciliationPage } from "@/pages/finance-bank-reconciliation-page"
+import { FinanceDailyPage, type FinanceDailyRoute } from "@/pages/finance-daily-page"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import {
   createFinanceDocumentLine,
@@ -84,7 +85,7 @@ export type FinanceAdministrationRoute =
   | "/finance/compliance"
   | "/finance/controls"
 export type FinanceDocumentRoute = `/finance/${FinanceLedger}/documents/${string}`
-export type FinanceRoute = FinanceLedgerRoute | FinanceAdministrationRoute | FinanceDocumentRoute | "/finance/setup"
+export type FinanceRoute = FinanceLedgerRoute | FinanceAdministrationRoute | FinanceDocumentRoute | FinanceDailyRoute | "/finance/setup"
   | "/finance/general-ledger" | "/finance/general-ledger/accounts" | "/finance/general-ledger/journals"
   | "/finance/reports"
   | "/finance/bank-reconciliation"
@@ -579,6 +580,7 @@ function FinanceSetupPage({ navigate }: { navigate: (path: string) => void }) {
 
 export function FinancePage({ route, navigate, currentUser }: { route: FinanceRoute; navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
   if (route === "/finance/bank-reconciliation") return <FinanceBankReconciliationPage currentUser={currentUser} />
+  if (["/finance/receivables/statements", "/finance/receivables/collections", "/finance/payables/payment-runs", "/finance/payables/purchase-orders", "/finance/payables/matching", "/finance/management/profitability"].includes(route)) return <FinanceDailyPage route={route as FinanceDailyRoute} navigate={navigate} currentUser={currentUser} />
   if (route.startsWith("/finance/general-ledger")) return <FinanceGeneralLedgerPage route={route} navigate={navigate} currentUser={currentUser} />
   if (route === "/finance/reports") return <FinanceReportsPage navigate={navigate} />
   if (route === "/finance/vat") return <FinanceVatPage currentUser={currentUser} navigate={navigate} />
