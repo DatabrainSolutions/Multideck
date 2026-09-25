@@ -9,7 +9,7 @@ import {
   toFunctionError,
 } from "../_shared/document-functions.ts"
 
-type DownloadRequest = { generatedDocumentId?: string; preview?: boolean }
+type DownloadRequest = { generatedDocumentId?: string; libraryDocumentId?: string; libraryKind?: string; preview?: boolean }
 type AuthorisedDownload = { bucket: string; path: string; fileName: string }
 
 Deno.serve(async (request) => {
@@ -19,8 +19,12 @@ Deno.serve(async (request) => {
   try {
     const { admin, userId } = await authenticateRequest(request)
     const payload = await request.json() as DownloadRequest
-    if (!isUuid(payload.generatedDocumentId)) {
+    const documentId = payload.libraryDocumentId ?? payload.generatedDocumentId
+    if (!isUuid(documentId)) {
       throw new FunctionError(400, "Choose a valid document.", "Generated document UUID validation failed")
+    }
+    if (payload.libraryDocumentId && !["generated", "booking_attachment", "quote_pdf", "customs_declaration", "finance_pdf"].includes(payload.libraryKind ?? "")) {
+      throw new FunctionError(400, "Choose a valid document type.", "Library document kind validation failed")
     }
     if (payload.preview !== undefined && typeof payload.preview !== "boolean") {
       throw new FunctionError(400, "Choose a valid document preview.", "Preview flag validation failed")
@@ -28,10 +32,15 @@ Deno.serve(async (request) => {
 
     const { data, error } = await admin
       .schema("document_api")
-      .rpc("authorize_download", {
-        caller_auth_user_id: userId,
-        requested_generated_document_id: payload.generatedDocumentId,
-      })
+      .rpc(payload.libraryDocumentId ? "authorize_unified_download" : "authorize_download",
+        payload.libraryDocumentId ? {
+          caller_auth_user_id: userId,
+          requested_kind: payload.libraryKind,
+          requested_document_id: documentId,
+        } : {
+          caller_auth_user_id: userId,
+          requested_generated_document_id: documentId,
+        })
     if (error || !data) throw error ?? new Error("Document download authorization returned no data")
 
     const authorised = data as AuthorisedDownload

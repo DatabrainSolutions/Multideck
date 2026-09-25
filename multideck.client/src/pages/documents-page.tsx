@@ -42,8 +42,14 @@ import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { useLanguage } from "@/i18n/language-provider"
 import {
+  approveDocumentStudioTemplate,
   bootstrapDocumentStudioTemplate,
+  createDocumentStudioTemplate,
   getDocumentBuilderWorkspace,
+  getDocumentStudioDraftSource,
+  getDocumentLibraryPage,
+  getLibraryDocumentDownload,
+  previewDraftDocumentStudioTemplate,
   getGeneratedDocumentsPage,
   getDocumentStudioComponent,
   getDocumentStudioSession,
@@ -52,6 +58,7 @@ import {
   renderDocumentStudioPreview,
   saveDocumentStudioTemplate,
   type DocumentBuilderWorkspace,
+  type DocumentLibraryRow,
   type DocumentContentSectionCode,
   type DocumentOutputFormat,
   type DocumentStudioRequest,
@@ -88,6 +95,7 @@ type CreateDocumentWorkspaceProps = {
   resumeActiveDraft: boolean
   onClose: () => void
   onRendered: () => Promise<void>
+  onTemplateCreated: (code: string) => Promise<void>
   preview: boolean
 }
 
@@ -878,6 +886,7 @@ function CreateDocumentWorkspace({
   resumeActiveDraft,
   onClose,
   onRendered,
+  onTemplateCreated,
   preview,
 }: CreateDocumentWorkspaceProps) {
   const { t } = useLanguage()
@@ -885,7 +894,7 @@ function CreateDocumentWorkspace({
   const jobInputRef = useRef<HTMLInputElement>(null)
   const templateUploadRef = useRef<HTMLInputElement>(null)
   const sourceUploadRef = useRef<HTMLInputElement>(null)
-  const [templateCode, setTemplateCode] = useState("")
+  const [templateCode, setTemplateCode] = useState(() => templates.find((item) => item.code === initialTemplateCode)?.code ?? templates[0]?.code ?? "")
   const [jobNumber, setJobNumber] = useState("")
   const [outputFormat, setOutputFormat] = useState<DocumentOutputFormat>("pdf")
   const [contentSections, setContentSections] = useState<DocumentContentSectionCode[]>([])
@@ -900,6 +909,15 @@ function CreateDocumentWorkspace({
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [publishingSource, setPublishingSource] = useState(false)
   const [savedTemplate, setSavedTemplate] = useState<SaveDocumentStudioTemplateResponse | null>(null)
+  const [newTemplateCode, setNewTemplateCode] = useState("")
+  const [newTemplateName, setNewTemplateName] = useState("")
+  const [createTemplateOpen, setCreateTemplateOpen] = useState(false)
+  const [creatingTemplate, setCreatingTemplate] = useState(false)
+  const [approvingTemplate, setApprovingTemplate] = useState(false)
+  const [draftSampleJson, setDraftSampleJson] = useState('{\n  "job": {\n    "reference": "DEMO-001",\n    "mode": "sea",\n    "origin": "London",\n    "destination": "Rotterdam"\n  },\n  "customer": { "name": "Example Customer Ltd" }\n}')
+  const [draftPreviewUrl, setDraftPreviewUrl] = useState<string | null>(null)
+  const [draftPreviewBusy, setDraftPreviewBusy] = useState(false)
+  const [draftReviewed, setDraftReviewed] = useState(false)
   const [draftUserId, setDraftUserId] = useState<string | null>(null)
   const latestDraftRef = useRef<{ userId: string; draft: DocumentBuilderDraft } | null>(null)
   const restoringDraftRef = useRef(!preview)
@@ -917,7 +935,7 @@ function CreateDocumentWorkspace({
     setStudioData(null)
     setStudioError(null)
     setSavedTemplate(null)
-  }, [initialTemplateCode, templates])
+  }, [initialTemplateCode, templates[0]?.code])
 
   useEffect(() => {
     const focusFrame = window.requestAnimationFrame(() => jobInputRef.current?.focus())
@@ -1034,6 +1052,67 @@ function CreateDocumentWorkspace({
   }, [preview])
 
   const selectedTemplate = templates.find((template) => template.code === templateCode)
+
+  useEffect(() => () => { if (draftPreviewUrl) URL.revokeObjectURL(draftPreviewUrl) }, [draftPreviewUrl])
+
+  useEffect(() => {
+    if (preview || !canManageTemplates || selectedTemplate?.status !== "draft") return
+    let cancelled = false
+    void getDocumentStudioDraftSource(selectedTemplate.id).then((draft) => {
+      if (cancelled || !draft) return
+      setStudioTemplateBase64(draft.templateBase64)
+      setSavedTemplate(draft)
+    }).catch((cause) => {
+      if (!cancelled) setStudioError(cause instanceof Error ? cause.message : t("The saved template source could not be opened."))
+    })
+    return () => { cancelled = true }
+  }, [canManageTemplates, preview, selectedTemplate?.id, selectedTemplate?.status, t])
+
+  async function createTemplate() {
+    setCreatingTemplate(true)
+    setError(null)
+    try {
+      const result = await createDocumentStudioTemplate(newTemplateCode.trim().toUpperCase(), newTemplateName.trim())
+      setNewTemplateCode("")
+      setNewTemplateName("")
+      setCreateTemplateOpen(false)
+      await onTemplateCreated(result.templateCode)
+      toast.success(t("Draft template created"))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("The template could not be created."))
+    } finally { setCreatingTemplate(false) }
+  }
+
+  async function previewDraft() {
+    if (!selectedTemplate || !studioTemplateBase64) return
+    setDraftPreviewBusy(true)
+    setStudioError(null)
+    setDraftReviewed(false)
+    try {
+      const parsed = JSON.parse(draftSampleJson) as unknown
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(t("Sample data must be a JSON object."))
+      const blob = await previewDraftDocumentStudioTemplate(selectedTemplate.id, studioTemplateBase64, parsed as Record<string, unknown>)
+      setDraftPreviewUrl(URL.createObjectURL(blob))
+    } catch (cause) {
+      setStudioError(cause instanceof Error ? cause.message : t("The draft preview could not be created."))
+    } finally { setDraftPreviewBusy(false) }
+  }
+
+  async function approveTemplate() {
+    if (!selectedTemplate || !draftReviewed || !savedTemplate || savedTemplate.status !== "draft") return
+    setApprovingTemplate(true)
+    setStudioError(null)
+    try {
+      await approveDocumentStudioTemplate(selectedTemplate.id)
+      await onRendered()
+      setSavedTemplate(null)
+      setDraftReviewed(false)
+      clearStudio()
+      toast.success(t("Template published"), { description: t("The reviewed version is now available for document creation.") })
+    } catch (cause) {
+      setStudioError(cause instanceof Error ? cause.message : t("The template could not be published."))
+    } finally { setApprovingTemplate(false) }
+  }
   const selectedModuleName = studioSession?.dataModuleName ?? (selectedTemplate?.targetType === "Job_Header" ? "Jobs" : "")
 
   function chooseTemplate(nextTemplateCode: string) {
@@ -1042,6 +1121,8 @@ function CreateDocumentWorkspace({
     setOutputFormat(template?.defaultOutputFormat ?? "pdf")
     setContentSections(template?.contentSections.filter((section) => section.required || section.defaultSelected).map((section) => section.code) ?? [])
     setError(null)
+    setDraftPreviewUrl(null)
+    setDraftReviewed(false)
     clearStudio()
   }
 
@@ -1147,9 +1228,11 @@ function CreateDocumentWorkspace({
       const result = await bootstrapDocumentStudioTemplate(selectedTemplate.id, base64)
       setStudioTemplateBase64(base64)
       setSavedTemplate(result)
+      setDraftPreviewUrl(null)
+      setDraftReviewed(false)
       await onRendered()
-      toast.success(t("Template source published"), {
-        description: t("The published template now uses this Word source."),
+      toast.success(t("Template source saved"), {
+        description: t("Preview and review the draft before publishing it."),
       })
     } catch (uploadError) {
       setStudioError(uploadError instanceof Error ? uploadError.message : t("The template source could not be published."))
@@ -1166,10 +1249,11 @@ function CreateDocumentWorkspace({
     try {
       const result = await saveDocumentStudioTemplate({ ...studioRequest, templateBase64: studioTemplateBase64 })
       setSavedTemplate(result)
+      setDraftReviewed(false)
       toast.success(t("Template version saved"), {
         description: result.status === "draft"
           ? t("The edited file is a draft. Publishing remains a separate approval.")
-          : t("The existing published version now has its stable Carbone template ID."),
+          : t("The template version is saved."),
       })
     } catch (saveError) {
       setStudioError(saveError instanceof Error ? saveError.message : t("The template version could not be saved."))
@@ -1235,6 +1319,7 @@ function CreateDocumentWorkspace({
   }
 
   const studioReady = Boolean(studioSession && studioRequest)
+  const pendingTemplateEdit = Boolean(studioSession && studioTemplateBase64 !== studioSession.templateBase64)
   const contextError = error ?? studioError
 
   return (
@@ -1245,11 +1330,12 @@ function CreateDocumentWorkspace({
             <ArrowLeft className="size-4 rtl:-scale-x-100" strokeWidth={1.5} aria-hidden="true" />
           </Button>
           <div className="min-w-0">
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-accent)]">{t("Document builder")}</p>
-            <h1 id="document-editor-title" className="mt-0.5 truncate text-[18px] font-medium leading-tight tracking-[-0.02em] text-[var(--md-ink)]">{t("Create a document")}</h1>
+            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-accent)]">{t("Documents")}</p>
+            <h1 id="document-editor-title" className="mt-0.5 truncate text-[18px] font-medium leading-tight tracking-[-0.02em] text-[var(--md-ink)]">{t("Manage templates")}</h1>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {canManageTemplates ? <Button type="button" variant="ghost" onClick={() => setCreateTemplateOpen(true)} className="h-9 text-[11px]"><FilePlus2 className="size-3.5" aria-hidden="true" />{t("New template")}</Button> : null}
           <Badge className={cn("hidden h-7 border-0 px-2.5 text-[11px] font-medium shadow-none sm:inline-flex", studioReady ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[var(--md-surface-tint)] text-[var(--md-subtle)]")}>
             {studioLoading ? t("Checking job access…") : savedTemplate ? `${t("Template ID")} ${savedTemplate.carboneTemplateId}` : studioReady ? t("JSON and preview ready") : t("Choose document context")}
           </Badge>
@@ -1279,6 +1365,10 @@ function CreateDocumentWorkspace({
                   <span className="hidden xl:inline">{savingTemplate ? t("Saving…") : t("Save template")}</span>
                 </Button>
               ) : null}
+              {canManageTemplates && savedTemplate?.status === "draft" ? <>
+                <label className="flex items-center gap-1.5 text-[11px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label>
+                <Button type="button" variant="ghost" disabled={!draftReviewed || approvingTemplate} onClick={() => void approveTemplate()} className="h-9 text-[11px]">{approvingTemplate ? t("Publishing…") : t("Publish version")}</Button>
+              </> : null}
               {savedTemplate ? (
                 <Button type="button" variant="ghost" size="icon-lg" onClick={() => void copyTemplateId()} aria-label={t("Copy Carbone template ID")} title={t("Copy Carbone template ID")} className="rounded-[var(--md-radius-md)]">
                   <Copy className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
@@ -1287,13 +1377,24 @@ function CreateDocumentWorkspace({
             </>
           ) : null}
           {studioReady ? (
-            <Button type="button" onClick={() => void submit()} disabled={submitting} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3.5 text-[12px] text-white shadow-[0_8px_20px_var(--md-accent-a14)]">
+            <Button type="button" onClick={() => void submit()} disabled={submitting || pendingTemplateEdit || savedTemplate?.status === "draft"} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3.5 text-[12px] text-white shadow-[0_8px_20px_var(--md-accent-a14)]">
               {submitting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <FilePlus2 className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}
               <span className="hidden sm:inline">{submitting ? t("Preparing document…") : t("Create and download")}</span>
             </Button>
           ) : null}
         </div>
       </header>
+
+      <Dialog open={createTemplateOpen} onOpenChange={setCreateTemplateOpen}>
+        <DialogContent className="max-w-md border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
+          <DialogHeader><DialogTitle>{t("New document template")}</DialogTitle><DialogDescription>{t("Create a draft, then upload its Word source and inspect a preview before publishing.")}</DialogDescription></DialogHeader>
+          <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void createTemplate() }}>
+            <label className="block text-[12px] text-[var(--md-ink)]">{t("Name")}<Input value={newTemplateName} onChange={(event) => setNewTemplateName(event.target.value)} maxLength={180} required minLength={2} className="mt-1.5" /></label>
+            <label className="block text-[12px] text-[var(--md-ink)]">{t("Code")}<Input value={newTemplateCode} onChange={(event) => setNewTemplateCode(event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))} maxLength={100} required minLength={2} placeholder="BOOKING_CONFIRMATION" className="mt-1.5" /></label>
+            <Button type="submit" disabled={creatingTemplate}>{creatingTemplate ? t("Creating…") : t("Create draft")}</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {studioReady ? (
       <div className="md-document-editor__workspace" data-studio-ready="true">
@@ -1335,6 +1436,20 @@ function CreateDocumentWorkspace({
           </div>
         </section>
       </div>
+      ) : selectedTemplate?.status === "draft" ? (
+        <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--md-bg-strong)] px-4 py-8 sm:px-6">
+          <div className="mx-auto max-w-5xl space-y-5">
+            <div><p className="text-[11px] font-medium text-[var(--md-accent)]" data-i18n-skip>{selectedTemplate.code} · v{selectedTemplate.version}</p><h2 className="mt-1 text-[18px] font-medium text-[var(--md-ink)]" data-i18n-skip>{selectedTemplate.name}</h2><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Upload a Word source, preview it with safe sample data, then publish the reviewed version.")}</p></div>
+            {studioError ? <InlineNotice tone="error">{studioError}</InlineNotice> : null}
+            <input ref={sourceUploadRef} type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" onChange={(event) => void publishTemplateSource(event.target.files?.[0])} />
+            <div className="flex flex-wrap items-center gap-3"><Button type="button" variant="ghost" disabled={publishingSource} onClick={() => sourceUploadRef.current?.click()}><FileUp className="size-4" aria-hidden="true" />{publishingSource ? t("Saving source…") : t("Upload Word source")}</Button><span className="text-[11px] text-[var(--md-subtle)]">{savedTemplate ? `${t("Saved draft")} · v${savedTemplate.multideckVersion}` : t("No source loaded in this session")}</span></div>
+            <div className="grid gap-5 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(0,1.2fr)]">
+              <label className="block text-[12px] font-medium text-[var(--md-ink)]">{t("Safe sample data (JSON)")}<textarea value={draftSampleJson} onChange={(event) => { setDraftSampleJson(event.target.value); setDraftReviewed(false); setDraftPreviewUrl(null) }} spellCheck={false} className="mt-2 h-[440px] w-full resize-y rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] p-4 font-sans text-[12px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" /><span className="mt-1 block text-[11px] font-normal text-[var(--md-subtle)]">{t("Use fictional values only. Match the fields used by your Carbone tags.")}</span></label>
+              <div className="min-h-[440px] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">{draftPreviewUrl ? <iframe src={draftPreviewUrl} title={t("Draft template preview")} className="h-full min-h-[440px] w-full bg-white" /> : <div className="grid h-full min-h-[440px] place-items-center text-[12px] text-[var(--md-subtle)]">{t("Preview will appear here")}</div>}</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={!studioTemplateBase64 || draftPreviewBusy} onClick={() => void previewDraft()}>{draftPreviewBusy ? t("Rendering…") : t("Preview draft")}</Button><label className="flex items-center gap-2 text-[12px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} disabled={!draftPreviewUrl || !savedTemplate} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label><Button type="button" variant="ghost" disabled={!draftReviewed || !savedTemplate || approvingTemplate} onClick={() => void approveTemplate()}>{approvingTemplate ? t("Publishing…") : t("Publish reviewed version")}</Button></div>
+          </div>
+        </main>
       ) : (
         <main data-document-context-step className="min-h-0 flex-1 overflow-y-auto bg-[var(--md-bg-strong)] px-4 py-8 sm:px-6 sm:py-10">
           <form
@@ -1547,6 +1662,17 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const [previewDocumentUrl, setPreviewDocumentUrl] = useState<string | null>(null)
   const [previewDocumentLoading, setPreviewDocumentLoading] = useState(false)
   const [previewDocumentError, setPreviewDocumentError] = useState<string | null>(null)
+  const [libraryRows, setLibraryRows] = useState<DocumentLibraryRow[]>([])
+  const [libraryTotal, setLibraryTotal] = useState(0)
+  const [libraryOffset, setLibraryOffset] = useState(0)
+  const [libraryQuery, setLibraryQuery] = useState("")
+  const [librarySearch, setLibrarySearch] = useState("")
+  const [libraryLoading, setLibraryLoading] = useState(false)
+  const [libraryError, setLibraryError] = useState<string | null>(null)
+  const [libraryDownloading, setLibraryDownloading] = useState<string | null>(null)
+  const [libraryPreview, setLibraryPreview] = useState<DocumentLibraryRow | null>(null)
+  const [libraryPreviewUrl, setLibraryPreviewUrl] = useState<string | null>(null)
+  const [libraryPreviewError, setLibraryPreviewError] = useState<string | null>(null)
   const createTriggerTemplateRef = useRef<string | null>(null)
   const previewRequestIdRef = useRef(0)
 
@@ -1585,6 +1711,31 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   }, [documentQuery])
 
   useEffect(() => setDocumentOffset(0), [debouncedDocumentQuery, documentSort])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setLibrarySearch(libraryQuery.trim()), 250)
+    return () => window.clearTimeout(timeout)
+  }, [libraryQuery])
+
+  useEffect(() => setLibraryOffset(0), [librarySearch])
+
+  useEffect(() => {
+    if (preview) return
+    let cancelled = false
+    setLibraryLoading(true)
+    setLibraryError(null)
+    void getDocumentLibraryPage({ offset: libraryOffset, limit: 20, search: librarySearch })
+      .then((page) => {
+        if (cancelled) return
+        setLibraryRows(page.rows)
+        setLibraryTotal(page.total)
+      })
+      .catch((cause) => {
+        if (!cancelled) setLibraryError(cause instanceof Error ? cause.message : t("The document library could not be loaded."))
+      })
+      .finally(() => { if (!cancelled) setLibraryLoading(false) })
+    return () => { cancelled = true }
+  }, [libraryOffset, librarySearch, preview, t])
 
   useEffect(() => {
     if (!workspace) return
@@ -1650,6 +1801,11 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     navigate?.("/documents")
   }
 
+  async function selectCreatedTemplate(code: string) {
+    setSelectedTemplateCode(code)
+    await loadWorkspace()
+  }
+
   async function download(document: GeneratedDocumentSummary) {
     if (preview) {
       toast.info(t("Preview only"), { description: t("Secure downloads are enabled after the service is deployed.") })
@@ -1666,6 +1822,30 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
       })
     } finally {
       setDownloadingId(null)
+    }
+  }
+
+  async function downloadLibraryDocument(document: DocumentLibraryRow) {
+    setLibraryDownloading(document.id)
+    try {
+      const result = await getLibraryDocumentDownload(document)
+      await startSignedDownload(result.signedUrl, result.fileName)
+    } catch (cause) {
+      toast.error(t("Download unavailable"), { description: cause instanceof Error ? cause.message : t("A secure download link could not be created.") })
+    } finally {
+      setLibraryDownloading(null)
+    }
+  }
+
+  async function previewLibraryDocument(document: DocumentLibraryRow) {
+    setLibraryPreview(document)
+    setLibraryPreviewUrl(null)
+    setLibraryPreviewError(null)
+    try {
+      const result = await getLibraryDocumentDownload(document, true)
+      setLibraryPreviewUrl(result.signedUrl)
+    } catch (cause) {
+      setLibraryPreviewError(cause instanceof Error ? cause.message : t("The document preview could not be opened."))
     }
   }
 
@@ -1722,12 +1902,13 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   if (manageOpen && workspace) {
     return (
       <CreateDocumentWorkspace
-        templates={workspace.templates.filter((template) => template.status === "published")}
+        templates={workspace.templates}
         canManageTemplates={workspace.permissions.canManageTemplates}
         initialTemplateCode={selectedTemplateCode}
         resumeActiveDraft={false}
         onClose={closeManage}
         onRendered={loadWorkspace}
+        onTemplateCreated={selectCreatedTemplate}
         preview={preview}
       />
     )
@@ -1780,6 +1961,34 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           </Button>
         }>{error}</InlineNotice>
       ) : null}
+
+      {!preview ? <section className="md-section-stack" aria-label={t("Document library")}>
+        <div>
+          <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Document library")}</h2>
+          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Sent Quotes, Booking files and Customs documents in one secure place.")}</p>
+        </div>
+        <label className="block max-w-sm"><span className="sr-only">{t("Search document library")}</span><Input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder={t("Search file, customer or reference…")} /></label>
+        {libraryError ? <InlineNotice tone="error">{libraryError}</InlineNotice> : null}
+        <Surface tone="soft" className="divide-y divide-[color-mix(in_srgb,var(--md-ink),transparent_94%)] overflow-hidden">
+          {libraryRows.map((document) => <div key={`${document.kind}:${document.id}`} className="flex flex-col items-start justify-between gap-2 px-4 py-3 sm:flex-row sm:items-center">
+            <div className="min-w-0"><p className="truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{document.file_name}</p><p className="mt-1 truncate text-[11px] text-[var(--md-subtle)]"><span>{t(document.type_name)}</span> · <span className="capitalize">{t(document.source_kind)}</span> <span data-i18n-skip>{document.source_reference}</span> · <span data-i18n-skip>{document.customer_name ?? ""}</span>{document.version_no ? <> · v<span data-i18n-skip>{document.version_no}</span></> : null} · <span className="capitalize">{t(document.status)}</span></p></div>
+            <div className="flex w-full shrink-0 flex-wrap items-center gap-1 sm:w-auto">
+              {navigate ? <Button type="button" variant="ghost" onClick={() => navigate(document.source_kind === "quote" ? `/quotes/${encodeURIComponent(document.source_reference.toLowerCase())}` : document.source_kind === "customs" ? `/customs/job-related/${document.source_direction === "import" ? "import" : "export"}/${document.source_id}` : document.source_kind === "finance" ? `/finance/receivables/documents/${document.source_id}` : `/bookings/${encodeURIComponent(document.source_reference.toLowerCase())}`)}>{t("Open record")}</Button> : null}
+              {document.mime_type === "application/pdf" ? <Button type="button" variant="ghost" onClick={() => void previewLibraryDocument(document)}>{t("Preview")}</Button> : null}
+              <Button type="button" variant="ghost" disabled={libraryDownloading === document.id} onClick={() => void downloadLibraryDocument(document)} aria-label={`${t("Download document")}: ${document.file_name}`}><Download className="size-4" aria-hidden="true" /></Button>
+            </div>
+          </div>)}
+          {!libraryRows.length ? <p className="px-4 py-8 text-center text-[12px] text-[var(--md-subtle)]">{libraryLoading ? t("Loading documents…") : librarySearch ? t("No documents match this search.") : t("No documents yet.")}</p> : null}
+        </Surface>
+        {libraryTotal > 20 ? <div className="flex items-center justify-end gap-2"><Button type="button" variant="ghost" disabled={libraryOffset === 0 || libraryLoading} onClick={() => setLibraryOffset(Math.max(0, libraryOffset - 20))}>{t("Previous")}</Button><span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip>{libraryOffset + 1}–{Math.min(libraryOffset + 20, libraryTotal)} / {libraryTotal}</span><Button type="button" variant="ghost" disabled={libraryOffset + 20 >= libraryTotal || libraryLoading} onClick={() => setLibraryOffset(libraryOffset + 20)}>{t("Next")}</Button></div> : null}
+      </section> : null}
+
+      <Dialog open={Boolean(libraryPreview)} onOpenChange={(open) => { if (!open) { setLibraryPreview(null); setLibraryPreviewUrl(null); setLibraryPreviewError(null) } }}>
+        <DialogContent className="h-[min(90dvh,920px)] w-[min(1120px,calc(100vw-2rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-none">
+          <DialogHeader className="px-5 py-4 text-start shadow-[var(--md-stroke-bottom)]"><DialogTitle className="truncate text-[15px]" data-i18n-skip>{libraryPreview?.file_name}</DialogTitle><DialogDescription>{libraryPreview?.source_reference}</DialogDescription></DialogHeader>
+          <div className="grid min-h-0 place-items-center bg-[var(--md-report-preview-bg)] p-3 sm:p-5">{libraryPreviewError ? <p className="text-[12px] text-[var(--md-text)]">{libraryPreviewError}</p> : libraryPreviewUrl ? <iframe src={libraryPreviewUrl} title={t("Document preview")} className="h-full min-h-[480px] w-full rounded-[var(--md-radius-lg)] bg-white" /> : <LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" aria-label={t("Loading preview…")} />}</div>
+        </DialogContent>
+      </Dialog>
 
       <section className="md-section-stack">
         <div className="flex items-end justify-between gap-3">

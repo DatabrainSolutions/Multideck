@@ -75,6 +75,30 @@ export type GeneratedDocumentPageRequest = {
   sort?: { id: string; direction: "asc" | "desc" }
 }
 
+export type DocumentLibraryRow = {
+  id: string
+  kind: "generated" | "booking_attachment" | "quote_pdf" | "customs_declaration" | "finance_pdf"
+  type_name: string
+  file_name: string
+  source_id: string
+  source_reference: string
+  source_kind: "booking" | "quote" | "customs" | "finance"
+  source_direction: "import" | "export" | null
+  customer_name: string | null
+  created_at: string
+  status: string
+  version_no: number | null
+  mime_type: string
+  file_size: number | null
+}
+
+export type DocumentLibraryPage = {
+  rows: DocumentLibraryRow[]
+  total: number
+  offset: number
+  limit: number
+}
+
 export type RenderDocumentRequest = {
   templateCode: string
   targetType: "Job_Header"
@@ -128,6 +152,14 @@ export type ApproveDocumentStudioTemplateResponse = {
   templateCode: string
   templateVersion: number
   status: "published"
+}
+
+export type CreateDocumentStudioTemplateResponse = {
+  multideckTemplateId: string
+  templateCode: string
+  templateName: string
+  multideckVersion: number
+  status: "draft"
 }
 
 export type RenderDocumentResponse = {
@@ -233,6 +265,62 @@ export async function getGeneratedDocumentsPage(options: GeneratedDocumentPageRe
   if ("rows" in data && Array.isArray(data.rows)) return data
 
   throw new Error("Paged document history is still being prepared. Try again shortly.")
+}
+
+export async function getDocumentLibraryPage(options: Pick<GeneratedDocumentPageRequest, "offset" | "limit" | "search"> = {}): Promise<DocumentLibraryPage> {
+  const client = requireDocumentClient()
+  const { data, error } = await client.functions.invoke<DocumentLibraryPage>("document-builder-workspace", {
+    method: "POST",
+    body: {
+      action: "library",
+      documentOffset: options.offset ?? 0,
+      documentLimit: options.limit ?? 20,
+      documentSearch: options.search ?? "",
+    },
+  })
+  if (error) throw await toFunctionError(error, "The document library could not be loaded.")
+  if (!data || !Array.isArray(data.rows)) throw new Error("The document library is waiting for the backend update.")
+  return data
+}
+
+export async function createDocumentStudioTemplate(code: string, name: string): Promise<CreateDocumentStudioTemplateResponse> {
+  const client = requireDocumentClient()
+  const { data, error } = await client.functions.invoke<CreateDocumentStudioTemplateResponse>("document-studio", {
+    method: "POST",
+    body: { action: "create", templateCode: code, templateName: name },
+  })
+  if (error) throw await toFunctionError(error, "The template could not be created.")
+  if (!data) throw new Error("The template service returned no record.")
+  return data
+}
+
+export async function previewDraftDocumentStudioTemplate(templateId: string, templateBase64: string, sampleData: Record<string, unknown>): Promise<Blob> {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in again to preview this template.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "preview-draft", multideckTemplateId: templateId, templateBase64, sampleData }),
+  })
+  if (!response.ok) {
+    let message = "The draft preview could not be created."
+    try { const payload = await response.json() as { error?: string }; if (payload.error) message = payload.error } catch { /* Keep safe fallback. */ }
+    throw new Error(message)
+  }
+  return response.blob()
+}
+
+export async function getLibraryDocumentDownload(document: Pick<DocumentLibraryRow, "id" | "kind">, preview = false): Promise<DocumentDownloadResponse> {
+  const client = requireDocumentClient()
+  const { data, error } = await client.functions.invoke<DocumentDownloadResponse>("document-download", {
+    method: "POST",
+    body: { libraryDocumentId: document.id, libraryKind: document.kind, preview },
+  })
+  if (error) throw await toFunctionError(error, "A secure document link could not be created.")
+  if (!data) throw new Error("The document service returned no link.")
+  return data
 }
 
 export async function renderDocument(request: RenderDocumentRequest): Promise<RenderDocumentResponse> {
@@ -392,6 +480,28 @@ export async function bootstrapDocumentStudioTemplate(templateId: string, templa
     throw new Error(message)
   }
   return response.json() as Promise<SaveDocumentStudioTemplateResponse>
+}
+
+export async function getDocumentStudioDraftSource(templateId: string): Promise<(SaveDocumentStudioTemplateResponse & { templateBase64: string }) | null> {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in to manage templates.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "draft-source", multideckTemplateId: templateId }),
+  })
+  if (!response.ok) {
+    let message = "The saved template source could not be opened."
+    try {
+      const payload = await response.json() as { error?: string }
+      if (payload.error) message = payload.error
+    } catch { /* Keep the safe fallback. */ }
+    throw new Error(message)
+  }
+  const result = await response.json() as { draft: (SaveDocumentStudioTemplateResponse & { templateBase64: string }) | null }
+  return result.draft
 }
 
 export async function approveDocumentStudioTemplate(templateId: string) {

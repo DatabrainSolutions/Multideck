@@ -13,8 +13,9 @@ import {
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
 type StudioRequest = {
-  action?: "component" | "open" | "preview" | "save" | "bootstrap" | "approve"
+  action?: "component" | "open" | "preview" | "preview-draft" | "save" | "bootstrap" | "approve" | "create" | "draft-source"
   templateCode?: string
+  templateName?: string
   multideckTemplateId?: string
   jobNumber?: string
   contentSections?: unknown
@@ -380,6 +381,49 @@ Deno.serve(async (request) => {
       return await studioComponentResponse(request)
     }
 
+    if (payload.action === "create") {
+      const templateCode = parseTemplateCode(payload.templateCode)
+      const templateName = typeof payload.templateName === "string" ? payload.templateName.trim() : ""
+      if (templateName.length < 2 || templateName.length > 180) {
+        throw new FunctionError(400, "Enter a template name between 2 and 180 characters.", "Studio template name validation failed")
+      }
+      const { data, error } = await context.admin.schema("document_api").rpc("create_studio_template", {
+        caller_auth_user_id: context.userId,
+        requested_template_code: templateCode,
+        requested_template_name: templateName,
+        requested_description: null,
+        requested_language_code: "en",
+      })
+      if (error || !data) throw error ?? new Error("Document template creation returned no data")
+      return jsonResponse(request, data)
+    }
+
+    if (payload.action === "draft-source") {
+      if (!isUuid(payload.multideckTemplateId)) {
+        throw new FunctionError(400, "Choose a valid document template.", "Draft source request was invalid")
+      }
+      const { data, error } = await context.admin.schema("document_api").rpc("studio_template_draft_source", {
+        caller_auth_user_id: context.userId,
+        requested_template_id: payload.multideckTemplateId,
+      })
+      if (error) throw error
+      if (!data) return jsonResponse(request, { draft: null })
+      const { data: source, error: downloadError } = await context.admin.storage.from(data.bucket).download(data.path)
+      if (downloadError || !source) throw new FunctionError(502, "The saved template source is unavailable.", downloadError?.message ?? "Draft source was missing")
+      if (source.size > maximumStudioTemplateBytes) throw new FunctionError(502, "The saved template source is too large.", "Draft source exceeded 15 MiB")
+      const bytes = new Uint8Array(await source.arrayBuffer())
+      if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new FunctionError(502, "The saved template source is invalid.", "Draft source was not a DOCX archive")
+      return jsonResponse(request, { draft: {
+        multideckTemplateId: payload.multideckTemplateId,
+        templateCode: data.templateCode,
+        multideckVersion: data.multideckVersion,
+        carboneTemplateId: data.carboneTemplateId,
+        carboneVersionId: data.carboneVersionId,
+        status: "draft",
+        templateBase64: toBase64(bytes),
+      } })
+    }
+
     if (payload.action === "bootstrap") {
       if (!isUuid(payload.multideckTemplateId) || typeof payload.templateBase64 !== "string") {
         throw new FunctionError(400, "Choose a valid template source.", "Studio bootstrap request was invalid")
@@ -399,6 +443,51 @@ Deno.serve(async (request) => {
         throw new FunctionError(400, "Choose a valid document template.", "Studio approval request was invalid")
       }
       return jsonResponse(request, await approveTemplate(context, payload.multideckTemplateId))
+    }
+
+    if (payload.action === "preview-draft") {
+      if (!isUuid(payload.multideckTemplateId) || typeof payload.templateBase64 !== "string") {
+        throw new FunctionError(400, "Choose a valid template source.", "Draft preview request was invalid")
+      }
+      await authorizeTemplateSave(context, payload.multideckTemplateId)
+      const templateBytes = fromBase64(payload.templateBase64)
+      if (!templateBytes.byteLength || templateBytes.byteLength > maximumStudioTemplateBytes
+        || templateBytes[0] !== 0x50 || templateBytes[1] !== 0x4b) {
+        throw new FunctionError(400, "Choose a valid Word template.", "Draft preview source was invalid")
+      }
+      const sampleData = parseSampleData(payload.sampleData)
+      if (!sampleData) throw new FunctionError(400, "Enter safe sample data to preview this template.", "Draft preview had no sample data")
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), renderTimeout())
+      try {
+        const response = await fetch(`${getCarboneBaseUrl()}/render/template?download=true`, {
+          method: "POST",
+          headers: {
+            "Authorization": getCarboneAuthorization(),
+            "Content-Type": "application/json",
+            "carbone-version": Deno.env.get("CARBONE_API_VERSION")?.trim() || "5",
+          },
+          body: JSON.stringify({ data: sampleData, template: payload.templateBase64,
+            convertTo: "pdf", converter: "L", lang: "en-GB", reportName: "template-review-preview" }),
+          signal: controller.signal,
+        })
+        if (!response.ok) throw new FunctionError(502, "The draft preview could not be created.", `Carbone draft preview returned HTTP ${response.status}`)
+        const contentLength = Number(response.headers.get("Content-Length") ?? 0)
+        if (contentLength > maximumGeneratedFileBytes) throw new FunctionError(502, "The draft preview is too large.", "Carbone draft preview exceeded 50 MiB")
+        const bytes = new Uint8Array(await response.arrayBuffer())
+        if (!bytes.byteLength || bytes.byteLength > maximumGeneratedFileBytes
+          || new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") {
+          throw new FunctionError(502, "The draft preview is invalid.", "Carbone returned an invalid draft PDF")
+        }
+        return binaryResponse(request, bytes, "application/pdf")
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          throw new FunctionError(502, "The draft preview did not respond in time.", "Carbone draft preview timed out")
+        }
+        throw error
+      } finally {
+        clearTimeout(timeoutId)
+      }
     }
 
     const templateCode = parseTemplateCode(payload.templateCode)
