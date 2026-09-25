@@ -39,6 +39,28 @@ export function quickCargoAssignmentElsewhere(lines: readonly BookingCargoAlloca
   return lines.find(line => line.cargoId === cargoId && line.containerId !== containerId) ?? null
 }
 
+/** Display a package summary only when the assigned cargo makes it certain. */
+export function containerPackageSummary(cargo: readonly BookingWorkflowCargo[], lines: readonly BookingCargoAllocation[], containerId: string | null | undefined) {
+  if (!containerId) return null
+  const assigned = lines.filter(line => !line.archived && line.containerId === containerId)
+  if (!assigned.length || assigned.some(line => line.routeId !== null)) return null
+  let packageType = ''
+  let total = 0n
+  for (const line of assigned) {
+    const goods = cargo.find(item => item.id === line.cargoId)
+    const type = goods?.packageType?.trim()
+    if (!type || (packageType && packageType.toLowerCase() !== type.toLowerCase())) return null
+    packageType ||= type
+    const split = lines.some(other => !other.archived && other.cargoId === line.cargoId && other.containerId !== containerId)
+    const quantity = line.packageQuantity == null && !split && goods ? cargoMeasure(goods, 'packageQuantity') : line.packageQuantity
+    const parsed = decimal(quantity, 6, true)
+    if (parsed == null) return null
+    total += parsed
+    if (total >= 10n ** 18n) return null
+  }
+  return { packages: decimalText(total, 6), packageType }
+}
+
 export function analyseCargoAllocations(cargo: readonly BookingWorkflowCargo[], equipment: readonly BookingWorkflowContainer[], routes: readonly BookingWorkflowRoute[], lines: readonly BookingCargoAllocation[]) {
   const issues: AllocationIssue[] = []
   const groups = new Map<string, BookingCargoAllocation[]>()

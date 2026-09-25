@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 
 const source = readFileSync(new URL('../src/lib/booking-cargo-allocations.ts', import.meta.url), 'utf8')
-const { analyseCargoAllocations, remainingForAllocation, bookingCargoAllocationPayload, newBookingCargoAllocation, quickCargoAssignmentElsewhere } =
+const { analyseCargoAllocations, remainingForAllocation, bookingCargoAllocationPayload, containerPackageSummary, newBookingCargoAllocation, quickCargoAssignmentElsewhere } =
   await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(source)).toString('base64')}`)
 const weightSource = readFileSync(new URL('../src/lib/booking-chargeable-weight.ts', import.meta.url), 'utf8')
 const { bookingChargeableWeightError } = await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(weightSource)).toString('base64')}`)
@@ -23,6 +23,18 @@ test('quick assignment excludes cargo used by another container without undoing 
   assert.equal(quickCargoAssignmentElsewhere([first], null, id(3)), null)
   const second = line({ id: id(7), containerId: id(3) })
   assert.equal(quickCargoAssignmentElsewhere([first, second], id(1), id(3)), null)
+})
+
+test('container packages follow assigned cargo without treating cargo weight as loaded weight', () => {
+  const goods = [{ ...cargo[0], packageType: 'Cartons', packageQuantity: '6.500000' }, { id: id(8), packageType: 'Cartons', packageQuantity: '3' }]
+  const first = line({ packageQuantity: null, grossWeightKg: null, volumeCbm: null })
+  assert.deepEqual(containerPackageSummary(goods, [first], id(2)), { packages: '6.5', packageType: 'Cartons' })
+  assert.deepEqual(containerPackageSummary(goods, [first, line({ id: id(9), cargoId: id(8), packageQuantity: null })], id(2)), { packages: '9.5', packageType: 'Cartons' })
+  assert.equal(containerPackageSummary([{ ...goods[0], packageType: 'Crates' }, goods[1]], [first, line({ id: id(9), cargoId: id(8) })], id(2)), null)
+  assert.equal(containerPackageSummary(goods, [first, line({ id: id(9), containerId: id(3) })], id(2)), null)
+  assert.deepEqual(containerPackageSummary(goods, [line({ packageQuantity: '2.25' }), line({ id: id(9), containerId: id(3), packageQuantity: '4.25' })], id(2)), { packages: '2.25', packageType: 'Cartons' })
+  assert.equal(containerPackageSummary(goods, [line({ routeId: id(4) })], id(2)), null)
+  assert.equal(containerPackageSummary(goods, [line({ packageQuantity: null })], id(3)), null)
 })
 
 test('split cargo: explicit remaining quantities preserve exact decimals and do not mutate source data', () => {
@@ -105,6 +117,25 @@ test('save payload distinguishes missing capability, empty plan and explicit rem
 })
 
 const parentSource = readFileSync(new URL('../src/components/multideck/booking-components.tsx', import.meta.url), 'utf8')
+const overrideStart = parentSource.indexOf('function bookingContainerHasPackageOverride(')
+const overrideSource = stripTypeScriptTypes(parentSource.slice(overrideStart, parentSource.indexOf('function bookingContainerVehicleIdentifiers(', overrideStart)))
+const containerUpdateStart = parentSource.indexOf('  function updateDraftContainer(')
+const containerUpdateSource = stripTypeScriptTypes(parentSource.slice(containerUpdateStart, parentSource.indexOf('  function addDraftContainer(', containerUpdateStart)))
+
+test('editing a calculated package count retains its type and does not supply container weight', () => {
+  let draft = { cargo: [{ ...cargo[0], packageType: 'Cartons', packageQuantity: '10' }],
+    containers: [{ ...equipment[0], grossWeightKg: null, data: {} }],
+    cargoAllocationState: { allocations: [line({ packageQuantity: null })] } }
+  const update = new Function('deps', `const {setDraftWorkspace,asRecord,containerPackageSummary}=deps; ${overrideSource}; ${containerUpdateSource}; return updateDraftContainer`)({
+    setDraftWorkspace: apply => { draft = apply(draft) }, asRecord: value => value && typeof value === 'object' ? value : {}, containerPackageSummary,
+  })
+  update(0, 'packages', '8')
+  assert.equal(draft.containers[0].packages, '8')
+  assert.equal(draft.containers[0].packageType, 'Cartons')
+  assert.equal(draft.containers[0].data.packageType, 'Cartons')
+  assert.equal(draft.containers[0].grossWeightKg, null)
+})
+
 const saveStart = parentSource.indexOf('  async function saveDetails() {')
 assert.ok(saveStart > 0)
 const saveSource = stripTypeScriptTypes(parentSource.slice(saveStart, parentSource.indexOf('  async function sendToCustoms()', saveStart)))

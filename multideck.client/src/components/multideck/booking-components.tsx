@@ -102,7 +102,7 @@ import { AnimatedList } from "./animated-list"
 import { setLiveJobStarred, type LiveBooking } from "@/lib/application-data-api"
 import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSafetyConflict, bookingCargoRequirementLabels } from "@/lib/booking-cargo-handling"
 import { bookingChargeableWeightSummary, bookingChargeableWeightError } from "@/lib/booking-chargeable-weight"
-import { analyseCargoAllocations, bookingCargoAllocationPayload, newBookingCargoAllocation, quickCargoAssignmentElsewhere } from "@/lib/booking-cargo-allocations"
+import { analyseCargoAllocations, bookingCargoAllocationPayload, containerPackageSummary, newBookingCargoAllocation, quickCargoAssignmentElsewhere } from "@/lib/booking-cargo-allocations"
 import { CargoAllocationEditor } from "./cargo-allocation-editor"
 import { BookingCustomerPanel } from "./booking-customer-panel"
 import { BookingRouteMilestones } from "./booking-route-milestones"
@@ -2646,6 +2646,11 @@ function bookingContainerDataValue(container: BookingWorkflowContainer, key: "pa
   return value == null ? "" : String(value)
 }
 
+function bookingContainerHasPackageOverride(container: BookingWorkflowContainer) {
+  return (["packages", "packageType"] as const).some(key =>
+    container[key] != null || container.data?.[key] != null || asRecord(container.data?.data)[key] != null)
+}
+
 function bookingContainerVehicleIdentifiers(container: BookingWorkflowContainer) {
   const value = container.vehicleIdentifiers ?? container.data?.vehicleIdentifiers
   return typeof value === "string" ? value : ""
@@ -2743,8 +2748,11 @@ function BookingContainerDetails({
               </button>
             } },
             { id: 'type', label: 'Type', width: 110, cell: item => item.type || '–' },
-            { id: 'packages', label: 'Packages', kind: 'number', width: 160, cell: item => [bookingContainerDataValue(item, 'packages'), bookingContainerDataValue(item, 'packageType')].filter(Boolean).join(' ') || '–' },
-            { id: 'weight', label: 'Weight (kg)', kind: 'number', width: 130, cell: item => item.grossWeightKg ?? '–' },
+            { id: 'packages', label: 'Packages', kind: 'number', width: 160, cell: item => {
+              const calculated = !bookingContainerHasPackageOverride(item) ? containerPackageSummary(cargo, allocations ?? [], item.id) : null
+              return [calculated?.packages ?? bookingContainerDataValue(item, 'packages'), calculated?.packageType ?? bookingContainerDataValue(item, 'packageType')].filter(Boolean).join(' ') || '–'
+            } },
+            { id: 'weight', label: 'Loaded gross weight (kg)', kind: 'number', width: 160, cell: item => item.grossWeightKg ?? '–' },
             { id: 'volume', label: 'Volume (CBM)', kind: 'number', width: 130, cell: item => bookingContainerDataValue(item, 'volumeCbm') || '–' },
             { id: 'seal', label: 'Seal no.', width: 150, cell: item => bookingContainerDataValue(item, 'sealNumber') || '–' },
           ] satisfies DataTableColumn<BookingWorkflowContainer>[]}
@@ -2763,12 +2771,14 @@ function BookingContainerDetails({
                 ...equipment.types,
               ].filter(Boolean))]
               const fieldClassName = "h-9 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-base sm:text-[12px] font-medium shadow-[var(--md-shadow-line)]"
+              const assigned = allocations?.some(line => !line.archived && line.containerId === container.id)
+              const calculatedPackages = !bookingContainerHasPackageOverride(container) ? containerPackageSummary(cargo, allocations ?? [], container.id) : null
               const fields = [
                 [equipment.numberLabel, "number", container.number ?? "", false],
                 [`${equipment.label} type`, "type", container.type ?? "", false],
-                ["Packages", "packages", bookingContainerDataValue(container, "packages"), true],
-                ["Package type", "packageType", bookingContainerDataValue(container, "packageType"), false],
-                ["Gross weight (kg)", "grossWeightKg", container.grossWeightKg ?? "", true],
+                ["Packages", "packages", calculatedPackages?.packages ?? bookingContainerDataValue(container, "packages"), true],
+                ["Package type", "packageType", calculatedPackages?.packageType ?? bookingContainerDataValue(container, "packageType"), false],
+                ["Loaded gross weight (kg)", "grossWeightKg", container.grossWeightKg ?? "", true],
                 ["Volume (CBM)", "volumeCbm", bookingContainerDataValue(container, "volumeCbm"), true],
                 ["Seal number", "sealNumber", bookingContainerDataValue(container, "sealNumber"), false],
               ] as const
@@ -2792,6 +2802,9 @@ function BookingContainerDetails({
                       ) : <Input id={`${fieldIdPrefix}-${index}-${field}`} disabled={!editable} aria-label={t(label)} inputMode={decimal ? "decimal" : undefined} maxLength={field === "number" ? 50 : undefined} value={fieldValue} onChange={(event) => { if (editable) onChange(index, field, event.target.value) }} className={fieldClassName} />}
                     </div>
                   ))}
+                  {calculatedPackages ? <p className="col-span-full text-[11px] leading-5 text-[var(--md-text)]">{t("Packages and type are calculated from assigned cargo. Edit either field to enter a container-specific value.")}</p>
+                    : assigned && !bookingContainerHasPackageOverride(container) ? <p className="col-span-full text-[11px] leading-5 text-[var(--md-text)]">{t("Review container packages: assigned cargo has mixed types, unknown quantities or a split allocation.")}</p> : null}
+                  <p className="col-span-full text-[11px] leading-5 text-[var(--md-text)]">{t("Loaded gross weight includes the container itself. Record it when known; cargo weight is not copied here.")}</p>
                   {equipment.key === "container" ? <div className="col-span-full grid min-w-0 gap-1 text-[11px] font-medium text-[var(--md-text)]">
                     <label htmlFor={`${fieldIdPrefix}-${index}-vehicleIdentifiers`}>{t("Vehicle VIN / chassis numbers")}</label>
                     <Textarea id={`${fieldIdPrefix}-${index}-vehicleIdentifiers`} disabled={!editable} maxLength={2000} value={bookingContainerVehicleIdentifiers(container)}
@@ -5643,7 +5656,13 @@ export function BookingDetailWorkspace({
       if (!current || !Number.isInteger(index) || index < 0 || !current.containers[index]) return current
       const containers = [...current.containers]
       const existing = containers[index]
-      if (field === "packages" || field === "packageType" || field === "volumeCbm" || field === "sealNumber") {
+      if (field === "packages" || field === "packageType") {
+        const calculated = !bookingContainerHasPackageOverride(existing)
+          ? containerPackageSummary(current.cargo, current.cargoAllocationState?.allocations ?? [], existing.id) : null
+        const otherField = field === "packages" ? "packageType" : "packages"
+        const retained = calculated ? { [otherField]: calculated[otherField] } : {}
+        containers[index] = { ...existing, ...retained, [field]: value, data: { ...existing.data, ...retained, [field]: value } }
+      } else if (field === "volumeCbm" || field === "sealNumber") {
         const data = { ...existing.data, [field]: value }
         containers[index] = { ...existing, [field]: value, data }
       } else if (["grossWeightKg", "tareWeightKg", "verifiedGrossMassKg", "reeferSetPoint"].includes(field)) {
