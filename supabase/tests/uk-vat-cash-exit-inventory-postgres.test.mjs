@@ -13,6 +13,7 @@ const migrations = [
   new URL("../migrations/20260925123000_uk_vat_cash_exit_review_fingerprint.sql", import.meta.url).pathname,
   new URL("../migrations/20260925124500_uk_vat_cash_exit_decimal_strings.sql", import.meta.url).pathname,
   new URL("../migrations/20260925131500_uk_vat_cash_exit_due_term_guard.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925133000_uk_vat_cash_exit_treatment_guard.sql", import.meta.url).pathname,
 ]
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 
@@ -83,7 +84,7 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
         signed_net_reporting numeric,signed_tax_reporting numeric);
       create table public."FIN_IndirectTaxDecisions"(
         id uuid primary key,evidence_id uuid,revision integer,scheme_code text,
-        treatment_code text,reviewed_rule_reference text);
+        treatment_code text,reviewed_rule_reference text,tax_point date);
       create table public."FIN_IndirectTaxCreditLinks"(
         legal_entity_id uuid,original_evidence_id uuid);
       create table public."FIN_IndirectTaxReconciliations"(
@@ -130,8 +131,8 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
         ('${id(61)}','${id(51)}','${id(11)}','${id(21)}','${id(2)}','GB',
           'posted_document_line','2026-02-10 12:00Z',200,40);
       insert into public."FIN_IndirectTaxDecisions" values
-        ('${id(70)}','${id(60)}',1,'cash','domestic_sale','UK20'),
-        ('${id(71)}','${id(61)}',1,'cash','domestic_purchase','UK20');`)
+        ('${id(70)}','${id(60)}',1,'cash','domestic_sale','UK20','2026-01-10'),
+        ('${id(71)}','${id(61)}',1,'cash','domestic_purchase','UK20','2026-02-10');`)
     for (const migration of migrations) {
       const apply = spawnSync(join(bin, "psql"), [...args, "-f", migration],
         { encoding: "utf8", timeout: 30000 })
@@ -145,6 +146,7 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(result.requiresPriceChangeReview, false)
     assert.equal(result.lineCount, 3)
     assert.equal(result.lineSourceIssueCount, 1)
+    assert.equal(result.lineTreatmentIssueCount, 0)
     assert.equal(result.dueTermIssueCount, 0)
     assert.equal(result.cashSourceCount, 1)
     assert.equal(result.cashAllocationCount, 1)
@@ -161,6 +163,9 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(byId.get(id(10)).candidate_outstanding, "120")
     assert.equal(byId.get(id(10)).lines[0].netGbp, "100")
     assert.equal(byId.get(id(10)).lines[0].evidenceVatGbp, "20")
+    assert.equal(byId.get(id(10)).lines[0].taxPoint, "2026-01-10")
+    assert.equal(byId.get(id(10)).lines[0].taxPointInCashTerm, true)
+    assert.equal(byId.get(id(10)).lines[0].supportedCashTreatment, true)
     assert.equal(byId.get(id(10)).document_due_date, "2026-02-10")
     assert.equal(byId.get(id(10)).due_within_six_months, true)
     assert.equal(byId.get(id(10)).lineSourceIssueCount, 0)
@@ -172,6 +177,22 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(byId.get(id(11)).allocation_sources.length, 2)
     assert.equal(byId.get(id(12)).source_exception, true)
     assert.equal(byId.get(id(12)).lineSourceIssueCount, 1)
+    sql(`update public."FIN_IndirectTaxDecisions" set treatment_code='reverse_charge'
+      where id='${id(70)}';`)
+    const unsupportedTreatment = JSON.parse(sql(`select ${call};`))
+    assert.equal(unsupportedTreatment.lineTreatmentIssueCount, 1)
+    assert.equal(unsupportedTreatment.lineSourceIssueCount, 2)
+    assert.equal(unsupportedTreatment.invoices.find((invoice) => invoice.invoice_id === id(10)).lines[0].supportedCashTreatment, false)
+    assert.notEqual(unsupportedTreatment.sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_IndirectTaxDecisions" set treatment_code='domestic_sale',
+      tax_point='2025-12-31' where id='${id(70)}';`)
+    const priorTaxPoint = JSON.parse(sql(`select ${call};`))
+    assert.equal(priorTaxPoint.lineTreatmentIssueCount, 1)
+    assert.equal(priorTaxPoint.invoices.find((invoice) => invoice.invoice_id === id(10)).lines[0].taxPointInCashTerm, false)
+    assert.notEqual(priorTaxPoint.sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_IndirectTaxDecisions" set tax_point='2026-01-10'
+      where id='${id(70)}';`)
+    assert.equal(JSON.parse(sql(`select ${call};`)).sourceDigest, result.sourceDigest)
     sql(`update public."FIN_Documents" set "FINDoc_DueDate"='2026-07-10'
       where "FINDoc_ID"='${id(10)}';`)
     const boundaryTerms = JSON.parse(sql(`select ${call};`))

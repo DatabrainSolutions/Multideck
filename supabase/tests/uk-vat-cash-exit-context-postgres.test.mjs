@@ -9,6 +9,7 @@ const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 const migrations = [
   new URL("../migrations/20260925130000_uk_vat_cash_exit_verified_context.sql", import.meta.url).pathname,
   new URL("../migrations/20260925131500_uk_vat_cash_exit_due_term_guard.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925133000_uk_vat_cash_exit_treatment_guard.sql", import.meta.url).pathname,
 ]
 
 test("Cash exit inventory derives its dates from a final Cash period and consecutive Standard term", () => {
@@ -59,13 +60,17 @@ test("Cash exit inventory derives its dates from a final Cash period and consecu
       create table public."FIN_Documents"(
         "FINDoc_ID" uuid primary key,"FINDoc_LegalEntityID" uuid,
         "FINDoc_DocumentDate" date,"FINDoc_DueDate" date);
+      create table public."FIN_IndirectTaxDecisions"(
+        id uuid primary key,evidence_id uuid,tax_point date,treatment_code text);
       create function public.multideck_uk_vat_cash_exit_invoice_inventory(
         actor uuid,entity uuid,start_date date,exit_date date)
       returns jsonb language sql stable as $$ select jsonb_build_object(
         'startDate',start_date,'exitDate',exit_date,'truncated',false,
         'amountEncoding','decimal_strings','sourceDigest',repeat('a',64),
+        'lineSourceIssueCount',0,
         'invoices',jsonb_build_array(jsonb_build_object(
-          'invoice_id','${id(20)}','source_exception',false))) $$;
+          'invoice_id','${id(20)}','source_exception',false,
+          'lines',jsonb_build_array(),'lineSourceIssueCount',0))) $$;
       insert into public."FIN_LocalisationPacks" values ('${id(10)}','gb-v1','GB');
       insert into public."FIN_ComplianceObligations" values
         ('${id(11)}','${id(10)}','gb-vat-mtd','indirect_tax');
@@ -91,6 +96,7 @@ test("Cash exit inventory derives its dates from a final Cash period and consecu
     assert.equal(result.verifiedTransition.finalCashPeriodId, id(14))
     assert.equal(result.verifiedTransition.nextStandardRegistrationId, id(13))
     assert.equal(result.dueTermIssueCount, 0)
+    assert.equal(result.lineTreatmentIssueCount, 0)
     assert.equal(result.invoices[0].due_within_six_months, true)
     assert.match(result.sourceDigest, /^[a-f0-9]{64}$/)
     assert.notEqual(result.sourceDigest, "a".repeat(64))
