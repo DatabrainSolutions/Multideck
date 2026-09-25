@@ -72,6 +72,7 @@ const staticLeafLabels: Record<string, string> = {
   "/finance/management/accruals-wip": "Accruals & WIP",
   "/playground/navigation": "Navigation lab",
   "/to-do": "Tasks",
+  "/events": "Events",
   "/quotes": "Quotes",
   "/reports": "Reports",
   "/reports/scheduled": "Scheduled reports",

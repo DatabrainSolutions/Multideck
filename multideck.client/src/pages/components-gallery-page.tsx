@@ -1,3 +1,5 @@
+import { EventAttendeeStrip, EventAudiencePicker, EventGuestList, EventTicket, EventsEmptyState, RsvpChoice, RsvpFormBuilder, RsvpFormFields } from "@/components/multideck/company-event-components"
+import { validateRsvpAnswers, type EventAttendee, type EventAudience, type EventsDirectory, type RsvpAnswers, type RsvpField, type RsvpStatus } from "@/lib/company-events-api"
 import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"
 import dexterActivityTrailSource from "@/components/multideck/dexter-activity-trail.tsx?raw"
 import type { DexterActivity } from "../../../shared/dexter-activity"
@@ -416,6 +418,11 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
     ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast"],
   },
   {
+    label: "Events",
+    helper: "Company events and RSVPs",
+    ids: ["event-ticket", "rsvp-choice", "event-audience-picker", "event-attendee-strip", "event-guest-list", "rsvp-form-builder", "rsvp-form-fields", "events-empty-state"],
+  },
+  {
     label: "Warehouse",
     helper: "Pricing and charge configuration",
     ids: ["warehouse-pricing-flow", "warehouse-rate-editor"],
@@ -436,6 +443,57 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
     ids: ["iphone-device-frame", "card-miniature", "contact-card-style-picker", "contact-card-layout-picker", "contact-card-qr-style-picker", "contact-card-social-links-editor", "automation-run-history"],
   },
 ]
+
+const galleryRsvpForm: RsvpField[] = [
+  { id: "meal", type: "single_choice", label: "Main course", required: true, options: [{ id: "fish", label: "Fish" }, { id: "veg", label: "Vegetarian" }] },
+  { id: "guest", type: "yes_no", label: "Bringing a guest?", required: false },
+  { id: "notes", type: "long_text", label: "Dietary requirements", required: false },
+]
+
+const galleryAttendees: EventAttendee[] = [
+  { userId: "a", name: "Priya Shah", status: "going", photoPath: null }, { userId: "b", name: "Tom Hughes", status: "going", photoPath: null },
+  { userId: "c", name: "Ana Costa", status: "going", photoPath: null }, { userId: "d", name: "Ben Okafor", status: "going", photoPath: null },
+  { userId: "g", name: "Mia Laurent", status: "going", photoPath: null }, { userId: "h", name: "Kofi Mensah", status: "going", photoPath: null },
+  { userId: "i", name: "Hana Sato", status: "going", photoPath: null }, { userId: "j", name: "Oliver Grant", status: "going", photoPath: null },
+  { userId: "k", name: "Zara Ali", status: "going", photoPath: null }, { userId: "e", name: "Lena Novak", status: "maybe", photoPath: null },
+  { userId: "f", name: "Sam Reid", status: "not_going", photoPath: null },
+]
+
+const galleryDirectory: EventsDirectory = {
+  departments: [{ id: "d1", name: "Operations", memberCount: 5 }, { id: "d2", name: "Warehouse", memberCount: 4 }, { id: "d3", name: "Finance", memberCount: 2 }],
+  people: galleryAttendees.map((person, index) => ({ userId: person.userId, name: person.name, jobTitle: ["Operations lead", "Customs specialist", "Warehouse supervisor", "Finance analyst"][index % 4], photoPath: null, departmentIds: [index < 5 ? "d1" : index < 9 ? "d2" : "d3"] })),
+}
+
+function GalleryAudiencePicker() {
+  const [value, setValue] = useState<{ audience: EventAudience; invitees: string[] }>({ audience: "everyone", invitees: [] })
+  return <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><EventAudiencePicker audience={value.audience} invitees={value.invitees} directory={galleryDirectory} onChange={setValue} /></div>
+}
+
+function GalleryGuestList() {
+  const [status, setStatus] = useState<RsvpStatus>("going")
+  return <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><EventGuestList attendees={galleryAttendees} status={status} onStatusChange={setStatus} listHeight={240} /></div>
+}
+
+function GalleryRsvpChoice() {
+  const [value, setValue] = useState<RsvpStatus | null>(null)
+  return <div className="grid justify-items-center gap-3"><RsvpChoice value={value} onChange={setValue} /><RsvpChoice value="maybe" pending="going" disabled onChange={() => undefined} /></div>
+}
+
+function GalleryRsvpBuilder() {
+  const [fields, setFields] = useState<RsvpField[]>(galleryRsvpForm)
+  return <div className="w-full max-w-[560px]"><RsvpFormBuilder fields={fields} onChange={setFields} answeredIds={["meal"]} /></div>
+}
+
+function GalleryRsvpFields() {
+  const [answers, setAnswers] = useState<RsvpAnswers>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  return (
+    <form className="grid w-full max-w-[520px] gap-4" noValidate onSubmit={(event) => { event.preventDefault(); setErrors(validateRsvpAnswers(galleryRsvpForm, answers)) }}>
+      <RsvpFormFields form={galleryRsvpForm} answers={answers} errors={errors} onChange={setAnswers} />
+      <Button type="submit" className="justify-self-end">Confirm RSVP</Button>
+    </form>
+  )
+}
 
 const previewHomeSuggestions: HomePromptSuggestion[] = [
   { id: "triage", title: "Work through what is due before cutoff", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
@@ -2451,6 +2509,29 @@ function ComponentPreview({ id }: { id: string }) {
           <SpringCheck disabled label="Awaiting confirmation" />
           <SpringCheck checked busy label="Saving task" />
           <p className="text-[12px] text-[var(--md-text)]">Select a task to complete it. Select it again to reopen it.</p>
+        </div>
+      ) : null}
+
+      {id === "event-ticket" ? (
+        <div className="mx-auto grid w-full gap-5 md:w-1/2 md:min-w-[360px]">
+          <EventTicket title="Summer social" startsAt="2099-07-03T17:30:00Z" endsAt="2099-07-03T21:00:00Z" timezone="Europe/London" location="Roof terrace, London office" imageUrl={null} goingCount={14} rsvp="none" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Quiz night" startsAt="2099-08-14T18:00:00Z" endsAt={null} timezone="Europe/London" location="Canteen" imageUrl={null} goingCount={9} rsvp="going" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Warehouse barbecue" startsAt="2099-09-02T11:00:00Z" endsAt={null} timezone="Europe/London" location="Felixstowe yard" imageUrl={null} rsvp="maybe" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Christmas lunch" startsAt="2099-12-18T12:00:00Z" endsAt={null} timezone="Europe/London" location="The Anchor" imageUrl={null} rsvp="none" closedLabel="Cancelled" onOpen={() => undefined} />
+        </div>
+      ) : null}
+
+      {id === "rsvp-choice" ? <GalleryRsvpChoice /> : null}
+      {id === "event-attendee-strip" ? (
+        <div className="grid w-full max-w-[340px] gap-3"><EventAttendeeStrip attendees={galleryAttendees} invitedCount={24} onOpen={() => undefined} /><EventAttendeeStrip attendees={[]} /></div>
+      ) : null}
+      {id === "event-guest-list" ? <GalleryGuestList /> : null}
+      {id === "event-audience-picker" ? <GalleryAudiencePicker /> : null}
+      {id === "rsvp-form-builder" ? <GalleryRsvpBuilder /> : null}
+      {id === "rsvp-form-fields" ? <GalleryRsvpFields /> : null}
+      {id === "events-empty-state" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+          <EventsEmptyState canCreate onCreate={() => undefined} title="No events yet" message="Create an event and publish it when it is ready for everyone." />
         </div>
       ) : null}
 

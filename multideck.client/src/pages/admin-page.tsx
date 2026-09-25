@@ -23,6 +23,36 @@ import { getAdminAudit, type AdminActiveUser, type AdminAuditResponse, type Admi
 import { draftQuoteReferenceRule, getQuoteBranding, getQuoteFollowUpSettings, getQuoteReferenceSettings, saveQuoteFollowUpSettings, saveQuoteReferenceSettings, uploadQuoteBrandingLogo, type QuoteBranding, type QuoteFollowUpSettings, type QuoteReferenceSettings, type ReferenceRuleDraft, type ReferenceRuleTarget } from "@/lib/quote-workflow-api"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
+import { Switch } from "@/components/ui/switch"
+import { EventsApiError, getEventsSettings, setEventsEnabled } from "@/lib/company-events-api"
+
+function AdminEventsPreference() {
+  const { t } = useLanguage()
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    getEventsSettings(true).then((settings) => setEnabled(settings.enabled), (loadError) => setError(loadError instanceof EventsApiError ? loadError.message : t("Events settings could not be loaded.")))
+  }, [t])
+  const change = async (next: boolean) => {
+    setSaving(true); setError(null)
+    try { setEnabled((await setEventsEnabled(next)).enabled) }
+    catch (saveError) { setError(saveError instanceof Error ? saveError.message : t("The setting could not be saved.")) }
+    finally { setSaving(false) }
+  }
+  return (
+    <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
+      <label className="flex items-center justify-between gap-4">
+        <span className="min-w-0">
+          <span className="block text-[14px] font-medium text-[var(--md-ink)]">{t("Events")}</span>
+          <span className="mt-1 block max-w-[62ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Company events and RSVPs for everyone. When off, Events is hidden and its data is unavailable.")}</span>
+        </span>
+        <Switch checked={enabled === true} disabled={enabled === null || saving} onCheckedChange={(next) => void change(next)} aria-label={t("Events")} />
+      </label>
+      {error ? <p className="mt-3 text-[12px] text-[var(--md-red)]" role="alert">{error}</p> : null}
+    </section>
+  )
+}
 
 const AdminUsersContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminUsersContent })))
 const AdminAiUsageContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminAiUsageContent })))
@@ -777,6 +807,7 @@ function SystemPreferencesContent() {
       <div className="mx-auto max-w-[960px] space-y-5 pb-[var(--md-page-bottom-pad)]">
         {header}
         <AdminCustomsPreferences />
+        <AdminEventsPreference />
         <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">

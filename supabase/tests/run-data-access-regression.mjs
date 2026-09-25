@@ -39,6 +39,7 @@ const tests = [
   'cloud-phone-boundary-postgres.test.mjs',
   'customs-reference-preferences-postgres.test.mjs',
   'email-signatures-postgres.test.mjs',
+  'company-events-postgres.test.mjs',
   'email-tracking-postgres.test.mjs',
   'crm-contact-communication-access-postgres.test.mjs',
   'general-ledger-postgres.test.mjs',

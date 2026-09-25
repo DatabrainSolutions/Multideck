@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLanguage } from "@/i18n/language-provider"
 import { dispatchTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
+import { useEventsSettings } from "@/lib/company-events-api"
 import { cn } from "@/lib/utils"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { openMeetingComposer } from "@/lib/meeting-composer-events"
@@ -196,6 +197,8 @@ export function TopBar({
   const isRoadRoute = isRoadControl || isRoadBooking || isRoadJob
   const isQuotes = route === "/quotes"
   const isTodo = route === "/to-do"
+  const isEvents = route === "/events" || route.startsWith("/events/")
+  const { settings: eventsSettings } = useEventsSettings(isEvents)
   const isCalendar = route === "/calendar"
   const isBookingLinks = route === "/calendar/booking-links" || route === "/calendar/meetings"
   const isWarehouse = route.startsWith("/warehouse")
@@ -354,7 +357,14 @@ export function TopBar({
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
             <CommandInput placeholder={isTodo ? t("Task, tag, job, quote or customer…") : isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isFinance ? t("Invoice, credit, payment, party or job...") : isPartyRegister ? `Search ${partyRegisterType}s, contacts, or bookings...` : isCrmRoute ? "Search calls, leads, companies, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>
-          {isTodo ? (
+          {isEvents ? (
+            eventsSettings?.enabled && eventsSettings.canManage ? (
+              <Button aria-label={t("New event")} title={t("New event")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createCompanyEvent)}>
+                <Plus data-icon="inline-start" strokeWidth={1.2} />
+                <span className="hidden sm:inline">{t("New event")}</span>
+              </Button>
+            ) : null
+          ) : isTodo ? (
             <Button aria-label={t("New task")} title={t("New task")} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(topBarActionEvents.createTodoTask)}>
               <Plus data-icon="inline-start" strokeWidth={1.2} />
               <span className="hidden sm:inline">{t("New task")}</span>

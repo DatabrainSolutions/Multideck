@@ -149,6 +149,9 @@ Deno.serve(async (request) => {
     if (recipientError || !recipient?.User_Email) return json({ error: "Notification recipient not found" }, 404)
 
     const metadata = notification.CommNotif_MetadataJSON ?? {}
+    if (metadata.in_app_only === true) {
+      return json({ delivered: false, skipped: "in_app_only" })
+    }
     const previousDelivery = metadata.email_delivery as { resend_id?: string } | undefined
     if (previousDelivery?.resend_id) return json({ delivered: true, id: previousDelivery.resend_id, skipped: "already_accepted" })
     const eventType = String(metadata.event_type ?? (metadata.suggestion_id ? "document_parse" : "product_updates"))

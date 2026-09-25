@@ -40,6 +40,10 @@ export function readableWatchSummary(watch: DexterWatchCopyWatch, t: Translate) 
     const field = watch.rule.field === "scheduledDate" ? t("Scheduled date") : t(watch.rule.field)
     if (watch.rule.operator === "changed") return `${field} ${t("changes")}.`
   }
+  if (watch.capability === "company_events" && watch.rule.operator === "changed") {
+    const labels: Record<string, string> = { title: "Title", startsAt: "Date and time", location: "Location", status: "Status", goingCount: "Number going" }
+    return `${t(labels[watch.rule.field] ?? watch.rule.field)} ${t("changes")}.`
+  }
   if (watch.capability !== "email") return watch.summary
 
   const value = watch.rule.value?.trim() ?? ""
@@ -117,6 +121,10 @@ export function readableWatchEvent(watch: DexterWatchCopyWatch, t: Translate) {
     const label = field === "accountCode" ? "Company code" : "Scope"
     return `${target}: ${t(label)} ${t("changed from")} ${before || t("Not set")} ${t("to")} ${after || t("Not set")}.`
   }
+  if (watch.capability === "company_events" && field === "status" && after === "cancelled") return `${target}: ${t("Cancelled")}.`
+  if (watch.capability === "company_events" && field === "goingCount" && before && after) return `${target}: ${t("Going changed from")} ${before} ${t("to")} ${after}.`
+  if (watch.capability === "company_events" && field === "startsAt") return `${target}: ${t("Date and time changed")}.`
+  if (watch.capability === "company_events" && field === "location" && before && after) return `${target}: ${t("Location changed from")} ${before} ${t("to")} ${after}.`
   if (!before || !after) return event.body
 
   if (field === "stage") return `${target} ${t("moved from")} ${before} ${t("to")} ${after}.`

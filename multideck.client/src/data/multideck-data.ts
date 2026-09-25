@@ -9,6 +9,9 @@ import bellToggleCss from "@/components/multideck/bell-toggle.css?raw"
 import springCheckSource from "@/components/multideck/spring-check.tsx?raw"
 import springCheckStyles from "@/components/multideck/spring-check.css?raw"
 import todoComponentsSource from "@/components/multideck/todo-components.tsx?raw"
+import companyEventComponentsSource from "@/components/multideck/company-event-components.tsx?raw"
+import companyEventComponentsStyles from "@/components/multideck/company-event-components.css?raw"
+import tearTicketSource from "@/components/multideck/tear-ticket.tsx?raw"
 import codeSlotsSource from "@/components/multideck/code-slots.tsx?raw"
 import codeSlotsCss from "@/components/multideck/code-slots.css?raw"
 import mileageRouteMapSource from "@/components/multideck/mileage-route-map.tsx?raw"
@@ -461,6 +464,7 @@ export const galleryComponents = [
       { label: "Digital business cards", route: "/crm/contact-cards" },
       { label: "Reports", route: "/reports" },
       { label: "Trips & mileage", route: "/crm/trips/new" },
+      { label: "Events · new event", route: "/events" },
       { label: "Components", route: "/components?component=wizard-dialog" },
     ],
     componentCode: `export function WizardDialog({ open, onOpenChange, steps, activeStepId, onStepChange, onSubmit, children }) {\n  return (\n    <Dialog open={open} onOpenChange={onOpenChange}>\n      <DialogContent>\n        <WizardStepRail steps={steps} activeStepId={activeStepId} onStepChange={onStepChange} />\n        <WizardStepContent activeStepId={activeStepId}>{children}</WizardStepContent>\n        <WizardFooter onBack={goBack} onNext={goNext} onSubmit={onSubmit} />\n      </DialogContent>\n    </Dialog>\n  )\n}`,
@@ -485,6 +489,86 @@ export const galleryComponents = [
     foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Home", route: "/" }, { label: "Components", route: "/components?component=spring-check" }],
     componentCode: `${springCheckSource}\n\n/* spring-check.css */\n${springCheckStyles}`,
     usageCode: `<SpringCheck label="Review revised delivery plan" checked={completed} onChange={setCompleted} busy={saving} />`,
+  },
+  {
+    id: "event-ticket",
+    name: "Event Ticket",
+    category: "Events",
+    description: "A company event rendered by the adapted React Bits TearTicket in display-only mode, with an explicit Yes / Maybe / No RSVP menu.",
+    details: "The whole body opens the event. TearTicket runs with interactive={false}: no drag, keyboard tear, fibres or onTear, and no dimming. Tickets run full width and stack vertically. Attendance only changes through the stub's RSVP menu: Yes, Maybe or No. Draft, cancelled and finished events replace the button with a label without dimming the ticket. Saving and Going states come from the server response, never optimistically.",
+    foundOn: [{ label: "Events", route: "/events" }, { label: "Components", route: "/components?component=event-ticket" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* tear-ticket.tsx (adapted React Bits) */\n${tearTicketSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<EventTicket\n  title={event.title}\n  startsAt={event.startsAt}\n  endsAt={event.endsAt}\n  timezone={event.timezone}\n  location={event.location}\n  imageUrl={imageUrl}\n  goingCount={event.goingCount}\n  rsvp={saving ? "saving" : event.myRsvp?.status ?? "none"}\n  closedLabel={event.status === "cancelled" ? "Cancelled" : null}\n  onOpen={() => navigate(\`/events/\${event.id}\`)}\n  onRsvp={() => rsvp(event)}\n/>`,
+  },
+  {
+    id: "rsvp-choice",
+    name: "RSVP Choice",
+    category: "Events",
+    description: "Yes, Maybe or No for “Are you going?”, with one pill that slides to the saved answer.",
+    details: "The answer being saved shows Saving… in place, so a click is never ambiguous; the pill only settles on the server's answer. Arrow keys move between options. Reduced motion moves the pill without travel.",
+    foundOn: [{ label: "Events · event detail", route: "/events" }, { label: "Components", route: "/components?component=rsvp-choice" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<RsvpChoice value={event.myRsvp?.status ?? null} pending={saving} disabled={Boolean(saving)} onChange={saveRsvp} />`,
+  },
+  {
+    id: "event-audience-picker",
+    name: "Event Audience Picker",
+    category: "Events",
+    description: "Who an event is for: Everyone (default), specific people or departments, with a live invited count.",
+    details: "Invitation is the visibility boundary: only invited colleagues see and RSVP, organisers always can. People and departments are searchable, checkable lists with their own height; each mode keeps its selection while you compare. The count uses the same rule as the server.",
+    foundOn: [{ label: "Events · new event · Invite", route: "/events" }, { label: "Components", route: "/components?component=event-audience-picker" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<EventAudiencePicker audience={draft.audience} invitees={draft.invitees} directory={directory} photoUrls={photoUrls} onChange={({ audience, invitees }) => update({ audience, invitees })} />`,
+  },
+  {
+    id: "event-attendee-strip",
+    name: "Event Attendee Strip",
+    category: "Events",
+    description: "One fixed-height row in the event detail: invited, going, maybe and not going counts with a few faces. Opens Who's coming.",
+    details: "Never grows with the number of replies, so a busy event cannot leave gaps or make the detail view scroll. Faces arrive in a short spring stagger; reduced motion shows them at once. Disabled until someone replies.",
+    foundOn: [{ label: "Events · event detail", route: "/events" }, { label: "Components", route: "/components?component=event-attendee-strip" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<EventAttendeeStrip attendees={event.attendees ?? []} photoUrls={photoUrls} onOpen={() => setView("guests")} />`,
+  },
+  {
+    id: "event-guest-list",
+    name: "Event Guest List",
+    category: "Events",
+    description: "The Who's coming view: count cards as tabs for Going, Maybe and Not going, then photos and names with search.",
+    details: "The count cards are the tabs (arrow keys move between them). The list has its own height so the view stays still however many people reply. Search appears once there are more than eight replies; very long lists render the first 150 matches and ask for a narrower search. Organisers can select a colleague to read their RSVP answers.",
+    foundOn: [{ label: "Events · event detail", route: "/events" }, { label: "Components", route: "/components?component=event-guest-list" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<EventGuestList attendees={event.attendees ?? []} photoUrls={photoUrls} status={guestStatus} onStatusChange={setGuestStatus} listHeight={320} onSelect={event.canManage ? openAnswers : undefined} />`,
+  },
+  {
+    id: "rsvp-form-builder",
+    name: "RSVP Form Builder",
+    category: "Events",
+    description: "Builds an event's RSVP questions: add, drag or arrow-key reorder, edit labels and options, mark required.",
+    details: "Drag by the handle on touch or pointer, use the move buttons, or focus the handle and press Up or Down. Moves are announced. Questions that already have answers keep their type, matching the server rule that protects saved responses.",
+    foundOn: [{ label: "Events · new or edit event", route: "/events" }, { label: "Components", route: "/components?component=rsvp-form-builder" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<RsvpFormBuilder fields={draft.form} errors={formErrors} answeredIds={answeredIds} onChange={(form) => setDraft({ ...draft, form })} />`,
+  },
+  {
+    id: "rsvp-form-fields",
+    name: "RSVP Form",
+    category: "Events",
+    description: "Answers an RSVP form with persistent labels, optional markers and per-question errors.",
+    details: "Supports short answer, paragraph, number, date, yes or no, single and multiple choice. Validation mirrors the server and errors are associated with each question.",
+    foundOn: [{ label: "Events · event detail", route: "/events" }, { label: "Components", route: "/components?component=rsvp-form-fields" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<RsvpFormFields form={event.form} answers={answers} errors={fieldErrors} disabled={saving} onChange={setAnswers} />`,
+  },
+  {
+    id: "events-empty-state",
+    name: "Events Empty State",
+    category: "Events",
+    description: "A softly looping ticket illustration with the empty message and, for organisers, the New event action.",
+    details: "The ticket drifts, the perforation flows and two sparks breathe. Reduced motion shows the resting frame. The illustration is decorative; the message and action carry the meaning.",
+    foundOn: [{ label: "Events", route: "/events" }, { label: "Components", route: "/components?component=events-empty-state" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<EventsEmptyState canCreate={canManage} onCreate={openEditor} title="No events yet" message="Company events will appear here when an organiser publishes them." />`,
   },
   {
     id: "todo-completion-control",

@@ -33,6 +33,7 @@ import { ThemeProfileSync, themeStorageKey } from "@/lib/theme-preferences"
 import { LanguageProfileSync } from "@/lib/language-preferences"
 import { rememberRecentWorkContext } from "@/lib/recent-work-context"
 import { invalidateWorkspaceBootstrap } from "@/lib/workspace-bootstrap"
+import { useEventsSettings } from "@/lib/company-events-api"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
 const HomePage = lazy(() => import("@/pages/home-page").then((module) => ({ default: module.HomePage })))
@@ -44,6 +45,7 @@ const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").the
 const SignatureTeamPage = lazy(() => import("@/pages/signature-team-page").then(module => ({ default: module.SignatureTeamPage })))
 const EmailSignaturesPage = lazy(() => import("@/pages/email-signatures-page").then(module => ({ default: module.EmailSignaturesPage })))
 const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
+const EventsPage = lazy(() => import("@/pages/events-page").then((module) => ({ default: module.EventsPage })))
 const ToDoPage = lazy(() => import("@/pages/to-do-page").then((module) => ({ default: module.ToDoPage })))
 const CalendarPage = lazy(() => import("@/pages/calendar-page").then((module) => ({ default: module.CalendarPage })))
 const MeetingsPage = lazy(() => import("@/pages/meetings-page").then((module) => ({ default: module.MeetingsPage })))
@@ -141,6 +143,7 @@ const validRoutes = new Set([
   "/suppliers",
   "/inbox",
   "/to-do",
+  "/events",
   "/calendar",
   "/calendar/booking-links",
   "/calendar/meetings",
@@ -368,6 +371,7 @@ function getRoute() {
   if (isQuoteResponseRoute(window.location.pathname)) return window.location.pathname
   if (isPublicBookingRoute(window.location.pathname)) return window.location.pathname
   if (isMeetingManageRoute(window.location.pathname)) return window.location.pathname
+  if (/^\/events\/[0-9a-f-]{36}$/.test(window.location.pathname)) return window.location.pathname
   return validRoutes.has(window.location.pathname) ? window.location.pathname : "/"
 }
 
@@ -746,6 +750,17 @@ export default function App() {
     startTransition(() => setRoute(getRoute()))
   }, [authStatus, currentUser, route])
 
+  const isEventsRoute = route === "/events" || route.startsWith("/events/")
+  const { settings: eventsSettings, resolved: eventsResolved } = useEventsSettings(authStatus === "authenticated" && currentUser?.actorType === "internal")
+  // Events is a company-wide opt-in. The server refuses every read when it is
+  // off; this keeps the route from being opened by address as well.
+  useEffect(() => {
+    if (!isEventsRoute || authStatus !== "authenticated" || !eventsResolved || eventsSettings?.enabled) return
+    if (currentUser?.actorType === "internal" && eventsSettings === null) return
+    window.history.replaceState({}, "", "/app")
+    startTransition(() => setRoute("/"))
+  }, [authStatus, currentUser?.actorType, eventsResolved, eventsSettings, isEventsRoute])
+
   useEffect(() => {
     if (authStatus !== "authenticated" || !route.startsWith("/admin") || isTenantAdministrator(currentUser) || (["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) && currentUser?.permissions.includes("Email.Signatures.Manage"))) return
     window.history.replaceState({}, "", "/app")
@@ -882,6 +897,7 @@ export default function App() {
                   {route === "/admin/email-signatures/team" ? <SignatureTeamPage navigate={navigate} /> : null}
                   {route === "/admin/email-signatures" ? <EmailSignaturesPage navigate={navigate} /> : null}
                   {route === "/to-do" ? <ToDoPage operatorName={currentUser?.name} /> : null}
+                  {(route === "/events" || route.startsWith("/events/")) && currentUser?.actorType === "internal" ? <EventsPage route={route} navigate={navigate} /> : null}
                   {route === "/calendar" ? <CalendarPage navigate={navigate} /> : null}
                   {route === "/calendar/meetings" || route === "/calendar/booking-links" ? <MeetingsPage navigate={navigate} view={route === "/calendar/booking-links" ? "Booking links" : "Appointments"} /> : null}
                   {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}

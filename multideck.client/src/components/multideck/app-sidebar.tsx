@@ -1,7 +1,7 @@
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, Ticket, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive, DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -46,6 +46,7 @@ import { toast } from "sonner"
 import { useWorkspaceNotifications } from "@/lib/use-workspace-notifications"
 import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
+import { useEventsSettings } from "@/lib/company-events-api"
 
 const sidebarItemTransition = {
   duration: 0.18,
@@ -1180,6 +1181,8 @@ export function AppSidebar({
   const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(currentUser?.profilePhotoUrl ?? null)
   const [accountCoverPhotoUrl, setAccountCoverPhotoUrl] = useState<string | null>(null)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const { settings: eventsSettings } = useEventsSettings(currentUser?.actorType === "internal")
+  const eventsEnabled = eventsSettings?.enabled === true
   const [aiUsagePercent, setAiUsagePercent] = useState<number | null>(null)
   const profileIsActive = false
   const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
@@ -2368,6 +2371,19 @@ export function AppSidebar({
                 </button>
               </>
             ) : null}
+            {eventsEnabled ? <button
+              type="button"
+              aria-current={route === "/events" || route.startsWith("/events/") ? "page" : undefined}
+              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] aria-[current=page]:text-[var(--md-ink)] motion-reduce:transition-none motion-reduce:active:scale-100"
+              onClick={() => {
+                setAccountMenuOpen(false)
+                onRequestClose?.()
+                navigate("/events")
+              }}
+            >
+              <Ticket data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Events")}</span>
+            </button> : null}
             {supportTicketFeatureEnabled ? <button
               type="button"
               className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
