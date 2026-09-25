@@ -411,14 +411,14 @@ test("finance drafts validate a selected active entity inside the signed-in tena
   ])
   assert.doesNotMatch(tenantOwnedFinanceDocuments, /legalEntityId/)
   assert.doesNotMatch(documentPageSource, /finance-detail-entity|legalEntityId:/)
-  assert.doesNotMatch(purchaseIntakeSource, /t\("Legal entity"\)|legalEntityId: item\.legalEntityId/)
+  includesEvery(purchaseIntakeSource, ["finance-intake-entity", "legalEntityId: entityId", "Finish or remove this batch before changing legal entity."])
   includesEvery(dexterSource, [
     "The signed-in tenant company is used automatically.",
     "type: cleanString(args.type, 40), partyOrgId",
   ])
 })
 
-test("the operator UI covers both ledgers, cash and manual ad hoc sources", () => {
+test("the operator UI covers both ledgers, cash, ad hoc and job sources", () => {
   includesEvery(appSource, [
     "Sales ledger",
     "Purchase ledger",
@@ -441,7 +441,7 @@ test("the operator UI covers both ledgers, cash and manual ad hoc sources", () =
     "text-end",
     "dir=\"ltr\"",
   ])
-  assert.doesNotMatch(appSource, /Ad hoc or ancillary|Freight job|setSourceKind|setSourceJobId/)
+  includesEvery(appSource, ["finance-document-entity", "finance-cash-entity", "legalEntityId: tenantEntityId", "setSourceJobId", "jobChargeOptions={jobChargeOptions}", "!jobLinesReady"])
   includesEvery(financeLineEditorSource, ["Charge code", "Description", "Qty", "Rate", "Tax", "Invoice amount", "Net", "text-end", "dir=\"ltr\""])
   assert.doesNotMatch(financeLineEditorSource, /t\("Line type"\)|t\("Ancillary"\)/)
   assert.doesNotMatch(appSource, /font-mono|ui-monospace|SF Mono/)

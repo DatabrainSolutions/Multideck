@@ -304,6 +304,7 @@ export type FinanceReportingSnapshot = {
 
 export type FinanceDraftInput = {
   type: FinanceDocumentType
+  legalEntityId?: string
   partyOrgId: string
   documentDate: string
   dueDate?: string | null
@@ -318,6 +319,7 @@ export type FinanceDraftInput = {
 
 export type FinanceCashInput = {
   type: FinanceCashType
+  legalEntityId: string
   partyOrgId: string
   bankAccountId: string
   transactionDate: string
