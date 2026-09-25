@@ -136,7 +136,7 @@ const financeEntitySessionKey = "multideck.finance.daily.entity"
 function preferredFinanceEntity<T extends { LegalEntity_ID: string }>(entities: T[]): T | undefined {
   let saved: string | null = null
   try { saved = window.sessionStorage.getItem(financeEntitySessionKey) } catch { /* Browser storage may be unavailable. */ }
-  return entities.find((entity) => entity.LegalEntity_ID === saved) ?? entities[0]
+  return entities.find((entity) => entity.LegalEntity_ID === saved) ?? (entities.length === 1 ? entities[0] : undefined)
 }
 function rememberFinanceEntity(id: string) {
   try { window.sessionStorage.setItem(financeEntitySessionKey, id) } catch { /* Selection still applies to this form. */ }

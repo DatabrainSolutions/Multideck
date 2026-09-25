@@ -59,7 +59,8 @@ const financeEntitySessionKey = "multideck.finance.daily.entity"
 function preferredEntityId(options: FinanceDraftOptions) {
   let saved: string | null = null
   try { saved = window.sessionStorage.getItem(financeEntitySessionKey) } catch { /* Browser storage may be unavailable. */ }
-  return options.legalEntities.find((entity) => entity.LegalEntity_ID === saved)?.LegalEntity_ID ?? options.legalEntities[0]?.LegalEntity_ID ?? ""
+  return options.legalEntities.find((entity) => entity.LegalEntity_ID === saved)?.LegalEntity_ID
+    ?? (options.legalEntities.length === 1 ? options.legalEntities[0].LegalEntity_ID : "")
 }
 function rememberEntity(id: string) {
   try { window.sessionStorage.setItem(financeEntitySessionKey, id) } catch { /* Selection still applies to this batch. */ }
