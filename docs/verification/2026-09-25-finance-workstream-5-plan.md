@@ -91,9 +91,11 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 11. `20260925073443_charge_recognition_authority.sql`
 12. `20260925073707_dated_charge_group_accrual_posting.sql`
 13. `20260925073708_charge_event_initial_recognition.sql`
-14. `20260925080000_bank_statement_reconciliation.sql`
-15. `20260925090000_finance_provider_period_reconciliation.sql`
-16. `20260925100000_finance_reconciliation_dexter.sql`
+14. `20260925074532_charge_lifecycle_review_replay.sql`
+15. `20260925075054_reviewed_charge_lifecycle_corrections.sql`
+16. `20260925080000_bank_statement_reconciliation.sql`
+17. `20260925090000_finance_provider_period_reconciliation.sql`
+18. `20260925100000_finance_reconciliation_dexter.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -140,8 +142,14 @@ incremental application plan; local filename order is not proof of its state.
 - Four further Finance migrations for recognition authority, dated accrual
   posting, initial event recognition and Dexter reconciliation were added after
   that full access run. The now sixteen-file manifest installed in isolation on
-  PostgreSQL at the next checkpoint; the full access suite must run again after
+  PostgreSQL at the next checkpoint; lifecycle replay and reviewed correction
+  migrations then brought the provisional manifest to eighteen files. The full access suite must run again after
   workstream handoff.
+- The 25 September combined client `npm run build` passed TypeScript and Vite
+  after Finance 3 completed its in-progress components. Broad
+  `finance-*-contract.test.mjs` source contracts passed 91/91 after the
+  concurrent VAT copy assertion was aligned. These are local checkpoints, not
+  authenticated, connected or deployed verification.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.
@@ -175,3 +183,9 @@ incremental application plan; local filename order is not proof of its state.
   in a read-only Chrome preflight. The tab was closed. The existing live version
   still needs exact deployed commit/asset verification after the new release;
   the demo project's migration target must still be explicitly confirmed.
+- A read-only query against that documented development project found one
+  active ERPNext accounting connection for a GBP legal entity, and no Sage 50
+  connection. The entity has open August, September and October 2026 periods
+  with posted batches. No provider API was called and no reconciliation run
+  was recorded. This is candidate test context, not selection of a safe period
+  or proof of ERPNext/Sage parity.

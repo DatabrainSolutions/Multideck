@@ -61,6 +61,8 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925073443_charge_recognition_authority.sql',
       '20260925073707_dated_charge_group_accrual_posting.sql',
       '20260925073708_charge_event_initial_recognition.sql',
+      '20260925074532_charge_lifecycle_review_replay.sql',
+      '20260925075054_reviewed_charge_lifecycle_corrections.sql',
       '20260925080000_bank_statement_reconciliation.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',
@@ -77,6 +79,9 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
     const installed = JSON.parse(sql(`select jsonb_build_object(
       'lifecycle_queue', to_regclass('public."FIN_ChargeLifecycleQueue"') is not null,
       'supplier_orders', to_regclass('public."FIN_SupplierPurchaseOrders"') is not null,
+      'match_proposals', to_regclass('public."FIN_SupplierMatchProposals"') is not null,
+      'match_proposal_service_only', not has_table_privilege('authenticated','public."FIN_SupplierMatchProposals"','SELECT')
+        and has_table_privilege('service_role','public."FIN_SupplierMatchProposals"','SELECT'),
       'mapping_cutovers', to_regclass('public."FIN_ChargeMappingCutovers"') is not null,
       'close_reviews', to_regclass('public."FIN_AccountingCloseReviews"') is not null,
       'opening_packages', to_regclass('public."FIN_OpeningBalancePackages"') is not null,
@@ -88,6 +93,8 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       'mapping_pin', to_regprocedure('public._multideck_finance_pin_document_charge_mapping()') is not null,
       'recognition_mandates', to_regclass('public."FIN_RecognitionMandates"') is not null,
       'event_recognitions', to_regclass('public."FIN_ChargeEventRecognitions"') is not null,
+      'lifecycle_recheck', to_regprocedure('public.multideck_finance_charge_lifecycle_requeue(uuid,uuid,uuid,text)') is not null,
+      'charge_corrections', to_regclass('public."FIN_ChargeCorrections"') is not null,
       'bank_reconciliation_watch', exists(select 1 from pg_trigger where tgname='bank_reconciliation_watch' and not tgisinternal),
       'bank_control', exists(select 1 from pg_proc where proname='multideck_bank_statement_control'),
       'provider_period_runs', to_regclass('public."ACCI_PeriodReconciliationRuns"') is not null,

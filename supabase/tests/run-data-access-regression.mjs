@@ -49,6 +49,7 @@ const tests = [
   'finance-accounting-period-close-postgres.test.mjs',
   'finance-trade-control-postgres.test.mjs',
   'finance-daily-operations-postgres.test.mjs',
+  'finance-daily-model.test.mjs',
   'finance-bank-statement-postgres.test.mjs',
   'finance-reconciliation-dexter-postgres.test.mjs',
   'finance-charge-recognition-postgres.test.mjs',
