@@ -133,7 +133,7 @@ async function matchProposals(admin: any, current: any, documentId: string) {
 }
 
 async function generateMatchProposal(admin: any, current: any, documentId: string) {
-  await requirePermission(admin, current.User_ID, "Finance.ReviewAndPost")
+  await requirePermission(admin, current.User_ID, "Finance.Payables.Draft")
   const key = Deno.env.get("OPENAI_API_KEY")?.trim() || Deno.env.get("OPEN_API_KEY")?.trim()
   if (!key) throw new HttpError(503, "AI matching is not configured. Use the source-cited rule suggestions and review them manually.")
   const suggestion = await matchSuggestions(admin, current, documentId)
@@ -174,7 +174,15 @@ async function generateMatchProposal(admin: any, current: any, documentId: strin
   const result = { rationale: verified.rationale, citations: verified.citations, ruleCandidateScore: chosen?.score ?? null, ruleConflicts: chosen?.conflicts ?? [] }
   const { data, error } = await admin.from("FIN_SupplierMatchProposals").insert({ FINMatchProposal_LegalEntityID: document.FINDoc_LegalEntityID, FINMatchProposal_DocumentID: document.FINDoc_ID, FINMatchProposal_PurchaseOrderID: chosen?.id ?? null, FINMatchProposal_Model: financeMatchModel, FINMatchProposal_PromptVersion: financeMatchPromptVersion, FINMatchProposal_SourceJSON: { ...source, purchaseOrder: selectedOrder ? { ...selectedOrder, updatedAt: (await admin.from("FIN_SupplierPurchaseOrders").select("FINPO_ReviewedAt").eq("FINPO_ID", selectedOrder.id).single()).data?.FINPO_ReviewedAt ?? null } : null }, FINMatchProposal_ResultJSON: result, FINMatchProposal_CreatedBy: current.User_ID }).select("*").single()
   if (error) fail(error, "AI proposal could not be saved.")
-  return data
+  if (!chosen) return data
+  const automatic = await admin.rpc("multideck_finance_auto_match_supplier_invoice", {
+    p_company_id: current.Company_ID, p_user_id: current.User_ID, p_proposal_id: data.FINMatchProposal_ID,
+  })
+  if (automatic.error) return { ...data, automaticDecisionError: clean(automatic.error.message, 500) || "The AI proposal was saved, but automatic matching could not complete." }
+  if (automatic.data?.status !== "approved") return { ...data, automaticDecision: automatic.data }
+  const { data: applied, error: appliedError } = await admin.from("FIN_SupplierMatchProposals").select("*").eq("FINMatchProposal_ID", data.FINMatchProposal_ID).single()
+  if (appliedError) fail(appliedError, "The applied AI proposal could not be reloaded.")
+  return { ...applied, automaticDecision: automatic.data }
 }
 
 async function reviewMatchProposal(admin: any, current: any, id: string, reason: string) {
@@ -210,7 +218,13 @@ async function createPurchaseOrder(admin: any, current: any, input: any) {
     if (!office) throw new HttpError(404, "That job is outside this workspace.")
     if (job.Job_Supplier && job.Job_Supplier !== input.supplierOrgId) throw new HttpError(409, "The supplier PO must match the supplier on this job.")
   }
-  const { data, error } = await admin.from("FIN_SupplierPurchaseOrders").insert({ FINPO_LegalEntityID: selectedEntity.LegalEntity_ID, FINPO_SupplierOrgID: input.supplierOrgId, FINPO_JobID: input.jobId || null, FINPO_Number: clean(input.number, 100), FINPO_CurrencyCode: input.currencyCode, FINPO_NetAmount: money(input.netAmount), FINPO_Description: clean(input.description, 1000), FINPO_SourceEvidenceJSON: { source: "operator_review", reference: clean(input.sourceReference, 200) || null }, FINPO_CreatedBy: current.User_ID }).select("*").single()
+  const { data, error } = await admin.rpc("multideck_finance_create_supplier_po", {
+    p_company_id: current.Company_ID, p_user_id: current.User_ID,
+    p_input: { legalEntityId: selectedEntity.LegalEntity_ID, supplierOrgId: input.supplierOrgId,
+      jobId: input.jobId || null, number: clean(input.number, 100), currencyCode: input.currencyCode,
+      netAmount: money(input.netAmount), description: clean(input.description, 1000),
+      sourceReference: clean(input.sourceReference, 200) || null },
+  })
   if (error) fail(error, "Supplier PO could not be saved.")
   return data
 }
@@ -327,7 +341,11 @@ async function preparePaymentRun(admin: any, current: any, input: any) {
   if (!uuid(input.bankAccountId) || !Array.isArray(input.documentIds) || !isoDate(input.paymentDate) || !clean(input.reason) || !(money(input.exchangeRate) > 0)) throw new HttpError(400, "Choose invoices, a payment bank, date, exchange rate and reason.")
   const { data, error } = await admin.rpc("multideck_finance_prepare_payment_run", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_bank_id: input.bankAccountId, p_document_ids: input.documentIds, p_payment_date: input.paymentDate, p_exchange_rate: money(input.exchangeRate), p_reason: clean(input.reason) })
   if (error) fail(error, "Payment run could not be prepared.")
-  return { runId: data, status: "awaiting_approval" }
+  const automatic = await admin.rpc("multideck_finance_auto_finalise_payment_run", {
+    p_company_id: current.Company_ID, p_user_id: current.User_ID, p_run_id: data,
+  })
+  if (automatic.error) return { runId: data, status: "awaiting_approval", automaticDecisionError: clean(automatic.error.message, 500) || "The payment run was prepared, but automatic approval could not complete." }
+  return automatic.data
 }
 
 async function reviewPaymentRun(admin: any, current: any, id: string, input: any) {

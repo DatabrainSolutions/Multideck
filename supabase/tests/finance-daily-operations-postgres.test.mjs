@@ -43,7 +43,9 @@ test('daily Finance operations install on the tenant baseline and keep browser r
     const migrations = process.env.FINANCE_FULL_MIGRATIONS === '1'
       ? readdirSync(new URL('migrations/', root))
         .filter(name => name >= '20260925070431' && name.endsWith('.sql') && !/_(?:uk_vat|hmrc)_/.test(name)).sort()
-      : ['20260925070458_finance_daily_operations.sql']
+      : ['20260925070458_finance_daily_operations.sql',
+        '20260925103000_finance_approval_policies.sql',
+        '20260925104100_finance_daily_approval_policy.sql']
     for (const migration of migrations) {
       assert.ok(readFileSync(new URL(`migrations/${migration}`, root), 'utf8').trimEnd().toLowerCase().endsWith('commit;'),
         `${migration} must finish its transaction before installation`)
@@ -267,6 +269,71 @@ test('daily Finance operations install on the tenant baseline and keep browser r
       update public."FIN_SupplierPurchaseOrders" set "FINPO_Number"='PO-1C' where "FINPO_ID"='00000000-0000-0000-0000-000000000141';
       select count(*) from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_CapabilityCode"='finance_operations' and "AIDexterWatchSignal_CompanyID"='00000000-0000-0000-0000-000000000001';
     `).split('\n').at(-1), '2')
+    assert.equal(JSON.parse(sql(`select public.multideck_finance_create_supplier_po(
+      '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000101',
+      '{"legalEntityId":"00000000-0000-0000-0000-000000000111","supplierOrgId":"00000000-0000-0000-0000-000000000121","number":"PO-POLICY-REVIEW","currencyCode":"GBP","netAmount":50,"description":"Documented purchase","sourceReference":"Source-50"}'::jsonb
+    );`)).FINPO_StatusCode, 'draft', 'An absent policy must retain a review step')
+    sql(`insert into public."FIN_ApprovalPolicies"("FINApprovalPolicy_LegalEntityID","FINApprovalPolicy_WorkflowCode","FINApprovalPolicy_Revision","FINApprovalPolicy_ModeCode","FINApprovalPolicy_MaxAutoAmount","FINApprovalPolicy_Reason","FINApprovalPolicy_CreatedBy") values
+      ('00000000-0000-0000-0000-000000000111','purchase_order',1,'automatic',100,'Bound purchase commitments','00000000-0000-0000-0000-000000000101'),
+      ('00000000-0000-0000-0000-000000000111','supplier_match',1,'automatic',100,'Exact one-PO matches','00000000-0000-0000-0000-000000000101'),
+      ('00000000-0000-0000-0000-000000000111','payment_run',1,'automatic',100,'Bound base-currency payment runs','00000000-0000-0000-0000-000000000101');`)
+    const approvedPo = JSON.parse(sql(`select public.multideck_finance_create_supplier_po(
+      '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000101',
+      '{"legalEntityId":"00000000-0000-0000-0000-000000000111","supplierOrgId":"00000000-0000-0000-0000-000000000121","number":"PO-POLICY-AUTO","currencyCode":"GBP","netAmount":50,"description":"Exact purchase","sourceReference":"Source-51"}'::jsonb
+    );`))
+    assert.equal(approvedPo.FINPO_StatusCode, 'approved')
+    assert.equal(approvedPo.FINPO_SourceEvidenceJSON.approvalPolicy.revision, 1)
+    assert.equal(sql(`select count(*) from jsonb_array_elements(public.multideck_dexter_domain_finance_operations('00000000-0000-0000-0000-000000000001',null,25)) item where item->>'recordId'='${approvedPo.FINPO_ID}' and item->'approvalPolicy'->>'policyId'= '${approvedPo.FINPO_SourceEvidenceJSON.approvalPolicy.policyId}';`), '1')
+    assert.equal(JSON.parse(sql(`select public.multideck_finance_create_supplier_po(
+      '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000101',
+      '{"legalEntityId":"00000000-0000-0000-0000-000000000111","supplierOrgId":"00000000-0000-0000-0000-000000000121","number":"PO-NO-SOURCE","currencyCode":"GBP","netAmount":10,"description":"Missing source"}'::jsonb
+    );`)).FINPO_StatusCode, 'draft', 'Missing source evidence must stay in review')
+    sql(`set session_replication_role=replica;
+      insert into public."FIN_Documents"("FINDoc_ID","FINDoc_TypeCode","FINDoc_StatusCode","FINDoc_Number","FINDoc_LegalEntityID","FINDoc_PartyOrgID","FINDoc_CurrencyCodeSnapshot","FINDoc_NetAmount","FINDoc_GrossAmount","FINDoc_OutstandingAmount") values
+        ('00000000-0000-0000-0000-000000000156','pl_invoice','draft','PI-AUTO','00000000-0000-0000-0000-000000000111','00000000-0000-0000-0000-000000000121','GBP',50,50,50);
+      set session_replication_role=origin;`)
+    const proposalId = '00000000-0000-0000-0000-000000000176'
+    sql(`insert into public."FIN_SupplierMatchProposals"("FINMatchProposal_ID","FINMatchProposal_LegalEntityID","FINMatchProposal_DocumentID","FINMatchProposal_PurchaseOrderID","FINMatchProposal_Model","FINMatchProposal_PromptVersion","FINMatchProposal_SourceJSON","FINMatchProposal_ResultJSON","FINMatchProposal_CreatedBy")
+      select '${proposalId}',document."FINDoc_LegalEntityID",document."FINDoc_ID",po."FINPO_ID",'test-model','finance-po-match-v1',
+        jsonb_build_object('document',jsonb_build_object('updatedAt',document."FINDoc_UpdatedAt"),'purchaseOrder',jsonb_build_object('updatedAt',po."FINPO_ReviewedAt")),
+        jsonb_build_object('citations',jsonb_build_array(
+          jsonb_build_object('table','FIN_Documents','recordId',document."FINDoc_ID",'field','invoice.netAmount'),
+          jsonb_build_object('table','FIN_SupplierPurchaseOrders','recordId',po."FINPO_ID",'field','po.availableNet'))),
+        '00000000-0000-0000-0000-000000000101'
+      from public."FIN_Documents" document cross join public."FIN_SupplierPurchaseOrders" po
+      where document."FINDoc_ID"='00000000-0000-0000-0000-000000000156' and po."FINPO_ID"='${approvedPo.FINPO_ID}';`)
+    assert.equal(JSON.parse(sql(`select public.multideck_finance_auto_match_supplier_invoice(
+      '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000101','${proposalId}');`)).status, 'approved')
+    assert.equal(sql(`select count(*) from public."FIN_SupplierInvoiceMatches" where "FINPOMatch_DocumentID"='00000000-0000-0000-0000-000000000156' and "FINPOMatch_EvidenceJSON"#>>'{approvalPolicy,policyId}' is not null;`), '1')
+    assert.equal(sql(`select count(*) from jsonb_array_elements(public.multideck_dexter_domain_finance_operations('00000000-0000-0000-0000-000000000001',null,25)) item where item->>'recordId'='${proposalId}' and item->>'matchId' is not null and item->'approvalPolicy'->>'policyId' is not null;`), '1')
+    sql(`set session_replication_role=replica;
+      insert into public."Org_Master"("Org_id","Org_Name","Org_BaseCurrency","Org_AccCode") values
+        ('00000000-0000-0000-0000-000000000123','Supplier C','00000000-0000-0000-0000-000000000131','SUP-C');
+      insert into public."CRM_AccountProfiles"("CRMAccount_OrgID","CRMAccount_CompanyID") values
+        ('00000000-0000-0000-0000-000000000123','00000000-0000-0000-0000-000000000001');
+      insert into public."FIN_Documents"("FINDoc_ID","FINDoc_TypeCode","FINDoc_StatusCode","FINDoc_Number","FINDoc_LegalEntityID","FINDoc_PartyOrgID","FINDoc_CurrencyCodeSnapshot","FINDoc_NetAmount","FINDoc_GrossAmount","FINDoc_OutstandingAmount") values
+        ('00000000-0000-0000-0000-000000000157','pl_invoice','approved','PI-RUN-AUTO','00000000-0000-0000-0000-000000000111','00000000-0000-0000-0000-000000000123','GBP',20,20,20);
+      set session_replication_role=origin;`)
+    const runId = sql(`select public.multideck_finance_prepare_payment_run(
+      '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000101',
+      '00000000-0000-0000-0000-000000000161','["00000000-0000-0000-0000-000000000157"]'::jsonb,
+      '2026-09-25',1,'Supplier C payment');`)
+    const autoRun = JSON.parse(sql(`select public.multideck_finance_auto_finalise_payment_run(
+      '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000101','${runId}');`))
+    assert.equal(autoRun.status, 'approved')
+    assert.equal(sql(`select count(*) from public."FIN_PaymentRuns" run join public."FIN_PaymentRunItems" item on item."FINPayRunItem_RunID"=run."FINPayRun_ID" join public."FIN_CashTransactions" cash on cash."FINCash_ID"=item."FINPayRunItem_CashID" where run."FINPayRun_ID"='${runId}' and run."FINPayRun_ApprovalPolicyJSON"->>'policyId' is not null and cash."FINCash_StatusCode"='approved';`), '1')
+    assert.equal(sql(`select count(*) from jsonb_array_elements(public.multideck_dexter_domain_finance_operations('00000000-0000-0000-0000-000000000001',null,25)) item where item->>'recordId'='${runId}' and item->'approvalPolicy'->>'policyId' is not null;`), '1')
+    assert.equal(sql(`select count(*) from public."Audit_Events" where "AuditEvent_RecordID"='${runId}' and "AuditEvent_Action"='auto_approve' and "AuditEvent_UserID"='00000000-0000-0000-0000-000000000101' and "AuditEvent_MetadataJSON"#>>'{policy,policyId}' is not null;`), '1')
+    assert.equal(sql(`do $test$ declare denied integer:=0; begin
+      begin perform public.multideck_finance_create_supplier_po('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000101',
+        '{"legalEntityId":"00000000-0000-0000-0000-000000000111","supplierOrgId":"00000000-0000-0000-0000-000000000121","number":"FOREIGN-PO","currencyCode":"GBP","netAmount":1,"description":"Foreign","sourceReference":"Foreign"}'::jsonb);
+      exception when sqlstate '42501' then denied:=denied+1; end;
+      begin perform public.multideck_finance_auto_match_supplier_invoice('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000101','${proposalId}');
+      exception when sqlstate '42501' then denied:=denied+1; end;
+      begin perform public.multideck_finance_auto_finalise_payment_run('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000101','${runId}');
+      exception when sqlstate '42501' or sqlstate 'P0002' then denied:=denied+1; end;
+      if denied<>3 then raise exception 'Foreign-company daily automation was not denied'; end if;
+    end $test$; select 1;`).split('\n').at(-1), '1')
   } finally {
     if (started) spawnSync(join(bin, 'pg_ctl'), ['-D', join(directory, 'data'), '-m', 'immediate', '-w', 'stop'], { encoding: 'utf8' })
     rmSync(directory, { recursive: true, force: true })

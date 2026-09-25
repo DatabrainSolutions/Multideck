@@ -260,11 +260,11 @@ export function FinanceDocumentPage({
     })),
   })
 
-  const runAction = async (name: string, action: () => Promise<unknown>, success: string) => {
+  const runAction = async <T,>(name: string, action: () => Promise<T>, success: string | ((result: T) => string)) => {
     setPendingAction(name)
     try {
-      await action()
-      toast.success(t(success))
+      const result = await action()
+      toast.success(t(typeof success === "string" ? success : success(result)))
       await load(true)
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : t("The finance action could not be completed."))
@@ -277,8 +277,8 @@ export function FinanceDocumentPage({
   const saveDraft = () => runAction("save", () => updateFinanceDraft(documentId, draftPayload()), "Draft saved")
   const sendForReview = () => runAction("review", async () => {
     await updateFinanceDraft(documentId, draftPayload())
-    await requestFinanceDocumentReview(documentId)
-  }, "Draft sent for finance review")
+    return requestFinanceDocumentReview(documentId)
+  }, (result) => result.FINDoc_StatusCode === "approved" ? "Document posted under the legal entity policy" : "Draft sent for finance review")
   const approve = () => runAction("approve", () => approveFinanceDocument(documentId), "Document approved and posted; external mirror checked")
   const retry = () => runAction("retry", () => retryFinanceDocumentPosting(documentId), "External mirror delivery completed")
 
@@ -375,7 +375,7 @@ export function FinanceDocumentPage({
     <>
       <SettingsPageHeader
         title={`${t(documentLabels[type])} ${document.FINDoc_Number ?? ""}`.trim()}
-        description={t(posted ? "Native ledger postings are locked and shown read-only." : editable ? "Edit and save this draft before sending it for finance review." : blocked ? "The document is posted in Multideck, but its external mirror delivery needs attention." : "Review the document and its controlled lifecycle evidence.")}
+        description={t(posted ? "Native ledger postings are locked and shown read-only." : editable ? "Edit and save this draft, then submit it through the legal entity's approval policy." : blocked ? "The document is posted in Multideck, but its external mirror delivery needs attention." : "Review the document and its controlled lifecycle evidence.")}
         descriptionPlacement="under-title"
         icon={FileText}
         actions={<div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => navigate(registerRoute)}><ArrowLeft />{t("Back to register")}</Button><Button type="button" variant="outline" disabled={refreshing || Boolean(pendingAction)} onClick={() => void load(true)}><RefreshCw className={refreshing ? "animate-spin" : ""} />{t("Refresh")}</Button></div>}
@@ -392,7 +392,7 @@ export function FinanceDocumentPage({
             <span className="text-[12px] text-[var(--md-subtle)]">{detail.provider ? t(providerLabel(detail.provider.ACCIC_ProviderCode)) : t("No external mirror")}</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {editable ? <><Button type="button" variant="outline" disabled={Boolean(pendingAction)} onClick={() => void saveDraft()}>{pendingAction === "save" ? <LoaderCircle className="animate-spin" /> : <Save />}{t("Save draft")}</Button><Button type="button" disabled={Boolean(pendingAction)} onClick={() => void sendForReview()}>{pendingAction === "review" ? <LoaderCircle className="animate-spin" /> : <Send />}{t("Send for review")}</Button></> : null}
+            {editable ? <><Button type="button" variant="outline" disabled={Boolean(pendingAction)} onClick={() => void saveDraft()}>{pendingAction === "save" ? <LoaderCircle className="animate-spin" /> : <Save />}{t("Save draft")}</Button><Button type="button" disabled={Boolean(pendingAction)} onClick={() => void sendForReview()}>{pendingAction === "review" ? <LoaderCircle className="animate-spin" /> : <Send />}{t("Submit document")}</Button></> : null}
             {document.FINDoc_StatusCode === "awaiting_approval" && canApprove ? <><Button type="button" variant="outline" disabled={Boolean(pendingAction)} onClick={() => { setReason(""); setReasonAction("reject") }}>{t("Reject")}</Button><Button type="button" disabled={Boolean(pendingAction)} onClick={() => void approve()}>{pendingAction === "approve" ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />}{t("Approve & post")}</Button></> : null}
             {document.FINDoc_StatusCode === "rejected" && !vatSourceLocked && canDraft && canApprove ? <Button type="button" disabled={Boolean(pendingAction)} onClick={() => { setReason(""); setReasonAction("reopen") }}>{t("Return to draft")}</Button> : null}
           </div>
