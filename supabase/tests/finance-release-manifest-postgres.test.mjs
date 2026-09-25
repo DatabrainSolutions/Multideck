@@ -82,6 +82,13 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',
       '20260925102000_finance_multi_entity_dexter_drafts.sql',
+      '20260925103000_finance_approval_policies.sql',
+      '20260925103100_finance_policy_document_cash_submission.sql',
+      '20260925103200_opening_explicit_policy_waivers.sql',
+      '20260925103300_finance_charge_close_policy_hooks.sql',
+      '20260925103400_opening_fx_policy_trade_bridge.sql',
+      '20260925104000_bank_statement_automatic_matching.sql',
+      '20260925104100_finance_daily_approval_policy.sql',
     ]
     const laterMigrations = readdirSync(new URL('migrations/', root))
       .filter(name => name >= '20260925070431' && name.endsWith('.sql') && !/_(?:uk_vat|hmrc)_/.test(name))
