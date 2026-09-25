@@ -72,6 +72,7 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925080343_opening_trade_control_bridge.sql',
       '20260925080746_finance_lifecycle_dexter_parity.sql',
       '20260925081349_finance_charge_case_no_balance_resolution.sql',
+      '20260925081955_finance_charge_case_dexter_parity.sql',
       '20260925085000_finance_opening_mirror_delivery.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',

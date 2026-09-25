@@ -99,9 +99,10 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 19. `20260925080343_opening_trade_control_bridge.sql`
 20. `20260925080746_finance_lifecycle_dexter_parity.sql`
 21. `20260925081349_finance_charge_case_no_balance_resolution.sql`
-22. `20260925085000_finance_opening_mirror_delivery.sql`
-23. `20260925090000_finance_provider_period_reconciliation.sql`
-24. `20260925100000_finance_reconciliation_dexter.sql`
+22. `20260925081955_finance_charge_case_dexter_parity.sql`
+23. `20260925085000_finance_opening_mirror_delivery.sql`
+24. `20260925090000_finance_provider_period_reconciliation.sql`
+25. `20260925100000_finance_reconciliation_dexter.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -171,6 +172,11 @@ incremental application plan; local filename order is not proof of its state.
   whose reviewed source change has no balance effect. The 24-file manifest
   installed and passed the table/function privilege audit locally on 25
   September; it remains provisional until the peer handoffs settle.
+- A twenty-fifth file adds scoped Dexter read/watch coverage for those resolved
+  charge cases. The 25-file manifest installed and passed the same local
+  privilege audit on 25 September. Finance 3 confirmed that accounting close
+  must continue to block on VAT control: the VAT workstream has a return-period
+  review RPC, not a signed whole-accounting-period clearance contract.
 - `FINANCE_FULL_MIGRATIONS=1 node --test
   supabase/tests/finance-daily-operations-postgres.test.mjs` now exercises the
   ordered non-VAT Finance chain on local PostgreSQL through supplier invoice,
