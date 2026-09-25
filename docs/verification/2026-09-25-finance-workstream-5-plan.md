@@ -100,9 +100,13 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 20. `20260925080746_finance_lifecycle_dexter_parity.sql`
 21. `20260925081349_finance_charge_case_no_balance_resolution.sql`
 22. `20260925081955_finance_charge_case_dexter_parity.sql`
-23. `20260925085000_finance_opening_mirror_delivery.sql`
-24. `20260925090000_finance_provider_period_reconciliation.sql`
-25. `20260925100000_finance_reconciliation_dexter.sql`
+23. `20260925083019_finance_linked_full_opening_guard.sql`
+24. `20260925083125_accounting_period_vat_control_signoff.sql`
+25. `20260925083450_finance_opening_fx_settlement.sql`
+26. `20260925083833_accounting_period_vat_control_dexter_parity.sql`
+27. `20260925085000_finance_opening_mirror_delivery.sql`
+28. `20260925090000_finance_provider_period_reconciliation.sql`
+29. `20260925100000_finance_reconciliation_dexter.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -177,6 +181,18 @@ incremental application plan; local filename order is not proof of its state.
   privilege audit on 25 September. Finance 3 confirmed that accounting close
   must continue to block on VAT control: the VAT workstream has a return-period
   review RPC, not a signed whole-accounting-period clearance contract.
+- Finance 3 has since added a separately reviewed accounting-month VAT control
+  migration. Its VAT inventory call is guarded so the Finance-only migration
+  chain installs without the separate VAT stream and returns `unavailable`
+  until that inventory is present. Focused two-person, stale evidence and
+  unresolved inventory tests pass; combined VAT-chain and deployed evidence
+  remain pending. Finance 1's linked opening guard is also in the provisional
+  manifest, with an opening FX settlement migration still in development.
+- The subsequent 29-file manifest includes the linked opening guard, monthly
+  VAT sign-off and Dexter parity, and source-control/FX settlement correction.
+  It installed over the local baseline and passed RLS/function-grant auditing
+  on 25 September. The owners' focused lifecycle and combined VAT-chain tests
+  are still running; this is an install/access result only.
 - `FINANCE_FULL_MIGRATIONS=1 node --test
   supabase/tests/finance-daily-operations-postgres.test.mjs` now exercises the
   ordered non-VAT Finance chain on local PostgreSQL through supplier invoice,
@@ -190,6 +206,17 @@ incremental application plan; local filename order is not proof of its state.
   the full-chain payment path (1/1), client TypeScript and the Finance
   operations Edge Deno check. A live model response and deployed operator
   workflow remain unverified.
+- Finance 2 committed bank/provider reconciliation as `8e1e2dde` and tighter
+  opening source-item parity as `b2dc8192`. Its full access run passed 118
+  PostgreSQL cases plus 10 boundary contracts, with client TypeScript and
+  focused tests passing. Missing, wrong-type or draft ERPNext invoice/payment
+  readback for an opening source remains incomplete, with exact source/package
+  references exposed for review. No connected period run is claimed.
+- Finance 2 also committed `3cbdf96c`, which rejects `full_open_items` mirror
+  delivery before any ERPNext Journal Entry write, including a package already
+  queued under older code. GL-only opening delivery remains available. Finance
+  1's separate batch-post guard is under focused regression; both guard the
+  unresolved provider double-count risk.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.
@@ -229,6 +256,13 @@ incremental application plan; local filename order is not proof of its state.
   with posted batches. No provider API was called and no reconciliation run
   was recorded. This is candidate test context, not selection of a safe period
   or proof of ERPNext/Sage parity.
+- A fresh read-only connection identity check matched the 17 and 23 September
+  sandbox verification records: the same connection and legal entity still
+  report `sandbox`, `https://demo-finance.multideck.app`, `Databrain Solution
+  Ltd`, GB and GBP. Those records describe labelled £1 sandbox journal,
+  invoice and payment acceptance tests. Any new connected smoke test must use
+  explicit test records and retain its source identity; this identity check
+  does not establish period parity or remove the linked cutover blocker.
 - The full CargoWise open-item path has an explicit GB historical-VAT safety
   dependency. Its separate VAT exclusion migration is outside this Finance
   manifest. The development entity is GB, so a Finance-only installation must
@@ -240,6 +274,20 @@ incremental application plan; local filename order is not proof of its state.
   readback, the provider period comparison should flag missing documents or
   payments. Full external parity remains no-go on the current path; a journal
   match alone cannot clear it.
+- Finance 1/2 identified a linked-opening double-count risk: the native full
+  trial balance contains AR/AP control balances, while mirroring that full
+  journal **and** individual opening invoices/payments would create those
+  controls twice in the provider. Linked full cutover must remain fail-closed
+  until a reviewed residual/clearing journal and exact provider item identities
+  are implemented and tested through period comparison. The development entity
+  has an active ERPNext connection, so this is a live-path gate there.
+- Finance 1 also found native cash settlement currently resolves receivables
+  and payables controls to fixed nominal codes 1100/2000. A CargoWise opening
+  source may carry different reviewed controls, so later settlement could move
+  the wrong GL account and distort realised FX. Full cutover of nonstandard
+  control nominals stays no-go until the posting mapping and settlement cases
+  preserve the exact approved control identity; Finance 1 is adding a
+  fail-closed guard in the interim.
 - A second read-only schema preflight found all eighteen sampled prerequisites
   for this Finance chain present on the development project, including native
   journals/posting batches, accrual and WIP tables, cost controls, nominal
