@@ -398,17 +398,19 @@ test("Dexter has evidence-backed finance reads, allowlisted drafts and event-dri
   assert.doesNotMatch(lifecycle, /openai|anthropic|chat\/completions|generateText/i)
 })
 
-test("finance drafts derive their company from the signed-in tenant", () => {
+test("finance drafts validate a selected active entity inside the signed-in tenant", () => {
   includesEvery(functionSource, [
     "async function tenantLegalEntity",
     '.eq("Company_ID", current.Company_ID)',
-    'if (data.length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")',
+    '.eq("LegalEntity_ID", requestedId)',
+    '.eq("LegalEntity_IsActive", true)',
+    'if (data.length !== 1) throw new HttpError(400, "Choose the legal entity for this finance record.")',
+    "tenantLegalEntity(admin, current, input.legalEntityId)",
     "const tenantInput: ControlledDraftInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }",
     "const controlledInput: ControlledCashInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }",
   ])
   assert.doesNotMatch(tenantOwnedFinanceDocuments, /legalEntityId/)
   assert.doesNotMatch(documentPageSource, /finance-detail-entity|legalEntityId:/)
-  assert.doesNotMatch(appSource, /finance-document-entity|finance-cash-entity/)
   assert.doesNotMatch(purchaseIntakeSource, /t\("Legal entity"\)|legalEntityId: item\.legalEntityId/)
   includesEvery(dexterSource, [
     "The signed-in tenant company is used automatically.",

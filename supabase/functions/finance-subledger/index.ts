@@ -15,9 +15,9 @@ import { registerPagination } from "../_shared/register-pagination.ts"
 import { previewUkVatCashSources } from "../_shared/uk-vat-cash-preview.mts"
 
 type LineInput = { description: string; quantity?: number; unitAmount?: number; taxRatePercent?: number; taxCode?: string | null; chargeCode?: string | null; jobCostingLineId?: string | null; lineType?: "service" | "ancillary" }
-type DraftInput = { type: "sl_invoice" | "credit_note" | "pl_invoice" | "debit_note"; partyOrgId: string; documentDate?: string; dueDate?: string | null; currencyCode?: string; exchangeRate?: number; lines: LineInput[]; sourceJobId?: string | null; idempotencyKey?: string; sourceExtractionId?: string }
+type DraftInput = { type: "sl_invoice" | "credit_note" | "pl_invoice" | "debit_note"; legalEntityId?: string; partyOrgId: string; documentDate?: string; dueDate?: string | null; currencyCode?: string; exchangeRate?: number; lines: LineInput[]; sourceJobId?: string | null; idempotencyKey?: string; sourceExtractionId?: string }
 type ControlledDraftInput = DraftInput & { legalEntityId: string }
-type CashInput = { type: "customer_receipt" | "supplier_payment"; partyOrgId: string; bankAccountId: string; transactionDate?: string; currencyCode?: string; exchangeRate?: number; amount: number; reference?: string | null; allocations?: Array<{ documentId: string; amount: number }>; idempotencyKey?: string }
+type CashInput = { type: "customer_receipt" | "supplier_payment"; legalEntityId?: string; partyOrgId: string; bankAccountId: string; transactionDate?: string; currencyCode?: string; exchangeRate?: number; amount: number; reference?: string | null; allocations?: Array<{ documentId: string; amount: number }>; idempotencyKey?: string }
 type ControlledCashInput = CashInput & { legalEntityId: string }
 type ConfigInput = { legalEntityId: string; chartTemplateCode: string; providerCode?: AccountingProviderCode; externalCompany: string; countryCode: string; taxRegistrationNo?: string | null; reportingBasisCode?: string | null; effectiveFrom?: string }
 type AdministrationInput = { settings: Record<string, unknown>; reason?: string | null }
@@ -113,7 +113,19 @@ async function legalEntity(admin: any, current: any, id: string) {
   return data
 }
 
-async function tenantLegalEntity(admin: any, current: any) {
+async function tenantLegalEntity(admin: any, current: any, requestedId?: string) {
+  if (requestedId !== undefined) {
+    if (!isUuid(requestedId)) throw new HttpError(400, "Choose a valid legal entity.")
+    const { data, error } = await admin.from("cmp_LegalEntities")
+      .select("LegalEntity_ID,LegalEntity_Name,LegalEntity_BaseCurrencyCodeSnapshot,Company_ID")
+      .eq("LegalEntity_ID", requestedId)
+      .eq("Company_ID", current.Company_ID)
+      .eq("LegalEntity_IsActive", true)
+      .maybeSingle()
+    if (error) throw new HttpError(500, error.message)
+    if (!data) throw new HttpError(404, "That active legal entity is not in this workspace.")
+    return data
+  }
   const { data, error } = await admin.from("cmp_LegalEntities")
     .select("LegalEntity_ID,LegalEntity_Name,LegalEntity_BaseCurrencyCodeSnapshot,Company_ID")
     .eq("Company_ID", current.Company_ID)
@@ -122,7 +134,7 @@ async function tenantLegalEntity(admin: any, current: any) {
     .limit(2)
   if (error) throw new HttpError(500, error.message)
   if (!data?.length) throw new HttpError(409, "Set up the tenant company before creating finance records.")
-  if (data.length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")
+  if (data.length !== 1) throw new HttpError(400, "Choose the legal entity for this finance record.")
   return data[0]
 }
 
@@ -1306,7 +1318,6 @@ async function documentWorkspace(admin: any, current: any, selectedLedger: Ledge
   ])
   for (const query of [entities, parties, jobs, periods, currencies, banks, treatments, revisions, pendingRuns, demoConnections, activeConnections, suggestions, openDocuments]) if (query.error) throw new HttpError(500, query.error.message)
   if (!(entities.data ?? []).length) throw new HttpError(409, "Set up the tenant company before creating finance records.")
-  if ((entities.data ?? []).length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")
   const connectionIds = (activeConnections.data ?? []).map((connection: any) => connection.ACCIC_ID)
   const { data: partyMappings, error: partyMappingError } = connectionIds.length
     ? await admin.from("ACCI_PartyMappings").select("ACCIPM_ID,ACCIPM_ConnectionID,ACCIPM_OrgID,ACCIPM_PartyType,ACCIPM_ProviderPartyID,ACCIPM_ProviderPartyCode,ACCIPM_ProviderPartyName,ACCIPM_LastSyncedAt,ACCIPM_IsActive").in("ACCIPM_ConnectionID", connectionIds).eq("ACCIPM_IsActive", true)
@@ -1516,7 +1527,7 @@ async function linkDocumentChargeLines(admin: any, current: any, documentId: str
 
 async function createDocumentDraft(admin: any, current: any, input: DraftInput) {
   await requirePermission(admin, current.User_ID, documentPermission(input.type))
-  const tenantEntity = await tenantLegalEntity(admin, current)
+  const tenantEntity = await tenantLegalEntity(admin, current, input.legalEntityId)
   const tenantInput: ControlledDraftInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }
   const evidence = await financePurchaseEvidence(admin, current, tenantInput)
   const controlledInput = await controlledDocumentDraftInput(admin, tenantInput)
@@ -1649,7 +1660,7 @@ async function correctDocumentBillingParty(admin: any, current: any, id: string,
 
 async function createCashDraft(admin: any, current: any, input: CashInput) {
   await requirePermission(admin, current.User_ID, cashPermission(input.type))
-  const tenantEntity = await tenantLegalEntity(admin, current)
+  const tenantEntity = await tenantLegalEntity(admin, current, input.legalEntityId)
   const controlledInput: ControlledCashInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }
   const { data, error } = await admin.rpc("multideck_finance_create_cash_draft", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_input: { ...controlledInput, idempotencyKey: input.idempotencyKey || crypto.randomUUID() } })
   rpcFailure(error, "Could not create the cash draft.")

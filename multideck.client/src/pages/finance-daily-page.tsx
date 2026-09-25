@@ -23,6 +23,9 @@ import { toast } from "sonner"
 export type FinanceDailyRoute = "/finance/receivables/statements" | "/finance/receivables/collections" | "/finance/payables/payment-runs" | "/finance/payables/purchase-orders" | "/finance/payables/matching" | "/finance/management/profitability"
 
 const today = () => new Date().toISOString().slice(0, 10)
+const entitySessionKey = "multideck.finance.daily.entity"
+const rememberedEntity = () => { try { return window.sessionStorage.getItem(entitySessionKey) } catch { return null } }
+const rememberEntity = (id: string) => { try { window.sessionStorage.setItem(entitySessionKey, id) } catch { /* The entity remains selected for this page. */ } }
 const numeric = (value: unknown) => Number(value ?? 0)
 const tone = (status: string): "teal" | "amber" | "red" | "neutral" => status === "approved" || status === "posted" || status === "routine" ? "teal" : status === "urgent" || status === "rejected" ? "red" : status === "draft" ? "neutral" : "amber"
 const errorText = (error: unknown) => error instanceof Error && /failed to fetch|networkerror/i.test(error.message) ? "Finance operations could not be reached. Check the tenant service and try again." : error instanceof Error ? error.message : "The Finance workspace could not be loaded."
@@ -46,7 +49,8 @@ export function FinanceDailyPage({ route, navigate, currentUser }: { route: Fina
     setLoading(true); setError("")
     getFinanceOperationEntities().then(({ entities: found }) => {
       if (!active) return
-      setEntities(found); setEntityId((current) => found.some((item) => item.LegalEntity_ID === current) ? current : found[0]?.LegalEntity_ID || "")
+      const saved = rememberedEntity()
+      setEntities(found); setEntityId((current) => found.some((item) => item.LegalEntity_ID === current) ? current : found.some((item) => item.LegalEntity_ID === saved) ? saved || "" : found[0]?.LegalEntity_ID || "")
     }).catch((cause) => { if (active) setError(errorText(cause)) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [version])
@@ -61,12 +65,21 @@ export function FinanceDailyPage({ route, navigate, currentUser }: { route: Fina
     "/finance/management/profitability": { title: "Job profitability", description: "Review expected, actual and open WIP or accrual amounts from the canonical job charge calculation.", icon: ChartLine },
   }
   const selected = labels[route]
+  const workflowLinks: Record<FinanceDailyRoute, Array<{ label: string; route: string }>> = {
+    "/finance/payables/purchase-orders": [{ label: "Supplier invoices", route: "/finance/payables" }, { label: "Match an invoice", route: "/finance/payables/matching" }],
+    "/finance/payables/matching": [{ label: "Supplier approvals", route: "/finance/payables/approvals" }, { label: "Payment runs", route: "/finance/payables/payment-runs" }],
+    "/finance/payables/payment-runs": [{ label: "Bank reconciliation", route: "/finance/bank-reconciliation" }],
+    "/finance/receivables/collections": [{ label: "Customer statements", route: "/finance/receivables/statements" }],
+    "/finance/receivables/statements": [{ label: "Customer receipts", route: "/finance/receivables/cash" }, { label: "Collections worklist", route: "/finance/receivables/collections" }],
+    "/finance/management/profitability": [{ label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }],
+  }
   return <>
     <SettingsPageHeader title={t(selected.title)} description={t(selected.description)} icon={selected.icon} actions={<Button type="button" variant="outline" onClick={refresh}><RefreshCw className="size-4" />{t("Refresh")}</Button>} />
     <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+      <nav aria-label={t("Continue Accounts workflow")} className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs"><span className="text-[var(--md-subtle)]">{t("Continue with")}</span>{workflowLinks[route].map((link) => <button key={link.route} type="button" className="font-medium text-[var(--md-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]" onClick={() => navigate(link.route)}>{t(link.label)}</button>)}</nav>
       {error ? <InlineNotice tone="error">{t(error)}</InlineNotice> : null}
       <SettingsPanel title={t("Company") } description={t("Finance records remain scoped to the selected legal entity.")}>
-        <div className="max-w-sm px-5 py-4"><label htmlFor="finance-daily-entity" className="mb-2 block text-xs font-medium">{t("Legal entity")}</label><Select value={entityId} onValueChange={setEntityId}><SelectTrigger id="finance-daily-entity"><SelectValue placeholder={t("Choose legal entity")} /></SelectTrigger><SelectContent>{entities.map((item) => <SelectItem key={item.LegalEntity_ID} value={item.LegalEntity_ID}>{item.LegalEntity_Name}</SelectItem>)}</SelectContent></Select></div>
+        <div className="max-w-sm px-5 py-4"><label htmlFor="finance-daily-entity" className="mb-2 block text-xs font-medium">{t("Legal entity")}</label><Select value={entityId} onValueChange={(value) => { setEntityId(value); rememberEntity(value) }}><SelectTrigger id="finance-daily-entity"><SelectValue placeholder={t("Choose legal entity")} /></SelectTrigger><SelectContent>{entities.map((item) => <SelectItem key={item.LegalEntity_ID} value={item.LegalEntity_ID}>{item.LegalEntity_Name}</SelectItem>)}</SelectContent></Select></div>
       </SettingsPanel>
       {loading ? <div className="grid min-h-52 place-items-center"><LoaderCircle className="size-5 animate-spin" /><span className="sr-only">{t("Loading Finance")}</span></div> : !entityId ? error ? null : <InlineNotice>{t("Set up a legal entity before using these Finance workflows.")}</InlineNotice> : <>
         {route === "/finance/receivables/statements" && <StatementsWorkspace entityId={entityId} format={format} navigate={navigate} version={version} />}
