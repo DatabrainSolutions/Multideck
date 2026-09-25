@@ -44,6 +44,9 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
     sql(baseline.slice(0, boundary))
     run('psql', [...args, '-f', new URL('migrations/20260918123733_general_ledger_journals.sql', root).pathname])
     sql(`set check_function_bodies=false;\n${baseline.slice(boundary)}`)
+    sql(`create schema test_gate;
+      create table test_gate.public_functions as
+      select oid from pg_proc where pronamespace='public'::regnamespace;`)
 
     // This is the Finance 1–4 manifest against the committed schema snapshot.
     // VAT migrations are a separate release and must not be a hidden dependency.
@@ -67,6 +70,7 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925075945_full_open_item_cutover.sql',
       '20260925080000_bank_statement_reconciliation.sql',
       '20260925080343_opening_trade_control_bridge.sql',
+      '20260925080746_finance_lifecycle_dexter_parity.sql',
       '20260925085000_finance_opening_mirror_delivery.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',
@@ -101,6 +105,22 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
         `${access.name} must not be directly available to browser roles`)
       assert.equal(access.service_read, true, `${access.name} must be readable by the authorised service boundary`)
     }
+    const newFunctions = JSON.parse(sql(`select coalesce(jsonb_agg(jsonb_build_object(
+      'signature',p.oid::regprocedure::text,
+      'anon_execute',has_function_privilege('anon',p.oid,'EXECUTE'),
+      'browser_execute',has_function_privilege('authenticated',p.oid,'EXECUTE')) order by p.proname),'[]'::jsonb)
+      from pg_proc p left join test_gate.public_functions old on old.oid=p.oid
+      where p.pronamespace='public'::regnamespace and old.oid is null;`))
+    assert.ok(newFunctions.length > 0, 'The manifest must install its expected Finance functions')
+    const authenticatedWatchReaders = new Set([
+      'multideck_dexter_can_read_finance_reconciliation_watch(uuid)',
+      'multideck_dexter_list_watches()',
+    ])
+    for (const access of newFunctions) {
+      assert.equal(access.anon_execute, false, `${access.signature} must deny anonymous execution`)
+      assert.equal(access.browser_execute, authenticatedWatchReaders.has(access.signature),
+        `${access.signature} has an unexpected authenticated execution grant`)
+    }
 
     const installed = JSON.parse(sql(`select jsonb_build_object(
       'lifecycle_queue', to_regclass('public."FIN_ChargeLifecycleQueue"') is not null,
@@ -127,6 +147,7 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       'bank_control', exists(select 1 from pg_proc where proname='multideck_bank_statement_control'),
       'opening_mirror_delivery', to_regclass('public."FIN_OpeningMirrorDeliveries"') is not null,
       'opening_trade_control', to_regprocedure('public._multideck_finance_opening_trade_control(uuid,uuid)') is not null,
+      'finance_dexter_domain', to_regprocedure('public.multideck_dexter_domain_finance(uuid,text,integer)') is not null,
       'provider_period_runs', to_regclass('public."ACCI_PeriodReconciliationRuns"') is not null,
       'provider_period_differences', to_regclass('public."ACCI_PeriodReconciliationDifferences"') is not null,
       'bank_control_service_only', not has_function_privilege('authenticated','public.multideck_bank_statement_control(uuid,uuid,uuid,uuid)','EXECUTE')

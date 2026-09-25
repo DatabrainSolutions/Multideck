@@ -97,9 +97,10 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 17. `20260925075945_full_open_item_cutover.sql`
 18. `20260925080000_bank_statement_reconciliation.sql`
 19. `20260925080343_opening_trade_control_bridge.sql`
-20. `20260925085000_finance_opening_mirror_delivery.sql`
-21. `20260925090000_finance_provider_period_reconciliation.sql`
-22. `20260925100000_finance_reconciliation_dexter.sql`
+20. `20260925080746_finance_lifecycle_dexter_parity.sql`
+21. `20260925085000_finance_opening_mirror_delivery.sql`
+22. `20260925090000_finance_provider_period_reconciliation.sql`
+23. `20260925100000_finance_reconciliation_dexter.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -148,7 +149,7 @@ incremental application plan; local filename order is not proof of its state.
   that full access run. The now sixteen-file manifest installed in isolation on
   PostgreSQL at the next checkpoint; lifecycle replay and reviewed correction
   migrations, source-item intake and opening-mirror delivery then brought the
-  provisional manifest to twenty-two files. The full access suite must run again after
+  provisional manifest to twenty-three files. The full access suite must run again after
   workstream handoff.
 - The 25 September combined client `npm run build` passed TypeScript and Vite
   after Finance 3 completed its in-progress components. Broad
@@ -160,6 +161,11 @@ incremental application plan; local filename order is not proof of its state.
   gate enumerates every new Finance table and verifies RLS is enabled, browser
   roles have no direct read/write grant, and the service role can read it. This
   does not exercise cutover approval/posting or actor-level tenant access.
+- The next twenty-three-file manifest also installs Finance lifecycle Dexter
+  parity and audits every newly installed public function. Anonymous execution
+  is denied throughout. Authenticated execution is allowed only for the two
+  explicitly reviewed reconciliation-watch readers, which check the signed-in
+  user's company and Finance view permission; all other new functions deny it.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.
