@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { previewUkVatCashExitImmediate } from "../functions/_shared/uk-vat-cash-exit-preview.mts"
 
 const migrations = [
   new URL("../migrations/20260925113000_uk_vat_cash_exit_invoice_inventory.sql", import.meta.url).pathname,
@@ -12,6 +13,7 @@ const migrations = [
   new URL("../migrations/20260925121500_uk_vat_cash_exit_cash_source_guard.sql", import.meta.url).pathname,
   new URL("../migrations/20260925123000_uk_vat_cash_exit_review_fingerprint.sql", import.meta.url).pathname,
   new URL("../migrations/20260925124500_uk_vat_cash_exit_decimal_strings.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925130000_uk_vat_cash_exit_verified_context.sql", import.meta.url).pathname,
   new URL("../migrations/20260925131500_uk_vat_cash_exit_due_term_guard.sql", import.meta.url).pathname,
   new URL("../migrations/20260925133000_uk_vat_cash_exit_treatment_guard.sql", import.meta.url).pathname,
 ]
@@ -55,14 +57,14 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
         "FINDoc_TypeCode" text,"FINDoc_DocumentDate" date,
         "FINDoc_NativePostingStatusCode" text,"FINDoc_NativePostedAt" timestamptz,
         "FINDoc_NativePostingBatchID" uuid,"FINDoc_CurrencyCodeSnapshot" text,
-        "FINDoc_ExchangeRate" numeric,"FINDoc_GrossAmount" numeric,
+        "FINDoc_ExchangeRate" numeric(20,10),"FINDoc_GrossAmount" numeric,
         "FINDoc_LocalGrossAmount" numeric,"FINDoc_DueDate" date);
       create table public."FIN_CashTransactions"(
         "FINCash_ID" uuid primary key,"FINCash_LegalEntityID" uuid,
         "FINCash_NativePostingStatusCode" text,"FINCash_NativePostedAt" timestamptz,
         "FINCash_CurrencyCodeSnapshot" text,"FINCash_TypeCode" text,
         "FINCash_TransactionDate" date,"FINCash_AccountingDate" date,
-        "FINCash_NativePostingBatchID" uuid,"FINCash_ExchangeRate" numeric,
+        "FINCash_NativePostingBatchID" uuid,"FINCash_ExchangeRate" numeric(20,10),
         "FINCash_Amount" numeric,"FINCash_LocalAmount" numeric,
         "FINCash_UnallocatedAmount" numeric);
       create table public."FIN_CashAllocations"(
@@ -89,8 +91,32 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
         legal_entity_id uuid,original_evidence_id uuid);
       create table public."FIN_IndirectTaxReconciliations"(
         evidence_id uuid,period_id uuid);
+      create table public."FIN_LocalisationPacks"(
+        "FINLocPack_ID" uuid primary key,"FINLocPack_Code" text,"FINLocPack_CountryCode" text);
+      create table public."FIN_ComplianceObligations"(
+        "FINCompliance_ID" uuid primary key,"FINCompliance_PackID" uuid,
+        "FINCompliance_Code" text,"FINCompliance_ObligationTypeCode" text);
+      create table public."FIN_LegalEntityComplianceRegistrations"(
+        "FINComplianceReg_ID" uuid primary key,"FINComplianceReg_LegalEntityID" uuid,
+        "FINComplianceReg_ObligationID" uuid,"FINComplianceReg_StatusCode" text,
+        "FINComplianceReg_FilingMethodCode" text,"FINComplianceReg_RegistrationReference" text,
+        "FINComplianceReg_EffectiveFrom" date,"FINComplianceReg_EffectiveTo" date,
+        "FINComplianceReg_SettingsJSON" jsonb,"FINComplianceReg_UpdatedAt" timestamptz);
       create table public."FIN_IndirectTaxPeriods"(
-        id uuid,legal_entity_id uuid,scheme_code text);
+        id uuid,legal_entity_id uuid,scheme_code text,obligation_id uuid,
+        registration_id uuid,jurisdiction_code text,reporting_currency text,
+        start_date date,end_date date,status text);
+      insert into public."FIN_LocalisationPacks" values ('${id(90)}','gb-v1','GB');
+      insert into public."FIN_ComplianceObligations" values
+        ('${id(91)}','${id(90)}','gb-vat-mtd','indirect_tax');
+      insert into public."FIN_LegalEntityComplianceRegistrations" values
+        ('${id(92)}','${id(2)}','${id(91)}','configured','mtd_api','123456789',
+          '2026-01-01','2026-03-31','{"schemeCode":"cash"}','2026-01-01 12:00Z'),
+        ('${id(93)}','${id(2)}','${id(91)}','configured','mtd_api','123456789',
+          '2026-04-01',null,'{"schemeCode":"standard"}','2026-01-02 12:00Z');
+      insert into public."FIN_IndirectTaxPeriods" values
+        ('${id(94)}','${id(2)}','cash','${id(91)}','${id(92)}','GB','GBP',
+          '2026-01-01','2026-03-31','draft');
       insert into public."cmp_LegalEntities" values
         ('${id(2)}','GB','GBP'),('${id(3)}','US','USD');
       insert into public."FIN_Documents" values
@@ -177,6 +203,36 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(byId.get(id(11)).allocation_sources.length, 2)
     assert.equal(byId.get(id(12)).source_exception, true)
     assert.equal(byId.get(id(12)).lineSourceIssueCount, 1)
+    const verifiedCall = `public.multideck_uk_vat_cash_exit_verified_inventory('${id(1)}','${id(2)}','${id(92)}','${id(94)}')`
+    const incomplete = JSON.parse(sql(`select ${verifiedCall};`))
+    assert.equal(previewUkVatCashExitImmediate(incomplete).sourceBoxesGbp, null)
+    sql(`update public."FIN_Documents" set "FINDoc_DocumentDate"='2026-04-01'
+      where "FINDoc_ID"='${id(12)}';`)
+    const clean = JSON.parse(sql(`select ${verifiedCall};`))
+    const immediate = previewUkVatCashExitImmediate(clean)
+    assert.equal(immediate.calculationValid, true)
+    assert.equal(immediate.returnReady, false)
+    assert.equal(immediate.sourceDigest, clean.sourceDigest)
+    assert.deepEqual(immediate.sourceBoxesGbp, {
+      1: "20.0000", 4: "30.0000", 6: "100.0000", 7: "150.0000",
+    })
+    assert.equal(immediate.invoiceLines.length, 2)
+    const alteredBalance = structuredClone(clean)
+    alteredBalance.invoices[1].candidate_outstanding = "179.9999"
+    assert.equal(previewUkVatCashExitImmediate(alteredBalance).sourceBoxesGbp, null)
+    const stalePayment = structuredClone(clean)
+    stalePayment.cashSources[0].reviewFingerprintMatches = false
+    assert.equal(previewUkVatCashExitImmediate(stalePayment).sourceBoxesGbp, null)
+    const missingEncoding = structuredClone(clean)
+    delete missingEncoding.amountEncoding
+    assert.equal(previewUkVatCashExitImmediate(missingEncoding).sourceBoxesGbp, null)
+    const unreviewedCredit = structuredClone(clean)
+    unreviewedCredit.postedPriceChangeCount = 1
+    unreviewedCredit.priceChanges = [{ document_id: id(15) }]
+    assert.equal(previewUkVatCashExitImmediate(unreviewedCredit).sourceBoxesGbp, null)
+    sql(`update public."FIN_Documents" set "FINDoc_DocumentDate"='2026-02-12'
+      where "FINDoc_ID"='${id(12)}';`)
+    assert.equal(JSON.parse(sql(`select ${verifiedCall};`)).sourceDigest, incomplete.sourceDigest)
     sql(`update public."FIN_IndirectTaxDecisions" set treatment_code='reverse_charge'
       where id='${id(70)}';`)
     const unsupportedTreatment = JSON.parse(sql(`select ${call};`))
@@ -229,6 +285,14 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(preciseInvoice.lines[0].evidenceVatGbp, "1666666666666.6667")
     assert.equal(preciseInvoice.lineSourceIssueCount, 0)
     assert.notEqual(precise.sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_Documents" set "FINDoc_DocumentDate"='2026-04-01'
+      where "FINDoc_ID"='${id(12)}';`)
+    const precisePreview = previewUkVatCashExitImmediate(JSON.parse(sql(`select ${verifiedCall};`)))
+    assert.equal(precisePreview.calculationValid, true)
+    assert.equal(precisePreview.sourceBoxesGbp?.[1], "1666666666666.6667")
+    assert.equal(precisePreview.sourceBoxesGbp?.[6], "8333333333333.3334")
+    sql(`update public."FIN_Documents" set "FINDoc_DocumentDate"='2026-02-12'
+      where "FINDoc_ID"='${id(12)}';`)
     sql(`update public."FIN_Documents" set "FINDoc_GrossAmount"=120,
         "FINDoc_LocalGrossAmount"=120 where "FINDoc_ID"='${id(10)}';
       update public."FIN_DocumentLines" set "FINDocLine_LocalNetAmount"=100,
@@ -295,7 +359,8 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.notEqual(linked.sourceDigest, reversed.sourceDigest)
     assert.equal(linked.invoices.find((invoice) => invoice.invoice_id === id(10)).lines[0].linkedCreditCount, 1)
     assert.equal(linked.lineSourceIssueCount, 2)
-    sql(`insert into public."FIN_IndirectTaxPeriods" values ('${id(80)}','${id(2)}','standard');
+    sql(`insert into public."FIN_IndirectTaxPeriods"(id,legal_entity_id,scheme_code)
+      values ('${id(80)}','${id(2)}','standard');
       insert into public."FIN_IndirectTaxReconciliations" values ('${id(61)}','${id(80)}');`)
     const priorSignoff = JSON.parse(sql(`select ${call};`))
     assert.notEqual(priorSignoff.sourceDigest, linked.sourceDigest)
