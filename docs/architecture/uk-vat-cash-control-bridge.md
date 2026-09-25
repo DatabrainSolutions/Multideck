@@ -38,6 +38,8 @@ The bridge also compares the invoice VAT side to all relevant posted VAT-control
 
 ## Implementation and verification gate
 
-Implement a read-only bridge inventory first, with source line IDs, opening/additions/closing/payment totals, journal evidence and a deterministic digest. Add focused PostgreSQL cases for two part payments, mixed VAT rates, unpaid sale and purchase, credit/refund, an accepted pre-entry Standard invoice, altered allocation/review, missing journal evidence and a foreign legal entity. Then add immutable reconciliation records and triggers. The review lock must recheck the bridge digest inside its transaction and refuse an incomplete or stale bridge. Only after this should Cash registration, period setup and the HMRC filing path be enabled.
+The read-only source inventory and exact-decimal arithmetic preview now bind invoice balances and payment events to one Cash period and report opening/additions/closing/payment VAT separately. They block known date anomalies, credits, stale payment reviews, missing event coverage and arithmetic differences. They do **not** yet match posted VAT-control journal balances or prove prior accepted Cash returns.
+
+Next, add journal-line evidence and a deterministic whole-period control digest. Add real PostgreSQL cases for credits/refunds, an accepted pre-entry Standard invoice, altered allocation/review, missing journal evidence and a foreign legal entity. Then add immutable reconciliation records and triggers. The review lock must recheck the bridge digest inside its transaction and refuse an incomplete or stale bridge. Only after this should Cash registration, period setup and the HMRC filing path be enabled.
 
 The model remains jurisdiction-neutral at the indirect-tax record boundary. UK Cash rules live in UK-named functions and rule versions; another country must supply its own tax-point, scheme, box and control rules rather than inheriting UK assumptions.
