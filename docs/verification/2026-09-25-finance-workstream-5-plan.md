@@ -200,11 +200,22 @@ incremental application plan; local filename order is not proof of its state.
   still needs exact deployed commit/asset verification after the new release;
   the demo project's migration target must still be explicitly confirmed.
 - A read-only query against that documented development project found one
-  active ERPNext accounting connection for a GBP legal entity, and no Sage 50
+  active ERPNext accounting connection for a GB/GBP legal entity, and no Sage 50
   connection. The entity has open August, September and October 2026 periods
   with posted batches. No provider API was called and no reconciliation run
   was recorded. This is candidate test context, not selection of a safe period
   or proof of ERPNext/Sage parity.
+- The full CargoWise open-item path has an explicit GB historical-VAT safety
+  dependency. Its separate VAT exclusion migration is outside this Finance
+  manifest. The development entity is GB, so a Finance-only installation must
+  leave full open-item posting blocked until the VAT stream's exclusion and
+  prior-filing controls are installed and independently verified.
+- A matched opening mirror journal covers the trial-balance GL entry only.
+  Full CargoWise cutover also creates operational opening invoices and
+  unapplied cash. Until those source items have exact ERPNext identities and
+  readback, the provider period comparison should flag missing documents or
+  payments. Full external parity remains no-go on the current path; a journal
+  match alone cannot clear it.
 - A second read-only schema preflight found all eighteen sampled prerequisites
   for this Finance chain present on the development project, including native
   journals/posting batches, accrual and WIP tables, cost controls, nominal
