@@ -58,8 +58,12 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925072611_immutable_committed_native_postings.sql',
       '20260925072948_charge_lifecycle_processing.sql',
       '20260925073046_versioned_charge_mapping_cutovers.sql',
+      '20260925073443_charge_recognition_authority.sql',
+      '20260925073707_dated_charge_group_accrual_posting.sql',
+      '20260925073708_charge_event_initial_recognition.sql',
       '20260925080000_bank_statement_reconciliation.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
+      '20260925100000_finance_reconciliation_dexter.sql',
     ]
     for (const migration of migrations) {
       run('psql', [...args, '-f', new URL(`migrations/${migration}`, root).pathname])
@@ -77,6 +81,9 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       'committed_line_guard', exists(select 1 from pg_trigger where tgname='AA_FIN_PostingLines_committed_immutable' and not tgisinternal),
       'lifecycle_process', to_regprocedure('public.multideck_charge_lifecycle_process(uuid,uuid,bigint)') is not null,
       'mapping_pin', to_regprocedure('public._multideck_finance_pin_document_charge_mapping()') is not null,
+      'recognition_mandates', to_regclass('public."FIN_RecognitionMandates"') is not null,
+      'event_recognitions', to_regclass('public."FIN_ChargeEventRecognitions"') is not null,
+      'bank_reconciliation_watch', exists(select 1 from pg_trigger where tgname='bank_reconciliation_watch' and not tgisinternal),
       'bank_control', exists(select 1 from pg_proc where proname='multideck_bank_statement_control'),
       'provider_period_runs', to_regclass('public."ACCI_PeriodReconciliationRuns"') is not null,
       'provider_period_differences', to_regclass('public."ACCI_PeriodReconciliationDifferences"') is not null,

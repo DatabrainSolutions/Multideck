@@ -88,8 +88,12 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 8. `20260925072611_immutable_committed_native_postings.sql`
 9. `20260925072948_charge_lifecycle_processing.sql`
 10. `20260925073046_versioned_charge_mapping_cutovers.sql`
-11. `20260925080000_bank_statement_reconciliation.sql`
-12. `20260925090000_finance_provider_period_reconciliation.sql`
+11. `20260925073443_charge_recognition_authority.sql`
+12. `20260925073707_dated_charge_group_accrual_posting.sql`
+13. `20260925073708_charge_event_initial_recognition.sql`
+14. `20260925080000_bank_statement_reconciliation.sql`
+15. `20260925090000_finance_provider_period_reconciliation.sql`
+16. `20260925100000_finance_reconciliation_dexter.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -127,6 +131,17 @@ incremental application plan; local filename order is not proof of its state.
   over that snapshot and verifies representative objects and service-only
   boundaries. It passed locally on 25 September and is included in the shared
   regression runner. This does not install a complete hosted Supabase tenant.
+- At 07:40 UTC on 25 September, `PG_TEST_CONCURRENCY=1 node
+  supabase/tests/run-data-access-regression.mjs` passed 109 PostgreSQL/source
+  cases plus 10 targeted boundary contracts, including the combined Finance
+  manifest, opening balances, charge event queue, close, AR/AP control and
+  daily Finance workflows. This is a local checkpoint while peers continue
+  editing, not a final release pass or intended-tenant result.
+- Four further Finance migrations for recognition authority, dated accrual
+  posting, initial event recognition and Dexter reconciliation were added after
+  that full access run. The now sixteen-file manifest installed in isolation on
+  PostgreSQL at the next checkpoint; the full access suite must run again after
+  workstream handoff.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.
@@ -140,8 +155,10 @@ incremental application plan; local filename order is not proof of its state.
   Finance Edge versions at inventory were `finance-subledger` 49,
   `finance-ledger` 6 and `finance-accruals` 25. The Vercel
   `multideck-app-dev` production target was READY at Git commit `73b42b00`,
-  whereas this checkout was `395c0edf` plus uncommitted work. Those versions
-  do not establish deployment of the new workstreams.
+  but the actual `dev.multideck.app` alias resolved to READY deployment
+  `dpl_HWJGgWS1P3W7JZ9ZXb1T9Fnc61B7` at Git `395c0edf` on branch `dev`,
+  with no alias error. Both predate Finance 1–4 work; the production target
+  should not be mistaken for the development alias version.
 - Finance migration names in the local checkout and demo project are not a
   one-to-one timestamp match. Several older local Finance migrations are also
   absent by name from the demo history, including accounting-party profile
