@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { AlertCircle, ChartNoAxesCombined, Landmark, LoaderCircle, ReceiptText, RefreshCw, ShieldCheck, Wallet } from "@/components/icons/hugeicons"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { FinanceGeneralLedgerPage } from "@/pages/finance-general-ledger-page"
+import { FinanceBankReconciliationPage } from "@/pages/finance-bank-reconciliation-page"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import {
   createFinanceDocumentLine,
@@ -58,6 +59,7 @@ import { FinanceDocumentPage } from "@/pages/finance-document-page"
 import { FinancePurchaseIntakePage } from "@/pages/finance-purchase-intake-page"
 import { FinanceAccrualWipPage } from "@/pages/finance-accrual-wip-page"
 import { FinanceReportsPage } from "@/pages/finance-reports-page"
+import { FinanceVatPage } from "@/pages/finance-vat-page"
 import { toast } from "sonner"
 
 export type FinanceLedgerRoute =
@@ -85,6 +87,8 @@ export type FinanceDocumentRoute = `/finance/${FinanceLedger}/documents/${string
 export type FinanceRoute = FinanceLedgerRoute | FinanceAdministrationRoute | FinanceDocumentRoute | "/finance/setup"
   | "/finance/general-ledger" | "/finance/general-ledger/accounts" | "/finance/general-ledger/journals"
   | "/finance/reports"
+  | "/finance/bank-reconciliation"
+  | "/finance/vat"
   | "/finance/payables/intake"
   | "/finance/management/accruals-wip"
 type CreationType = FinanceDocumentType | FinanceCashType
@@ -574,8 +578,10 @@ function FinanceSetupPage({ navigate }: { navigate: (path: string) => void }) {
 }
 
 export function FinancePage({ route, navigate, currentUser }: { route: FinanceRoute; navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
+  if (route === "/finance/bank-reconciliation") return <FinanceBankReconciliationPage currentUser={currentUser} />
   if (route.startsWith("/finance/general-ledger")) return <FinanceGeneralLedgerPage route={route} navigate={navigate} currentUser={currentUser} />
   if (route === "/finance/reports") return <FinanceReportsPage navigate={navigate} />
+  if (route === "/finance/vat") return <FinanceVatPage currentUser={currentUser} navigate={navigate} />
   if (route === "/finance/management/accruals-wip") return <FinanceAccrualWipPage currentUser={currentUser} />
   if (route === "/finance/payables/intake") return <FinancePurchaseIntakePage navigate={navigate} currentUser={currentUser} />
   const detailMatch = route.match(/^\/finance\/(receivables|payables)\/documents\/([0-9a-f-]+)$/i)

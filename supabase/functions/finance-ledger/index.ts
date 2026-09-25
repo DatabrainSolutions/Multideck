@@ -36,6 +36,26 @@ Deno.serve(async request => {
       }
       return json(request, reconcileAccountingMigration(input, accounts, entities.find((row: any) => row.LegalEntity_ID === entity).LegalEntity_BaseCurrencyCodeSnapshot))
     }
+    if (parts[0] === "opening-balances" && (request.method === "GET" || request.method === "POST")) {
+      const action = request.method === "GET" ? "read" : input.action
+      if (!["read", "stage", "approve", "post"].includes(action)) throw new HttpError(400, "Choose an opening balance action.")
+      if (action !== "read") await requirePermission(admin, current.User_ID,
+        action === "stage" ? "Finance.Configuration.Manage" : "Finance.Management.Post")
+      if (["approve", "post"].includes(action) && !uuid(input.id)) throw new HttpError(400, "Choose an opening balance package.")
+      return json(request, checked(await admin.rpc("multideck_finance_opening_balances", {
+        p_actor: current.User_ID, p_entity: entity, p_action: action, p_input: input,
+      })))
+    }
+    if (parts[0] === "charge-mapping-cutover" && (request.method === "GET" || request.method === "POST")) {
+      const action = request.method === "GET" ? "read" : input.action
+      if (!["read", "propose", "approve", "activate"].includes(action)) throw new HttpError(400, "Choose a charge mapping cutover action.")
+      if (action !== "read") await requirePermission(admin, current.User_ID,
+        action === "propose" ? "Finance.Configuration.Manage" : "Finance.Management.Post")
+      if (["approve", "activate"].includes(action) && !uuid(input.id)) throw new HttpError(400, "Choose a cutover plan.")
+      return json(request, checked(await admin.rpc("multideck_finance_charge_mapping_cutover", {
+        p_actor: current.User_ID, p_entity: entity, p_action: action, p_input: input,
+      })))
+    }
     if (parts[0] === "charge-catalogue" && request.method === "POST") {
       await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
       return json(request, checked(await admin.rpc("multideck_manage_charge_catalogue", {

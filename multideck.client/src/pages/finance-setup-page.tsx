@@ -3125,7 +3125,7 @@ function TaxTab({
       <FinancePanel
         title={t("Tax treatments")}
         description={t(
-          "Operators can select approved treatments only; they cannot enter rates or accounts system templates.",
+          "Operators can select approved treatments only; they cannot enter rates or accounts system templates. For UK services supplied outside the UK, use the separate Box 6 treatment after reviewing the place of supply.",
         )}
         action={
           <Button
@@ -3191,6 +3191,26 @@ function TaxTab({
                     })
                   }
                   ltr
+                />
+                <SelectField
+                  id={`tax-category-${rowKey(row)}`}
+                  label={t("Treatment")}
+                  value={text(row.treatmentCategoryCode, "domestic_standard")}
+                  onChange={(treatmentCategoryCode) =>
+                    patchRow("taxCodes", row, treatmentCategoryCode === "outside_uk_service_box6"
+                      ? { treatmentCategoryCode, ratePercent: 0, transactionTypeCode: "sales", isRecoverable: false }
+                      : { treatmentCategoryCode })
+                  }
+                  options={[
+                    ...universalTaxTreatments.map(([, name, category]) => ({ value: category, label: t(name) })),
+                    ...(text(row.countryCode, draft.organisation.countryCode) === "GB"
+                      ? [{ value: "outside_uk_service_box6", label: t("Service supplied outside the UK · Box 6") }]
+                      : []),
+                    ...(!universalTaxTreatments.some(([, , category]) => category === text(row.treatmentCategoryCode))
+                      && text(row.treatmentCategoryCode) !== "outside_uk_service_box6"
+                      ? [{ value: text(row.treatmentCategoryCode), label: text(row.treatmentCategoryCode) }]
+                      : []),
+                  ]}
                 />
                 <SelectField
                   id={`tax-transaction-${rowKey(row)}`}

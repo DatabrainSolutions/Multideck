@@ -153,6 +153,61 @@ export function updateCostControls(legalEntityId: string, action: "save_policy" 
   return jsonRequest("POST", "/cost-controls", { ...input, legalEntityId, action })
 }
 
+export type ChargeLifecycleCase = {
+  legal_entity_id: string
+  charge_id: string
+  source_revision: number
+  event_types: string[]
+  first_queued_at: string
+  last_queued_at: string
+  status: "pending" | "review" | "settled"
+  attempted_revision: number | null
+  attempted_at: string | null
+  attempts: number
+  next_attempt_at: string
+  assigned_user_id: string | null
+  reason: string | null
+}
+export function getChargeLifecycleQueue(legalEntityId: string, limit = 100) {
+  return call<{ rows: ChargeLifecycleCase[] }>(`/charge-lifecycle?legalEntityId=${encodeURIComponent(legalEntityId)}&limit=${limit}`)
+}
+
+export type AccountingCloseSnapshot = {
+  legalEntityId: string
+  periodId: string
+  periodCode: string
+  periodEnd: string
+  currency: string
+  trialBalance: { difference: number; invalidBatches: number }
+  costAccrual: { subledger: number; control: number; difference: number }
+  revenueWip: { subledger: number; control: number; difference: number }
+  futureChargeMovements: number
+  pendingChargeCases: number
+  arApStatus: string
+  vatStatus: string
+  bankControls: Array<{ bankId: string; status: string; issues?: string[] }>
+  mirror: { mode: string; connected: boolean; pendingJournals: number; providerStatus: string }
+  blockers: string[]
+}
+export type AccountingCloseReview = {
+  id: string; legal_entity_id: string; period_id: string; source_digest: string
+  snapshot: AccountingCloseSnapshot; prepared_by: string; prepared_at: string; reason: string
+}
+export type AccountingClosedPack = {
+  id: string; review_id: string; legal_entity_id: string; period_id: string; source_digest: string
+  snapshot: AccountingCloseSnapshot; closed_by: string; closed_at: string; reason: string
+}
+export function getAccountingClose(legalEntityId: string, periodId: string) {
+  return call<{ snapshot: AccountingCloseSnapshot; sourceDigest: string; reviews: AccountingCloseReview[]; closedPack: AccountingClosedPack | null }>(
+    `/accounting-close?legalEntityId=${encodeURIComponent(legalEntityId)}&periodId=${encodeURIComponent(periodId)}`)
+}
+export function prepareAccountingClose(legalEntityId: string, periodId: string, reason: string) {
+  return jsonRequest<AccountingCloseReview>("POST", "/accounting-close", { legalEntityId, periodId, action: "prepare", reason })
+}
+export function closeAccountingPeriod(legalEntityId: string, periodId: string, reviewId: string, reason: string) {
+  return jsonRequest<AccountingClosedPack>("POST", "/accounting-close", { legalEntityId, periodId, action: "close", reviewId, reason })
+}
+
 async function call<T>(path: string, init?: RequestInit) {
   const session = await getSupabaseSession()
   if (!session?.access_token) throw new FinanceAccrualsApiError("Sign in again to continue.")

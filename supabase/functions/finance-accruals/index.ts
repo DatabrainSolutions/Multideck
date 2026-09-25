@@ -29,7 +29,7 @@ const toMonth = (value: unknown) => clean(value, 10).replaceAll("-", "").slice(0
 
 function rpcFailure(error: any, fallback: string) {
   if (!error) return
-  const status = error.code === "42501" ? 403 : error.code === "P0002" ? 404 : ["22023", "22P02", "23514"].includes(error.code) ? 400 : 500
+  const status = error.code === "42501" ? 403 : error.code === "P0002" ? 404 : error.code === "40001" ? 409 : ["22023", "22P02", "23514"].includes(error.code) ? 400 : 500
   throw new HttpError(status, clean(error.message, 500) || fallback)
 }
 
@@ -334,6 +334,30 @@ Deno.serve(async (request) => {
   try {
     const { admin, user } = await authenticate(request); const current = await currentInternalUser(admin, user); const parts = routeParts(request, "finance-accruals")
     if (request.method === "GET" && parts[0] === "entities") return json(request, await entities(admin, current))
+    if (request.method === "GET" && parts[0] === "charge-lifecycle" && parts.length === 1) {
+      const query = new URL(request.url).searchParams
+      const entityId = query.get("legalEntityId") ?? ""
+      const limit = Number(query.get("limit") ?? "100")
+      if (!uuid(entityId) || !Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new HttpError(400, "Choose a legal entity and valid queue page size.")
+      const { data, error } = await admin.rpc("multideck_finance_charge_lifecycle_queue", { p_actor: current.User_ID, p_entity: entityId, p_limit: limit })
+      rpcFailure(error, "The charge lifecycle queue could not be loaded.")
+      return json(request, data)
+    }
+    if (parts[0] === "accounting-close" && parts.length === 1 && ["GET", "POST"].includes(request.method)) {
+      const query = new URL(request.url).searchParams
+      const input = request.method === "POST" ? await body<Record<string, unknown>>(request) : {}
+      const entityId = request.method === "POST" ? input.legalEntityId : query.get("legalEntityId")
+      const targetPeriodId = request.method === "POST" ? input.periodId : query.get("periodId")
+      const action = request.method === "POST" ? input.action : "read"
+      if (!uuid(entityId) || !uuid(targetPeriodId) || !["read", "prepare", "close"].includes(String(action)) ||
+        (request.method === "POST" && action === "read")) throw new HttpError(400, "Choose a legal entity, accounting period and valid close action.")
+      const { data, error } = await admin.rpc("multideck_finance_accounting_close", {
+        p_actor: current.User_ID, p_entity: entityId, p_period: targetPeriodId, p_action: action,
+        p_input: request.method === "POST" ? { reviewId: input.reviewId, reason: input.reason } : {},
+      })
+      rpcFailure(error, "The accounting close pack could not be updated.")
+      return json(request, data)
+    }
     if (parts[0] === "cost-controls" && parts.length === 1 && ["GET", "POST"].includes(request.method)) {
       const query = new URL(request.url).searchParams
       const input = request.method === "POST" ? await body<Record<string, unknown>>(request) : {}

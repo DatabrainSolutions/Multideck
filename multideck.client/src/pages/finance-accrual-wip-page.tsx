@@ -22,6 +22,8 @@ import {
   getFinanceManagementEntities,
   getFinanceCostReview,
   getCostControls, getChargeCostControls, updateCostControls,
+  getAccountingClose, prepareAccountingClose, closeAccountingPeriod, getChargeLifecycleQueue,
+  type AccountingCloseSnapshot, type AccountingCloseReview, type ChargeLifecycleCase,
   type CostControls, type ChargeCostControls,
   type CostReview,
   type CostReviewRow,
@@ -131,6 +133,9 @@ export function FinanceAccrualWipPage({ currentUser }: { currentUser?: AuthUserS
         { label: t("Adjusted margin"), value: money(totals.margin), detail: t("After proposed corrections"), tone: "teal" as const },
       ]} /></div>
       {entityId ? <CostReviewPanel key={entityId} entityId={entityId} /> : null}
+      {entityId && workspace?.periods.find((item) => item.FINPeriod_Code === period) ? <AccountingClosePanel
+        entityId={entityId} periodId={workspace.periods.find((item) => item.FINPeriod_Code === period)!.FINPeriod_ID}
+        currency={currency} canPrepare={canPrepare} canApprove={canApprove && canPost} onChanged={refresh} /> : null}
       <SettingsPanel title={t("Job period control")} description={t("The assigned period drives management reporting. Reassignment is audited and does not change operational dates or statutory accounting dates.")}>
         <div className="flex flex-wrap items-center justify-between gap-3 py-1"><p className="text-[13px] text-[var(--md-text)]">{t("Jobs assigned to this entity")}: <span className="font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{workspace?.assignableJobs.length ?? 0}</span></p>{canPrepare ? <Button type="button" size="sm" variant="outline" onClick={openAssign}><Pencil />{t("Assign job period")}</Button> : null}</div>
       </SettingsPanel>
@@ -315,4 +320,72 @@ function ChargeEvidenceControls({ entityId, chargeId }: { entityId: string; char
       {data.history.length ? <details className="text-[12px]"><summary>{t("Confirmation history")}</summary><ul className="mt-2 space-y-2">{data.history.map(item => <li key={item.id}><span>{new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.recorded_at))} · {t(item.is_final ? "Final invoice" : "Further invoices possible")}</span><p className="whitespace-pre-wrap">{item.reason}</p></li>)}</ul></details> : null}
     </> : null}
   </section>
+}
+
+function AccountingClosePanel({ entityId, periodId, currency, canPrepare, canApprove, onChanged }: {
+  entityId: string; periodId: string; currency: string; canPrepare: boolean; canApprove: boolean; onChanged: () => Promise<void>
+}) {
+  const { language, t } = useLanguage()
+  const [snapshot, setSnapshot] = useState<AccountingCloseSnapshot | null>(null)
+  const [reviews, setReviews] = useState<AccountingCloseReview[]>([])
+  const [closedAt, setClosedAt] = useState<string | null>(null)
+  const [cases, setCases] = useState<ChargeLifecycleCase[]>([])
+  const [reason, setReason] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [digest, setDigest] = useState("")
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [close, queue] = await Promise.all([getAccountingClose(entityId, periodId), getChargeLifecycleQueue(entityId)])
+      setSnapshot(close.snapshot); setReviews(close.reviews); setClosedAt(close.closedPack?.closed_at ?? null)
+      setDigest(close.sourceDigest); setCases(queue.rows); setError("")
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Accounting close evidence could not be loaded.")) }
+    finally { setLoading(false) }
+  }, [entityId, periodId, t])
+  useEffect(() => { void load() }, [load])
+  const action = async (kind: "prepare" | "close", reviewId?: string) => {
+    setBusy(true); setError("")
+    try {
+      if (kind === "prepare") await prepareAccountingClose(entityId, periodId, reason)
+      else await closeAccountingPeriod(entityId, periodId, reviewId!, reason)
+      setReason(""); await load(); await onChanged()
+      toast.success(t(kind === "prepare" ? "Close pack prepared for independent review." : "Accounting period locked with a signed close pack."))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Accounting close could not be completed.")) }
+    finally { setBusy(false) }
+  }
+  const latest = reviews[0]
+  const currentReview = latest?.source_digest === digest
+  const format = (value: number) => new Intl.NumberFormat(language, { style: "currency", currency, maximumFractionDigits: 4 }).format(value)
+  return <SettingsPanel title={t("Accounting period close")} description={t("Reconcile the native ledger and connected controls, prepare an immutable close pack, then have another authorised colleague lock the period.")}>
+    <div className="space-y-3 py-1 text-[12px] text-[var(--md-text)]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p role="status" className="font-medium text-[var(--md-ink)]">{closedAt ? `${t("Locked")} · ${new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(closedAt))}` : snapshot?.blockers.length ? `${snapshot.blockers.length} ${t("controls need attention")}` : t("Controls ready for independent close review")}</p>
+        <Button type="button" size="sm" variant="outline" disabled={loading || busy} onClick={() => void load()}><RefreshCw className={loading ? "animate-spin" : ""} />{t("Refresh controls")}</Button>
+      </div>
+      {error ? <p role="alert" className="text-[var(--md-red)]">{error}</p> : null}
+      {loading && !snapshot ? <DotGridLoader label={t("Loading accounting controls")} /> : null}
+      {snapshot ? <>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <p>{t("Trial balance difference")}: <strong data-i18n-skip dir="ltr">{format(snapshot.trialBalance.difference)}</strong></p>
+          <p>{t("Cost accrual control difference")}: <strong data-i18n-skip dir="ltr">{format(snapshot.costAccrual.difference)}</strong></p>
+          <p>{t("Revenue WIP control difference")}: <strong data-i18n-skip dir="ltr">{format(snapshot.revenueWip.difference)}</strong></p>
+          <p>{t("Customer and supplier controls")}: {t(snapshot.arApStatus.replaceAll("_", " "))}</p>
+          <p>{t("VAT control")}: {t(snapshot.vatStatus.replaceAll("_", " "))}</p>
+          <p>{t("Provider reconciliation")}: {t(snapshot.mirror.providerStatus.replaceAll("_", " "))}</p>
+          <p>{t("Bank controls")}: {snapshot.bankControls.length ? snapshot.bankControls.filter((item) => item.status === "verified").length + "/" + snapshot.bankControls.length : t("No active bank accounts")}</p>
+          <p>{t("Charge cases")}: <span data-i18n-skip dir="ltr">{snapshot.pendingChargeCases}</span></p>
+        </div>
+        {snapshot.blockers.length ? <div role="status" className="border-t border-[var(--md-line)] pt-2"><p className="font-medium text-[var(--md-amber)]">{t("Close blockers")}</p><ul className="mt-1 list-disc space-y-1 ps-5">{snapshot.blockers.map((item) => <li key={item}>{t(item.replaceAll("_", " "))}</li>)}</ul></div> : null}
+        {cases.length ? <details><summary>{t("Charge lifecycle work queue")} · {cases.length}</summary><ul className="mt-2 space-y-1">{cases.slice(0, 20).map((item) => <li key={item.charge_id}><span data-i18n-skip dir="ltr">{item.charge_id}</span> · {t(item.status)} · {item.event_types.map((event) => t(event.replaceAll("_", " "))).join(", ")}{item.reason ? ` · ${item.reason}` : ""}</li>)}</ul></details> : null}
+        {latest ? <p>{t("Latest review")}: {new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(latest.prepared_at))} · {currentReview ? t("Current source snapshot") : t("Source changed; prepare again")}</p> : null}
+        {!closedAt && (canPrepare || canApprove && currentReview && !snapshot.blockers.length) ? <form className="space-y-2 border-t border-[var(--md-line)] pt-3" onSubmit={(event) => { event.preventDefault(); void action(canApprove && currentReview && !snapshot.blockers.length ? "close" : "prepare", latest?.id) }}>
+          <label className="block space-y-1"><span>{t("Close review reason")}</span><Textarea required minLength={10} maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+          {canPrepare ? <Button type="button" variant="outline" disabled={busy || loading} onClick={() => void action("prepare")}>{t("Prepare current close pack")}</Button> : null}
+          {canApprove && currentReview && !snapshot.blockers.length ? <Button type="submit" disabled={busy || loading}>{t("Approve and lock period")}</Button> : null}
+        </form> : null}
+      </> : null}
+    </div>
+  </SettingsPanel>
 }

@@ -154,6 +154,14 @@ export type FinanceDocument = {
 }
 
 export type FinanceDocumentDetail = {
+  vatReconciliation: null | {
+    status: "not_posted" | "pending" | "partial" | "reconciled"
+    totalLines: number
+    reconciledLines: number
+    vatReconciledAt: string | null
+    firstCompleteVatReconciledAt: string | null
+    sourceLocked: boolean
+  }
   document: FinanceDocument & {
     FINDoc_AccountingDate: string
     FINDoc_PeriodID: string | null
@@ -529,6 +537,501 @@ const put = <T>(path: string, value: unknown) => call<T>(path, { method: "PUT", 
 export async function getFinanceSetup() { return normaliseFinanceSetup(await call<unknown>("/setup")) }
 export function getFinanceReportOptions() { return call<FinanceReportOptions>("/report-options") }
 export function getFinanceReports(legalEntityId: string, from: string, to: string) { return call<FinanceReportingSnapshot>(`/reports?legalEntityId=${encodeURIComponent(legalEntityId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`) }
+export type UkVatPeriod = {
+  period_id: string; start_date: string; end_date: string; status: "draft" | "review_locked"; scheme_code: string;
+  reporting_currency: string; authority_obligation_verified_at: string | null;
+  latest_calculation_id: string | null; latest_revision: number | null;
+  latest_boxes: Record<string, number> | null; control_status: string | null;
+  transaction_count: number; signed_transaction_count: number;
+}
+export type UkVatPeriodList = { legalEntityId: string; total: number; periods: UkVatPeriod[] }
+export type UkVatReviewItem = {
+  evidence_id: string; recorded_at: string; recorded_by: string;
+  capture_kind: string; capture_reason: string | null; source_version: string;
+  source_kind: string; document_id: string | null; document_number: string | null;
+  document_type: string | null; line_id: string | null; document_date: string | null;
+  currency_code: string; net_gbp: number; vat_gbp: number; tax_code: string | null;
+}
+export type UkVatReviewQueue = {
+  legalEntityId: string; totalUnreviewed: number; items: UkVatReviewItem[];
+  nextCursor: null | { recordedAt: string; evidenceId: string }
+}
+export type UkVatCoverage = {
+  legalEntityId: string; jurisdiction: "GB"; postedDocumentLines: number; missingCapturedLines: number;
+  unreviewedEvents: number; pendingOrReversedDocuments: number; unsupportedSourceKinds: number;
+  missingSample: Array<{ document_id: string; document_number: string | null; document_date: string; line_id: string }>;
+  unreviewedSample: Array<{ evidence_id: string; document_id: string | null; line_id: string | null; document_date: string | null; net_gbp: number; vat_gbp: number; tax_code: string | null }>;
+  complete: boolean;
+}
+export type UkVatDraftCalculation = {
+  calculationId: string; revision: number; boxes: Record<string, number>; sourceDigest: string;
+  controlStatus: "unreconciled";
+  sourceLedger: { status: "matched" | "mismatch"; checked: number; mismatched: number; postingDigest: string;
+    mismatchSample: Array<{ evidenceId: string; documentId: string; documentLineId: string;
+      documentType: string; batchStatus: string | null;
+      netGbp: number; vatGbp: number; netPosted: number; taxPosted: number; netLines: number; taxLines: number }> };
+  approvalAvailable: false;
+}
+export type UkVatCalculationLine = {
+  box_number: number; amount_gbp: number; evidence_id: string; decision_id: string;
+  source_kind: string; source_id: string; source_version: string;
+  document_id: string | null; document_line_id: string | null;
+  document_number: string | null; document_type: string | null;
+  decision_revision: number; tax_point: string; treatment_code: string;
+  reviewed_rule_reference: string; rule_snapshot: Record<string, unknown>;
+  net_gbp: number; vat_gbp: number;
+  source_locked: boolean;
+  vat_reconciled_at: string | null; vat_reconciled_by: string | null;
+}
+export type UkVatCalculationDetail = {
+  calculationId: string; periodId: string; legalEntityId: string;
+  startDate: string; endDate: string; periodStatus: string; scheme: string;
+  revision: number; calculationVersion: string; sourceDigest: string;
+  registration: Record<string, unknown>; boxes: Record<string, number>;
+  exceptions: unknown[]; controlReconciliation: Record<string, unknown>;
+  calculatedBy: string; calculatedAt: string; latestRevision: boolean;
+  totalLines: number; offset: number; lines: UkVatCalculationLine[];
+}
+export type UkVatAccount = {
+  calculationId: string; periodId: string; legalEntityId: string; revision: number;
+  sourceDigest: string; returnBoxes: Record<string, number>; rawBoxTotals: Record<string, number>;
+  controlStatus: "unreconciled"; totalTransactions: number; signedTransactions: number;
+  offset: number; rows: Array<Omit<UkVatCalculationLine, "box_number" | "amount_gbp"> & {
+    boxes: Record<string, number>;
+    reverses_evidence_id: string | null;
+    original_document_id: string | null;
+    original_document_number: string | null;
+    original_document_type: string | null;
+    original_vat_reconciled_at: string | null;
+    credit_original_evidence_id: string | null;
+    credit_original_document_id: string | null;
+    credit_original_document_number: string | null;
+    credit_original_document_type: string | null;
+    credit_linked_at: string | null;
+  }>;
+}
+export type UkVatTaxPostingInventory = {
+  calculationId: string; periodId: string; legalEntityId: string;
+  scope: string; vatPeriodStart: string; vatPeriodEnd: string;
+  postingDigest: string; accountingScopeDigest: string;
+  totalLines: number; linkedLines: number; unlinkedLines: number; nonGbpLines: number;
+  taxLinesOffVatAccounts: number;
+  totalDebitGbp: number; totalCreditGbp: number; offset: number;
+  linkedVatAccountDebitGbp: number; linkedVatAccountCreditGbp: number;
+  unlinkedVatAccountDebitGbp: number; unlinkedVatAccountCreditGbp: number;
+  taxOffVatAccountDebitGbp: number; taxOffVatAccountCreditGbp: number;
+  linkedVatAccountTaxLines: number;
+  controlBridge: {
+    sourceVatDueGbp: number; vatAccountNetCreditGbp: number; differenceGbp: number;
+    expectedTaxPostingLines: number; linkedVatAccountTaxLines: number;
+    accountingCoverageExact: boolean; daysWithoutOneAccountingPeriod: number;
+    straddlingAccountingPeriods: number; scope: string;
+  };
+  rows: Array<{
+    posting_line_id: string; batch_id: string; batch_number: string | null;
+    batch_source: string | null; posted_at: string | null;
+    accounting_period_id: string; accounting_start: string; accounting_end: string; line_number: number;
+    document_id: string | null; document_line_id: string | null;
+    nominal_id: string | null; nominal_code: string | null; nominal_name: string | null; description: string | null;
+    debit_gbp: number; credit_gbp: number; currency: string; linked_to_draft: boolean;
+    tax_labelled: boolean; vat_account: boolean;
+  }>;
+}
+const ukVatPath = (legalEntityId: string) => `/vat/${encodeURIComponent(legalEntityId)}`
+export type UkVatRegistrationRow = {
+  registrationId: string; status: string; vrn: string | null;
+  schemeCode: string | null; accountingBasis: string | null;
+  effectiveFrom: string; effectiveTo: string | null; updatedAt: string;
+}
+export type UkVatRegistration = { registration: UkVatRegistrationRow | null; scheduledRegistration: UkVatRegistrationRow | null }
+export const getUkVatRegistration = (legalEntityId: string) =>
+  call<UkVatRegistration>(`${ukVatPath(legalEntityId)}/registration`)
+export const configureUkVatRegistration = (legalEntityId: string, input: {
+  vrn: string; schemeCode: "standard"; effectiveFrom: string; invoiceBasisConfirmed: true;
+}) => post<UkVatRegistration>(`${ukVatPath(legalEntityId)}/registration`, input)
+export const scheduleUkVatRegistration = (legalEntityId: string, input: {
+  vrn: string; schemeCode: "standard"; effectiveFrom: string;
+  invoiceBasisConfirmed: true; reason: string;
+}) => post<{ newRegistrationId: string; previousRegistrationId: string; effectiveFrom: string; hmrcVerification: "required" }>(
+  `${ukVatPath(legalEntityId)}/registration/revisions`, input)
+export const getUkVatEntities = () => call<{ entities: Array<{
+  LegalEntity_ID: string; LegalEntity_Name: string; LegalEntity_BaseCurrencyCodeSnapshot: string
+}> }>("/vat/entities")
+export const getUkVatPeriods = (legalEntityId: string) => call<UkVatPeriodList>(`${ukVatPath(legalEntityId)}/periods`)
+export const prepareUkVatDraftPeriod = (legalEntityId: string, startDate: string, endDate: string) =>
+  post<{ periodId: string; status: "draft"; start: string; end: string; authorityObligationVerified: false }>(`${ukVatPath(legalEntityId)}/periods`, { startDate, endDate })
+export type UkVatPriorPeriodErrorIntake = {
+  legalEntityId: string; discoveryPeriodId: string; total: number;
+  status: "unassessed_no_return_effect";
+  items: Array<{
+    id: string; original_period_start: string; original_period_end: string;
+    discovered_on: string; source_reference: string; tax_side: "input" | "output";
+    signed_vat_error_gbp: number; conduct: "undetermined" | "reasonable_care" | "careless" | "deliberate"; explanation: string;
+    recorded_by: string; recorded_at: string;
+    effective_conduct: "undetermined" | "reasonable_care" | "careless" | "deliberate";
+    conduct_review_id: string | null; conduct_reviewed_at: string | null;
+    conduct_review_history: Array<{ reviewId: string; revision: number;
+      conduct: "reasonable_care" | "careless" | "deliberate";
+      reviewedBy: string; reviewedAt: string; reason: string }>;
+  }>;
+}
+export const getUkVatPriorPeriodErrors = (legalEntityId: string, periodId: string) =>
+  call<UkVatPriorPeriodErrorIntake>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/prior-errors`)
+export type UkVatPriorPeriodErrorPreview = {
+  periodId: string; legalEntityId: string; itemCount: number; itemsFingerprint: string;
+  netErrorGbp: number; method: "no_errors" | "current_return_adjustment" | "separate_notification"
+    | "needs_reviewed_current_box6" | "external_notification_evidence_recorded"
+    | "notification_history_review_required";
+  reason: string; reviewedBox6Gbp: number | null; filingProjectionId: string | null;
+  projectionFingerprint: string | null; conductReviewRequired: boolean;
+  carelessDisclosureAdvisory: boolean; timeLimitReviewRequired: boolean;
+  immediateNotificationReviewRequired: boolean;
+  externallyNotifiedCount: number; unnotifiedCount: number;
+  status: "preview_only_no_return_effect";
+}
+export const previewUkVatPriorPeriodErrors = (legalEntityId: string, periodId: string, chooseSeparate: boolean) =>
+  call<UkVatPriorPeriodErrorPreview>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/prior-errors/preview?chooseSeparate=${chooseSeparate}`)
+export const recordUkVatPriorPeriodError = (legalEntityId: string, periodId: string, input: {
+  originalPeriodStart: string; originalPeriodEnd: string; discoveredOn: string;
+  sourceReference: string; taxSide: "input" | "output"; signedVatErrorGbp: string;
+  conduct: "undetermined" | "reasonable_care" | "careless" | "deliberate"; explanation: string;
+}) => post<{ intakeId: string; recordedAt: string; inserted: boolean; status: "intake_only" }>(
+  `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/prior-errors`, input)
+export const reviewUkVatPriorErrorConduct = (legalEntityId: string, intakeId: string, input: {
+  conduct: "reasonable_care" | "careless" | "deliberate"; reason: string;
+}) => post<{ reviewId: string; intakeId: string; revision: number;
+  conduct: "reasonable_care" | "careless" | "deliberate"; reviewedAt: string; inserted: boolean }>(
+  `${ukVatPath(legalEntityId)}/prior-errors/${encodeURIComponent(intakeId)}/conduct`, input)
+export type UkVatPriorErrorTimeLimitHistory = {
+  intakeId: string; status: "assessment_only_no_return_effect";
+  reviews: Array<{ id: string; revision: number; error_category: string;
+    original_return_reference: string; original_return_due_on: string | null;
+    statutory_deadline_on: string; assessment_on: string; within_time_limit: boolean;
+    evidence_reference: string; reason: string; reviewed_by: string; reviewed_at: string }>;
+}
+export const getUkVatPriorErrorTimeLimitHistory = (legalEntityId: string, intakeId: string) =>
+  call<UkVatPriorErrorTimeLimitHistory>(
+    `${ukVatPath(legalEntityId)}/prior-errors/${encodeURIComponent(intakeId)}/time-limit`)
+export const reviewUkVatPriorErrorTimeLimit = (legalEntityId: string, intakeId: string, input: {
+  errorCategory: "output_underdeclared" | "output_overdeclared" | "input_overclaimed" | "input_underclaimed";
+  originalReturnReference: string; originalReturnDueOn: string | null;
+  evidenceReference: string; reason: string;
+}) => post<{ reviewId: string; revision: number; deadlineOn: string;
+  withinTimeLimit: boolean; assessmentOn: string; inserted: boolean;
+  status: "assessment_only" }>(
+  `${ukVatPath(legalEntityId)}/prior-errors/${encodeURIComponent(intakeId)}/time-limit`, input)
+export type UkVatMethod1OffsetNominals = {
+  legalEntityId: string; nominals: Array<{ id: string; code: string; name: string }>;
+}
+export const getUkVatMethod1OffsetNominals = (legalEntityId: string) =>
+  call<UkVatMethod1OffsetNominals>(`${ukVatPath(legalEntityId)}/method1-offsets`)
+export type UkVatMethod1Plans = {
+  periodId: string; status: "reviewed_for_posting_only";
+  plans: Array<{ id: string; base_source_digest: string; item_count: number;
+    planned_items: Array<{ intakeId: string; signedVatErrorGbp: number;
+      boxNetDeltaGbp: number; offsetNominalId: string; evidenceReference: string }>;
+    net_error_gbp: number; box6_delta_gbp: number; box7_delta_gbp: number;
+    planned_filed_box6_gbp: number; threshold_basis: string;
+    plan_fingerprint: string; reviewed_by: string; reviewed_at: string; reason: string }>;
+}
+export const getUkVatMethod1Plans = (legalEntityId: string, periodId: string) =>
+  call<UkVatMethod1Plans>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/prior-errors/method1-plans`)
+export const reviewUkVatMethod1Plan = (legalEntityId: string, periodId: string, input: {
+  baseCalculationId: string; sourceDigest: string;
+  items: Array<{ intakeId: string; boxNetDeltaGbp: string;
+    offsetNominalId: string; evidenceReference: string }>;
+  reason: string; confirmed: true;
+}) => post<{ planId: string; periodId: string; planFingerprint: string;
+  itemCount: number; netErrorGbp: number; box6DeltaGbp: number;
+  box7DeltaGbp: number; plannedFiledBox6Gbp: number; thresholdBasis: string;
+  reviewedAt: string; inserted: boolean; status: "reviewed_for_posting_only" }>(
+  `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/prior-errors/method1-plans`, input)
+export type UkVatMethod1Postings = {
+  periodId: string;
+  postings: Array<{ id: string; planId: string; batchId: string; itemCount: number;
+    planFingerprint: string; postedBy: string; postedAt: string; reason: string;
+    items: Array<{ intakeId: string; evidenceId: string; decisionId: string;
+      taxPostingLineId: string; offsetPostingLineId: string;
+      signedVatErrorGbp: number; boxNetDeltaGbp: number; evidenceReference: string }> }>;
+}
+export const getUkVatMethod1Postings = (legalEntityId: string, periodId: string) =>
+  call<UkVatMethod1Postings>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/prior-errors/method1-postings`)
+export const postUkVatMethod1Plan = (legalEntityId: string, periodId: string,
+  planId: string, input: { reason: string; confirmed: true }) =>
+  post<{ postingId: string; periodId: string; planId: string; batchId: string;
+    itemCount: number; status: "posted_pending_vat_calculation_and_signoff" }>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/prior-errors/method1-plans/${encodeURIComponent(planId)}`,
+    input)
+export type UkVatExternalErrorNotifications = {
+  legalEntityId: string; discoveryPeriodId: string; total: number;
+  notifiedIntakeIds: string[];
+  status: "operator_recorded_unverified";
+  items: Array<{ id: string; notified_on: string; channel: "hmrc_online" | "letter";
+    evidence_reference: string; explanation: string; item_count: number;
+    net_error_gbp: number; items_fingerprint: string; recorded_by: string;
+    recorded_at: string; intake_ids: string[] }>;
+}
+export const getUkVatExternalErrorNotifications = (legalEntityId: string, periodId: string) =>
+  call<UkVatExternalErrorNotifications>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/prior-errors/notifications`)
+export const recordUkVatExternalErrorNotification = (legalEntityId: string, periodId: string, input: {
+  intakeIds: string[]; notifiedOn: string; channel: "hmrc_online" | "letter";
+  evidenceReference: string; explanation: string; confirmed: true;
+}) => post<{ notificationId: string; recordedAt: string; inserted: boolean;
+  status: "operator_recorded_unverified" }>(
+  `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/prior-errors/notifications`, input)
+export type UkVatCashPaymentDateQueue = {
+  legalEntityId: string; total: number; offset: number; limit: number;
+  status: "review_only_no_cash_return_effect";
+  items: Array<{ cash_id: string; cash_number: string | null;
+    cash_type: "customer_receipt" | "supplier_payment"; transaction_date: string;
+    amount: number; currency_code: string; posting_batch_id: string;
+    allocation_count: number; allocated_amount: number;
+    review_id: string | null; revision: number | null;
+    method_code: "cash_handover" | "bank_credit_or_debit" | "card_voucher" | "cheque" | "agent_collection" | null;
+    method_event_date: string | null; cheque_date: string | null;
+    vat_payment_date: string | null; evidence_reference: string | null;
+    source_fingerprint: string | null; reason: string | null;
+    reviewed_by: string | null; reviewed_at: string | null;
+    review_history: Array<{ reviewId: string; revision: number; method: string;
+      vatPaymentDate: string; evidenceReference: string; reason: string;
+      reviewedBy: string; reviewedAt: string }> }>
+}
+export const getUkVatCashPaymentDateQueue = (legalEntityId: string, offset = 0, limit = 25) =>
+  call<UkVatCashPaymentDateQueue>(`${ukVatPath(legalEntityId)}/cash-payment-dates?offset=${offset}&limit=${limit}`)
+export type UkVatCashSourcePreview = {
+  legalEntityId: string; startDate: string; endDate: string;
+  sourceStatus: "source_only_not_filing"; calculationValid: boolean;
+  issueCount: number; issues: string[]; candidateAllocationCount: number;
+  excludedAllocationCount: number;
+  excludedAllocations: Array<{ allocationId: string; cashId: string;
+    invoiceId: string; paymentDate: string; standardAcceptedAt: string }>;
+  sourceBoxesGbp: { 1: string; 4: string; 6: string; 7: string } | null;
+  allocationLines: Array<{ allocationId: string; cashId: string; paymentReviewId: string;
+    invoiceId: string; paymentDate: string; lineId: string; evidenceId: string;
+    treatmentReviewId: string; treatment: string; netGbp: string; vatGbp: string }>;
+}
+export const getUkVatCashSourcePreview = (legalEntityId: string, start: string, end: string) =>
+  call<UkVatCashSourcePreview>(`${ukVatPath(legalEntityId)}/cash-preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+export type UkVatCashEventProjectionHistory = {
+  legalEntityId: string; startDate: string; endDate: string;
+  currentSourceDigest: string; status: "source_projection_history_only";
+  items: Array<{ id: string; source_digest: string; start_date: string; end_date: string;
+    candidate_allocation_count: number; excluded_allocation_count: number;
+    source_boxes_gbp: { 1: string; 4: string; 6: string; 7: string };
+    excluded_allocations: UkVatCashSourcePreview["excludedAllocations"];
+    projected_by: string; projected_at: string; source_current: boolean;
+    event_lines: Array<{ id: string; allocation_id: string; invoice_id: string;
+      payment_date: string; line_id: string; treatment_code: string;
+      net_gbp: string; vat_gbp: string }> }>;
+}
+export const getUkVatCashEventProjections = (legalEntityId: string, start: string, end: string) =>
+  call<UkVatCashEventProjectionHistory>(`${ukVatPath(legalEntityId)}/cash-projections?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+export const recordUkVatCashEventProjection = (legalEntityId: string, start: string, end: string) =>
+  post<{ projectionId: string; sourceDigest: string; inserted: boolean;
+    eventLineCount?: number; status: "source_projection_only_no_cash_return_effect" }>(
+    `${ukVatPath(legalEntityId)}/cash-projections`, { start, end })
+export const reviewUkVatCashPaymentDate = (legalEntityId: string, cashId: string, input: {
+  method: "cash_handover" | "bank_credit_or_debit" | "card_voucher" | "cheque" | "agent_collection";
+  methodDate: string; chequeDate: string | null; evidenceReference: string; reason: string;
+}) => post<{ reviewId: string; cashId: string; revision: number; vatPaymentDate: string;
+  reviewedAt: string; inserted: boolean; status: "payment_date_review_only" }>(
+  `${ukVatPath(legalEntityId)}/cash-payment-dates/${encodeURIComponent(cashId)}/review`, input)
+export const calculateUkVatDraft = (legalEntityId: string, periodId: string) =>
+  post<UkVatDraftCalculation>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/calculate`)
+export type UkVatClawbackCandidates = {
+  periodId: string; legalEntityId: string; periodEnd: string; totalCandidates: number;
+  items: Array<{
+    document_id: string; document_number: string | null; document_date: string;
+    due_date: string | null; currency_code: string; gross_amount: number;
+    paid_by_period_end: number; unpaid_at_period_end: number;
+    first_possible_clawback_date: string;
+  }>;
+}
+export const getUkVatClawbackCandidates = (legalEntityId: string, periodId: string) =>
+  call<UkVatClawbackCandidates>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/clawback-candidates`)
+const supplierInputTaxPath = (legalEntityId: string, periodId: string, documentId: string) =>
+  `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/supplier-input-tax/${encodeURIComponent(documentId)}`
+export type UkVatSupplierInputTaxSource = {
+  status: "source_verified_only" | "source_only_no_posting" | "source_only_no_tax_effect";
+  periodId: string; documentId: string; sourceFingerprint: string;
+  firstPossibleRepaymentDate?: string; originallyClaimedInputVatGbp?: number;
+  grossSourceAmount?: number; paidByPeriodEnd?: number; unpaidAtPeriodEnd?: number;
+  priorRepaymentOutstandingGbp?: number; restorationBox4Gbp?: number;
+  unpaidAtPeriodEndGbp?: number;
+  events?: Array<{ eventDate: string; kind: string; signedBox4DeltaGbp: number }>;
+}
+export type UkVatSupplierInputTaxHistory = {
+  periodId: string; documentId: string;
+  firstProposals: Array<{ proposalId: string; sourceFingerprint: string;
+    proposedRepaymentGbp: number; proposedRestorationGbp: number;
+    proposedBox4DeltaGbp: number; preparedAt: string; reason: string }>;
+  firstReviews: Array<{ reviewId: string; proposalId: string;
+    sourceFingerprint: string; offsetNominalId: string; reviewedAt: string;
+    revokedAt: string | null; reason: string }>;
+  firstPostings: Array<{ postingId: string; reviewId: string; batchId: string;
+    box4DeltaGbp: number; eventCount: number; postedAt: string; reason: string;
+    events: Array<{ eventDate: string; kind: string; signedBox4DeltaGbp: number }> }>;
+  laterReviews: Array<{ reviewId: string; revision: number;
+    sourceFingerprint: string; offsetNominalId: string; restorationBox4Gbp: number;
+    reviewedAt: string; reason: string }>;
+  laterPostings: Array<{ postingId: string; reviewId: string; batchId: string | null;
+    status: "posted" | "zero_tax_effect_confirmed"; restorationBox4Gbp: number;
+    eventCount: number; postedAt: string; reason: string;
+    events: Array<{ eventDate: string; signedBox4DeltaGbp: number }> }>;
+}
+export const getUkVatSupplierInputTaxHistory = (legalEntityId: string, periodId: string, documentId: string) =>
+  call<UkVatSupplierInputTaxHistory>(supplierInputTaxPath(legalEntityId, periodId, documentId))
+export const getUkVatSupplierInputTaxSource = (
+  legalEntityId: string, periodId: string, documentId: string, kind: "first" | "later",
+) => call<UkVatSupplierInputTaxSource>(
+  `${supplierInputTaxPath(legalEntityId, periodId, documentId)}/source?kind=${kind}`)
+export const prepareUkVatFirstInputTaxRepayment = (
+  legalEntityId: string, periodId: string, documentId: string, reason: string,
+) => post<{ proposalId: string; inserted: boolean; proposedBox4DeltaGbp: number }>(
+  `${supplierInputTaxPath(legalEntityId, periodId, documentId)}/first-proposals`, { reason })
+export const reviewUkVatFirstInputTaxRepayment = (
+  legalEntityId: string, periodId: string, documentId: string,
+  proposalId: string, offsetNominalId: string, reason: string,
+) => post<{ reviewId: string; reviewedAt: string }>(
+  `${supplierInputTaxPath(legalEntityId, periodId, documentId)}/first-reviews`,
+  { proposalId, offsetNominalId, reason, confirmed: true })
+export const postUkVatFirstInputTaxRepayment = (
+  legalEntityId: string, periodId: string, documentId: string, reviewId: string, reason: string,
+) => post<{ postingId: string; batchId: string; box4DeltaGbp: number }>(
+  `${supplierInputTaxPath(legalEntityId, periodId, documentId)}/first-postings`,
+  { reviewId, reason, confirmed: true })
+export const reviewUkVatLaterInputTaxRestoration = (
+  legalEntityId: string, periodId: string, documentId: string,
+  offsetNominalId: string, reason: string,
+) => post<{ reviewId: string; revision: number; restorationBox4Gbp: number }>(
+  `${supplierInputTaxPath(legalEntityId, periodId, documentId)}/later-reviews`,
+  { offsetNominalId, reason, confirmed: true })
+export const postUkVatLaterInputTaxRestoration = (
+  legalEntityId: string, periodId: string, documentId: string, reviewId: string, reason: string,
+) => post<{ postingId: string; batchId: string | null; restorationBox4Gbp: number;
+  status: "posted_pending_vat_calculation_and_signoff" | "zero_tax_effect_confirmed" }>(
+  `${supplierInputTaxPath(legalEntityId, periodId, documentId)}/later-postings`,
+  { reviewId, reason, confirmed: true })
+export const getUkVatCalculationDetail = (legalEntityId: string, calculationId: string, offset = 0, limit = 100) =>
+  call<UkVatCalculationDetail>(`${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/detail?offset=${offset}&limit=${limit}`)
+export const getUkVatAccount = (legalEntityId: string, calculationId: string, offset = 0, limit = 100) =>
+  call<UkVatAccount>(`${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/account?offset=${offset}&limit=${limit}`)
+export type UkVatCreditCandidate = {
+  evidenceId: string; documentId: string; documentNumber: string | null;
+  documentDate: string; lineId: string; lineNo: number; currencyCode: string;
+  remainingNet: number; remainingVat: number;
+  vatReconciledAt: string | null;
+}
+export const findUkVatCreditCandidates = (legalEntityId: string, creditEvidenceId: string, search: string) =>
+  call<{ creditEvidenceId: string; candidates: UkVatCreditCandidate[] }>(
+    `${ukVatPath(legalEntityId)}/credit-links/candidates?creditEvidenceId=${encodeURIComponent(creditEvidenceId)}&search=${encodeURIComponent(search)}`)
+export const linkUkVatCredit = (legalEntityId: string, creditEvidenceId: string, originalEvidenceId: string, reason: string) =>
+  post<{ linkId: string; linkedAt: string; creditEvidenceId: string; originalEvidenceId: string; inserted: boolean }>(
+    `${ukVatPath(legalEntityId)}/credit-links`, { creditEvidenceId, originalEvidenceId, reason })
+export const getUkVatTaxPostingInventory = (legalEntityId: string, calculationId: string, offset = 0, limit = 100) =>
+  call<UkVatTaxPostingInventory>(`${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/tax-postings?offset=${offset}&limit=${limit}`)
+export const reconcileUkVatTransactions = (legalEntityId: string, calculationId: string,
+  sourceDigest: string, evidenceIds: string[], reason: string) =>
+  post<{ periodId: string; calculationId: string; sourceDigest: string; inserted: number;
+    transactions: Array<{ evidenceId: string; decisionId: string; reconciliationId: string; vatReconciledAt: string }> }>(
+    `${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/reconcile`,
+    { sourceDigest, evidenceIds, reason })
+export const reviewUkVatControl = (legalEntityId: string, calculationId: string, sourceDigest: string, reason: string) =>
+  post<{ reviewId: string; periodId: string; calculationId: string; reviewCalculationId: string;
+    sourceDigest: string; controlFingerprint: string; reviewedAt: string; inserted: boolean;
+    bridge: UkVatTaxPostingInventory["controlBridge"] }>(
+    `${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/control-review`,
+    { sourceDigest, reason })
+export type UkVatControlReviews = { periodId: string; reviews: Array<{
+  review_id: string; calculation_id: string; source_digest: string; posting_digest: string;
+  accounting_scope_digest: string; control_fingerprint: string;
+  bridge_snapshot: UkVatTaxPostingInventory["controlBridge"];
+  transaction_count: number; signed_transaction_count: number;
+  reviewed_by: string; reviewed_at: string; reason: string;
+}> }
+export const getUkVatControlReviews = (legalEntityId: string, periodId: string) =>
+  call<UkVatControlReviews>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/control-reviews`)
+export type UkVatFilingProjections = { periodId: string; reviews: Array<{
+  review_id: string; calculation_id: string; source_digest: string; rule_version: string;
+  control_review_id: string; control_fingerprint: string;
+  source_boxes: Record<string, number>; filed_boxes: Record<string, number>;
+  projection_fingerprint: string; reviewed_by: string; reviewed_at: string; reason: string;
+}> }
+export type UkVatFilingProjectionPreview = {
+  calculationId: string; periodId: string; sourceDigest: string; ruleVersion: string;
+  sourceBoxes: Record<string, number>; filedBoxes: Record<string, number>;
+  currentDraft: boolean; controlReviewed: boolean;
+}
+export const getUkVatFilingProjectionPreview = (legalEntityId: string, calculationId: string) =>
+  call<UkVatFilingProjectionPreview>(`${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/filing-projection`)
+export const getUkVatFilingProjections = (legalEntityId: string, periodId: string) =>
+  call<UkVatFilingProjections>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/filing-projections`)
+export const reviewUkVatFilingProjection = (legalEntityId: string, calculationId: string, sourceDigest: string, reason: string) =>
+  post<{ reviewId: string; periodId: string; calculationId: string; sourceDigest: string;
+    projectionFingerprint: string; controlFingerprint: string; ruleVersion: string; sourceBoxes: Record<string, number>;
+    filedBoxes: Record<string, number>; reviewedAt: string; inserted: boolean }>(
+    `${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/filing-projection`,
+    { sourceDigest, reason })
+export type UkVatReviewLocks = { periodId: string; activeLockId: string | null; locks: Array<{
+  lock_id: string; calculation_id: string; source_digest: string;
+  control_review_id: string; control_fingerprint: string; filing_projection_id: string;
+  projection_fingerprint: string; lock_fingerprint: string; locked_by: string;
+  locked_at: string; reason: string; unlock_id: string | null;
+  unlocked_by: string | null; unlocked_at: string | null; unlock_reason: string | null;
+}> }
+export const getUkVatReviewLocks = (legalEntityId: string, periodId: string) =>
+  call<UkVatReviewLocks>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/review-locks`)
+export type UkVatFilingStatus = {
+  periodId: string; periodStatus: string; reviewLockId: string | null;
+  obligation: null | { verificationId: string; environment: "sandbox" | "production";
+    observedAt: string; freshForApproval: boolean };
+  approval: null | { approvalId: string; environment: "sandbox" | "production";
+    confirmedAt: string; confirmedBy: string;
+    revocation: null | { revocationId: string; revokedAt: string; reason: string } };
+  attempt: null | { attemptId: string; status: "reserved" | "dispatching" |
+    "reconciliation_required" | "accepted" | "accepted_readback" | "cancelled";
+    environment: "sandbox" | "production";
+    reservedAt: string; dispatchingAt: string | null; uncertainAt: string | null;
+    uncertaintyKind: string | null; acceptedAt: string | null; cancelledAt: string | null;
+    httpStatus: number | null };
+  receipt: null | { recordedAt: string; processingDate: string;
+    formBundleNumber: string; correlationId: string; receiptId: string;
+    receiptTimestamp: string; paymentIndicator: string | null; chargeRefNumber: string | null };
+  readback: null | { readbackId: string; result: "matched" | "mismatch" | "not_found";
+    httpStatus: number; correlationId: string | null; observedAt: string };
+}
+export const getUkVatFilingStatus = (legalEntityId: string, periodId: string) =>
+  call<UkVatFilingStatus>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/filing-status`)
+export const confirmUkVatFilingApproval = (legalEntityId: string, periodId: string,
+  verificationId: string, lockFingerprint: string) =>
+  post<{ approvalId: string; periodId: string; environment: "sandbox" | "production";
+    confirmedAt: string; status: "approved_for_dispatch_review" }>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/filing-approval`,
+    { verificationId, lockFingerprint, confirmed: true })
+export const revokeUkVatFilingApproval = (legalEntityId: string, approvalId: string, reason: string) =>
+  post<{ revocationId: string; approvalId: string; periodId: string;
+    revokedAt: string; status: "revoked" }>(
+    `${ukVatPath(legalEntityId)}/filing-approvals/${encodeURIComponent(approvalId)}/revoke`, { reason })
+export const lockUkVatReview = (legalEntityId: string, calculationId: string,
+  sourceDigest: string, projectionId: string, reason: string) =>
+  post<{ lockId: string; periodId: string; calculationId: string; sourceDigest: string;
+    lockFingerprint: string; lockedAt: string; status: "review_locked" }>(
+    `${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/review-lock`,
+    { sourceDigest, projectionId, reason })
+export const reopenUkVatReview = (legalEntityId: string, periodId: string, reason: string) =>
+  post<{ unlockId: string; periodId: string; lockId: string; unlockedAt: string; status: "draft" }>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/review-locks`, { reason })
+export const getUkVatCoverage = (legalEntityId: string) => call<UkVatCoverage>(`${ukVatPath(legalEntityId)}/coverage`)
+export const getUkVatReviewQueue = (legalEntityId: string, limit = 100, cursor?: UkVatReviewQueue["nextCursor"]) =>
+  call<UkVatReviewQueue>(`${ukVatPath(legalEntityId)}/review-queue?limit=${limit}${cursor ? `&afterAt=${encodeURIComponent(cursor.recordedAt)}&afterId=${encodeURIComponent(cursor.evidenceId)}` : ""}`)
+export const reviewUkVatEvidence = (legalEntityId: string, evidenceId: string, taxPoint: string, reason: string) =>
+  post<{ decisionId: string; evidenceId: string; revision: number; taxPoint: string; treatment: string }>(
+    `${ukVatPath(legalEntityId)}/evidence/${encodeURIComponent(evidenceId)}/review`, { taxPoint, reason })
+export const backfillUkVatPostedLines = (legalEntityId: string, limit: number, reason: string) =>
+  post<{ inserted: number; coverage: UkVatCoverage }>(`${ukVatPath(legalEntityId)}/backfill`, { limit, reason })
 export function getErpNextCompanies() { return call<{ companies: Array<{ name: string; company_name?: string; country?: string; default_currency?: string }> }>("/erpnext/companies") }
 export function getErpNextAccountCatalog(connectionId: string) { return call<{ accounts: Array<{ name: string; account_number?: string; account_name?: string; account_type?: string; root_type?: string; account_currency?: string; is_group?: boolean | number; disabled?: boolean | number }> }>(`/erpnext/catalog?connectionId=${encodeURIComponent(connectionId)}`) }
 export function getSage50NominalCatalog(connectionId: string) { return call<{ connectionId: string; accounts: Array<{ name: string; account_number: string; account_name: string; is_group?: boolean | number }> }>(`/sage-50/nominals?connectionId=${encodeURIComponent(connectionId)}`) }

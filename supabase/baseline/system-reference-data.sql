@@ -24441,4 +24441,48 @@ SELECT pg_catalog.setval('public."tbl_sys_PhoneType_sys_PhoneType_ID_seq"', 14, 
 -- PostgreSQL database dump complete
 --
 
+-- Finance jurisdiction catalogues are product reference data, not tenant
+-- configuration. The schema-only baseline does not include the data inserts
+-- from historical migrations, so seed these explicitly for new tenants.
+-- "foundation" is intentionally not a claim of HMRC filing readiness.
+INSERT INTO public."FIN_LocalisationPacks" (
+  "FINLocPack_Code", "FINLocPack_Name", "FINLocPack_CountryCode",
+  "FINLocPack_AccountingStandardCode", "FINLocPack_Version",
+  "FINLocPack_AuthorityName", "FINLocPack_ReportingCurrencyCode",
+  "FINLocPack_ComplianceStatusCode", "FINLocPack_SourceURL",
+  "FINLocPack_ReviewedAt", "FINLocPack_IsActive"
+) VALUES
+  ('gb-v1', 'United Kingdom accounting and tax foundation', 'GB', 'UK_GAAP', 1, 'HMRC and Companies House', 'GBP', 'foundation', 'https://developer.service.hmrc.gov.uk/api-documentation/docs/api/service/vat-api/1.0', now(), true),
+  ('us-v1', 'United States accounting and tax foundation', 'US', 'US_GAAP', 1, 'Internal Revenue Service and state tax authorities', 'USD', 'foundation', 'https://www.irs.gov/e-file-providers/form-1120-1120-s-1120-f-1120-h-e-file', now(), true),
+  ('ca-v1', 'Canada accounting and tax foundation', 'CA', 'ASPE_OR_IFRS', 1, 'Canada Revenue Agency', 'CAD', 'foundation', 'https://www.canada.ca/en/revenue-agency/services/e-services/digital-services-businesses.html', now(), true),
+  ('au-v1', 'Australia accounting and tax foundation', 'AU', 'AUSTRALIAN_ACCOUNTING_STANDARDS', 1, 'Australian Taxation Office and ASIC', 'AUD', 'foundation', 'https://softwaredevelopers.ato.gov.au/getting_started', now(), true)
+ON CONFLICT ("FINLocPack_Code") DO NOTHING;
 
+WITH obligations(pack_code, code, name, kind, authority, channel, frequency, source_url, requirements) AS (VALUES
+  ('gb-v1', 'gb-vat-mtd', 'VAT Making Tax Digital', 'indirect_tax', 'HM Revenue & Customs', 'direct_api', 'periodic', 'https://developer.service.hmrc.gov.uk/api-documentation/docs/api/service/vat-api/1.0', jsonb_build_object('productionGate', 'HMRC software production approval and fraud prevention headers', 'payrollExcluded', true)),
+  ('gb-v1', 'gb-corporation-tax', 'Corporation Tax return and computations', 'corporate_income_tax', 'HM Revenue & Customs', 'approved_software', 'annual', 'https://www.gov.uk/company-tax-returns', jsonb_build_object('forms', jsonb_build_array('CT600', 'iXBRL accounts', 'iXBRL computations'), 'payrollExcluded', true)),
+  ('gb-v1', 'gb-statutory-accounts', 'Companies House annual accounts', 'statutory_accounts', 'Companies House', 'software_filing', 'annual', 'https://www.gov.uk/government/news/changes-to-filing-annual-accounts-at-companies-house', jsonb_build_object('format', 'iXBRL', 'productionGate', 'Companies House software filing and presenter approval', 'payrollExcluded', true)),
+  ('us-v1', 'us-federal-corporate-income-tax', 'Federal corporation income tax', 'corporate_income_tax', 'Internal Revenue Service', 'modernized_e_file', 'annual', 'https://www.irs.gov/e-file-providers/form-1120-1120-s-1120-f-1120-h-e-file', jsonb_build_object('forms', jsonb_build_array('1120', '1120-S'), 'productionGate', 'IRS approved software or authorised e-file provider', 'payrollExcluded', true)),
+  ('us-v1', 'us-state-sales-use-tax', 'State and local sales and use tax', 'sales_and_use_tax', 'State and local tax authorities', 'jurisdiction_specific', 'periodic', 'https://www.irs.gov/businesses/small-businesses-self-employed/state-government-websites', jsonb_build_object('requiresNexusConfiguration', true, 'requiresStateSpecificRatesAndReturns', true, 'payrollExcluded', true)),
+  ('us-v1', 'us-financial-reporting', 'US GAAP financial statements', 'financial_reporting', 'Applicable company and regulatory authorities', 'statement_generation', 'annual', 'https://asc.fasb.org/', jsonb_build_object('standard', 'US GAAP', 'payrollExcluded', true)),
+  ('ca-v1', 'ca-gst-hst', 'GST/HST return', 'indirect_tax', 'Canada Revenue Agency', 'netfile_or_file_transfer', 'periodic', 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses/file-gst-hst-return/how-file.html', jsonb_build_object('accessCodeMayBeRequired', true, 'payrollExcluded', true)),
+  ('ca-v1', 'ca-t2', 'T2 Corporation Income Tax Return', 'corporate_income_tax', 'Canada Revenue Agency', 'corporation_internet_filing', 'annual', 'https://www.canada.ca/en/revenue-agency/services/e-services/digital-services-businesses/corporation-internet-filing.html', jsonb_build_object('productionGate', 'CRA-certified software and applicable Web Access Code or EFILE credentials', 'payrollExcluded', true)),
+  ('ca-v1', 'ca-provincial-sales-tax', 'Provincial sales taxes', 'sales_and_use_tax', 'Applicable provincial tax authority', 'jurisdiction_specific', 'periodic', 'https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses/provincial-territorial-taxes.html', jsonb_build_object('requiresProvinceConfiguration', true, 'payrollExcluded', true)),
+  ('au-v1', 'au-gst-bas', 'GST and Business Activity Statement', 'indirect_tax', 'Australian Taxation Office', 'sbr', 'periodic', 'https://www.ato.gov.au/online-services/businesses-and-organisations-online-services', jsonb_build_object('productionGate', 'Registered DSP, EVTE testing, Operational Security Framework and production whitelisting', 'payrollExcluded', true)),
+  ('au-v1', 'au-company-tax', 'Company tax return', 'corporate_income_tax', 'Australian Taxation Office', 'sbr', 'annual', 'https://www.ato.gov.au/online-services/businesses-and-organisations-online-services', jsonb_build_object('productionGate', 'SBR-enabled product and ATO production whitelisting', 'payrollExcluded', true)),
+  ('au-v1', 'au-financial-reporting', 'Australian financial reporting', 'financial_reporting', 'Australian Securities and Investments Commission', 'software_or_portal', 'annual', 'https://asic.gov.au/regulatory-resources/financial-reporting-and-audit/preparers-of-financial-reports/lodging-financial-reports/', jsonb_build_object('standard', 'Australian Accounting Standards', 'entitySpecificRequirements', true, 'payrollExcluded', true))
+)
+INSERT INTO public."FIN_ComplianceObligations" (
+  "FINCompliance_PackID", "FINCompliance_Code", "FINCompliance_Name",
+  "FINCompliance_ObligationTypeCode", "FINCompliance_AuthorityName",
+  "FINCompliance_FilingChannelCode", "FINCompliance_FrequencyCode",
+  "FINCompliance_ReadinessStatusCode", "FINCompliance_SourceURL",
+  "FINCompliance_EffectiveFrom", "FINCompliance_RequirementsJSON",
+  "FINCompliance_ReviewedAt"
+)
+SELECT pack."FINLocPack_ID", item.code, item.name, item.kind, item.authority,
+  item.channel, item.frequency, 'foundation', item.source_url,
+  DATE '2026-08-31', item.requirements, now()
+FROM obligations item
+JOIN public."FIN_LocalisationPacks" pack ON pack."FINLocPack_Code" = item.pack_code
+ON CONFLICT ("FINCompliance_PackID", "FINCompliance_Code") DO NOTHING;

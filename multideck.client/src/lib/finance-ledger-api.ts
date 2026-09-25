@@ -38,6 +38,12 @@ export const saveChargeCatalogueItem = (legalEntityId: string, input: { id?: str
 export const resolveChargeNominals = (legalEntityId: string, chargeId: string) =>
   call<{ version: number; chargeId: string; legalEntityId: string; cost: ResolvedNominalGroup | null; revenue: ResolvedNominalGroup | null }>(`/charge-nominals?${new URLSearchParams({ legalEntityId, chargeId })}`)
 
+export type ChargeMappingCutover = { id: string; legal_entity_id: string; effective_date: string; status: "proposed" | "approved" | "active"; mapping_snapshot: Record<string, unknown>; proposed_by: string; proposed_at: string; approved_by: string | null; approved_at: string | null; activated_by: string | null; activated_at: string | null }
+export const getChargeMappingCutovers = (legalEntityId: string) =>
+  call<ChargeMappingCutover[]>(`/charge-mapping-cutover?${new URLSearchParams({ legalEntityId })}`)
+export const chargeMappingCutoverAction = (legalEntityId: string, action: "propose" | "approve" | "activate", input: { id?: string; effectiveDate?: string }) =>
+  call<ChargeMappingCutover>("/charge-mapping-cutover", { legalEntityId, action, ...input })
+
 export type MigrationReconciliation = {
   reconciled: boolean; postingAuthorised: false
   issues: Array<{ area: "batch" | "trial_balance" | "open_items" | "control"; row?: number; message: string }>
@@ -47,6 +53,15 @@ export type MigrationReconciliation = {
 }
 export const reconcileMigration = (legalEntityId: string, input: { cutoffDate: string; baseCurrency: string; trialBalance: TrialBalanceInput[]; openItems: OpeningItemInput[] }) =>
   call<MigrationReconciliation>("/migration/reconcile", { ...input, legalEntityId })
+
+export type OpeningBalancePackage = { id: string; legal_entity_id: string; source_file_name: string; source_sha256: string; closing_date: string; opening_date: string; base_currency: string; debit_total: string; credit_total: string; status: "staged" | "approved" | "posted"; staged_by: string; approved_by: string | null; posted_by: string | null; posting_batch_id: string | null }
+export type OpeningBalanceRecord = { package: OpeningBalancePackage; rowCount: number; rows: Array<{ source_row_number: number; source_account_code: string; nominal_code_snapshot: string; nominal_name_snapshot: string; debit: string; credit: string }> }
+export const getOpeningBalances = (legalEntityId: string) =>
+  call<OpeningBalanceRecord[]>(`/opening-balances?${new URLSearchParams({ legalEntityId })}`)
+export const getOpeningBalancePackage = (legalEntityId: string, id: string) =>
+  call<OpeningBalanceRecord[]>(`/opening-balances?${new URLSearchParams({ legalEntityId, id })}`)
+export const openingBalanceAction = (legalEntityId: string, action: "stage" | "approve" | "post", input: { id?: string; sourceSystem?: "CargoWise"; sourceFileName?: string; sourceSha256?: string; cutoffDate?: string; baseCurrency?: string; evidence?: { bank: string; tax: string; accrualWip: string; sourceReconciliation: string }; trialBalance?: Array<TrialBalanceInput & { sourceRow: number }>; openItems?: OpeningItemInput[] }) =>
+  call<OpeningBalancePackage>("/opening-balances", { legalEntityId, action, ...input })
 
 export function journalTotal(lines: JournalLine[], side: "debit" | "credit"): bigint | null {
   let total = 0n
