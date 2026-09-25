@@ -26,7 +26,8 @@ test("charge lines own expected, WIP/accrual, actual and nominal-code evidence",
     "FINChargeProfit_OpenAccrual",
     "FINChargeProfit_GrossProfit",
   ])
-  assert.match(baseline, /BEGIN MIGRATION 20260830215402_charge_line_accrual_wip_profitability\.sql/)
+  assert.match(baseline, /CREATE TABLE IF NOT EXISTS "public"\."FIN_JobChargePeriodAllocations"/)
+  assert.match(baseline, /CREATE OR REPLACE VIEW "public"\."FIN_JobChargeProfitability" WITH \("security_invoker"='true'\)/)
 })
 
 test("posted invoices reclassify only the exact linked charge line", () => {
@@ -54,7 +55,8 @@ test("every charge resolves nominal codes inside its legal entity", () => {
   ])
   assert.match(nominalResolution, /p_default_code/)
   assert.match(nominalResolution, /v_document\."FINDoc_LegalEntityID"/)
-  assert.match(baseline, /BEGIN MIGRATION 20260830223200_job_charge_nominal_resolution\.sql/)
+  assert.match(baseline, /CREATE OR REPLACE TRIGGER "TR_FIN_default_job_charge_nominals"/)
+  assert.match(baseline, /CREATE OR REPLACE TRIGGER "TR_FIN_remap_job_charge_nominals"/)
   assert.doesNotMatch(baseline, /\\ir \.\.\/migrations\/20260830223200_job_charge_nominal_resolution\.sql/)
 })
 

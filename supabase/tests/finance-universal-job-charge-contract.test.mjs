@@ -12,15 +12,14 @@ const page = read("../../multideck.client/src/pages/finance-accrual-wip-page.tsx
 
 const includesEvery = (source, values) => values.forEach((value) => assert.ok(source.includes(value), `Missing ${value}`))
 
-test("new-tenant provisioning contains the exact universal job charge migration", () => {
-  const name = "20260831061903_universal_job_charge_accounting.sql"
-  const startMarker = `-- BEGIN MIGRATION ${name}\n`
-  const endMarker = `\n-- END MIGRATION ${name}`
-  const start = baseline.indexOf(startMarker)
-  const end = baseline.indexOf(endMarker, start)
-  assert.notEqual(start, -1)
-  assert.notEqual(end, -1)
-  assert.equal(baseline.slice(start + startMarker.length, end).trim(), migration.trim())
+test("new-tenant schema snapshot contains the universal job charge boundary", () => {
+  includesEvery(baseline, [
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_upsert_job_charge"',
+    'CREATE OR REPLACE TRIGGER "TR_FIN_adapt_warehouse_billing_event"',
+    'CREATE OR REPLACE TRIGGER "TR_FIN_adapt_legacy_charge_in"',
+    'CREATE OR REPLACE TRIGGER "TR_FIN_adapt_legacy_charge_out"',
+    'CREATE OR REPLACE TRIGGER "TR_FIN_job_charge_dexter_watch"',
+  ])
 })
 
 test("one canonical job charge boundary covers every operational domain", () => {

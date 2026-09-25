@@ -35,14 +35,14 @@ test("posted job invoices progressively and idempotently release the correct man
   assert.doesNotMatch(migration, /FINDoc_TypeCode" in \('credit_note','debit_note'\)/)
   assert.match(periodFix, /interval '1 month'-interval '1 day'/)
   assert.doesNotMatch(periodFix, /interval '1 month-1 day'/)
-  assert.match(baseline, /BEGIN MIGRATION 20260830214204_fix_finance_period_end_interval\.sql/)
+  assert.match(baseline, /v_start\+interval '1 month'-interval '1 day'/)
   assert.match(postingDimensionFix, /FINPostLine_JobID/)
   assert.match(postingDimensionFix, /FINPostLine_Dimension1ID.*FINPostLine_JobID/s)
   assert.match(postingDimensionFix, /TR_FIN_PostingLines_job_dimension_guard/)
-  assert.match(baseline, /BEGIN MIGRATION 20260830214351_finance_posting_line_job_dimension_fix\.sql/)
+  assert.match(baseline, /CREATE OR REPLACE TRIGGER "TR_FIN_PostingLines_job_dimension_guard"/)
   assert.match(dimensionKeyFix, /dimension\."FINDim_ID"/)
   assert.doesNotMatch(dimensionKeyFix, /FINDimValue_ID/)
-  assert.match(baseline, /BEGIN MIGRATION 20260830214525_fix_posting_dimension_value_key\.sql/)
+  assert.match(baseline, /dimension\."FINDim_ID"=new\."FINPostLine_Dimension1ID"/)
 })
 
 test("invoice release reverses original posting lines and manual reversal only consumes the remainder", () => {
@@ -55,7 +55,8 @@ test("invoice release reverses original posting lines and manual reversal only c
     "Reversal of remaining balance",
   ])
   assert.match(migration, /FINPostBatch_DebitTotal"=v_total,"FINPostBatch_CreditTotal"=v_total/)
-  assert.match(baseline, /BEGIN MIGRATION 20260830213234_automatic_accrual_wip_document_release\.sql/)
+  assert.match(baseline, /CREATE TABLE IF NOT EXISTS "public"\."FIN_AccrualWIPReleases"/)
+  assert.match(baseline, /CREATE OR REPLACE TRIGGER "TR_FIN_Documents_automatic_accrual_wip_release"/)
 })
 
 test("operators and Dexter receive exact automatic release evidence without a new write action", () => {
