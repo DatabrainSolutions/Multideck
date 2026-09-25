@@ -524,9 +524,11 @@ function buildDraft(
   const existingNominals = administration.nominalAccounts.filter(
     (item) => item.FINNom_LegalEntityID === id,
   )
+  // Start a new native ledger with the document/cash control codes. Operators can
+  // add the actual/accrued chart for WIP after reviewing the base chart.
   const preferredTemplate = administration.chartTemplateAccounts.some(
-    (item) => item.FINChartTemplate?.FINChartTemplate_Code === "freight-accrual-v1",
-  ) ? "freight-accrual-v1" : "freight-forwarder-v1"
+    (item) => item.FINChartTemplate?.FINChartTemplate_Code === "freight-forwarder-v1",
+  ) ? "freight-forwarder-v1" : "generic-v1"
   const templateNominals = administration.chartTemplateAccounts.filter(
     (item) => item.FINChartTemplate?.FINChartTemplate_Code === preferredTemplate,
   )
@@ -1530,7 +1532,7 @@ export function FinanceSetupPage({
             t={t}
           />
           <FinanceNominalStructurePanel key={selectedEntityId} entityId={selectedEntityId} accounts={setup.administration.nominalAccounts} chartDirty={Boolean(dirty)} />
-          <FinanceMigrationPanel key={`migration-${selectedEntityId}`} entityId={selectedEntityId} baseCurrency={selectedEntity?.LegalEntity_BaseCurrencyCodeSnapshot || ""} chartDirty={Boolean(dirty)} canDeliverOpeningMirror={hasPermission(currentUser, "Finance.Integration.Manage")} />
+          <FinanceMigrationPanel key={`migration-${selectedEntityId}`} entityId={selectedEntityId} baseCurrency={selectedEntity?.LegalEntity_BaseCurrencyCodeSnapshot || ""} chartDirty={Boolean(dirty)} canDeliverOpeningMirror={hasPermission(currentUser, "Finance.Integration.Manage")} canPrepareFX={hasPermission(currentUser, "Finance.Management.Prepare")} canPostFX={hasPermission(currentUser, "Finance.Management.Post")} />
           </>
         ) : null}
         {tab === "tax" ? (
