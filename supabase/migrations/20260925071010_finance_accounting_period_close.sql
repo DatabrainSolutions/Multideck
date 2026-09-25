@@ -47,7 +47,9 @@ on conflict ("WorkflowRecordType_Code") do nothing;
 create function public._multideck_accounting_period_status_guard() returns trigger
 language plpgsql set search_path=pg_catalog,public as $$
 begin
-  if old."FINPeriod_StatusCode"='locked' and new."FINPeriod_StatusCode" is distinct from 'locked' then
+  if old."FINPeriod_StatusCode"='locked' and
+    (new."FINPeriod_StatusCode",new."FINPeriod_LockedAt",new."FINPeriod_LockedBy") is distinct from
+    (old."FINPeriod_StatusCode",old."FINPeriod_LockedAt",old."FINPeriod_LockedBy") then
     raise exception 'A locked accounting period cannot be reopened without a separate approved correction policy.' using errcode='22023';
   end if;
   if new."FINPeriod_StatusCode"='locked' and old."FINPeriod_StatusCode"<>'locked' and not exists (
@@ -56,7 +58,7 @@ begin
   ) then raise exception 'Prepare and independently approve a current accounting close pack first.' using errcode='22023'; end if;
   return new;
 end; $$;
-create trigger accounting_period_status_guard before update of "FINPeriod_StatusCode" on public."FIN_Periods"
+create trigger accounting_period_status_guard before update of "FINPeriod_StatusCode","FINPeriod_LockedAt","FINPeriod_LockedBy" on public."FIN_Periods"
   for each row execute function public._multideck_accounting_period_status_guard();
 revoke all on function public._multideck_accounting_period_status_guard() from public,anon,authenticated;
 
@@ -67,18 +69,28 @@ language plpgsql set search_path=pg_catalog,public as $$
 declare v_period uuid; v_status text;
 begin
   if tg_table_name='FIN_PostingBatches' then
-    v_period:=case when tg_op='DELETE' then old."FINPostBatch_PeriodID" else new."FINPostBatch_PeriodID" end;
+    if tg_op='DELETE' then v_period:=old."FINPostBatch_PeriodID";
+    else v_period:=new."FINPostBatch_PeriodID"; end if;
   else
-    select "FINPostBatch_PeriodID" into v_period from public."FIN_PostingBatches"
-      where "FINPostBatch_ID"=case when tg_op='DELETE' then old."FINPostLine_BatchID" else new."FINPostLine_BatchID" end;
+    if tg_op='DELETE' then
+      select "FINPostBatch_PeriodID" into v_period from public."FIN_PostingBatches"
+        where "FINPostBatch_ID"=old."FINPostLine_BatchID";
+    else
+      select "FINPostBatch_PeriodID" into v_period from public."FIN_PostingBatches"
+        where "FINPostBatch_ID"=new."FINPostLine_BatchID";
+    end if;
   end if;
   if v_period is not null then
     select "FINPeriod_StatusCode" into v_status from public."FIN_Periods" where "FINPeriod_ID"=v_period for share;
     if v_status='locked' then raise exception 'The accounting period is locked; post a dated correction in an open period.' using errcode='22023'; end if;
   end if;
-  if tg_op='UPDATE' and tg_table_name='FIN_PostingBatches' and old."FINPostBatch_PeriodID" is distinct from new."FINPostBatch_PeriodID" then
-    select "FINPeriod_StatusCode" into v_status from public."FIN_Periods" where "FINPeriod_ID"=old."FINPostBatch_PeriodID" for share;
-    if v_status='locked' then raise exception 'A posted batch cannot be moved out of a locked period.' using errcode='22023'; end if;
+  if tg_table_name='FIN_PostingBatches' then
+    if tg_op='UPDATE' then
+      if old."FINPostBatch_PeriodID" is distinct from new."FINPostBatch_PeriodID" then
+        select "FINPeriod_StatusCode" into v_status from public."FIN_Periods" where "FINPeriod_ID"=old."FINPostBatch_PeriodID" for share;
+        if v_status='locked' then raise exception 'A posted batch cannot be moved out of a locked period.' using errcode='22023'; end if;
+      end if;
+    end if;
   end if;
   if tg_op='DELETE' then return old; end if;
   return new;
@@ -89,12 +101,82 @@ create trigger closed_period_line_guard before insert or update or delete on pub
   for each row execute function public._multideck_closed_period_posting_guard();
 revoke all on function public._multideck_closed_period_posting_guard() from public,anon,authenticated;
 
+create function public._multideck_closed_period_source_guard() returns trigger
+language plpgsql set search_path=pg_catalog,public as $$
+declare v_entity uuid; v_date date; v_posted boolean; v_changed boolean;
+begin
+  if tg_table_name='FIN_Documents' then
+    v_entity:=case when tg_op='INSERT' then new."FINDoc_LegalEntityID" else old."FINDoc_LegalEntityID" end;
+    v_date:=case when tg_op='INSERT' then new."FINDoc_AccountingDate" else old."FINDoc_AccountingDate" end;
+    v_posted:=case when tg_op='INSERT' then new."FINDoc_NativePostingStatusCode"='posted' else old."FINDoc_NativePostingStatusCode"='posted' end;
+    v_changed:=tg_op in ('INSERT','DELETE');
+    if tg_op='UPDATE' then
+      v_changed:=(new."FINDoc_TypeCode",new."FINDoc_LegalEntityID",new."FINDoc_PartyOrgID",new."FINDoc_AccountingDate",
+        new."FINDoc_CurrencyCodeSnapshot",new."FINDoc_ExchangeRate",new."FINDoc_LocalNetAmount",new."FINDoc_LocalTaxAmount",
+        new."FINDoc_LocalGrossAmount",new."FINDoc_NativePostingStatusCode",new."FINDoc_NativePostingBatchID") is distinct from
+        (old."FINDoc_TypeCode",old."FINDoc_LegalEntityID",old."FINDoc_PartyOrgID",old."FINDoc_AccountingDate",
+        old."FINDoc_CurrencyCodeSnapshot",old."FINDoc_ExchangeRate",old."FINDoc_LocalNetAmount",old."FINDoc_LocalTaxAmount",
+        old."FINDoc_LocalGrossAmount",old."FINDoc_NativePostingStatusCode",old."FINDoc_NativePostingBatchID");
+    end if;
+  elsif tg_table_name='FIN_CashTransactions' then
+    v_entity:=case when tg_op='INSERT' then new."FINCash_LegalEntityID" else old."FINCash_LegalEntityID" end;
+    v_date:=case when tg_op='INSERT' then new."FINCash_AccountingDate" else old."FINCash_AccountingDate" end;
+    v_posted:=case when tg_op='INSERT' then new."FINCash_NativePostingStatusCode"='posted' else old."FINCash_NativePostingStatusCode"='posted' end;
+    v_changed:=tg_op in ('INSERT','DELETE');
+    if tg_op='UPDATE' then
+      v_changed:=(new."FINCash_TypeCode",new."FINCash_LegalEntityID",new."FINCash_PartyOrgID",new."FINCash_BankAccountID",
+        new."FINCash_AccountingDate",new."FINCash_CurrencyCodeSnapshot",new."FINCash_ExchangeRate",new."FINCash_LocalAmount",
+        new."FINCash_NativePostingStatusCode",new."FINCash_NativePostingBatchID") is distinct from
+        (old."FINCash_TypeCode",old."FINCash_LegalEntityID",old."FINCash_PartyOrgID",old."FINCash_BankAccountID",
+        old."FINCash_AccountingDate",old."FINCash_CurrencyCodeSnapshot",old."FINCash_ExchangeRate",old."FINCash_LocalAmount",
+        old."FINCash_NativePostingStatusCode",old."FINCash_NativePostingBatchID");
+    end if;
+  end if;
+  if v_posted and v_changed and exists(select 1 from public."FIN_Periods" period
+    where period."FINPeriod_LegalEntityID"=v_entity and v_date between period."FINPeriod_StartDate" and period."FINPeriod_EndDate"
+      and period."FINPeriod_StatusCode"='locked') then
+    raise exception 'A posted source in a locked period is immutable; issue a correction in an open period.' using errcode='22023';
+  end if;
+  if tg_op='DELETE' then return old; end if;
+  return new;
+end; $$;
+create trigger closed_period_document_guard before insert or update or delete on public."FIN_Documents"
+  for each row execute function public._multideck_closed_period_source_guard();
+create trigger closed_period_cash_guard before insert or update or delete on public."FIN_CashTransactions"
+  for each row execute function public._multideck_closed_period_source_guard();
+revoke all on function public._multideck_closed_period_source_guard() from public,anon,authenticated;
+
+create function public._multideck_closed_period_charge_link_guard() returns trigger
+language plpgsql set search_path=pg_catalog,public as $$
+declare v_document uuid;
+begin
+  for v_document in select distinct document_id from (values
+    (case when tg_op<>'INSERT' then old."FINDocLineJob_DocumentID" end),
+    (case when tg_op<>'DELETE' then new."FINDocLineJob_DocumentID" end)
+  ) candidate(document_id) where document_id is not null loop
+    if exists(select 1 from public."FIN_Documents" doc join public."FIN_Periods" period
+      on period."FINPeriod_LegalEntityID"=doc."FINDoc_LegalEntityID"
+      and doc."FINDoc_AccountingDate" between period."FINPeriod_StartDate" and period."FINPeriod_EndDate"
+      where doc."FINDoc_ID"=v_document and doc."FINDoc_NativePostingStatusCode"='posted'
+        and period."FINPeriod_StatusCode"='locked') then
+      raise exception 'A posted charge link in a locked period is immutable; review a later-period correction.' using errcode='22023';
+    end if;
+  end loop;
+  if tg_op='DELETE' then return old; end if;
+  return new;
+end; $$;
+create trigger closed_period_charge_link_guard before insert or update or delete on public."FIN_DocumentLineJobLinks"
+  for each row execute function public._multideck_closed_period_charge_link_guard();
+revoke all on function public._multideck_closed_period_charge_link_guard() from public,anon,authenticated;
+
 create function public._multideck_finance_close_snapshot(p_actor uuid,p_entity uuid,p_period uuid)
 returns jsonb language plpgsql volatile security definer set search_path=pg_catalog,public as $$
 declare v_period public."FIN_Periods"; v_trial numeric; v_bad_batches bigint; v_cost numeric; v_cost_gl numeric;
-  v_wip numeric; v_wip_gl numeric; v_future bigint; v_docs bigint; v_queue bigint;
-  v_mode text; v_connected boolean; v_native boolean; v_mirror_pending bigint; v_bank record;
-  v_bank_result jsonb; v_bank_rows jsonb:='[]'; v_provider jsonb; v_provider_status text;
+  v_wip numeric; v_wip_gl numeric; v_future bigint; v_docs bigint; v_cash bigint; v_queue bigint;
+  v_mode text; v_connected boolean; v_native boolean; v_mirror_pending bigint; v_bank record; v_connection record;
+  v_bank_result jsonb; v_bank_rows jsonb:='[]'; v_provider jsonb; v_provider_rows jsonb:='[]'; v_provider_status text;
+  v_trade jsonb; v_trade_status text;
+  v_vat jsonb; v_vat_status text; v_country text;
   v_blockers text[]:='{}';
 begin
   perform public._multideck_journal_access(p_actor,p_entity,'Finance.Management.View');
@@ -140,9 +222,28 @@ begin
   if v_queue>0 then v_blockers:=array_append(v_blockers,'charge_lifecycle_queue'); end if;
   select count(*) into v_docs from public."FIN_Documents" where "FINDoc_LegalEntityID"=p_entity
     and "FINDoc_NativePostingStatusCode"='posted' and "FINDoc_AccountingDate"<=v_period."FINPeriod_EndDate";
-  -- AR/AP and tax require their separately reconciled controls. They cannot be
-  -- inferred from a balanced trial balance or from open job charges.
-  if v_docs>0 then v_blockers:=array_append(v_blockers,'ar_ap_control_unavailable'); v_blockers:=array_append(v_blockers,'vat_control_unavailable'); end if;
+  select count(*) into v_cash from public."FIN_CashTransactions" where "FINCash_LegalEntityID"=p_entity
+    and "FINCash_NativePostingStatusCode"='posted' and "FINCash_AccountingDate"<=v_period."FINPeriod_EndDate";
+  if to_regprocedure('public.multideck_finance_trade_control_bridge(uuid,uuid,uuid)') is null then
+    v_trade_status:=case when v_docs+v_cash=0 then 'not_applicable' else 'unavailable' end;
+  else
+    execute 'select public.multideck_finance_trade_control_bridge($1,$2,$3)' into v_trade using p_actor,p_entity,p_period;
+    v_trade_status:=v_trade->>'status';
+  end if;
+  if v_trade_status not in ('verified','not_applicable') then v_blockers:=array_append(v_blockers,'ar_ap_control'); end if;
+  -- A return-period VAT review cannot clear an accounting month. The separate
+  -- signed accounting-period control must bind the current native VAT lines.
+  select to_jsonb(entity)->>'LegalEntity_CountryCode' into v_country from public."cmp_LegalEntities" entity
+    where entity."LegalEntity_ID"=p_entity;
+  if to_regprocedure('public.multideck_finance_accounting_vat_control_status(uuid,uuid,uuid)') is not null then
+    execute 'select public.multideck_finance_accounting_vat_control_status($1,$2,$3)'
+      into v_vat using p_actor,p_entity,p_period;
+    v_vat_status:=v_vat->>'status';
+  else
+    v_vat_status:=case when v_country='GB' or v_docs>0 then 'unavailable' else 'not_applicable' end;
+  end if;
+  if v_vat_status not in ('verified','not_applicable') then
+    v_blockers:=array_append(v_blockers,'vat_control_unavailable'); end if;
   for v_bank in select "FINBank_ID" id from public."FIN_BankAccounts"
     where "FINBank_LegalEntityID"=p_entity and "FINBank_IsActive" loop
     if to_regprocedure('public.multideck_bank_statement_control(uuid,uuid,uuid,uuid)') is null then
@@ -159,24 +260,33 @@ begin
     where journal.legal_entity_id=p_entity and journal.accounting_date<=v_period."FINPeriod_EndDate"
       and journal.status='posted' and journal.mirror_status not in ('not_required','synced');
   if v_mirror_pending>0 then v_blockers:=array_append(v_blockers,'journal_mirror_delivery'); end if;
-  if v_mode<>'disabled' and v_connected then
-    if to_regprocedure('public.multideck_finance_provider_period_control(uuid,uuid,uuid)') is null then
-      v_provider_status:='unavailable';
-    else
-      execute 'select public.multideck_finance_provider_period_control($1,$2,$3)' into v_provider using p_actor,p_entity,p_period;
-      v_provider_status:=v_provider->>'status';
-    end if;
-    if v_provider_status is distinct from 'verified' then v_blockers:=array_append(v_blockers,'provider_reconciliation'); end if;
-  else v_provider_status:='not_required'; end if;
+  v_provider_status:='not_required';
+  if v_mode='required' and not v_connected then
+    v_provider_status:='unavailable'; v_blockers:=array_append(v_blockers,'provider_reconciliation');
+  elsif v_mode<>'disabled' and v_connected then
+    v_provider_status:='verified';
+    for v_connection in select "ACCIC_ID" id from public."ACCI_Connections"
+      where "ACCIC_LegalEntityID"=p_entity and "ACCIC_StatusCode"='active' loop
+      if to_regprocedure('public.multideck_finance_provider_period_status(uuid,uuid,uuid,uuid)') is null then
+        v_provider:=jsonb_build_object('connectionId',v_connection.id,'status','incomplete');
+      else
+        execute 'select public.multideck_finance_provider_period_status($1,$2,$3,$4)' into v_provider using p_actor,p_entity,p_period,v_connection.id;
+      end if;
+      v_provider_rows:=v_provider_rows||jsonb_build_array(v_provider);
+      if v_provider->>'status' is distinct from 'verified' then v_provider_status:='incomplete'; end if;
+    end loop;
+    if jsonb_array_length(v_provider_rows)=0 then v_provider_status:='incomplete'; end if;
+    if v_provider_status<>'verified' then v_blockers:=array_append(v_blockers,'provider_reconciliation'); end if;
+  end if;
   return jsonb_build_object('legalEntityId',p_entity,'periodId',p_period,'periodCode',v_period."FINPeriod_Code",
     'periodEnd',v_period."FINPeriod_EndDate",'currency',v_period."FINPeriod_BaseCurrencyCode",
     'trialBalance',jsonb_build_object('difference',v_trial,'invalidBatches',v_bad_batches),
     'costAccrual',jsonb_build_object('subledger',v_cost,'control',v_cost_gl,'difference',v_cost-v_cost_gl),
     'revenueWip',jsonb_build_object('subledger',v_wip,'control',v_wip_gl,'difference',v_wip-v_wip_gl),
     'futureChargeMovements',v_future,'pendingChargeCases',v_queue,
-    'arApStatus',case when v_docs=0 then 'not_applicable' else 'unavailable' end,
-    'vatStatus',case when v_docs=0 then 'not_applicable' else 'unavailable' end,
-    'bankControls',v_bank_rows,'mirror',jsonb_build_object('mode',v_mode,'connected',v_connected,'pendingJournals',v_mirror_pending,'providerStatus',v_provider_status),
+    'arApStatus',v_trade_status,'tradeControl',v_trade,
+    'vatStatus',v_vat_status,'vatControl',v_vat,
+    'bankControls',v_bank_rows,'mirror',jsonb_build_object('mode',v_mode,'connected',v_connected,'pendingJournals',v_mirror_pending,'providerStatus',v_provider_status,'providerControls',v_provider_rows),
     'blockers',to_jsonb(v_blockers));
 end; $$;
 revoke all on function public._multideck_finance_close_snapshot(uuid,uuid,uuid) from public,anon,authenticated;
@@ -194,6 +304,13 @@ begin
   select * into v_period from public."FIN_Periods" where "FINPeriod_ID"=p_period and "FINPeriod_LegalEntityID"=p_entity
     for update;
   if not found then raise exception 'Accounting period not found in this legal entity.' using errcode='P0002'; end if;
+  if p_action='close' and to_regclass('public."FIN_IndirectTaxEvidence"') is not null
+    and to_regclass('public."FIN_IndirectTaxDecisions"') is not null
+    and to_regclass('public."FIN_IndirectTaxReconciliations"') is not null then
+    -- Retain the exact signed monthly VAT snapshot until the period lock
+    -- commits; ordinary posting already shares this period row lock.
+    execute 'lock table public."FIN_IndirectTaxEvidence",public."FIN_IndirectTaxDecisions",public."FIN_IndirectTaxReconciliations" in share mode';
+  end if;
   v_snapshot:=public._multideck_finance_close_snapshot(p_actor,p_entity,p_period);
   v_digest:=md5(v_snapshot::text);
   if p_action='read' then

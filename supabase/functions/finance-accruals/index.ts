@@ -54,7 +54,7 @@ async function accessibleJobs(admin: any, current: any, entityId: string, target
   if (error) throw new HttpError(500, error.message)
   const officeSet = new Set(officeIds)
   return (data ?? []).filter((job: any) =>
-    officeSet.has(job.Job_OrgOfficeID ?? job.Job_OfficeID) && (!job.Job_LegalEntityID || job.Job_LegalEntityID === entityId)
+    officeSet.has(job.Job_OrgOfficeID ?? job.Job_OfficeID) && job.Job_LegalEntityID === entityId
   )
 }
 
@@ -343,6 +343,58 @@ Deno.serve(async (request) => {
       rpcFailure(error, "The charge lifecycle queue could not be loaded.")
       return json(request, data)
     }
+    if (request.method === "POST" && parts[0] === "charge-lifecycle" && parts[1] === "recheck" && parts.length === 2) {
+      const input = await body<Record<string, unknown>>(request)
+      if (!uuid(input.legalEntityId) || !uuid(input.chargeId)) throw new HttpError(400, "Choose a legal entity and charge case.")
+      const { data, error } = await admin.rpc("multideck_finance_charge_lifecycle_requeue", {
+        p_actor: current.User_ID, p_entity: input.legalEntityId, p_charge: input.chargeId, p_reason: input.reason,
+      })
+      rpcFailure(error, "The charge case could not be rechecked.")
+      return json(request, data)
+    }
+    if (parts[0] === "charge-lifecycle" && parts[1] === "resolve" && parts.length === 2 && ["GET", "POST"].includes(request.method)) {
+      const query = new URL(request.url).searchParams
+      const input = request.method === "POST" ? await body<Record<string, unknown>>(request) : {}
+      const entityId = request.method === "POST" ? input.legalEntityId : query.get("legalEntityId")
+      const chargeId = request.method === "POST" ? input.chargeId : query.get("chargeId")
+      const action = request.method === "POST" ? input.action : "read"
+      if (!uuid(entityId) || !uuid(chargeId) || !["read", "prepare", "approve"].includes(String(action)) ||
+        (request.method === "POST" && action === "read")) throw new HttpError(400, "Choose a legal entity, charge case and valid resolution action.")
+      const { data, error } = await admin.rpc("multideck_finance_charge_case_resolution", {
+        p_actor: current.User_ID, p_entity: entityId, p_charge: chargeId, p_action: action, p_input: input,
+      })
+      rpcFailure(error, "The no-balance case resolution could not be completed.")
+      return json(request, data)
+    }
+    if (parts[0] === "recognition-controls" && parts.length === 1 && ["GET", "POST"].includes(request.method)) {
+      const query = new URL(request.url).searchParams
+      const input = request.method === "POST" ? await body<Record<string, unknown>>(request) : {}
+      const entityId = request.method === "POST" ? input.legalEntityId : query.get("legalEntityId")
+      const action = request.method === "POST" ? input.action : "read"
+      if (!uuid(entityId) || !["read", "propose", "activate", "pause", "record_revenue_evidence"].includes(String(action)) ||
+        (request.method === "POST" && action === "read")) throw new HttpError(400, "Choose a legal entity and valid recognition action.")
+      const { data, error } = await admin.rpc("multideck_finance_recognition_controls", {
+        p_actor: current.User_ID, p_entity: entityId, p_action: action, p_input: input,
+      })
+      rpcFailure(error, "Recognition controls could not be updated.")
+      return json(request, data)
+    }
+    if (parts[0] === "charge-correction" && parts.length === 1 && ["GET", "POST"].includes(request.method)) {
+      const query = new URL(request.url).searchParams
+      const input = request.method === "POST" ? await body<Record<string, unknown>>(request) : {}
+      const entityId = request.method === "POST" ? input.legalEntityId : query.get("legalEntityId")
+      const chargeId = request.method === "POST" ? input.chargeId : query.get("chargeId")
+      const kind = request.method === "POST" ? input.kind : query.get("kind")
+      const action = request.method === "POST" ? input.action : "read"
+      if (!uuid(entityId) || !uuid(chargeId) || !["cost", "revenue"].includes(String(kind)) ||
+        !["read", "prepare", "approve"].includes(String(action)) || (request.method === "POST" && action === "read"))
+        throw new HttpError(400, "Choose a legal entity, charge and valid correction action.")
+      const { data, error } = await admin.rpc("multideck_finance_charge_correction", {
+        p_actor: current.User_ID, p_entity: entityId, p_charge: chargeId, p_kind: kind, p_action: action, p_input: input,
+      })
+      rpcFailure(error, "The charge correction could not be completed.")
+      return json(request, data)
+    }
     if (parts[0] === "accounting-close" && parts.length === 1 && ["GET", "POST"].includes(request.method)) {
       const query = new URL(request.url).searchParams
       const input = request.method === "POST" ? await body<Record<string, unknown>>(request) : {}
@@ -356,6 +408,21 @@ Deno.serve(async (request) => {
         p_input: request.method === "POST" ? { reviewId: input.reviewId, reason: input.reason } : {},
       })
       rpcFailure(error, "The accounting close pack could not be updated.")
+      return json(request, data)
+    }
+    if (parts[0] === "accounting-vat-control" && parts.length === 1 && ["GET", "POST"].includes(request.method)) {
+      const query = new URL(request.url).searchParams
+      const input = request.method === "POST" ? await body<Record<string, unknown>>(request) : {}
+      const entityId = request.method === "POST" ? input.legalEntityId : query.get("legalEntityId")
+      const targetPeriodId = request.method === "POST" ? input.periodId : query.get("periodId")
+      const action = request.method === "POST" ? input.action : "read"
+      if (!uuid(entityId) || !uuid(targetPeriodId) || !["read", "prepare", "approve"].includes(String(action)) ||
+        (request.method === "POST" && action === "read")) throw new HttpError(400, "Choose a legal entity, period and valid VAT control action.")
+      const { data, error } = await admin.rpc("multideck_finance_accounting_vat_control", {
+        p_actor: current.User_ID, p_entity: entityId, p_period: targetPeriodId, p_action: action,
+        p_input: request.method === "POST" ? { reviewId: input.reviewId, reason: input.reason } : {},
+      })
+      rpcFailure(error, "The accounting-period VAT control could not be updated.")
       return json(request, data)
     }
     if (parts[0] === "cost-controls" && parts.length === 1 && ["GET", "POST"].includes(request.method)) {

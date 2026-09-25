@@ -167,9 +167,86 @@ export type ChargeLifecycleCase = {
   next_attempt_at: string
   assigned_user_id: string | null
   reason: string | null
+  amount_local: number | string | null
+  next_action: string | null
 }
 export function getChargeLifecycleQueue(legalEntityId: string, limit = 100) {
   return call<{ rows: ChargeLifecycleCase[] }>(`/charge-lifecycle?legalEntityId=${encodeURIComponent(legalEntityId)}&limit=${limit}`)
+}
+export function recheckChargeLifecycleCase(legalEntityId: string, chargeId: string, reason: string) {
+  return jsonRequest("POST", "/charge-lifecycle/recheck", { legalEntityId, chargeId, reason })
+}
+export type ChargeCaseResolution = {
+  actorId: string
+  snapshot: {
+    queueRevision: number; queueStatus: string; queueReason: string | null; blockers: string[]
+    cost: ChargeCorrectionSnapshot | null; revenue: ChargeCorrectionSnapshot | null
+  }
+  reviews: { id: string; status: "prepared" | "approved"; queue_revision: number; prepared_by: string; prepared_at: string; prepared_reason: string; approved_by: string | null }[]
+}
+export function getChargeCaseResolution(legalEntityId: string, chargeId: string) {
+  return call<ChargeCaseResolution>(`/charge-lifecycle/resolve?legalEntityId=${encodeURIComponent(legalEntityId)}&chargeId=${encodeURIComponent(chargeId)}`)
+}
+export function updateChargeCaseResolution(legalEntityId: string, chargeId: string, action: "prepare" | "approve", input: Record<string, unknown>) {
+  return jsonRequest("POST", "/charge-lifecycle/resolve", { legalEntityId, chargeId, action, ...input })
+}
+
+export type RecognitionMandate = {
+  id: string
+  legal_entity_id: string
+  policy_id: string | null
+  cost_enabled: boolean
+  revenue_enabled: boolean
+  revenue_service_rule: string | null
+  effective_date: string
+  status: "proposed" | "active" | "paused"
+  prepared_by: string
+  approved_by: string | null
+  prepared_at: string
+  approved_at: string | null
+}
+export type RecognitionControls = { mandates: RecognitionMandate[]; canPrepare: boolean; canApprove: boolean; canPost: boolean; actorId: string }
+export function getRecognitionControls(legalEntityId: string) {
+  return call<RecognitionControls>(`/recognition-controls?legalEntityId=${encodeURIComponent(legalEntityId)}`)
+}
+export function updateRecognitionControls(legalEntityId: string, action: "propose" | "activate" | "pause" | "record_revenue_evidence", input: Record<string, unknown>) {
+  return jsonRequest("POST", "/recognition-controls", { legalEntityId, action, ...input })
+}
+
+export type ChargeCorrectionReview = {
+  id: string; kind: "cost" | "revenue"; status: "prepared" | "posting" | "posted"
+  target_balance: number | string; delta: number | string; period_id: string
+  prepared_by: string; prepared_at: string; prepared_reason: string
+  approved_by: string | null; approved_at: string | null; approval_reason: string | null
+  posting_batch_id: string | null
+}
+export type ChargeCorrectionSnapshot = {
+  sourceHash: string; kind: "cost" | "revenue"; currency: string
+  estimate: number | string; actual: number | string; target: number | string; current: number | string; delta: number | string
+  blockers: string[]
+}
+export type ChargeCorrectionControls = { snapshot: ChargeCorrectionSnapshot; reviews: ChargeCorrectionReview[] }
+export function getChargeCorrection(legalEntityId: string, chargeId: string, kind: "cost" | "revenue") {
+  return call<ChargeCorrectionControls>(`/charge-correction?legalEntityId=${encodeURIComponent(legalEntityId)}&chargeId=${encodeURIComponent(chargeId)}&kind=${kind}`)
+}
+export function updateChargeCorrection(legalEntityId: string, chargeId: string, kind: "cost" | "revenue", action: "prepare" | "approve", input: Record<string, unknown>) {
+  return jsonRequest("POST", "/charge-correction", { legalEntityId, chargeId, kind, action, ...input })
+}
+
+export type AccountingVatControl = {
+  actorId: string
+  canPrepare: boolean
+  canApprove: boolean
+  inventory: { status: "ready_for_review" | "blocked"; sourceDigest: string; lineCount: number; openingExcludedLines: number; unclassifiedLines: number; unreviewedCutoffDifferences: number; orphanEvidence: number; missingDocumentSources: number; issues: { lineId: string; classification: string; batchId: string }[] }
+  control: { status: string; sourceDigest: string | null; approvalId: string | null }
+  reviews: { id: string; source_digest: string; prepared_by: string; prepared_at: string; reason: string }[]
+  approvals: { id: string; review_id: string; source_digest: string; approved_by: string; approved_at: string; reason: string }[]
+}
+export function getAccountingVatControl(legalEntityId: string, periodId: string) {
+  return call<AccountingVatControl>(`/accounting-vat-control?legalEntityId=${encodeURIComponent(legalEntityId)}&periodId=${encodeURIComponent(periodId)}`)
+}
+export function updateAccountingVatControl(legalEntityId: string, periodId: string, action: "prepare" | "approve", input: Record<string, unknown>) {
+  return jsonRequest("POST", "/accounting-vat-control", { legalEntityId, periodId, action, ...input })
 }
 
 export type AccountingCloseSnapshot = {

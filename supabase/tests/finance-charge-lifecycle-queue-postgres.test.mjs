@@ -8,6 +8,8 @@ import { spawnSync } from 'node:child_process'
 const root = new URL('../', import.meta.url)
 const read = path => readFileSync(new URL(path, root), 'utf8')
 const migration = read('migrations/20260925070431_finance_accrual_wip_event_queue.sql')
+const processor = read('migrations/20260925072948_charge_lifecycle_processing.sql')
+const replay = read('migrations/20260925074532_charge_lifecycle_review_replay.sql')
 const baseline = read('baseline/public-schema.sql')
 const table = name => baseline.match(new RegExp(`CREATE TABLE IF NOT EXISTS "public"\\."${name}" \\([\\s\\S]*?^\\);`, 'm'))?.[0]
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -35,19 +37,22 @@ test('source transactions coalesce exact charge events and preserve tenant bound
     sql(`create role anon; create role authenticated; create role service_role;
       create table "cmp_Users"("User_ID" uuid primary key,"Company_ID" uuid,"User_AccessStatus" text);
       create table "cmp_LegalEntities"("LegalEntity_ID" uuid primary key,"Company_ID" uuid);
-      create table "Job_Header"("Job_ID" uuid primary key,"Job_LegalEntityID" uuid);
-      create table "FIN_CostAutomation"(legal_entity_id uuid,authorised_by uuid);
-      create table "FIN_CostEvidence"(id uuid,legal_entity_id uuid,charge_id uuid);
-      ${['Job_Costing_Lines','FIN_Documents','FIN_DocumentLineJobLinks','FIN_Accruals','FIN_WIPItems','FIN_Periods'].map(table).join('\n')}
+      create table "Job_Header"("Job_ID" uuid primary key,"Job_LegalEntityID" uuid,"Job_Status" text default 'active',"Job_IsDeleted" boolean default false);
+      create table "FIN_CostAutomation"(legal_entity_id uuid,authorised_by uuid,enabled boolean default false);
+      create table "FIN_CostEvidence"(id uuid,legal_entity_id uuid,charge_id uuid,recorded_at timestamptz,is_final boolean);
+      create table "FIN_CostFinalisations"(id uuid,evidence_id uuid,status text,reason text);
+      ${['Job_Costing_Lines','FIN_Documents','FIN_DocumentLineJobLinks','FIN_Accruals','FIN_WIPItems','FIN_Periods','Audit_Events'].map(table).join('\n')}
       alter table "Job_Costing_Lines" add primary key("JobCostingLine_ID");
       create function public._multideck_journal_access(p_actor uuid,p_entity uuid,p_permission text) returns void language plpgsql as $$
       begin if not exists(select 1 from "cmp_Users" u join "cmp_LegalEntities" e on e."Company_ID"=u."Company_ID"
         where u."User_ID"=p_actor and e."LegalEntity_ID"=p_entity and u."User_AccessStatus"='active') then
         raise exception 'No finance access' using errcode='42501'; end if; end $$;
       ${migration}
+      ${processor}
+      ${replay}
       insert into "cmp_Users" values('${id(1)}','${id(2)}','active'),('${id(9)}','${id(8)}','active');
       insert into "cmp_LegalEntities" values('${id(3)}','${id(2)}'),('${id(7)}','${id(8)}');
-      insert into "Job_Header" values('${id(4)}','${id(3)}'),('${id(5)}','${id(7)}');
+      insert into "Job_Header"("Job_ID","Job_LegalEntityID") values('${id(4)}','${id(3)}'),('${id(5)}','${id(7)}');
       insert into "Job_Costing_Lines"("JobCostingLine_ID","Job_ID","JobCostingLine_Number","JobCostingLine_Description","JobCostingLine_DomainCode","JobCostingLine_CostAmountLocal","JobCostingLine_CreatedBy") values
         ('${id(11)}','${id(4)}',1,'Handling','freight',100,'${id(1)}'),('${id(12)}','${id(5)}',1,'Foreign','freight',200,'${id(9)}');
       insert into "FIN_Documents"("FINDoc_ID","FINDoc_LegalEntityID","FINDoc_TypeCode","FINDoc_PostingStatusCode","FINDoc_NativePostingStatusCode")
@@ -72,6 +77,26 @@ test('source transactions coalesce exact charge events and preserve tenant bound
     assert.match(reject(`select public.multideck_finance_charge_lifecycle_queue('${id(9)}','${id(3)}');`), /No finance access/)
     assert.match(reject(`set role authenticated; select public.multideck_finance_charge_lifecycle_queue('${id(1)}','${id(3)}');`), /permission denied/)
     assert.match(reject(`set role anon; select * from "FIN_ChargeLifecycleQueue";`), /permission denied/)
+    const queued = JSON.parse(sql('select public.multideck_charge_lifecycle_work_queue()'))
+    assert.equal(queued.length, 2)
+    assert.equal(JSON.parse(sql(`select public.multideck_charge_lifecycle_process('${id(3)}','${id(11)}',6)`)).status, 'settled')
+    assert.equal(sql(`select status from "FIN_ChargeLifecycleQueue" where charge_id='${id(11)}'`), 'settled')
+    assert.equal(JSON.parse(sql(`select public.multideck_charge_lifecycle_process('${id(3)}','${id(11)}',5)`)).status, 'newer_event')
+    sql(`update "FIN_Documents" set "FINDoc_NativePostingStatusCode"='reversed' where "FINDoc_ID"='${id(20)}';`)
+    assert.equal(JSON.parse(sql(`select public.multideck_charge_lifecycle_process('${id(3)}','${id(11)}',7)`)).status, 'settled')
+    sql(`insert into "FIN_Periods"("FINPeriod_ID","FINPeriod_LegalEntityID","FINPeriod_Code","FINPeriod_Name","FINPeriod_StartDate","FINPeriod_EndDate")
+      values('${id(30)}','${id(3)}','202609','September','2026-09-01','2026-09-30');`)
+    sql(`insert into "FIN_Accruals"("FINAccrual_JobID","FINAccrual_JobCostingLineID","FINAccrual_PeriodID","FINAccrual_StatusCode","FINAccrual_AccountingDate","FINAccrual_ExpectedAmount","FINAccrual_AccruedAmount","FINAccrual_LocalAccruedAmount","FINAccrual_CurrencyCodeSnapshot","FINAccrual_CreatedBy") values
+      ('${id(4)}','${id(11)}','${id(30)}','posted',current_date,100,100,100,'GBP','${id(1)}');`)
+    assert.equal(JSON.parse(sql(`select public.multideck_charge_lifecycle_process('${id(3)}','${id(11)}',8)`)).status, 'review')
+    assert.match(sql(`select reason from "FIN_ChargeLifecycleQueue" where charge_id='${id(11)}'`), /Credit, debit note or reversal/)
+    assert.equal(sql(`select amount_local from "FIN_ChargeLifecycleQueue" where charge_id='${id(11)}'`), '110.0000')
+    assert.match(reject(`select public.multideck_finance_charge_lifecycle_requeue('${id(9)}','${id(3)}','${id(11)}','Reviewed source correction');`), /No finance access/)
+    assert.equal(JSON.parse(sql(`select public.multideck_finance_charge_lifecycle_requeue('${id(1)}','${id(3)}','${id(11)}','Reviewed source correction');`)).status, 'pending')
+    sql(`update "Job_Costing_Lines" set "JobCostingLine_CostAmountLocal"=121 where "JobCostingLine_ID"='${id(11)}';`)
+    assert.equal(sql(`select status from "FIN_ChargeLifecycleQueue" where charge_id='${id(11)}'`), 'pending')
+    assert.equal(JSON.parse(sql(`select public.multideck_charge_lifecycle_record_failure('${id(3)}','${id(11)}',8,'stale')`)).status, 'newer_event')
+    assert.equal(JSON.parse(sql(`select public.multideck_charge_lifecycle_record_failure('${id(3)}','${id(11)}',9,'transient')`)).status, 'pending')
   } finally {
     if (started) spawnSync(join(bin, 'pg_ctl'), ['-D', join(dir, 'data'), '-m', 'immediate', '-w', 'stop'], { encoding: 'utf8' })
     rmSync(dir, { recursive: true, force: true })

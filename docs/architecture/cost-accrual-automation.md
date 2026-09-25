@@ -6,17 +6,22 @@ Target: a half-day month-end review, supported by daily exception resolution rat
 than a half-day promise irrespective of missing supplier evidence. Multideck owns
 the ledger; an accounts package is a mirror, not a second posting authority.
 
-The current implementation adds independently approved policies, final-invoice
-confirmation, a residual-finalisation worker and connected invoice-arrival history.
-It is deployed to the demo backend, with automation OFF pending policy approval
-and connected posting verification. Initial accrual recognition still uses the
-existing approved period workflow; this is not a replacement continuous engine.
-See `docs/verification/2026-09-22-cost-accrual-model.md` for exact deployment/test status.
+The earlier residual-finalisation pilot is deployed to the demo backend with
+automation off. The September 25 event-driven lifecycle described below is
+implemented and locally tested, but has not been deployed or enabled for a
+tenant. It retains the reviewed period workflow alongside approved event
+recognition. See `docs/verification/2026-09-22-cost-accrual-model.md` for the
+earlier pilot and `docs/verification/2026-09-25-finance-charge-lifecycle.md`
+for the new local verification state.
 
 ## Accounting model
 
 - Keep individual charge records linked to legal entity, job, supplier, charge
   code, expense nominal, accrual-control nominal, service evidence and currency.
+- Include a job in management WIP only when it is explicitly assigned to the
+  selected legal entity. Unassigned legacy jobs require audited assignment
+  after source review; a company or office match does not establish ownership
+  by every legal entity in that workspace.
 - Map many charge codes to a small number of accrual controls. Do not create a
   nominal per job/charge instance. Allow a tenant to use one control or several
   categories; a mapping is reviewed, never inferred from a nominal's name.
@@ -66,7 +71,7 @@ Human override cannot bypass a locked period, missing mapping, mismatched suppli
 dispute, unsupported currency treatment or stale evidence. Zero-cost/no-invoice
 write-offs require their own evidence/approval path, not an artificial final invoice.
 
-## Target full lifecycle and current worker boundary
+## Event lifecycle and worker boundary
 
 Implemented: persisted final confirmations feed a bounded queue processed by the
 existing secret-authenticated tenant accounting worker. Atomic SQL reloads source
@@ -77,24 +82,29 @@ Source-table locks conservatively prevent concurrent invoice/link phantoms and
 have a two-second lock timeout; this needs load testing before wider rollout.
 The queue is scheduled deterministic database work, not recurring LLM evaluation.
 
-Still to complete for the broader continuous model:
+Charge, service, job, document, invoice-link, policy and adjustment events now
+coalesce into one tenant-scoped revisioned queue case. The bounded worker
+recognises cost accrual or revenue WIP only under a separately approved mandate,
+fresh completed-service evidence, current dated nominal mapping and an open
+accounting period. Native double-entry posting, immutable recognition evidence
+and audit commit together. The existing reviewed period workflow remains for
+charges without event recognition and is guarded against duplicate recognition.
 
-1. Estimate/service event, exact invoice-link/native-posting event, credit/reversal
-   event or approved policy change enqueues affected charge IDs after transaction
-   commit. Coalesce duplicate events and retain source revisions.
-2. A worker reads a transactionally consistent snapshot and runs the decision
-   model. Deterministic arithmetic and rules decide eligibility; no LLM in ordinary
-   posting or watch evaluation.
-3. Within-policy approved cases create one atomic balanced posting, charge movement,
-   immutable audit record and mirror outbox entry. Lock charge and period; use a
-   unique source-revision idempotency key. Re-read linked actuals under those locks.
-4. Exceptions enter a durable work queue with responsible owner, reason, age,
-   amount and next action. Human review re-evaluates current evidence before posting.
-5. Mirroring uses immutable source identity, fenced delivery, exact nominal/currency
-   readback and retained failures. A retry never reposts the native ledger. The
-   manual journal workflow is not a bypass for control-account restrictions.
-6. A late invoice after closure reopens a review case and records an adjustment in
-   an open period; it does not silently restore a previously released estimate.
+Posted exact invoice links relieve only the matching charge's open cost accrual
+or revenue WIP. Credits, changed estimates and late source events enter review;
+an independently approved correction posts the exact delta to an open period
+using the original nominal pair. A no-balance late case also requires a recorded
+reason and independent approval before the queue is settled. Source revisions,
+tenant scope and current permissions are rechecked at approval. A locked period
+is never silently reopened or amended.
+
+The native close pack checks trial balance, charge subledger controls, AR/AP,
+bank and provider status, pending charge cases and source freshness before an
+independent period lock. A separate monthly VAT inventory classifies exact
+native VAT-control postings, opening balances, evidence and cut-off differences;
+an independently approved digest is required for a GB accounting close. A VAT
+return review is not that control. Provider mirroring remains separately
+evidenced and must pass its own reconciliation gate where enabled.
 
 ## Ageing intelligence
 
@@ -122,15 +132,14 @@ differences, unresolved exception value/count, auto-handled proportion, mirror
 failures and actual reviewer time. Only describe the half-day target as achieved
 after real tenant closes meet it without hidden suspense or unexplained balances.
 
-## Dexter staged exception
+## Dexter boundary
 
-Generated journals reuse existing general-ledger reads and deterministic lifecycle
-watches. Dedicated policy/evidence/prediction reads, writes and watches are an
-explicit unsupported exception: approvals must use the finance screen, not chat.
-The local Dexter prompt states this boundary. Before exposing these controls to
-Dexter, add scoped domains, approved allowlisted actions and event adapters together,
-then test match/non-match, exactly-once signals, pause/resume, revocation and tenant
-denial. Do not infer a prediction or approval from a general-ledger journal.
+The finance domain now reads charge cases, corrections, recognition mandates,
+no-balance resolutions and close evidence with source identifiers. Deterministic
+watches follow persisted status and revision changes. Recognition evidence,
+mandate approval, corrections, case resolution and close approval remain manual
+Finance actions because they require source review and an independent colleague.
+Historical invoice-arrival predictions remain unsupported chat reads and watches.
 
 ## Release gates
 
@@ -140,5 +149,5 @@ denial. Do not infer a prediction or approval from a general-ledger journal.
 - Full access regression, exact audit registration, tenant-aware migration preflight,
   schema baseline coverage, adapter readback and authenticated UI journeys.
 - Per-tenant policy approval and an explicit cutover from existing period accruals.
-- No live enablement until all gates pass. This pilot does not repair historical
-  profile/audit gaps or complete the separately outstanding revenue-WIP lifecycle.
+- No live enablement until all gates pass, including tenant migration preflight,
+  signed monthly VAT source coverage and end-to-end posting verification.
