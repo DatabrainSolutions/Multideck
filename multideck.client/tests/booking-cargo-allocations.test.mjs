@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 
 const source = readFileSync(new URL('../src/lib/booking-cargo-allocations.ts', import.meta.url), 'utf8')
-const { analyseCargoAllocations, remainingForAllocation, bookingCargoAllocationPayload, newBookingCargoAllocation } =
+const { analyseCargoAllocations, remainingForAllocation, bookingCargoAllocationPayload, newBookingCargoAllocation, quickCargoAssignmentElsewhere } =
   await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(source)).toString('base64')}`)
 const weightSource = readFileSync(new URL('../src/lib/booking-chargeable-weight.ts', import.meta.url), 'utf8')
 const { bookingChargeableWeightError } = await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(weightSource)).toString('base64')}`)
@@ -14,6 +14,16 @@ const equipment = [{ id: id(2), type: '40GP', verifiedGrossMassKg: '1700' }, { i
 const routes = [{ id: id(4) }, { id: id(5) }]
 const line = (change = {}) => ({ id: id(6), cargoId: id(1), containerId: id(2), routeId: null, packageQuantity: '6', grossWeightKg: '600.25', volumeCbm: '8.125', notes: null, archived: false, ...change })
 const analyse = lines => analyseCargoAllocations(cargo, equipment, routes, lines)
+
+test('quick assignment excludes cargo used by another container without undoing intentional splits', () => {
+  const first = line({ packageQuantity: null, grossWeightKg: null, volumeCbm: null })
+  assert.equal(quickCargoAssignmentElsewhere([first], id(1), id(3)), first)
+  assert.equal(quickCargoAssignmentElsewhere([first], id(1), id(2)), null)
+  assert.equal(quickCargoAssignmentElsewhere([first], id(99), id(3)), null)
+  assert.equal(quickCargoAssignmentElsewhere([first], null, id(3)), null)
+  const second = line({ id: id(7), containerId: id(3) })
+  assert.equal(quickCargoAssignmentElsewhere([first, second], id(1), id(3)), null)
+})
 
 test('split cargo: explicit remaining quantities preserve exact decimals and do not mutate source data', () => {
   const first = line(), second = line({ id: id(7), containerId: id(3), packageQuantity: null, grossWeightKg: null, volumeCbm: null })

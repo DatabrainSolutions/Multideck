@@ -102,7 +102,7 @@ import { AnimatedList } from "./animated-list"
 import { setLiveJobStarred, type LiveBooking } from "@/lib/application-data-api"
 import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSafetyConflict, bookingCargoRequirementLabels } from "@/lib/booking-cargo-handling"
 import { bookingChargeableWeightSummary, bookingChargeableWeightError } from "@/lib/booking-chargeable-weight"
-import { analyseCargoAllocations, bookingCargoAllocationPayload, newBookingCargoAllocation } from "@/lib/booking-cargo-allocations"
+import { analyseCargoAllocations, bookingCargoAllocationPayload, newBookingCargoAllocation, quickCargoAssignmentElsewhere } from "@/lib/booking-cargo-allocations"
 import { CargoAllocationEditor } from "./cargo-allocation-editor"
 import { BookingCustomerPanel } from "./booking-customer-panel"
 import { BookingRouteMilestones } from "./booking-route-milestones"
@@ -2810,20 +2810,24 @@ function BookingContainerDetails({
                         const linked = allocations.find(allocation => allocation.cargoId === line.id && allocation.containerId === container.id)
                         const legScoped = allocations.some(allocation => allocation.cargoId === line.id && allocation.routeId !== null)
                         const controlId = `${fieldIdPrefix}-${index}-cargo-${cargoIndex}`
-                        const disabled = !editable || !container.id || !line.id || (legScoped && !linked) || allocations.length >= 1000 && !linked
+                        const assignedElsewhere = quickCargoAssignmentElsewhere(allocations, line.id, container.id)
+                        const otherEquipmentIndex = containers.findIndex(item => item.id === assignedElsewhere?.containerId)
+                        const otherEquipment = containers[otherEquipmentIndex]
+                        const otherEquipmentLabel = otherEquipment ? `${t(bookingEquipmentPresentation(otherEquipment.equipmentKind).label)} ${otherEquipmentIndex + 1}` : t("another equipment item")
+                        const disabled = !editable || !container.id || !line.id || Boolean(assignedElsewhere) || (legScoped && !linked) || allocations.length >= 1000 && !linked
                         return <label key={line.id || cargoIndex} htmlFor={controlId} className="flex min-w-0 items-start gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 py-2 text-[12px] shadow-[var(--md-shadow-line)]">
                           <Checkbox id={controlId} checked={Boolean(linked)} disabled={disabled || Boolean(linked?.routeId)}
                             onCheckedChange={checked => {
                               if (!editable || !container.id || !line.id || !allocations) return
                               if (checked === true) {
-                                if (linked || legScoped || allocations.length >= 1000) return
+                                if (linked || legScoped || assignedElsewhere || allocations.length >= 1000) return
                                 onAllocationsChange([...allocations, { ...newBookingCargoAllocation(), cargoId: line.id, containerId: container.id }])
                               } else if (linked && !linked.routeId) {
                                 if (linked.packageQuantity != null || linked.grossWeightKg != null || linked.volumeCbm != null || linked.notes?.trim()) setRemovingAllocation(linked)
                                 else onAllocationsChange(allocations.filter(allocation => allocation.id !== linked.id))
                               }
-                            }} aria-label={`${linked ? t("Remove") : t("Assign")} ${t("Cargo")} ${cargoIndex + 1} ${line.description || t("No description")}`} />
-                          <span className="min-w-0 break-words" data-i18n-skip>{cargoIndex + 1}. {line.description || t("No description")}{legScoped ? <span className="block text-[11px] text-[var(--md-text)]">{t("Leg-specific — manage below")}</span> : null}</span>
+                            }} aria-label={`${linked ? t("Remove") : t("Assign")} ${t("Cargo")} ${cargoIndex + 1} ${line.description || t("No description")}`} aria-describedby={assignedElsewhere ? `${controlId}-reason` : undefined} />
+                          <span className="min-w-0 break-words" data-i18n-skip>{cargoIndex + 1}. {line.description || t("No description")}{assignedElsewhere ? <span id={`${controlId}-reason`} className="block text-[11px] text-[var(--md-text)]">{t("Already assigned to")} {otherEquipmentLabel}</span> : legScoped ? <span className="block text-[11px] text-[var(--md-text)]">{t("Leg-specific — manage below")}</span> : null}</span>
                         </label>
                       })}
                     </div>

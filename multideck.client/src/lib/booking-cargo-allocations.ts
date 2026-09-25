@@ -33,6 +33,12 @@ export function newBookingCargoAllocation(): BookingCargoAllocation {
     packageQuantity: null, grossWeightKg: null, volumeCbm: null, notes: null, archived: false }
 }
 
+/** Quick equipment assignment moves whole cargo lines; deliberate splits use the detailed editor. */
+export function quickCargoAssignmentElsewhere(lines: readonly BookingCargoAllocation[], cargoId: string | null | undefined, containerId: string | null | undefined) {
+  if (!cargoId || !containerId || lines.some(line => line.cargoId === cargoId && line.containerId === containerId)) return null
+  return lines.find(line => line.cargoId === cargoId && line.containerId !== containerId) ?? null
+}
+
 export function analyseCargoAllocations(cargo: readonly BookingWorkflowCargo[], equipment: readonly BookingWorkflowContainer[], routes: readonly BookingWorkflowRoute[], lines: readonly BookingCargoAllocation[]) {
   const issues: AllocationIssue[] = []
   const groups = new Map<string, BookingCargoAllocation[]>()
