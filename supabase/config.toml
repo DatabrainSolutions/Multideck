@@ -461,6 +461,9 @@ verify_jwt = false
 [functions.tenant-branding]
 verify_jwt = true
 
+[functions.company-event-image]
+verify_jwt = true
+
 [functions.team]
 verify_jwt = true
 

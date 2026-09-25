@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import { edgeFetch } from "@/lib/api"
+import { getSupabaseSession, supabase } from "@/lib/supabase"
 
 export type EventStatus = "draft" | "published" | "cancelled"
 export type EventAudience = "everyone" | "people" | "departments"
@@ -264,6 +265,25 @@ export async function uploadEventImage(file: File) {
   const { error } = await client().storage.from(eventImageBucket).upload(path, file, { contentType: type.mime, upsert: false })
   if (error) throw new EventsApiError(/row-level|policy|403/i.test(error.message) ? "You need the Event organiser role to upload images." : "The image could not be uploaded. Try again.", "invalid")
   return path
+}
+
+/** A single cover is generated server-side; the provider key never reaches the browser. */
+export async function generateEventImage(draft: Pick<EventDraft, "title" | "location" | "details" | "startsAt">, requestId: string) {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new EventsApiError("Sign in again to create the event image.", "forbidden")
+  let response: Response
+  try {
+    response = await edgeFetch("company-event-image", "", session.access_token, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: draft.title, location: draft.location, details: draft.details, startsAt: draft.startsAt, requestId }),
+    })
+  } catch { throw new EventsApiError("Dexter could not create the image. Try again or upload your own.", "network") }
+  const result = await response.json().catch(() => null) as { imagePath?: string; detail?: string } | null
+  if (!response.ok || !result?.imagePath) {
+    throw new EventsApiError(result?.detail || "Dexter could not create the image. Try again or upload your own.", response.status === 403 ? "forbidden" : "network")
+  }
+  return result.imagePath
 }
 
 const signedUrls = new Map<string, { url: string; expires: number }>()

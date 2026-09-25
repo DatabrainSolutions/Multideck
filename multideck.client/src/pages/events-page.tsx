@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import {
-  EventsApiError, audienceReach, getEventsDirectory, useProfilePhotoUrls, getEvent, isEventOver, listEvents, saveEvent, saveRsvp, setEventStatus, uploadEventImage, useEventImage, useEventsSettings,
+  EventsApiError, audienceReach, generateEventImage, getEventsDirectory, useProfilePhotoUrls, getEvent, isEventOver, listEvents, saveEvent, saveRsvp, setEventStatus, uploadEventImage, useEventImage, useEventsSettings,
   validateRsvpAnswers, validateRsvpForm, type CompanyEvent, type EventDraft, type EventResponse, type EventsDirectory, type RsvpAnswers, type RsvpStatus,
 } from "@/lib/company-events-api"
 import { cn } from "@/lib/utils"
@@ -573,9 +573,11 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [generatingImage, setGeneratingImage] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const imageRequestId = useRef(crypto.randomUUID())
   const imageUrl = useEventImage(draft.imagePath)
   const answeredIds = useMemo(() => [...new Set((existing?.responses ?? []).flatMap((response) => Object.keys(response.answers)))], [existing])
   const [directory, setDirectory] = useState<EventsDirectory | null>(null)
@@ -591,6 +593,7 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
     if (!target) return
     const next = draftFrom(target === "new" ? null : target)
     setDraft(next); setUseForm(next.form.length > 0); setPublishNow(false); setStep("basics")
+    imageRequestId.current = crypto.randomUUID()
     setErrors({}); setFormErrors({}); setError(null)
   }, [target])
 
@@ -629,7 +632,15 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
     setSaving(true); setError(null)
     try {
       if (draft.audience !== "everyone" && !directory) { setError(t("Invitations are not available in this workspace yet. Invite everyone, or try again later.")); return }
-      let saved = await saveEvent(existing?.id ?? null, existing?.editVersion ?? 0, { ...draft, title: draft.title.trim(), location: draft.location.trim(), form })
+      let imagePath = draft.imagePath
+      if (!existing && !imagePath) {
+        setGeneratingImage(true)
+        try {
+          imagePath = await generateEventImage(draft, imageRequestId.current)
+          update({ imagePath })
+        } finally { setGeneratingImage(false) }
+      }
+      let saved = await saveEvent(existing?.id ?? null, existing?.editVersion ?? 0, { ...draft, imagePath, title: draft.title.trim(), location: draft.location.trim(), form })
       // Never publish an event more widely than chosen: a server without
       // invitations would have saved it for everyone.
       if (saved.audience !== draft.audience) { onSaved(saved); return }
@@ -659,7 +670,7 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
       steps={steps}
       activeStepId={step}
       onStepChange={(id) => setStep(id as WizardStepId)}
-      submitLabel={saving ? "Saving…" : publishNow && canPublish ? "Save and publish" : existing ? "Save changes" : "Save draft"}
+      submitLabel={generatingImage ? "Creating image…" : saving ? "Saving…" : publishNow && canPublish ? "Save and publish" : existing ? "Save changes" : "Save draft"}
       onSubmit={() => void save()}
       saving={saving}
       submitDisabled={uploading}
@@ -721,6 +732,7 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
                   <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => update({ imagePath: null })}>{t("Remove")}</Button>
                 </div>
               ) : null}
+              {!draft.imagePath ? <p className="text-[11px] leading-4 text-[var(--md-subtle)]">{t("No image? Dexter will make one from the event details when you save.")}</p> : null}
               <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(change) => void upload(change.target.files?.[0] ?? null)} />
             </StepField>
           </>
