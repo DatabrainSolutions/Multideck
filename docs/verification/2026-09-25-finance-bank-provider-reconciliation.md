@@ -26,7 +26,9 @@
   synced, submitted ERPNext invoice or Payment Entry readback. The issue
   names up to eight affected source references and package IDs and directs
   an operator to reconcile control postings before another run. A matched
-  opening Journal Entry proves GL delivery only. Historical unapplied cash
+  opening Journal Entry proves GL delivery only. The delivery endpoint
+  rejects full-open-items packages before any ERPNext write, including a
+  previously queued package. Historical unapplied cash
   is not treated as current bank statement movement.
 - Finance pages and Dexter read/watch domains expose saved evidence with
   existing permissions. Difference review records a disposition or draft

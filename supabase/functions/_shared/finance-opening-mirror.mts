@@ -11,11 +11,13 @@ type OpeningExport = JournalExport & { sourceSha256: string }
 async function source(admin: any, entity: string, packageId: string) {
   const delivery = checked(await admin.from("FIN_OpeningMirrorDeliveries").select("*").eq("package_id", packageId).eq("legal_entity_id", entity).single(), "Opening mirror queue")
   const [packageResult, connectionResult, rowResult] = await Promise.all([
-    admin.from("FIN_OpeningBalancePackages").select("id,legal_entity_id,status,source_sha256,opening_date,base_currency,posting_batch_id").eq("id", packageId).eq("legal_entity_id", entity).single(),
+    admin.from("FIN_OpeningBalancePackages").select("id,legal_entity_id,status,package_kind,source_sha256,opening_date,base_currency,posting_batch_id").eq("id", packageId).eq("legal_entity_id", entity).single(),
     admin.from("ACCI_Connections").select("ACCIC_ID,ACCIC_LegalEntityID,ACCIC_StatusCode,ACCIC_ProviderCode,ACCIC_ExternalTenantName,ACCIC_ExternalBaseCurrencyCode,ACCIC_SettingsJSON").eq("ACCIC_ID", delivery.connection_id).eq("ACCIC_LegalEntityID", entity).single(),
     admin.from("FIN_OpeningBalanceRows").select("id,source_row_number,nominal_account_id,nominal_code_snapshot,debit,credit").eq("package_id", packageId).order("source_row_number"),
   ])
   const packageRow = checked(packageResult, "Opening package"), connection = checked(connectionResult, "Opening mirror connection"), rows = checked(rowResult, "Opening source rows")
+  if (packageRow.package_kind === "full_open_items") throw new HttpError(409,
+    "A full CargoWise opening package cannot deliver its entire trial balance as one ERPNext journal. Its invoices and unapplied payments need a reviewed provider subledger import and a residual opening journal that excludes their AR/AP and bank control postings.")
   if (packageRow.status !== "posted" || !packageRow.posting_batch_id || connection.ACCIC_StatusCode !== "active" || connection.ACCIC_ProviderCode !== "erpnext" ||
     connection.ACCIC_ExternalBaseCurrencyCode !== packageRow.base_currency || connection.ACCIC_SettingsJSON?.partySync?.siteOrigin !== erpNextOrigin()) {
     throw new HttpError(409, "The posted opening package and its exact ERPNext site, company and currency must still agree.")

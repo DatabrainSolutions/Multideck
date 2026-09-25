@@ -109,7 +109,9 @@ incomplete blocker unless the exact ERPNext invoice or Payment Entry identity
 has a submitted readback. ERPNext opening invoices and payments create their
 own control-account ledger entries. The current full opening Journal Entry
 already carries those AR/AP and bank control balances, so exporting the
-subledger documents alongside it would double post. A reviewed clearing or
+subledger documents alongside it would double post. The opening mirror
+delivery boundary refuses a full-open-items package, including a previously
+queued package, before any provider write. A reviewed clearing or
 residual opening journal and exact provider subledger import/readback are
 required before linked full opening packages can be released or period parity
 can be signed off. Historical
