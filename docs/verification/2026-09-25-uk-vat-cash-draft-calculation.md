@@ -2,7 +2,7 @@
 
 The draft calculation records an immutable revision for one Cash VAT period and one current, verified payment-event projection. Its Box 1, 4, 6 and 7 source lines retain individual payment-event IDs and four-decimal amounts, including multiple part payments against one invoice. The calculation records a projection fingerprint, registration terms and rounded draft boxes. Another source revision creates another calculation rather than editing a prior one.
 
-The draft remains **unreconciled**. It cannot approve or submit a Cash return. Cash period creation and registration changes remain guarded off in the product. Before enabling them, the workflow still needs:
+The draft remains **unreconciled**. It cannot approve or submit a Cash return. Cash period creation and registration changes remain guarded off in the product. The required [Cash VAT control bridge](../architecture/uk-vat-cash-control-bridge.md) defines the ledger-to-payment identity and sign-off gates. Before enabling Cash periods, the workflow still needs:
 
 - a complete cash-to-VAT-control bridge, including credits, refunds, excluded transactions and transitions;
 - individual Cash event reconciliation dates and source locks, plus a review lock that checks all event lines and exceptions;
