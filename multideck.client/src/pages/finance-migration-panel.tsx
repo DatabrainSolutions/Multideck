@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useLanguage } from "@/i18n/language-provider"
-import { getOpeningBalancePackage, getOpeningBalances, getOpeningSourceItems, openingBalanceAction, reconcileMigration, type MigrationReconciliation, type OpeningBalanceRecord, type OpeningSourceItem } from "@/lib/finance-ledger-api"
+import { getOpeningBalancePackage, getOpeningBalances, getOpeningSourceItems, getOpeningFXNominals, getOpeningFXWorklist, openingBalanceAction, openingFXAction, reconcileMigration, type MigrationReconciliation, type OpeningBalanceRecord, type OpeningSourceItem, type OpeningFXWorkItem } from "@/lib/finance-ledger-api"
 import { deliverOpeningMirror, openingMirrorStatus, type OpeningMirrorStatus } from "@/lib/finance-reconciliation-api"
 import { getFinanceDraftOptions } from "@/lib/finance-subledger-api"
 import { openingKinds, openItemsFromUpload, readMigrationUpload, trialBalanceFromUpload, type ImportResult, type ItemField, type ItemMapping, type MigrationUpload, type OpeningItemInput, type OpeningKind, type TrialBalanceInput, type TrialField, type TrialMapping } from "@/lib/accounting-migration-import"
@@ -19,7 +19,7 @@ const blankTrial = (): TrialMapping => ({ headerRow: 0, columns: {}, numberForma
 const blankItems = (): ItemMapping => ({ headerRow: 0, columns: {}, numberFormat: "decimal-point", dateFormat: "iso", amountConvention: "positive", fixedKind: "customer_invoice", kindValues: {} })
 
 /** Page-local CargoWise preflight and controlled, clean-ledger opening cutover. */
-export function FinanceMigrationPanel({ entityId, baseCurrency, chartDirty, canDeliverOpeningMirror = false }: { entityId: string; baseCurrency: string; chartDirty: boolean; canDeliverOpeningMirror?: boolean }) {
+export function FinanceMigrationPanel({ entityId, baseCurrency, chartDirty, canDeliverOpeningMirror = false, canPrepareFX = false, canPostFX = false }: { entityId: string; baseCurrency: string; chartDirty: boolean; canDeliverOpeningMirror?: boolean; canPrepareFX?: boolean; canPostFX?: boolean }) {
   const { t } = useLanguage()
   const [trial, setTrial] = useState<Source<TrialBalanceInput> | null>(null)
   const [items, setItems] = useState<Source<OpeningItemInput> | null>(null)
@@ -40,6 +40,16 @@ export function FinanceMigrationPanel({ entityId, baseCurrency, chartDirty, canD
   const [review, setReview] = useState<{ action: "approve" | "post"; record: OpeningBalanceRecord } | null>(null)
   const [sourcePage, setSourcePage] = useState<{ rows: OpeningSourceItem[]; total: number; offset: number } | null>(null)
   const [sourceError, setSourceError] = useState("")
+  const [fxPackageId, setFxPackageId] = useState<string | null>(null)
+  const [fxWorklist, setFxWorklist] = useState<OpeningFXWorkItem[]>([])
+  const [fxTotal, setFxTotal] = useState(0)
+  const [fxOffset, setFxOffset] = useState(0)
+  const [fxNominals, setFxNominals] = useState<Array<{ FINNom_ID: string; FINNom_Code: string; FINNom_Name: string }>>([])
+  const [fxNominalId, setFxNominalId] = useState("")
+  const [fxReason, setFxReason] = useState("")
+  const [fxCorrectionDate, setFxCorrectionDate] = useState("")
+  const [fxError, setFxError] = useState("")
+  const [fxNotice, setFxNotice] = useState("")
   const request = useRef(0)
   const packageRequest = useRef(0)
   const loadPackages = useCallback(async () => {
@@ -56,6 +66,7 @@ export function FinanceMigrationPanel({ entityId, baseCurrency, chartDirty, canD
     } catch (cause) { if (version === packageRequest.current) setPackageError(cause instanceof Error ? cause.message : "Opening balance packages could not be loaded.") }
   }, [entityId])
   useEffect(() => { void loadPackages(); return () => { packageRequest.current++ } }, [loadPackages])
+  useEffect(() => { setFxPackageId(null); setFxWorklist([]); setFxTotal(0); setFxOffset(0); setFxError(""); setFxNotice("") }, [entityId])
   useEffect(() => {
     let active = true
     setPartyOptions([]); setPartyMap({}); setPartyError("")
@@ -151,6 +162,27 @@ export function FinanceMigrationPanel({ entityId, baseCurrency, chartDirty, canD
     } catch (cause) { setPackageError(cause instanceof Error ? cause.message : "Opening journal delivery failed. Check the saved status before retrying.") }
     finally { await loadPackages(); setBusy(false) }
   }
+  const loadFX = async (packageId: string, offset = 0) => {
+    setBusy(true); setFxError(""); setFxNotice("")
+    try {
+      const [page, nominals] = await Promise.all([getOpeningFXWorklist(entityId, packageId, offset), getOpeningFXNominals(entityId)])
+      setFxPackageId(packageId); setFxWorklist(page.rows); setFxTotal(page.total); setFxOffset(page.offset); setFxNominals(nominals)
+    } catch (cause) { setFxError(cause instanceof Error ? cause.message : "Opening settlements could not be loaded.") }
+    finally { setBusy(false) }
+  }
+  const settleFX = async (row: OpeningFXWorkItem, action: "propose" | "post") => {
+    if (!fxPackageId || busy) return
+    setBusy(true); setFxError(""); setFxNotice("")
+    try {
+      await openingFXAction(entityId, action, action === "propose"
+        ? { allocationId: row.allocationId, fxNominalId, reason: fxReason }
+        : { id: row.settlement?.id, ...(fxCorrectionDate ? { correctionDate: fxCorrectionDate } : {}) })
+      setFxNotice(t(action === "propose" ? "Settlement proposed. A second finance operator must post it." : "Settlement posted to the native ledger."))
+      const page = await getOpeningFXWorklist(entityId, fxPackageId, fxOffset)
+      setFxWorklist(page.rows); setFxTotal(page.total)
+    } catch (cause) { setFxError(cause instanceof Error ? cause.message : "Opening settlement could not be completed.") }
+    finally { setBusy(false) }
+  }
   const issueLocation = (issue: MigrationReconciliation["issues"][number]) => {
     const source = issue.area === "trial_balance" ? trial : issue.area === "open_items" ? items : null
     return source && issue.row ? `${source.upload.name} · ${source.upload.sheetName} · ${t("row")} ${source.result.sourceRows[issue.row - 1] ?? issue.row}` : t(issue.area.replaceAll("_", " "))
@@ -201,7 +233,21 @@ export function FinanceMigrationPanel({ entityId, baseCurrency, chartDirty, canD
       {packageError ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{t(packageError)}</p> : null}
       {packageNotice ? <p role="status" className="text-[13px] text-[var(--md-green)]">{packageNotice}</p> : null}
       {mirrorError ? <p role="alert" className="text-[12px] text-[var(--md-red)]">{t(mirrorError)}</p> : null}
-      {!openingPackages.length ? <p className="text-[12px] text-[var(--md-subtle)]">{t("No opening balance packages staged.")}</p> : <div className="overflow-x-auto"><table className="w-full min-w-[780px] text-[13px]"><thead><tr>{["Source", "Closing date", "Rows", "Debit / credit", "Status", "Accounts system", "Action"].map(label => <th key={label} scope="col" className="p-2 text-start font-medium">{t(label)}</th>)}</tr></thead><tbody>{openingPackages.map(record => { const mirror = mirrorStatuses[record.package.id]; return <tr key={record.package.id} className="border-t border-[var(--md-line)]"><td className="p-2" data-i18n-skip>{record.package.source_file_name}</td><td className="p-2" data-i18n-skip>{record.package.closing_date}</td><td className="p-2 tabular-nums">{record.rowCount}</td><td className="p-2 tabular-nums" data-i18n-skip>{record.package.debit_total} / {record.package.credit_total} {record.package.base_currency}</td><td className="p-2">{t(record.package.status)}</td><td className="p-2">{mirror && mirror.status !== "not_queued" ? <div className="space-y-1"><p>{t(mirror.status === "matched" ? "Matched" : mirror.status === "failed" ? "Delivery failed" : mirror.status === "leased" ? "Delivery in progress" : "Queued for delivery")}</p>{mirror.external_id ? <p className="break-all text-[11px] text-[var(--md-subtle)]" data-i18n-skip>{mirror.external_id}</p> : null}{mirror.readback_hash ? <p className="break-all text-[11px] text-[var(--md-subtle)]" data-i18n-skip>SHA-256 {mirror.readback_hash}</p> : null}{mirror.last_error ? <p role="alert" className="text-[11px] text-[var(--md-red)]">{t(mirror.last_error)}</p> : null}</div> : <span className="text-[var(--md-subtle)]">—</span>}</td><td className="p-2">{record.package.status !== "posted" ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void openReview(record, record.package.status === "staged" ? "approve" : "post")}>{t(record.package.status === "staged" ? "Review and approve" : "Review and post")}</Button> : mirror && ["queued", "failed"].includes(mirror.status) && canDeliverOpeningMirror ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void deliverMirror(record.package.id)}>{t(mirror.status === "failed" ? "Retry delivery" : "Deliver opening")}</Button> : null}</td></tr> })}</tbody></table></div>}
+      {!openingPackages.length ? <p className="text-[12px] text-[var(--md-subtle)]">{t("No opening balance packages staged.")}</p> : <div className="overflow-x-auto"><table className="w-full min-w-[780px] text-[13px]"><thead><tr>{["Source", "Closing date", "Rows", "Debit / credit", "Status", "Accounts system", "Action"].map(label => <th key={label} scope="col" className="p-2 text-start font-medium">{t(label)}</th>)}</tr></thead><tbody>{openingPackages.map(record => { const mirror = mirrorStatuses[record.package.id]; return <tr key={record.package.id} className="border-t border-[var(--md-line)]"><td className="p-2" data-i18n-skip>{record.package.source_file_name}</td><td className="p-2" data-i18n-skip>{record.package.closing_date}</td><td className="p-2 tabular-nums">{record.rowCount}</td><td className="p-2 tabular-nums" data-i18n-skip>{record.package.debit_total} / {record.package.credit_total} {record.package.base_currency}</td><td className="p-2">{t(record.package.status)}</td><td className="p-2">{record.package.package_kind === "full_open_items" ? <span className="text-[11px] text-[var(--md-text)]">{t(record.package.status === "posted" ? "Native opening ledger posted. Review cash settlements and trade controls before period close." : "Native opening package awaits approval and posting.")}</span> : mirror && mirror.status !== "not_queued" ? <div className="space-y-1"><p>{t(mirror.status === "matched" ? "Matched" : mirror.status === "failed" ? "Delivery failed" : mirror.status === "leased" ? "Delivery in progress" : "Queued for delivery")}</p>{mirror.external_id ? <p className="break-all text-[11px] text-[var(--md-subtle)]" data-i18n-skip>{mirror.external_id}</p> : null}{mirror.readback_hash ? <p className="break-all text-[11px] text-[var(--md-subtle)]" data-i18n-skip>SHA-256 {mirror.readback_hash}</p> : null}{mirror.last_error ? <p role="alert" className="text-[11px] text-[var(--md-red)]">{t(mirror.last_error)}</p> : null}</div> : <span className="text-[var(--md-subtle)]">—</span>}</td><td className="p-2">{record.package.status !== "posted" ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void openReview(record, record.package.status === "staged" ? "approve" : "post")}>{t(record.package.status === "staged" ? "Review and approve" : "Review and post")}</Button> : record.package.package_kind === "full_open_items" ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void loadFX(record.package.id)}>{t("Review settlements")}</Button> : record.package.package_kind === "gl_only" && mirror && ["queued", "failed"].includes(mirror.status) && canDeliverOpeningMirror ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void deliverMirror(record.package.id)}>{t(mirror.status === "failed" ? "Retry delivery" : "Deliver opening")}</Button> : null}</td></tr> })}</tbody></table></div>}
+      {fxPackageId && <section className="space-y-3 border-t border-[var(--md-line)] pt-4" aria-label={t("Opening cash settlements")}>
+        <div className="flex items-center justify-between gap-3"><h3 className="text-[13px] font-medium">{t("Opening cash settlements")}</h3><Button size="sm" variant="outline" disabled={busy} onClick={() => void loadFX(fxPackageId)}>{t("Refresh")}</Button></div>
+        <p className="text-xs text-[var(--md-text)]">{t("Compare the cash amount at the bank rate with the imported invoice carrying value. A second operator posts the control reclassification and realised FX adjustment.")}</p>
+        {fxError && <p role="alert" className="text-xs text-[var(--md-red)]">{t(fxError)}</p>}{fxNotice && <p role="status" className="text-xs text-[var(--md-green)]">{fxNotice}</p>}
+        {fxWorklist.length === 0 ? <p className="text-xs text-[var(--md-subtle)]">{t("No posted cash allocations against this opening package yet.")}</p> : <>
+          {canPrepareFX && <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-xs">{t("Reviewed FX gain/loss account")}<select className={selectClass} value={fxNominalId} onChange={event => setFxNominalId(event.target.value)}><option value="">{t("Choose account")}</option>{fxNominals.map(nominal => <option key={nominal.FINNom_ID} value={nominal.FINNom_ID}>{nominal.FINNom_Code} · {nominal.FINNom_Name}</option>)}</select></label>
+            <label className="grid gap-1 text-xs">{t("Cash and invoice rate evidence")}<Input value={fxReason} onChange={event => setFxReason(event.target.value)} maxLength={500} /></label>
+          </div>}
+          {canPostFX && <label className="grid max-w-sm gap-1 text-xs">{t("Later correction date if the cash period is closed")}<Input type="date" value={fxCorrectionDate} onChange={event => setFxCorrectionDate(event.target.value)} /></label>}
+          <div className="overflow-x-auto"><table className="w-full min-w-[920px] text-xs"><thead><tr>{["Cash reference", "Source invoice", "Transaction", "Cash base", "Invoice base", "Gain / loss", "Cash control", "Source control", "Status", "Action"].map(label => <th key={label} scope="col" className="p-2 text-start font-medium">{t(label)}</th>)}</tr></thead><tbody>{fxWorklist.map(row => <tr key={row.allocationId} className="border-t border-[var(--md-line)]"><td className="p-2" data-i18n-skip>{row.cashReference}</td><td className="p-2" data-i18n-skip>{row.sourceReference}</td><td className="p-2 tabular-nums" data-i18n-skip>{row.sourceAmount} {row.currency}</td><td className="p-2 tabular-nums">{row.cashLocal}</td><td className="p-2 tabular-nums">{row.documentLocal}</td><td className="p-2 tabular-nums">{row.gainLoss}</td><td className="p-2" data-i18n-skip>{row.cashControlCode}</td><td className="p-2" data-i18n-skip>{row.sourceControlCode}</td><td className="p-2">{t(row.settlement?.status ?? (row.needed ? "Needs review" : "Matched"))}</td><td className="p-2">{row.settlement?.status === "posted" || !row.needed ? null : row.settlement?.status === "proposed" ? canPostFX && <Button size="sm" variant="outline" disabled={busy} onClick={() => void settleFX(row, "post")}>{t("Post adjustment")}</Button> : canPrepareFX && <Button size="sm" variant="outline" disabled={busy || !fxNominalId || fxReason.trim().length < 8} onClick={() => void settleFX(row, "propose")}>{t("Propose adjustment")}</Button>}</td></tr>)}</tbody></table></div>
+          {fxTotal > 0 && <div className="flex items-center gap-2 text-xs"><span>{fxOffset + 1}–{Math.min(fxOffset + fxWorklist.length, fxTotal)} / {fxTotal} {t("allocations")}</span><Button size="sm" variant="outline" disabled={busy || fxOffset === 0} onClick={() => void loadFX(fxPackageId, Math.max(0, fxOffset - 200))}>{t("Previous")}</Button><Button size="sm" variant="outline" disabled={busy || fxOffset + 200 >= fxTotal} onClick={() => void loadFX(fxPackageId, fxOffset + 200)}>{t("Next")}</Button></div>}
+        </>}
+      </section>}
     </div>
     <Dialog open={review !== null} onOpenChange={open => { if (!open && !busy) setReview(null) }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[760px]"><DialogHeader><DialogTitle>{t(review?.action === "post" ? "Post opening balances" : "Approve opening balances")}</DialogTitle><DialogDescription>{t("Compare the source hash, account rows and evidence with the CargoWise closing records. The service requires a second finance operator and checks the ledger again.")}</DialogDescription></DialogHeader>
       {review ? <div className="space-y-3 text-[12px]">{packageError ? <p role="alert" className="text-[var(--md-red)]">{t(packageError)}</p> : null}<p>{t("Source")}: <span data-i18n-skip>{review.record.package.source_file_name}</span> · SHA-256 <span className="break-all" data-i18n-skip>{review.record.package.source_sha256}</span></p>

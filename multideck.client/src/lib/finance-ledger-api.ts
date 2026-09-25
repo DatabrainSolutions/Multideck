@@ -67,6 +67,14 @@ export const getOpeningBalancePackage = (legalEntityId: string, id: string) =>
   call<OpeningBalanceRecord[]>(`/opening-balances?${new URLSearchParams({ legalEntityId, id })}`)
 export const openingBalanceAction = (legalEntityId: string, action: "stage" | "approve" | "post", input: { id?: string; packageKind?: "gl_only" | "full_open_items"; sourceSystem?: "CargoWise"; sourceFileName?: string; sourceSha256?: string; sourceItemsFileName?: string; sourceItemsSha256?: string; sourceItemsSheetName?: string; cutoffDate?: string; baseCurrency?: string; evidence?: { bank: string; tax: string; accrualWip: string; sourceReconciliation: string; partyMapping?: string; openItems?: string; fx?: string }; trialBalance?: Array<TrialBalanceInput & { sourceRow: number }>; openItems?: Array<OpeningItemInput & { sourceRow: number; partyOrgId: string }> | OpeningItemInput[] }) =>
   call<OpeningBalancePackage>("/opening-balances", { legalEntityId, action, ...input })
+export type OpeningFXSettlement = { id: string; status: "proposed" | "posted"; allocation_id: string; cash_control_nominal_id: string; source_control_nominal_id: string; fx_nominal_id: string | null; cash_local: string; document_local: string; gain_loss_amount: string; proposed_by: string; posted_by: string | null; posting_batch_id: string | null }
+export type OpeningFXWorkItem = { allocationId: string; packageId: string; cashId: string; cashReference: string; documentId: string; sourceReference: string; cashControlNominalId: string; cashControlCode: string; sourceControlNominalId: string; sourceControlCode: string; sourceAmount: number; cashLocal: number; documentLocal: number; gainLoss: number; currency: string; needed: boolean; settlement: OpeningFXSettlement | null }
+export const getOpeningFXWorklist = (legalEntityId: string, packageId: string, offset = 0) =>
+  call<{ rows: OpeningFXWorkItem[]; total: number; offset: number }>(`/opening-balances/fx?${new URLSearchParams({ legalEntityId, packageId, offset: String(offset) })}`)
+export const getOpeningFXNominals = (legalEntityId: string) =>
+  call<Array<{ FINNom_ID: string; FINNom_Code: string; FINNom_Name: string; FINNom_ReportCategoryCode: string }>>(`/opening-balances/fx-nominals?${new URLSearchParams({ legalEntityId })}`)
+export const openingFXAction = (legalEntityId: string, action: "propose" | "post", input: { allocationId?: string; fxNominalId?: string; reason?: string; id?: string; correctionDate?: string }) =>
+  call<OpeningFXSettlement>("/opening-balances/fx", { legalEntityId, action, ...input })
 
 export function journalTotal(lines: JournalLine[], side: "debit" | "credit"): bigint | null {
   let total = 0n

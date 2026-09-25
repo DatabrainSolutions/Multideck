@@ -36,6 +36,28 @@ Deno.serve(async request => {
       }
       return json(request, reconcileAccountingMigration(input, accounts, entities.find((row: any) => row.LegalEntity_ID === entity).LegalEntity_BaseCurrencyCodeSnapshot))
     }
+    if (parts[0] === "opening-balances" && parts[1] === "fx-nominals" && request.method === "GET") {
+      return json(request, checked(await admin.from("FIN_NominalAccounts")
+        .select("FINNom_ID,FINNom_Code,FINNom_Name,FINNom_ReportCategoryCode")
+        .eq("FINNom_LegalEntityID", entity).eq("FINNom_IsActive", true)
+        .eq("FINNom_IsControlAccount", false).in("FINNom_ReportCategoryCode", ["finance", "income", "expense"])
+        .order("FINNom_Code")))
+    }
+    if (parts[0] === "opening-balances" && parts[1] === "fx" && (request.method === "GET" || request.method === "POST")) {
+      const action = request.method === "GET" ? "read" : input.action
+      if (!["read", "propose", "post"].includes(action)) throw new HttpError(400, "Choose an opening settlement action.")
+      if (action !== "read") await requirePermission(admin, current.User_ID,
+        action === "propose" ? "Finance.Management.Prepare" : "Finance.Management.Post")
+      if (action === "read" && !uuid(input.packageId)) throw new HttpError(400, "Choose an opening balance package.")
+      if (action === "read" && (!Number.isSafeInteger(Number(input.offset ?? 0)) || Number(input.offset ?? 0) < 0 || Number(input.offset ?? 0) > 50000))
+        throw new HttpError(400, "Choose a valid opening settlement page.")
+      if (action === "propose" && (!uuid(input.allocationId) || !uuid(input.fxNominalId)))
+        throw new HttpError(400, "Choose an allocation and reviewed FX nominal.")
+      if (action === "post" && !uuid(input.id)) throw new HttpError(400, "Choose a proposed settlement.")
+      return json(request, checked(await admin.rpc("multideck_finance_opening_fx_settlement", {
+        p_actor: current.User_ID, p_entity: entity, p_action: action, p_input: input,
+      })))
+    }
     if (parts[0] === "opening-balances" && parts[1] === "items" && request.method === "GET") {
       if (!uuid(input.id)) throw new HttpError(400, "Choose an opening balance package.")
       const offset = Number(input.offset ?? 0)

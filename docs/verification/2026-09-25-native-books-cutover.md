@@ -22,8 +22,20 @@ tenant, and no release or live provider reconciliation is claimed.
   posting. Native trade control compares these links and source carrying values
   to the posted trial-balance lines. Historical opening documents are excluded
   from current VAT capture; UK posting requires the separate VAT readiness hook.
-  A linked ERPNext connection queues a separate opening journal delivery with
-  readback status visible in the migration panel.
+  A linked ERPNext connection blocks full posting before a ledger write. A
+  full trial-balance journal including AR/AP controls cannot be mirrored safely
+  alongside provider opening invoices or payments until their residual journal
+  and exact source identities are reviewed. The migration panel can show and
+  retry opening-journal delivery status for eligible packages.
+- A posted native cash allocation against an imported opening invoice can be
+  independently proposed and posted as a reviewed settlement. The settlement
+  reverses the allocated cash amount from the normal cash control, applies the
+  imported invoice carrying amount to its source AR/AP control, and posts the
+  realised FX difference to a selected gain/loss account. It records rates,
+  allocation, source document, posting batch and audit evidence. If the cash
+  period is closed, posting requires a dated correction in a later open period.
+  The migration panel pages through the allocated opening cash worklist and
+  shows proposal, posting and correction controls.
 - Charge-to-nominal mappings have an independently approved effective-dated
   snapshot. Document approval pins the actual nominal and mapping provenance;
   month-end charge accrual/WIP selects the accrued nominal from the same
@@ -46,7 +58,7 @@ tenant, and no release or live provider reconciliation is claimed.
 | Check | Result |
 | --- | --- |
 | `node --test supabase/tests/opening-balance-cutover-postgres.test.mjs` | Passed: independent approval, exact posting, GL agreement, source and access denials. |
-| `node --test supabase/tests/opening-full-cutover-postgres.test.mjs` | Passed: full source staging and independent approval, exact AR/AP control, one TB batch, two operational invoices and two unapplied cash records, source immutability. |
+| `node --test supabase/tests/opening-full-cutover-postgres.test.mjs` | Passed: full source staging and independent approval, exact AR/AP control, one TB batch, operational invoices/credits and unapplied cash, source immutability, cross-tenant denial, linked-provider denial before ledger write, EUR customer gain and supplier loss settlements into a later open period, and trade control agreement. |
 | `node --test supabase/tests/finance-release-manifest-postgres.test.mjs` | Passed: ordered Finance migrations install on the tenant baseline with service-only access. |
 | `node --test supabase/tests/charge-mapping-cutover-postgres.test.mjs` | Passed: independent dated cutovers, document correction pinning, later editable-map drift, accrued nominal selection and backdated activation denials. |
 | `node --test supabase/tests/general-ledger-postgres.test.mjs` | Passed: exact linked reversal and journal mirror lifecycle. |
@@ -63,9 +75,10 @@ provider invoices, credits and payments. Provider period comparison must keep
 those source items as an explicit unmatched subledger blocker.
 
 Existing cash approval records allocations at the document exchange rate.
-When a later cash rate differs, the trade bridge flags the missing realised-FX
-true-up; no journal-linked settlement true-up has been proved. Large (up to
-50,000-row) source payload and processing performance has not been exercised.
+The local test proves the later reviewed cash-rate adjustment and source-control
+reclassification for one customer and one supplier case; real imported rates,
+bank statements and posted balances have not been reconciled in a tenant.
+Large (up to 50,000-row) source payload and processing performance has not been exercised.
 Tenant-specific GL, subledger, bank, VAT, accrual and external-mirror agreement,
 period close, and live URL/version checks are required before calling the books
 released. The browser verification attempt was blocked by the Chrome request

@@ -48,7 +48,11 @@ test('full CargoWise opening posts one TB and operational AR/AP and unapplied ca
   const items = [item(1, 'customer_invoice', 'AR', 20, 120),
     item(2, 'customer_receipt', 'AR', 20, 20),
     item(3, 'supplier_invoice', 'AP', 21, 50),
-    item(4, 'supplier_payment', 'AP', 21, 20)]
+    item(4, 'supplier_payment', 'AP', 21, 20),
+    { ...item(5, 'customer_invoice', 'AR', 20, 120), currency: 'EUR', originalBaseAmount: '110', outstandingBaseAmount: '100' },
+    { ...item(6, 'customer_credit', 'AR', 20, 120), currency: 'EUR', originalBaseAmount: '110', outstandingBaseAmount: '100' },
+    { ...item(7, 'supplier_invoice', 'AP', 21, 120), currency: 'EUR', originalBaseAmount: '110', outstandingBaseAmount: '100' },
+    { ...item(8, 'supplier_credit', 'AP', 21, 120), currency: 'EUR', originalBaseAmount: '110', outstandingBaseAmount: '100' }]
   const call = (actor, action, input) => `select public.multideck_finance_opening_balances(
     '${id(actor)}','${id(3)}','${action}', '${JSON.stringify(input)}'::jsonb);`
   try {
@@ -99,7 +103,13 @@ test('full CargoWise opening posts one TB and operational AR/AP and unapplied ca
         ('${id(40)}','${id(3)}','AR','AR','Receivable','asset',true),
         ('${id(41)}','${id(3)}','AP','AP','Payable','liability',true),
         ('${id(42)}','${id(3)}','BANK','Bank','Bank','asset',false),
-        ('${id(43)}','${id(3)}','EQUITY','Equity','Equity','equity',false);
+        ('${id(43)}','${id(3)}','EQUITY','Equity','Equity','equity',false),
+        ('${id(44)}','${id(3)}','1100','Default AR','Receivable','asset',true),
+        ('${id(45)}','${id(3)}','7000','Realised FX','Income Account','finance',false),
+        ('${id(46)}','${id(3)}','2000','Default AP','Payable','liability',true);
+      insert into public."FIN_BankAccounts"("FINBank_ID","FINBank_Code","FINBank_Name",
+        "FINBank_LegalEntityID","FINBank_CurrencyCode","FINBank_NominalAccountID")
+        values('${id(70)}','EUR-BANK','EUR bank','${id(3)}','EUR','${id(42)}');
       insert into public."sys_AuditActorTypes"("AuditActorType_Code","AuditActorType_Name") values('user','User');
       insert into public."sys_AuditEventTypes"("AuditEventType_Code","AuditEventType_Name") values('finance_lifecycle','Finance lifecycle');
       insert into public."sys_AuditOutcomeStatuses"("AuditOutcomeStatus_Code","AuditOutcomeStatus_Name") values('success','Success');
@@ -107,14 +117,26 @@ test('full CargoWise opening posts one TB and operational AR/AP and unapplied ca
         values('standard_7y','Standard seven years');
       insert into public."sys_AuditSensitivityLevels"("AuditSensitivity_Code","AuditSensitivity_Name")
         values('normal','Normal');
-      insert into public."sys_FinancePeriodStatuses"("FINPERST_Code","FINPERST_Name") values('open','Open');
-      insert into public."sys_FinancePostingStatuses"("FINPOSTST_Code","FINPOSTST_Name") values('posted','Posted');
+      insert into public."sys_FinancePeriodStatuses"("FINPERST_Code","FINPERST_Name") values
+        ('open','Open'),('soft_closed','Soft closed');
+      insert into public."sys_FinancePostingStatuses"("FINPOSTST_Code","FINPOSTST_Name") values
+        ('posted','Posted'),('draft','Draft');
       insert into public."sys_FinanceDocumentStatuses"("FINDST_Code","FINDST_Name") values('approved','Approved');
       insert into public."sys_FinanceDocumentTypes"("FINDT_Code","FINDT_Name") values
         ('sl_invoice','Sales invoice'),('pl_invoice','Purchase invoice'),('credit_note','Credit note'),('debit_note','Debit note');
       insert into public."sys_FinanceCashStatuses"("FINCASHST_Code","FINCASHST_Name") values('approved','Approved');
       insert into public."sys_FinanceCashTypes"("FINCASHT_Code","FINCASHT_Name") values
-        ('customer_receipt','Customer receipt'),('supplier_payment','Supplier payment');`)
+        ('customer_receipt','Customer receipt'),('supplier_payment','Supplier payment');
+      insert into public."sys_FinanceAllocationStatuses"("FINALLOCST_Code","FINALLOCST_Name")
+        values('allocated','Allocated');
+      insert into public."sys_FinanceFXGainLossTypes"("FINFXGLT_Code","FINFXGLT_Name")
+        values('realised_gain','Realised gain'),('realised_loss','Realised loss');
+      insert into public."sys_WorkflowRecordTypes"("WorkflowRecordType_Code","WorkflowRecordType_Name")
+        values('customer_receipt','Customer receipt'),('supplier_payment','Supplier payment') on conflict do nothing;
+      insert into public."sys_AccountingProviders"("ACCP_Code","ACCP_Name","ACCP_DefaultAuthType")
+        values('erpnext','ERPNext','api_key');
+      insert into public."sys_AccountingConnectionStatuses"("ACCCS_Code","ACCCS_Name") values
+        ('active','Active'),('draft','Draft');`)
     reject(call(5, 'stage', stage(items)), /do not have access/)
     reject(call(1, 'stage', stage(items, [
       { sourceRow: 1, accountCode: 'AR', debit: '99', credit: '0' },
@@ -124,17 +146,121 @@ test('full CargoWise opening posts one TB and operational AR/AP and unapplied ca
     ])), /do not reconcile/)
     const staged = JSON.parse(sql(call(1, 'stage', stage(items))))
     assert.equal(staged.status, 'staged')
-    assert.equal(staged.reconciliation.openItems, 4)
+    assert.equal(staged.reconciliation.openItems, 8)
     reject(call(1, 'approve', { id: staged.id }), /second finance operator/)
     assert.equal(JSON.parse(sql(call(4, 'approve', { id: staged.id }))).status, 'approved')
+    sql(`insert into public."ACCI_Connections"("ACCIC_ID","ACCIC_ProviderCode","ACCIC_Name",
+      "ACCIC_StatusCode","ACCIC_LegalEntityID","ACCIC_AuthType","ACCIC_ExternalBaseCurrencyCode")
+      values('${id(80)}','erpnext','Linked books','active','${id(3)}','api_key','GBP');`)
+    reject(call(4, 'post', { id: staged.id }), /blocked for a linked accounts system/)
+    assert.equal(sql(`select count(*) from public."FIN_PostingBatches" where "FINPostBatch_LegalEntityID"='${id(3)}';`), '0')
+    sql(`update public."ACCI_Connections" set "ACCIC_StatusCode"='draft' where "ACCIC_ID"='${id(80)}';`)
     const posted = JSON.parse(sql(call(4, 'post', { id: staged.id })))
     assert.equal(posted.status, 'posted')
     assert.equal(sql(`select count(*) from public."FIN_PostingBatches" where "FINPostBatch_LegalEntityID"='${id(3)}';`), '1')
     assert.equal(sql(`select count(*) from public."FIN_PostingLines" where "FINPostLine_BatchID"='${posted.posting_batch_id}';`), '4')
     assert.equal(sql(`select count(*) from public."FIN_Documents" where "FINDoc_OpeningBalancePackageID"='${staged.id}'
-      and "FINDoc_NativePostingBatchID"='${posted.posting_batch_id}';`), '2')
+      and "FINDoc_NativePostingBatchID"='${posted.posting_batch_id}';`), '6')
     assert.equal(sql(`select count(*) from public."FIN_CashTransactions" where "FINCash_OpeningBalancePackageID"='${staged.id}'
       and "FINCash_NativePostingBatchID"='${posted.posting_batch_id}';`), '2')
+    const invoice = sql(`select operational_document_id from public."FIN_OpeningSourceItems"
+      where package_id='${staged.id}' and source_id='CW-5';`)
+    const supplierInvoice = sql(`select operational_document_id from public."FIN_OpeningSourceItems"
+      where package_id='${staged.id}' and source_id='CW-7';`)
+    sql(`insert into public."FIN_CashTransactions"("FINCash_ID","FINCash_TypeCode","FINCash_StatusCode",
+      "FINCash_Number","FINCash_BankAccountID","FINCash_PartyOrgID","FINCash_TransactionDate",
+      "FINCash_AccountingDate","FINCash_CurrencyCodeSnapshot","FINCash_ExchangeRate",
+      "FINCash_Amount","FINCash_LocalAmount","FINCash_UnallocatedAmount","FINCash_LocalUnallocatedAmount",
+      "FINCash_CreatedBy","FINCash_UpdatedBy","FINCash_LegalEntityID") values
+      ('${id(90)}','customer_receipt','approved','EUR-RECEIPT-1','${id(70)}','${id(20)}',
+        '2026-09-15','2026-09-15','EUR',0.9,120,108,0,0,'${id(1)}','${id(1)}','${id(3)}');
+      insert into public."FIN_CashAllocations"("FINCashAlloc_ID","FINCashAlloc_CashID",
+        "FINCashAlloc_DocumentID","FINCashAlloc_AllocationStatusCode","FINCashAlloc_AllocatedAmount",
+        "FINCashAlloc_LocalAllocatedAmount","FINCashAlloc_AllocatedBy") values
+        ('${id(91)}','${id(90)}','${invoice}','allocated',120,100,'${id(1)}');
+      update public."FIN_Documents" set "FINDoc_OutstandingAmount"=0,
+        "FINDoc_LocalOutstandingAmount"=0 where "FINDoc_ID"='${invoice}';
+      insert into public."FIN_CashTransactions"("FINCash_ID","FINCash_TypeCode","FINCash_StatusCode",
+        "FINCash_Number","FINCash_BankAccountID","FINCash_PartyOrgID","FINCash_TransactionDate",
+        "FINCash_AccountingDate","FINCash_CurrencyCodeSnapshot","FINCash_ExchangeRate",
+        "FINCash_Amount","FINCash_LocalAmount","FINCash_UnallocatedAmount","FINCash_LocalUnallocatedAmount",
+        "FINCash_CreatedBy","FINCash_UpdatedBy","FINCash_LegalEntityID") values
+        ('${id(92)}','supplier_payment','approved','EUR-PAYMENT-1','${id(70)}','${id(21)}',
+          '2026-09-16','2026-09-16','EUR',0.9,120,108,0,0,'${id(1)}','${id(1)}','${id(3)}');
+      insert into public."FIN_CashAllocations"("FINCashAlloc_ID","FINCashAlloc_CashID",
+        "FINCashAlloc_DocumentID","FINCashAlloc_AllocationStatusCode","FINCashAlloc_AllocatedAmount",
+        "FINCashAlloc_LocalAllocatedAmount","FINCashAlloc_AllocatedBy") values
+        ('${id(93)}','${id(92)}','${supplierInvoice}','allocated',120,100,'${id(1)}');
+      update public."FIN_Documents" set "FINDoc_OutstandingAmount"=0,
+        "FINDoc_LocalOutstandingAmount"=0 where "FINDoc_ID"='${supplierInvoice}';`)
+    const cashPosted = JSON.parse(sql(`select public._multideck_finance_post_cash_native('${id(90)}','${id(1)}');`))
+    assert.equal(cashPosted.status, 'posted')
+    assert.equal(sql(`select "FINPostLine_NominalAccountID" from public."FIN_PostingLines"
+      where "FINPostLine_BatchID"='${cashPosted.postingBatchId}' and "FINPostLine_LineNo"=2;`), id(44),
+      'normal cash posts to the default AR control before reviewed reclassification')
+    const supplierCashPosted = JSON.parse(sql(`select public._multideck_finance_post_cash_native('${id(92)}','${id(1)}');`))
+    assert.equal(supplierCashPosted.status, 'posted')
+    assert.equal(sql(`select "FINPostLine_NominalAccountID" from public."FIN_PostingLines"
+      where "FINPostLine_BatchID"='${supplierCashPosted.postingBatchId}' and "FINPostLine_LineNo"=2;`), id(46))
+    const cashPeriod = sql(`select "FINCash_PeriodID" from public."FIN_CashTransactions" where "FINCash_ID"='${id(90)}';`)
+    const beforeSettlement = JSON.parse(sql(`select public.multideck_finance_trade_control_bridge(
+      '${id(4)}','${id(3)}','${cashPeriod}');`))
+    assert.equal(beforeSettlement.status, 'unreconciled')
+    assert.ok(beforeSettlement.issues.some(issue => issue.reason === 'opening_allocation_fx_trueup_required'))
+    const fxInput = { allocationId: id(91), fxNominalId: id(45), reason: 'Reviewed CargoWise EUR receipt and bank rate' }
+    const fxCall = (actor, action, input) => `select public.multideck_finance_opening_fx_settlement(
+      '${id(actor)}','${id(3)}','${action}','${JSON.stringify(input)}'::jsonb);`
+    const worklist = JSON.parse(sql(fxCall(4, 'read', { packageId: staged.id, offset: 0 })))
+    assert.equal(worklist.total, 2)
+    assert.equal(worklist.rows.length, 2)
+    assert.ok(worklist.rows.some(row => row.cashReference === 'EUR-RECEIPT-1'
+      && row.sourceReference === 'CW-DOC-5' && row.cashControlCode === '1100' && row.sourceControlCode === 'AR'))
+    assert.equal(JSON.parse(sql(fxCall(4, 'read', { packageId: staged.id, offset: 1 }))).rows.length, 1)
+    const proposedFx = JSON.parse(sql(fxCall(1, 'propose', fxInput)))
+    assert.equal(proposedFx.gain_loss_amount, 8)
+    assert.equal(proposedFx.cash_control_nominal_id, id(44))
+    assert.equal(proposedFx.source_control_nominal_id, id(40))
+    const supplierFx = JSON.parse(sql(fxCall(1, 'propose', {
+      allocationId: id(93), fxNominalId: id(45), reason: 'Reviewed CargoWise EUR supplier payment and bank rate' })))
+    assert.equal(supplierFx.gain_loss_amount, -8)
+    assert.equal(supplierFx.cash_control_nominal_id, id(46))
+    assert.equal(supplierFx.source_control_nominal_id, id(41))
+    reject(fxCall(1, 'post', { id: proposedFx.id }), /second finance operator/)
+    sql(`update public."FIN_Periods" set "FINPeriod_StatusCode"='soft_closed' where "FINPeriod_ID"='${cashPeriod}';`)
+    reject(fxCall(4, 'post', { id: proposedFx.id }), /dated correction after the closed cash period/)
+    const fxPosted = JSON.parse(sql(fxCall(4, 'post', { id: proposedFx.id, correctionDate: '2026-10-01' })))
+    assert.equal(fxPosted.status, 'posted')
+    assert.equal(fxPosted.correction_date, '2026-10-01')
+    assert.equal(sql(`select p."FINPeriod_Code" from public."FIN_PostingBatches" b
+      join public."FIN_Periods" p on p."FINPeriod_ID"=b."FINPostBatch_PeriodID"
+      where b."FINPostBatch_ID"='${fxPosted.posting_batch_id}';`), '202610')
+    assert.equal(sql(`select count(*) from public."FIN_PostingLines" where "FINPostLine_BatchID"='${fxPosted.posting_batch_id}';`), '3')
+    assert.equal(sql(`select "FINPostLine_DebitAmount" from public."FIN_PostingLines"
+      where "FINPostLine_BatchID"='${fxPosted.posting_batch_id}' and "FINPostLine_NominalAccountID"='${id(44)}';`), '108.0000')
+    assert.equal(sql(`select "FINPostLine_CreditAmount" from public."FIN_PostingLines"
+      where "FINPostLine_BatchID"='${fxPosted.posting_batch_id}' and "FINPostLine_NominalAccountID"='${id(40)}';`), '100.0000')
+    assert.equal(sql(`select "FINPostLine_CreditAmount" from public."FIN_PostingLines"
+      where "FINPostLine_BatchID"='${fxPosted.posting_batch_id}' and "FINPostLine_NominalAccountID"='${id(45)}';`), '8.0000')
+    assert.equal(sql(`select count(*) from public."FIN_FXGainLossEvents" where "FINFXEvent_CashAllocationID"='${id(91)}';`), '1')
+    const supplierPosted = JSON.parse(sql(fxCall(4, 'post', { id: supplierFx.id, correctionDate: '2026-10-01' })))
+    assert.equal(supplierPosted.status, 'posted')
+    assert.equal(sql(`select "FINPostLine_CreditAmount" from public."FIN_PostingLines"
+      where "FINPostLine_BatchID"='${supplierPosted.posting_batch_id}' and "FINPostLine_NominalAccountID"='${id(46)}';`), '108.0000')
+    assert.equal(sql(`select "FINPostLine_DebitAmount" from public."FIN_PostingLines"
+      where "FINPostLine_BatchID"='${supplierPosted.posting_batch_id}' and "FINPostLine_NominalAccountID"='${id(41)}';`), '100.0000')
+    assert.equal(sql(`select "FINPostLine_DebitAmount" from public."FIN_PostingLines"
+      where "FINPostLine_BatchID"='${supplierPosted.posting_batch_id}' and "FINPostLine_NominalAccountID"='${id(45)}';`), '8.0000')
+    const correctionPeriod = sql(`select "FINPostBatch_PeriodID" from public."FIN_PostingBatches"
+      where "FINPostBatch_ID"='${fxPosted.posting_batch_id}';`)
+    const afterSettlement = JSON.parse(sql(`select public.multideck_finance_trade_control_bridge(
+      '${id(4)}','${id(3)}','${correctionPeriod}');`))
+    assert.equal(afterSettlement.status, 'verified', JSON.stringify(afterSettlement.issues))
+    const settledWorklist = JSON.parse(sql(fxCall(4, 'read', { packageId: staged.id })))
+    assert.equal(settledWorklist.rows.filter(row => row.settlement?.status === 'posted').length, 2)
+    reject(fxCall(4, 'post', { id: proposedFx.id }), /not found/)
+    reject(`update public."FIN_PostingLines" set "FINPostLine_CreditAmount"=1
+      where "FINPostLine_BatchID"='${fxPosted.posting_batch_id}' and "FINPostLine_LineNo"=3;`, /immutable/)
+    reject(`delete from public."FIN_CashAllocations" where "FINCashAlloc_ID"='${id(91)}';`, /cannot be deleted/)
     reject(call(4, 'post', { id: staged.id }), /stages in order/)
     reject(`update public."FIN_OpeningSourceItems" set original_amount=1 where package_id='${staged.id}';`, /immutable/)
   } finally {
