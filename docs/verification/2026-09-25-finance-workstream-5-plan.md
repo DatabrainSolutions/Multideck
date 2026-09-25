@@ -86,8 +86,10 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 6. `20260925072009_linked_journal_reversals.sql`
 7. `20260925072017_finance_trade_control_reconciliation.sql`
 8. `20260925072611_immutable_committed_native_postings.sql`
-9. `20260925080000_bank_statement_reconciliation.sql`
-10. `20260925090000_finance_provider_period_reconciliation.sql`
+9. `20260925072948_charge_lifecycle_processing.sql`
+10. `20260925073046_versioned_charge_mapping_cutovers.sql`
+11. `20260925080000_bank_statement_reconciliation.sql`
+12. `20260925090000_finance_provider_period_reconciliation.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -121,7 +123,7 @@ incremental application plan; local filename order is not proof of its state.
   expected historical `BEGIN MIGRATION` text in the schema dump now assert
   current snapshot objects as well; their 25 focused cases pass together.
   The fixture is now included in the shared access runner.
-- A second PostgreSQL fixture installs the current ten-file Finance 1–4 manifest
+- A second PostgreSQL fixture installs the current Finance 1–4 manifest
   over that snapshot and verifies representative objects and service-only
   boundaries. It passed locally on 25 September and is included in the shared
   regression runner. This does not install a complete hosted Supabase tenant.
@@ -150,5 +152,9 @@ incremental application plan; local filename order is not proof of its state.
   migration history and cannot serve as an empty-project baseline proof.
 - Chrome opened both the latest Vercel deployment URL and its project alias.
   Each `/auth` page displayed “This deployment is not authorised for this
-  workspace domain.” No credentials were entered. An exact authorised tenant
-  App hostname and test session are needed for authenticated operator proof.
+  workspace domain.” No credentials were entered. Prior release evidence named
+  `dev.multideck.app` as the approved development host; that hostname loaded
+  an existing signed-in operator session and the deployed Finance navigation
+  in a read-only Chrome preflight. The tab was closed. The existing live version
+  still needs exact deployed commit/asset verification after the new release;
+  the demo project's migration target must still be explicitly confirmed.

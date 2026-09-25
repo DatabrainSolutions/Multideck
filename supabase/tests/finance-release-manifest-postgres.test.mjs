@@ -56,6 +56,8 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925072009_linked_journal_reversals.sql',
       '20260925072017_finance_trade_control_reconciliation.sql',
       '20260925072611_immutable_committed_native_postings.sql',
+      '20260925072948_charge_lifecycle_processing.sql',
+      '20260925073046_versioned_charge_mapping_cutovers.sql',
       '20260925080000_bank_statement_reconciliation.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
     ]
@@ -73,6 +75,8 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       'trade_bridge', exists(select 1 from pg_proc where proname='multideck_finance_trade_control_bridge'),
       'committed_batch_guard', exists(select 1 from pg_trigger where tgname='AA_FIN_PostingBatches_committed_immutable' and not tgisinternal),
       'committed_line_guard', exists(select 1 from pg_trigger where tgname='AA_FIN_PostingLines_committed_immutable' and not tgisinternal),
+      'lifecycle_process', to_regprocedure('public.multideck_charge_lifecycle_process(uuid,uuid,bigint)') is not null,
+      'mapping_pin', to_regprocedure('public._multideck_finance_pin_document_charge_mapping()') is not null,
       'bank_control', exists(select 1 from pg_proc where proname='multideck_bank_statement_control'),
       'provider_period_runs', to_regclass('public."ACCI_PeriodReconciliationRuns"') is not null,
       'provider_period_differences', to_regclass('public."ACCI_PeriodReconciliationDifferences"') is not null,
