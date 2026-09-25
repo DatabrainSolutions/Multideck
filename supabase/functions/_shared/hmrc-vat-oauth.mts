@@ -242,7 +242,7 @@ function positiveWhole(value: string | undefined) {
   return value !== undefined && /^[1-9]\d{0,5}$/.test(value)
 }
 
-function ipAddress(value: string) {
+function publicIpv4(value: string) {
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(value)) {
     const octets = value.split(".").map(Number)
     return octets.every((part) => part >= 0 && part <= 255)
@@ -252,10 +252,24 @@ function ipAddress(value: string) {
       && !(octets[0] === 169 && octets[1] === 254)
       && !(octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127)
   }
+  return false
+}
+
+function ipAddress(value: string) {
+  if (value.includes(".") && !value.includes(":")) return publicIpv4(value)
   if (!value.includes(":")) return false
   try {
     const url = new URL(`https://[${value}]/`)
     const address = url.hostname.toLowerCase()
+    // URL normalises dotted IPv4-mapped addresses to hexadecimal groups.
+    // Validate the embedded IPv4 address rather than accepting private
+    // or loopback addresses merely because they arrived in IPv6 notation.
+    const mapped = /^\[::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})\]$/.exec(address)
+    if (mapped) {
+      const high = Number.parseInt(mapped[1], 16)
+      const low = Number.parseInt(mapped[2], 16)
+      return publicIpv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`)
+    }
     return address.startsWith("[") && address.endsWith("]")
       && address !== "[::]" && address !== "[::1]"
       && !/^\[(?:fc|fd|fe[89ab])/i.test(address)

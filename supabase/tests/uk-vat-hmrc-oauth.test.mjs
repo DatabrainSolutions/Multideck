@@ -110,6 +110,13 @@ test("VAT API fraud headers fail closed on missing, placeholder and malformed da
   assert.throws(() => buildHmrcVatFraudHeaders({ ...headers, "Gov-Client-Public-Port": "443".repeat(3) }), /invalid connection method/)
   assert.throws(() => buildHmrcVatFraudHeaders({ ...headers, "Gov-Client-Public-Port": "443" }), /invalid connection method/)
   assert.throws(() => buildHmrcVatFraudHeaders({ ...headers, "Gov-Client-Public-IP": "192.168.1.2" }), /invalid connection method/)
+  assert.throws(() => buildHmrcVatFraudHeaders({ ...headers, "Gov-Client-Public-IP": "::ffff:192.168.1.2" }), /invalid connection method/)
+  assert.throws(() => buildHmrcVatFraudHeaders({ ...headers, "Gov-Vendor-Public-IP": "::ffff:127.0.0.1" }), /invalid connection method/)
+  assert.equal(buildHmrcVatFraudHeaders({
+    ...headers,
+    "Gov-Client-Public-IP": "::ffff:8.8.8.8",
+    "Gov-Vendor-Forwarded": "by=1.1.1.1&for=%3A%3Affff%3A8.8.8.8",
+  })["Gov-Client-Public-IP"], "::ffff:8.8.8.8")
   assert.throws(() => buildHmrcVatFraudHeaders({ ...headers, "Gov-Client-Screens": "sample-value" }), /invalid connection method/)
   assert.throws(() => buildHmrcVatFraudHeaders({ ...headers, "Gov-Client-Window-Size": "width=0&height=720" }), /invalid connection method/)
   assert.throws(() => buildHmrcVatFraudHeaders({ ...headers, "Gov-Vendor-Forwarded": "by=1.1.1.1&for=9.9.9.9" }), /invalid connection method/)
