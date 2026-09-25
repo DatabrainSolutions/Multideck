@@ -85,6 +85,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   const inventory = object(source?.invoiceInventory)
   const projection = object(source?.paymentPreview)
   const anomalies = object(source?.dateAnomalies)
+  const journal = object(source?.journalEvidence)
   const issues: string[] = []
   let issueCount = 0
   const issue = (message: string) => { issueCount++; if (issues.length < 30) issues.push(message) }
@@ -97,7 +98,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   if (!source || source.status !== "cash_control_source_only"
     || source.returnReady !== false || source.truncated !== false
     || !digestPattern.test(String(source.sourceDigest ?? ""))
-    || !context || !inventory || !projection || !anomalies
+    || !context || !inventory || !projection || !anomalies || !journal
     || inventory.truncated !== false || inventory.amountEncoding !== "decimal_strings"
     || projection.amountEncoding !== "decimal_strings"
     || projection.status !== "preview_only_no_cash_return_effect"
@@ -112,7 +113,10 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     || projection.endDate !== context.periodEnd
     || !Array.isArray(inventory.invoices)
     || !Array.isArray(inventory.cashSources)
-    || !Array.isArray(inventory.priceChanges)) {
+    || !Array.isArray(inventory.priceChanges)
+    || journal.status !== "invoice_journals_matched"
+    || !digestPattern.test(String(journal.digest ?? ""))
+    || !Array.isArray(journal.lines)) {
     issue("A complete invoice and payment inventory bound to one Cash VAT period is required.")
     return empty()
   }
@@ -120,6 +124,11 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   let end: string
   let entry: string
   try {
+    if (errorCount(journal.unmatchedLines) !== 0
+      || errorCount(journal.orphanTaxPostings) !== 0
+      || errorCount(journal.lineCount) !== journal.lines.length) {
+      issue("Invoice VAT journal postings are incomplete or unmatched.")
+    }
     start = date(context.periodStart)
     end = date(context.periodEnd)
     entry = date(context.schemeEntryDate)
@@ -149,6 +158,25 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     issue(error instanceof Error ? error.message : "Cash source counts are incomplete.")
   }
   if (issues.length) return empty()
+
+  const journalLines = new Map<string, Row>()
+  for (const item of journal.lines) {
+    const line = object(item)
+    const key = `${String(line?.invoiceId)}:${String(line?.lineId)}`
+    try {
+      if (!line || line.matched !== true || typeof line.invoiceId !== "string"
+        || typeof line.lineId !== "string" || journalLines.has(key)
+        || typeof line.expectedVatGbp !== "string"
+        || typeof line.postedVatGbp !== "string"
+        || units(line.expectedVatGbp) !== units(line.postedVatGbp)) {
+        throw new Error("posted VAT amount or source link is invalid")
+      }
+      journalLines.set(key, line)
+    } catch {
+      issue("A Cash invoice VAT line has no matching posted journal evidence.")
+    }
+  }
+  if (issueCount) return empty()
 
   const cashById = new Map<string, Row>()
   for (const item of inventory.cashSources) {
@@ -216,7 +244,12 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
           || typeof line.treatment !== "string"
           || units(line.netGbp) !== units(line.evidenceNetGbp)
           || units(line.vatGbp) !== units(line.evidenceVatGbp)
-          || units(line.netGbp) + units(line.vatGbp) !== units(line.grossGbp)) {
+          || units(line.netGbp) + units(line.vatGbp) !== units(line.grossGbp)
+          || !journalLines.has(`${invoiceId}:${line.lineId}`)
+          || journalLines.get(`${invoiceId}:${line.lineId}`)?.evidenceId !== line.evidenceId
+          || journalLines.get(`${invoiceId}:${line.lineId}`)?.decisionId !== line.decisionId
+          || units(journalLines.get(`${invoiceId}:${line.lineId}`)?.expectedVatGbp)
+            !== units(line.vatGbp)) {
           throw new Error("invoice line does not match reviewed Cash VAT evidence")
         }
         return { lineId: line.lineId, treatment: line.treatment as CashExitOutstandingInput["lines"][number]["treatment"],
@@ -281,6 +314,10 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     } catch (error) {
       issue(`Invoice ${String(invoiceId ?? "unknown")}: ${error instanceof Error ? error.message : "invalid source"}.`)
     }
+  }
+  if (journalLines.size !== inventory.invoices.reduce((total, invoice) =>
+    total + (Array.isArray(object(invoice)?.lines) ? (object(invoice)?.lines as unknown[]).length : 0), 0)) {
+    issue("Posted VAT journal evidence does not cover every Cash invoice line.")
   }
   if (issueCount) return empty()
   const boxLines = object(projection.boxLines)

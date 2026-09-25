@@ -18,7 +18,8 @@ const allocation = (id, cashId, amount, type, when) => ({
   cashPostedAt: `${when}T12:00:00Z`,
 })
 const line = (id, treatment, net, vat) => ({
-  lineId: id, decisionId: `decision-${id}`, decisionScheme: "cash",
+  lineId: id, evidenceId: `evidence-${id}`,
+  decisionId: `decision-${id}`, decisionScheme: "cash",
   supportedCashTreatment: true, taxPointInCashTerm: true,
   reviewedRuleId: `rule-${id}`, treatment,
   netGbp: net, vatGbp: vat, grossGbp: String(Number(net) + Number(vat)),
@@ -36,6 +37,21 @@ const fixture = () => ({
   dateAnomalies: {
     preEntryDatedPostedInvoices: 0, futureDatedPostedInvoices: 0,
     missingPostingDates: 0, digest: "e".repeat(64),
+  },
+  journalEvidence: {
+    status: "invoice_journals_matched", digest: "f".repeat(64),
+    lineCount: 3, unmatchedLines: 0, orphanTaxPostings: 0,
+    lines: [
+      { invoiceId: "sale-1", lineId: "sale-taxable",
+        evidenceId: "evidence-sale-taxable", decisionId: "decision-sale-taxable",
+        expectedVatGbp: "20.0000", postedVatGbp: "20.0000", matched: true },
+      { invoiceId: "sale-1", lineId: "sale-zero",
+        evidenceId: "evidence-sale-zero", decisionId: "decision-sale-zero",
+        expectedVatGbp: "0.0000", postedVatGbp: "0.0000", matched: true },
+      { invoiceId: "purchase-1", lineId: "purchase-taxable",
+        evidenceId: "evidence-purchase-taxable", decisionId: "decision-purchase-taxable",
+        expectedVatGbp: "40.0000", postedVatGbp: "40.0000", matched: true },
+    ],
   },
   paymentPreview: {
     status: "preview_only_no_cash_return_effect", amountEncoding: "decimal_strings",
@@ -130,4 +146,10 @@ test("Cash bridge surfaces payment mismatch and blocks incomplete source coverag
   const stalePayment = fixture()
   stalePayment.invoiceInventory.cashSources[0].reviewFingerprintMatches = false
   assert.equal(previewUkVatCashControlBridge(stalePayment).streams, null)
+  const missingJournal = fixture()
+  missingJournal.journalEvidence.lines[0].matched = false
+  assert.equal(previewUkVatCashControlBridge(missingJournal).streams, null)
+  const orphanJournal = fixture()
+  orphanJournal.journalEvidence.orphanTaxPostings = 1
+  assert.equal(previewUkVatCashControlBridge(orphanJournal).streams, null)
 })
