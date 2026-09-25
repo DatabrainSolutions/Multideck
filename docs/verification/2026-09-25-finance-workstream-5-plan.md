@@ -331,6 +331,12 @@ incremental application plan; local filename order is not proof of its state.
   September Finance/VAT chain. Five function names overlap; their ordered
   migrations replace or rename the existing functions. This is a collision
   preflight, not proof that the full chain will apply safely to live data.
+- Before any development migration, a read-only count snapshot at 09:29 UTC
+  showed one legal entity, five Finance documents, one cash transaction,
+  three accounting periods, seven native posting batches, sixteen posting
+  lines and 1,441 audit events. Compare these counts and scoped record
+  identities after rollout; a count match alone will not establish access or
+  posting correctness.
 - The current checkout passes the serial data-access regression: 119/119
   PostgreSQL/access cases plus 9/9 boundary contracts, including the staged
   Finance/VAT chain. A two-entity browser journey and live after-migration
