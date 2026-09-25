@@ -148,15 +148,23 @@ test('full CargoWise opening posts one TB and operational AR/AP and unapplied ca
     assert.equal(staged.status, 'staged')
     assert.equal(staged.reconciliation.openItems, 8)
     reject(call(1, 'approve', { id: staged.id }), /second finance operator/)
-    assert.equal(JSON.parse(sql(call(4, 'approve', { id: staged.id }))).status, 'approved')
+    const policy = (workflow, maxAmount) => `select public.multideck_finance_save_approval_policy(
+      '${id(2)}','${id(1)}','${id(3)}','${workflow}','automatic',${maxAmount},20,
+      'Explicit operator action within reviewed exposure');`
+    assert.equal(JSON.parse(sql(policy('opening_balance', 100))).mode, 'automatic')
+    reject(call(1, 'approve', { id: staged.id }), /second finance operator/)
+    assert.equal(JSON.parse(sql(policy('opening_balance', 200))).mode, 'automatic')
+    assert.equal(JSON.parse(sql(call(1, 'approve', { id: staged.id }))).status, 'approved')
     sql(`insert into public."ACCI_Connections"("ACCIC_ID","ACCIC_ProviderCode","ACCIC_Name",
       "ACCIC_StatusCode","ACCIC_LegalEntityID","ACCIC_AuthType","ACCIC_ExternalBaseCurrencyCode")
       values('${id(80)}','erpnext','Linked books','active','${id(3)}','api_key','GBP');`)
-    reject(call(4, 'post', { id: staged.id }), /blocked for a linked accounts system/)
+    reject(call(1, 'post', { id: staged.id }), /blocked for a linked accounts system/)
     assert.equal(sql(`select count(*) from public."FIN_PostingBatches" where "FINPostBatch_LegalEntityID"='${id(3)}';`), '0')
     sql(`update public."ACCI_Connections" set "ACCIC_StatusCode"='draft' where "ACCIC_ID"='${id(80)}';`)
-    const posted = JSON.parse(sql(call(4, 'post', { id: staged.id })))
+    const posted = JSON.parse(sql(call(1, 'post', { id: staged.id })))
     assert.equal(posted.status, 'posted')
+    assert.equal(sql(`select count(*) from public."Audit_Events" where "AuditEvent_RecordID"='${staged.id}'
+      and "AuditEvent_Action"='same_operator_policy_waiver';`), '2')
     assert.equal(sql(`select count(*) from public."FIN_PostingBatches" where "FINPostBatch_LegalEntityID"='${id(3)}';`), '1')
     assert.equal(sql(`select count(*) from public."FIN_PostingLines" where "FINPostLine_BatchID"='${posted.posting_batch_id}';`), '4')
     assert.equal(sql(`select count(*) from public."FIN_Documents" where "FINDoc_OpeningBalancePackageID"='${staged.id}'
@@ -226,7 +234,15 @@ test('full CargoWise opening posts one TB and operational AR/AP and unapplied ca
     assert.equal(supplierFx.cash_control_nominal_id, id(46))
     assert.equal(supplierFx.source_control_nominal_id, id(41))
     reject(fxCall(1, 'post', { id: proposedFx.id }), /second finance operator/)
+    assert.equal(JSON.parse(sql(policy('opening_fx', 100))).mode, 'automatic')
+    reject(fxCall(1, 'post', { id: supplierFx.id }), /second finance operator/)
+    assert.equal(JSON.parse(sql(policy('opening_fx', 200))).mode, 'automatic')
+    const supplierPosted = JSON.parse(sql(fxCall(1, 'post', { id: supplierFx.id })))
+    assert.equal(supplierPosted.status, 'posted')
+    assert.equal(sql(`select count(*) from public."Audit_Events" where "AuditEvent_RecordID"='${supplierFx.id}'
+      and "AuditEvent_Action"='same_operator_policy_waiver';`), '1')
     sql(`update public."FIN_Periods" set "FINPeriod_StatusCode"='soft_closed' where "FINPeriod_ID"='${cashPeriod}';`)
+    reject(fxCall(1, 'post', { id: proposedFx.id, correctionDate: '2026-10-01' }), /second finance operator/)
     reject(fxCall(4, 'post', { id: proposedFx.id }), /dated correction after the closed cash period/)
     const fxPosted = JSON.parse(sql(fxCall(4, 'post', { id: proposedFx.id, correctionDate: '2026-10-01' })))
     assert.equal(fxPosted.status, 'posted')
@@ -242,8 +258,6 @@ test('full CargoWise opening posts one TB and operational AR/AP and unapplied ca
     assert.equal(sql(`select "FINPostLine_CreditAmount" from public."FIN_PostingLines"
       where "FINPostLine_BatchID"='${fxPosted.posting_batch_id}' and "FINPostLine_NominalAccountID"='${id(45)}';`), '8.0000')
     assert.equal(sql(`select count(*) from public."FIN_FXGainLossEvents" where "FINFXEvent_CashAllocationID"='${id(91)}';`), '1')
-    const supplierPosted = JSON.parse(sql(fxCall(4, 'post', { id: supplierFx.id, correctionDate: '2026-10-01' })))
-    assert.equal(supplierPosted.status, 'posted')
     assert.equal(sql(`select "FINPostLine_CreditAmount" from public."FIN_PostingLines"
       where "FINPostLine_BatchID"='${supplierPosted.posting_batch_id}' and "FINPostLine_NominalAccountID"='${id(46)}';`), '108.0000')
     assert.equal(sql(`select "FINPostLine_DebitAmount" from public."FIN_PostingLines"

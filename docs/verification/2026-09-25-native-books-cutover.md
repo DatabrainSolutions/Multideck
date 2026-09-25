@@ -8,8 +8,11 @@ tenant, and no release or live provider reconciliation is claimed.
 
 - A CargoWise trial balance can be staged with its source filename, SHA-256,
   source row numbers, exact nominal codes, base-currency amounts and bank, tax,
-  accrual/WIP and source reconciliation references. A second finance operator
+  accrual/WIP and source reconciliation references. An operator explicitly
   approves and posts one balanced opening journal to an empty native ledger.
+  By default the approver must differ from the staging operator; a bounded
+  legal-entity policy can waive that second-person check, with an audit event
+  recording the policy decision. No unattended opening posting is available.
   The package and rows are immutable. The GL-only path rejects open AR/AP,
   unapplied cash and a linked accounting mirror.
 - The **full open-item** package stages a second source manifest and immutable
@@ -17,7 +20,7 @@ tenant, and no release or live provider reconciliation is claimed.
   original source and base amounts, outstanding source and reviewed carrying
   amounts, historical dates, party mappings and UK prior-filing references.
   Control balances must reconcile by AR/AP nominal to the single trial-balance
-  journal. After independent approval, posting creates operational documents
+  journal. After approval under the entity policy, posting creates operational documents
   and cash with reserved source IDs and an opening marker, without a second GL
   posting. Native trade control compares these links and source carrying values
   to the posted trial-balance lines. Historical opening documents are excluded
@@ -35,7 +38,9 @@ tenant, and no release or live provider reconciliation is claimed.
   allocation, source document, posting batch and audit evidence. If the cash
   period is closed, posting requires a dated correction in a later open period.
   The migration panel pages through the allocated opening cash worklist and
-  shows proposal, posting and correction controls.
+  shows proposal, posting and correction controls. A bounded entity policy can
+  waive the second-person check for an explicit FX post in the original open
+  period. Closed-period corrections continue to require another operator.
 - Charge-to-nominal mappings have an independently approved effective-dated
   snapshot. Document approval pins the actual nominal and mapping provenance;
   month-end charge accrual/WIP selects the accrued nominal from the same
@@ -58,7 +63,7 @@ tenant, and no release or live provider reconciliation is claimed.
 | Check | Result |
 | --- | --- |
 | `node --test supabase/tests/opening-balance-cutover-postgres.test.mjs` | Passed: independent approval, exact posting, GL agreement, source and access denials. |
-| `node --test supabase/tests/opening-full-cutover-postgres.test.mjs` | Passed: full source staging and independent approval, exact AR/AP control, one TB batch, operational invoices/credits and unapplied cash, source immutability, cross-tenant denial, linked-provider denial before ledger write, EUR customer gain and supplier loss settlements into a later open period, and trade control agreement. |
+| `node --test supabase/tests/opening-full-cutover-postgres.test.mjs` | Passed: full source staging, default second-person denial and bounded same-operator policy waiver, exact AR/AP control, one TB batch, operational invoices/credits and unapplied cash, source immutability, cross-tenant and linked-provider denial, EUR gain/loss settlements, closed-period second-person control, and trade control agreement. |
 | `node --test supabase/tests/finance-release-manifest-postgres.test.mjs` | Passed: ordered Finance migrations install on the tenant baseline with service-only access. |
 | `node --test supabase/tests/charge-mapping-cutover-postgres.test.mjs` | Passed: independent dated cutovers, document correction pinning, later editable-map drift, accrued nominal selection and backdated activation denials. |
 | `node --test supabase/tests/general-ledger-postgres.test.mjs` | Passed: exact linked reversal and journal mirror lifecycle. |
