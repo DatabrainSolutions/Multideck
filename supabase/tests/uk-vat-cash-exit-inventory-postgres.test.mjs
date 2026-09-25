@@ -11,6 +11,7 @@ const migrations = [
   new URL("../migrations/20260925120000_uk_vat_cash_exit_line_sources.sql", import.meta.url).pathname,
   new URL("../migrations/20260925121500_uk_vat_cash_exit_cash_source_guard.sql", import.meta.url).pathname,
   new URL("../migrations/20260925123000_uk_vat_cash_exit_review_fingerprint.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925124500_uk_vat_cash_exit_decimal_strings.sql", import.meta.url).pathname,
 ]
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 
@@ -147,20 +148,50 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(result.cashAllocationCount, 1)
     assert.equal(result.cashSourceIssueCount, 0)
     assert.equal(result.cashSources[0].reviewFingerprintMatches, true)
+    assert.equal(result.cashSources[0].cash_amount, "60")
+    assert.equal(result.cashSources[0].allocation_sources[0].allocatedAmount, "60")
     assert.equal(result.unpostedInvoiceCount, 1)
     assert.equal(result.truncated, false)
+    assert.equal(result.amountEncoding, "decimal_strings")
     assert.match(result.sourceDigest, /^[0-9a-f]{64}$/)
     const byId = new Map(result.invoices.map((invoice) => [invoice.invoice_id, invoice]))
-    assert.equal(byId.get(id(10)).paid_through_exit, 0)
-    assert.equal(byId.get(id(10)).candidate_outstanding, 120)
+    assert.equal(byId.get(id(10)).paid_through_exit, "0")
+    assert.equal(byId.get(id(10)).candidate_outstanding, "120")
+    assert.equal(byId.get(id(10)).lines[0].netGbp, "100")
+    assert.equal(byId.get(id(10)).lines[0].evidenceVatGbp, "20")
     assert.equal(byId.get(id(10)).lineSourceIssueCount, 0)
     assert.equal(byId.get(id(10)).lines[0].decisionScheme, "cash")
-    assert.equal(byId.get(id(11)).paid_through_exit, 60)
-    assert.equal(byId.get(id(11)).candidate_outstanding, 180)
+    assert.equal(byId.get(id(11)).paid_through_exit, "60")
+    assert.equal(byId.get(id(11)).candidate_outstanding, "180")
+    assert.equal(byId.get(id(11)).allocation_sources[0].allocatedAmount, "60")
     assert.equal(byId.get(id(11)).future_allocation_count, 1)
     assert.equal(byId.get(id(11)).allocation_sources.length, 2)
     assert.equal(byId.get(id(12)).source_exception, true)
     assert.equal(byId.get(id(12)).lineSourceIssueCount, 1)
+    sql(`update public."FIN_Documents" set "FINDoc_GrossAmount"=10000000000000.0001,
+        "FINDoc_LocalGrossAmount"=10000000000000.0001 where "FINDoc_ID"='${id(10)}';
+      update public."FIN_DocumentLines" set "FINDocLine_LocalNetAmount"=8333333333333.3334,
+        "FINDocLine_LocalTaxAmount"=1666666666666.6667,
+        "FINDocLine_LocalGrossAmount"=10000000000000.0001 where "FINDocLine_ID"='${id(50)}';
+      update public."FIN_IndirectTaxEvidence" set signed_net_reporting=8333333333333.3334,
+        signed_tax_reporting=1666666666666.6667 where id='${id(60)}';`)
+    const precise = JSON.parse(sql(`select ${call};`))
+    const preciseInvoice = precise.invoices.find((invoice) => invoice.invoice_id === id(10))
+    assert.equal(preciseInvoice.gross_amount, "10000000000000.0001")
+    assert.equal(preciseInvoice.candidate_outstanding, "10000000000000.0001")
+    assert.equal(preciseInvoice.lines[0].netGbp, "8333333333333.3334")
+    assert.equal(preciseInvoice.lines[0].vatGbp, "1666666666666.6667")
+    assert.equal(preciseInvoice.lines[0].evidenceVatGbp, "1666666666666.6667")
+    assert.equal(preciseInvoice.lineSourceIssueCount, 0)
+    assert.notEqual(precise.sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_Documents" set "FINDoc_GrossAmount"=120,
+        "FINDoc_LocalGrossAmount"=120 where "FINDoc_ID"='${id(10)}';
+      update public."FIN_DocumentLines" set "FINDocLine_LocalNetAmount"=100,
+        "FINDocLine_LocalTaxAmount"=20,"FINDocLine_LocalGrossAmount"=120
+        where "FINDocLine_ID"='${id(50)}';
+      update public."FIN_IndirectTaxEvidence" set signed_net_reporting=100,
+        signed_tax_reporting=20 where id='${id(60)}';`)
+    assert.equal(JSON.parse(sql(`select ${call};`)).sourceDigest, result.sourceDigest)
     sql(`update public."FIN_CashTransactions" set "FINCash_TransactionDate"='2026-03-02'
       where "FINCash_ID"='${id(30)}';`)
     const staleReview = JSON.parse(sql(`select ${call};`))
@@ -187,6 +218,7 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(changedPrice.postedPriceChangeCount, 1)
     assert.equal(changedPrice.requiresPriceChangeReview, true)
     assert.equal(changedPrice.priceChanges[0].document_id, id(15))
+    assert.equal(changedPrice.priceChanges[0].gross_amount, "-12")
     assert.notEqual(changedPrice.sourceDigest, changed.sourceDigest)
     sql(`insert into public."FIN_CashTransactions" values
       ('${id(33)}','${id(2)}','posted','2026-03-16 12:00Z','GBP','customer_refund',
