@@ -100,9 +100,9 @@ import { StatusPill, attributeToneFor, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
 import { setLiveJobStarred, type LiveBooking } from "@/lib/application-data-api"
-import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSafetyConflict } from "@/lib/booking-cargo-handling"
+import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSafetyConflict, bookingCargoRequirementLabels } from "@/lib/booking-cargo-handling"
 import { bookingChargeableWeightSummary, bookingChargeableWeightError } from "@/lib/booking-chargeable-weight"
-import { analyseCargoAllocations, bookingCargoAllocationPayload } from "@/lib/booking-cargo-allocations"
+import { analyseCargoAllocations, bookingCargoAllocationPayload, newBookingCargoAllocation } from "@/lib/booking-cargo-allocations"
 import { CargoAllocationEditor } from "./cargo-allocation-editor"
 import { BookingCustomerPanel } from "./booking-customer-panel"
 import { BookingRouteMilestones } from "./booking-route-milestones"
@@ -126,6 +126,7 @@ import {
   type BookingQuoteSyncDifference,
   type BookingQuoteSyncReview,
   type BookingWorkflowCharge,
+  type BookingCargoAllocation,
   type BookingWorkflowContainer,
   type BookingWorkflowEvent,
   type BookingWorkflowParty,
@@ -2645,8 +2646,15 @@ function bookingContainerDataValue(container: BookingWorkflowContainer, key: "pa
   return value == null ? "" : String(value)
 }
 
+function bookingContainerVehicleIdentifiers(container: BookingWorkflowContainer) {
+  const value = container.vehicleIdentifiers ?? container.data?.vehicleIdentifiers
+  return typeof value === "string" ? value : ""
+}
+
 function BookingContainerDetails({
   containers,
+  cargo,
+  allocations,
   mode,
   equipmentKinds,
   editable,
@@ -2654,8 +2662,11 @@ function BookingContainerDetails({
   onAdd,
   onChange,
   onRemove,
+  onAllocationsChange,
 }: {
   containers: BookingWorkflowContainer[]
+  cargo: BookingWorkflowCargo[]
+  allocations?: BookingCargoAllocation[]
   mode: string
   equipmentKinds?: BookingEquipmentKind[]
   editable: boolean
@@ -2663,6 +2674,7 @@ function BookingContainerDetails({
   onAdd: (kind: BookingEquipmentKind) => void
   onChange: (index: number, field: BookingContainerDraftField, value: string) => void
   onRemove: (index: number) => void
+  onAllocationsChange: (lines: BookingCargoAllocation[]) => void
 }) {
   const { t } = useLanguage()
   const kinds = equipmentKinds ?? bookingEquipmentKindChoices({ mode, stage: "booking", hasContainers: containers.some((item) => bookingEquipmentPresentation(item.equipmentKind).key === "container") })
@@ -2675,6 +2687,7 @@ function BookingContainerDetails({
   const removeFocus = useRef<HTMLElement | null>(null)
   const [removing, setRemoving] = useState<{ index: number; item: BookingWorkflowContainer } | null>(null)
   const [reclassifying, setReclassifying] = useState<{ index: number; item: BookingWorkflowContainer; kind: BookingEquipmentKind } | null>(null)
+  const [removingAllocation, setRemovingAllocation] = useState<BookingCargoAllocation | null>(null)
   useEffect(() => {
     if (pendingFocus.current !== null) {
       setExpandedEquipment(pendingFocus.current)
@@ -2779,6 +2792,42 @@ function BookingContainerDetails({
                       ) : <Input id={`${fieldIdPrefix}-${index}-${field}`} disabled={!editable} aria-label={t(label)} inputMode={decimal ? "decimal" : undefined} maxLength={field === "number" ? 50 : undefined} value={fieldValue} onChange={(event) => { if (editable) onChange(index, field, event.target.value) }} className={fieldClassName} />}
                     </div>
                   ))}
+                  {equipment.key === "container" ? <div className="col-span-full grid min-w-0 gap-1 text-[11px] font-medium text-[var(--md-text)]">
+                    <label htmlFor={`${fieldIdPrefix}-${index}-vehicleIdentifiers`}>{t("Vehicle VIN / chassis numbers")}</label>
+                    <Textarea id={`${fieldIdPrefix}-${index}-vehicleIdentifiers`} disabled={!editable} maxLength={2000} value={bookingContainerVehicleIdentifiers(container)}
+                      onChange={event => onChange(index, "vehicleIdentifiers", event.target.value)} placeholder={t("One identifier per line when carrying vehicles")}
+                      className="min-h-16 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-base sm:text-[12px]" />
+                    <p className="font-normal">{t("Use a separate line for each vehicle, including two cars in one container. These identifiers are operational details, not the container number.")}</p>
+                  </div> : null}
+                  {allocations && cargo.length ? <div className="col-span-full grid min-w-0 gap-2 py-2">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <h4 className="text-[12px] font-medium text-[var(--md-ink)]">{t("Cargo in this equipment")}</h4>
+                      <span className="text-[11px] text-[var(--md-text)]">{t("Select any number of cargo lines; quantities can be added below.")}</span>
+                    </div>
+                    {!container.id ? <p className="text-[11px] text-[var(--md-text)]">{t("Save this equipment before assigning cargo.")}</p> : null}
+                    <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {cargo.map((line, cargoIndex) => {
+                        const linked = allocations.find(allocation => allocation.cargoId === line.id && allocation.containerId === container.id)
+                        const legScoped = allocations.some(allocation => allocation.cargoId === line.id && allocation.routeId !== null)
+                        const controlId = `${fieldIdPrefix}-${index}-cargo-${cargoIndex}`
+                        const disabled = !editable || !container.id || !line.id || (legScoped && !linked) || allocations.length >= 1000 && !linked
+                        return <label key={line.id || cargoIndex} htmlFor={controlId} className="flex min-w-0 items-start gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 py-2 text-[12px] shadow-[var(--md-shadow-line)]">
+                          <Checkbox id={controlId} checked={Boolean(linked)} disabled={disabled || Boolean(linked?.routeId)}
+                            onCheckedChange={checked => {
+                              if (!editable || !container.id || !line.id || !allocations) return
+                              if (checked === true) {
+                                if (linked || legScoped || allocations.length >= 1000) return
+                                onAllocationsChange([...allocations, { ...newBookingCargoAllocation(), cargoId: line.id, containerId: container.id }])
+                              } else if (linked && !linked.routeId) {
+                                if (linked.packageQuantity != null || linked.grossWeightKg != null || linked.volumeCbm != null || linked.notes?.trim()) setRemovingAllocation(linked)
+                                else onAllocationsChange(allocations.filter(allocation => allocation.id !== linked.id))
+                              }
+                            }} aria-label={`${linked ? t("Remove") : t("Assign")} ${t("Cargo")} ${cargoIndex + 1} ${line.description || t("No description")}`} />
+                          <span className="min-w-0 break-words" data-i18n-skip>{cargoIndex + 1}. {line.description || t("No description")}{legScoped ? <span className="block text-[11px] text-[var(--md-text)]">{t("Leg-specific — manage below")}</span> : null}</span>
+                        </label>
+                      })}
+                    </div>
+                  </div> : null}
                   <Button
                     type="button"
                     variant="ghost"
@@ -2801,6 +2850,7 @@ function BookingContainerDetails({
                       <BookingCargoWiseField label="Reefer set point" value={String(container.reeferSetPoint ?? "")} editable={editable} onChange={(value) => onChange(index, "reeferSetPoint", value)} />
                       <BookingCargoWiseField label="Temperature unit" value={container.reeferUnit || "Not recorded"} options={["Not recorded", "C", "F"]} allowCustom={false} editable={editable} onChange={(value) => onChange(index, "reeferUnit", value === "Not recorded" ? "" : value)} />
                     </div>
+                    {/RF|REEFER/i.test(container.type ?? "") && !container.reeferSetPoint ? <p className="pb-2 text-[11px] leading-5 text-[var(--md-status-amber-ink)]">{t("No container set point recorded. Check the assigned cargo requirements before setting this reefer; Quote temperatures are not assigned to containers automatically.")}</p> : null}
                     {seaContainer ? <p className="pb-2 text-[11px] leading-5 text-[var(--md-text)]">{t("Record VGM from the verified weighing evidence. Cargo weight is not automatically treated as VGM. Recording these values does not submit a VGM declaration.")}</p> : null}
                     {retainedVgm && equipment.key !== "container" ? <p className="text-xs leading-5 text-[var(--md-text)]">{t("Historical VGM values are retained for review, not treated as a declaration for this equipment kind.")}</p> : null}
                   </details>
@@ -2820,6 +2870,14 @@ function BookingContainerDetails({
           <DialogHeader><DialogTitle>{t("Remove equipment from this Booking?")}</DialogTitle><DialogDescription>{t("This removal saves automatically. Saved equipment history is retained. Remove or reassign cargo allocations first.")}</DialogDescription></DialogHeader>
           <p className="break-words text-sm">{removing ? `${bookingEquipmentPresentation(removing.item.equipmentKind).label} ${removing.index + 1} · ${removing.item.number || t("Number not recorded")}` : ""}</p>
           <DialogFooter><Button ref={cancelRef} variant="ghost" onClick={() => setRemoving(null)}>{t("Keep equipment")}</Button><Button disabled={!editable || !removing || containers[removing.index] !== removing.item} onClick={() => { if (editable && removing && containers[removing.index] === removing.item) { onRemove(removing.index); setRemoving(null) } }}>{t("Remove equipment")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={removingAllocation !== null} onOpenChange={open => { if (!open) setRemovingAllocation(null) }}>
+        <DialogContent><DialogHeader><DialogTitle>{t("Remove this cargo assignment?")}</DialogTitle><DialogDescription>{t("This assignment has recorded quantities or notes. Removing it will clear those details when the Booking saves. Cargo, equipment and the accepted Quote remain unchanged.")}</DialogDescription></DialogHeader>
+          <DialogFooter><Button type="button" variant="outline" onClick={() => setRemovingAllocation(null)}>{t("Keep assignment")}</Button><Button type="button" disabled={!editable} onClick={() => {
+            if (editable && allocations && removingAllocation) onAllocationsChange(allocations.filter(line => line.id !== removingAllocation.id))
+            setRemovingAllocation(null)
+          }}>{t("Remove assignment")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog open={reclassifying !== null} onOpenChange={(open) => { if (!open) setReclassifying(null) }}>
@@ -2860,6 +2918,7 @@ function BookingRecordDetails({
   renderSecurityEvidence,
   renderMilestones,
   allocationEditor,
+  onAllocationsChange,
   allocationValidationAttempt = 0,
   weightValidation,
   editable,
@@ -2888,6 +2947,7 @@ function BookingRecordDetails({
   renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
   renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
   allocationEditor?: ReactNode
+  onAllocationsChange: (lines: BookingCargoAllocation[]) => void
   allocationValidationAttempt?: number
   weightValidation?: { attempt: number; index: number | null; field?: "description" }
   currentUser?: AuthUserSummary | null
@@ -2936,7 +2996,7 @@ function BookingRecordDetails({
   useEffect(() => {
     if (allocationValidationAttempt) allocationSectionRef.current?.focus()
   }, [allocationValidationAttempt])
-  const [selectedCargoIndex, setSelectedCargoIndex] = useState(0)
+  const [selectedCargoIndex, setSelectedCargoIndex] = useState<number | null>(null)
   const [removingCargoIndex, setRemovingCargoIndex] = useState<number | null>(null)
   const [pendingRouteMode, setPendingRouteMode] = useState<{ index: number; mode: string; route: BookingWorkflowRoute } | null>(null)
   const [pendingOverallMode, setPendingOverallMode] = useState<{ bookingId: string; from: string; to: string; shipmentType: string; routing: string } | null>(null)
@@ -2945,7 +3005,7 @@ function BookingRecordDetails({
   const routeModeCancelRef = useRef<HTMLButtonElement>(null)
   const routeModeFocusRef = useRef<HTMLElement | null>(null)
   const routeModeTriggersRef = useRef(new Map<number, HTMLDivElement>())
-  const cargoIndex = Math.min(selectedCargoIndex, Math.max(0, workspace.cargo.length - 1))
+  const cargoIndex = Math.min(selectedCargoIndex ?? 0, Math.max(0, workspace.cargo.length - 1))
   const lineWeightField = useRef<HTMLDivElement>(null)
   const overrideWeightField = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -3146,6 +3206,31 @@ function BookingRecordDetails({
     setPendingOverallMode(null)
   }
 
+  const cargoLineEditor = selectedCargoIndex !== null && cargo ? <div className="grid min-w-0 gap-3 p-3">
+    {allocationEditor && cargo.id ? <p className="text-[12px] text-[var(--md-text)]">{t("To place this cargo, open a container below and select this line. Add quantities only when known.")}</p> : null}
+    <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <BookingCargoWiseAmountField label="Cargo line value" amount={cargoValue("declaredValue")} currency={cargoValue("declaredValueCurrency")} currencies={currencyOptions} editable={editable} onAmountChange={(nextAmount) => onCargoChange(cargoIndex, "declaredValue", nextAmount)} onCurrencyChange={(nextCurrency) => onCargoChange(cargoIndex, "declaredValueCurrency", nextCurrency)} />
+      <BookingCargoWiseField label="Commodity" value={cargoValue("commodity", value(facts, "commodity"))} options={commodityOptions} searchable placeholder="Search commodities" {...editCargo(cargoIndex, "commodity")} />
+      <BookingCargoWiseField label="Other handling" value={bookingCargoOtherHandling(knownCargo)} options={bookingOtherHandlingOptions} placeholder="Choose handling" allowCustom={false} {...editCargo(cargoIndex, "knownCargo")} />
+      <div className="sm:col-span-2 xl:col-span-4">{renderDangerousGoods?.(cargo, (entry, records, unsaved) => <CargoHandlingEditor booking evidence={records} sourceEvidenceEntry={entry} unsaved={unsaved} onLineChange={(field, value) => onCargoChange(cargoIndex, field, value)} value={cargo.handlingDetailsJson ?? (typeof cargo.cargoData?.handlingDetailsJson === "string" ? cargo.cargoData.handlingDetailsJson : JSON.stringify({ ...(cargo.isHazardous ? { hazardous: { tbc: true, details: {} } } : {}), ...(cargo.isTemperatureControlled ? { temperatureControlled: { tbc: true, details: {} } } : {}) }))} line={cargo} editable={editable} onChange={nextValue => onCargoChange(cargoIndex, "handlingDetailsJson", nextValue)} />)}</div>
+      {bookingCargoSafetyConflict(cargo, knownCargo) ? <p className="sm:col-span-2 xl:col-span-4 text-[12px] leading-5 text-[var(--md-text)]">{t("Earlier handling text mentions safety requirements that are not confirmed by this line's flags. Review the source documents before changing them.")} <span data-i18n-skip>{knownCargo}</span></p> : null}
+      {typeof cargo.cargoData?.cargoCharacteristics === "string" && cargo.cargoData.cargoCharacteristics.trim() ? <details className="sm:col-span-2 xl:col-span-4 text-[12px] text-[var(--md-text)]"><summary className="cursor-pointer">{t("Earlier shipment handling retained")}</summary><p className="pt-2" data-i18n-skip>{cargo.cargoData.cargoCharacteristics}</p></details> : null}
+      <div className="sm:col-span-2"><div ref={goodsDescriptionRef}><BookingCargoWiseField label="Goods description" value={goodsDescription} placeholder="Describe the goods" {...editCargo(cargoIndex, "description")} /></div></div>
+      <BookingCargoWiseField label="Marks and numbers" value={cargoValue("marksAndNumbers", cargoDataValue("marksAndNumbers"))} {...editCargo(cargoIndex, "marksAndNumbers")} />
+      <BookingCargoWiseField label="Packages / pieces" value={cargoValue("packageQuantity", value(facts, "packageQuantity"))} {...editCargo(cargoIndex, "packageQuantity")} />
+      <BookingCargoWiseField label="Package type" value={cargoValue("packageType", value(facts, "packageType"))} options={[...freightPackageTypeOptions]} searchable {...editCargo(cargoIndex, "packageType")} />
+      <BookingCargoWiseField label="Gross weight (kg)" value={cargoValue("grossWeightKg", value(facts, "grossWeightKg"))} {...editCargo(cargoIndex, "grossWeightKg")} />
+      <BookingCargoWiseField label="Volume (CBM)" value={cargoValue("volumeCbm", value(facts, "volumeCbm"))} {...editCargo(cargoIndex, "volumeCbm")} />
+      <BookingCargoWiseField label="Length" value={cargoValue("length", value(facts, "length"))} {...editCargo(cargoIndex, "length")} />
+      <BookingCargoWiseField label="Width" value={cargoValue("width", value(facts, "width"))} {...editCargo(cargoIndex, "width")} />
+      <BookingCargoWiseField label="Height" value={cargoValue("height", value(facts, "height"))} {...editCargo(cargoIndex, "height")} />
+      <BookingCargoWiseField label="Dimension unit" value={cargoValue("lengthUnit", value(facts, "lengthUnit", "cm"))} options={["cm", "m", "in"]} allowCustom={false} {...editCargo(cargoIndex, "lengthUnit")} />
+      {showChargeableWeight ? <div ref={lineWeightField}><BookingCargoWiseField label="Line chargeable weight (kg)" inputMode="decimal" error={weightValidation ? bookingChargeableWeightError(cargo.chargeableWeightKg) : undefined} value={cargoValue("chargeableWeightKg")} {...editCargo(cargoIndex, "chargeableWeightKg")} /></div> : null}
+      {fieldPolicy.vin ? <BookingCargoWiseField label="VIN" value={cargoValue("vin", cargoDataValue("vin"))} {...editCargo(cargoIndex, "vin")} /> : null}
+    </div>
+    {renderSecurityEvidence?.(cargo)}
+  </div> : null
+
   return (
     <div data-booking-continuous-details className="@container/booking-details grid min-w-0 gap-2">
       <div role="status" className={fieldPolicy.routingModeMismatch ? "text-[12px] leading-5 text-[var(--md-text)]" : "sr-only"}>
@@ -3312,7 +3397,12 @@ function BookingRecordDetails({
             <div className="grid content-start gap-1.5 @min-[80rem]/booking-details:contents">
               <div className="grid gap-1.5 md:grid-cols-2 @min-[80rem]/booking-details:contents">
                 <BookingCargoWiseField label="Shipment type" value={detailValue("shipmentType", record.booking.shipmentType)} options={shipmentTypeOptions} placeholder="Choose shipment type" allowCustom={false} {...editDetail("shipmentType")} />
-                <BookingCargoWiseField label="Equipment / load" value={record.booking.container} options={bookingEquipmentOptionsByMode[modeKey] ?? bookingEquipmentOptionsByMode.multimodal} placeholder="Choose equipment" {...editField("container")} />
+                {workspace.containers.length ? <div className="min-w-0 text-[12px]">
+                  <p className="mb-1 text-[var(--md-text)]">{t("Requested equipment")}</p>
+                  <div className="flex min-h-9 flex-wrap gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] p-1.5 shadow-[var(--md-shadow-line)]" aria-label={t("Requested equipment")}>
+                    {workspace.containers.map((item, index) => <span key={item.id || index} className="rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] px-2 py-1 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" data-i18n-skip>{item.number || `${t(bookingEquipmentPresentation(item.equipmentKind).label)} ${index + 1}`} · {item.type || t("Type not recorded")}</span>)}
+                  </div>
+                </div> : <BookingCargoWiseField label="Equipment / load" value={record.booking.container} options={bookingEquipmentOptionsByMode[modeKey] ?? bookingEquipmentOptionsByMode.multimodal} placeholder="Choose equipment" {...editField("container")} />}
                 {fieldPolicy.hblMode ? <BookingCargoWiseField label="HBL mode" value={detailValue("hblMode", value(facts, "hblMode"))} options={bookingHblModeOptions} placeholder="Choose HBL mode" allowCustom={false} {...editDetail("hblMode")} /> : null}
                 <BookingCargoWiseField label="Incoterms" value={incotermCode} options={bookingIncotermOptions} placeholder="Choose Incoterm" allowCustom={false} editable={editable} onChange={(nextCode) => onDetailChange("incoterms", [nextCode, incotermLocation].filter(Boolean).join(" "))} />
                 <BookingCargoWiseField label="Planned departure (UTC)" value={plannedDeparture} inputType="date" editable={editable && !departureParts.invalid} onChange={(nextDate) => {
@@ -3435,7 +3525,7 @@ function BookingRecordDetails({
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="flex items-center justify-between gap-3 px-3 py-2">
             <div className="flex items-center gap-1"><h2 className="text-[13px] font-medium">{t("Cargo lines")} · {workspace.cargo.length}</h2>
-              <BookingDetailsInfo label="About cargo values">{t("The quoted shipment value comes from the accepted quote. It is a reference total, not a distribution of value across cargo lines. Shipment goods value and cargo-line values are maintained separately; changing the shipment total does not redistribute line values. Equipment allocations are recorded separately in Cargo allocation.")}</BookingDetailsInfo>
+              <BookingDetailsInfo label="About cargo values">{t("The quoted shipment value comes from the accepted quote. It is a reference total, not a distribution of value across cargo lines. Shipment goods value and cargo-line values are maintained separately; changing the shipment total does not redistribute line values. Allocate each cargo line to its equipment below.")}</BookingDetailsInfo>
             </div>
             <Button variant="ghost" size="sm" disabled={!editable || workspace.cargo.length >= 200} onClick={() => { setSelectedCargoIndex(workspace.cargo.length); onCargoAdd() }}>
               <Plus className="size-3.5" aria-hidden="true" />{t("Add cargo line")}
@@ -3457,22 +3547,38 @@ function BookingRecordDetails({
               <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Does not update cargo-line values.")}</p>
             </div>
           ) : null}
+          <div className="grid gap-2 px-3 pb-3 sm:grid-cols-2 xl:grid-cols-4">
+            <BookingCargoWiseAmountField label="Booking value" amount={valueAmount} currency={valueCurrency} currencies={currencyOptions} editable={editable} onAmountChange={(nextAmount) => onBookingChange("value", [valueCurrency, nextAmount].filter(Boolean).join(" "))} onCurrencyChange={(nextCurrency) => onBookingChange("value", [nextCurrency, valueAmount].filter(Boolean).join(" "))} />
+            <BookingCargoWiseField label="Customs included" value={recordText(editableDetails, "customsIncluded") || value(facts, "customsIncluded")} options={bookingCustomsIncludedOptions} placeholder="Choose" allowCustom={false} {...editDetail("customsIncluded")} />
+            {record.booking.customFields.filter(field => !["Quote type", "Quote ref", "Customer PO", "Incoterms", "Source"].includes(field.label) || Object.prototype.hasOwnProperty.call(editableDetails, `customField:${field.label}`)).map((field, index) => <BookingCargoWiseField key={`${field.label}-${index}`} label={field.label === "Source" ? "Booking source" : field.label} value={detailValue(`customField:${field.label}`, field.value)} {...editDetail(`customField:${field.label}`)} />)}
+          </div>
           <div role="region" aria-label={t("Cargo line comparison")} tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">
             <table className="w-full text-left text-[12px]">
-              <caption className="sr-only">{t("Select a cargo line to edit its goods details below")}</caption>
+              <caption className="sr-only">{t("Expand a cargo line to edit its goods and handling details")}</caption>
               <thead className="bg-[var(--md-surface-soft)] text-[var(--md-text)]"><tr>
-                {["Goods description", "Packages", "Gross weight (kg)", ...(showChargeableWeight ? ["Chargeable weight (kg)"] : []), "Volume (CBM)", "Actions"].map((label) => <th key={label} scope="col" className="px-3 py-2 font-medium">{t(label)}</th>)}
+                {["Goods description", "Packages", "Gross weight (kg)", ...(showChargeableWeight ? ["Chargeable weight (kg)"] : []), "Volume (CBM)", "Handling", "Equipment", "Actions"].map((label) => <th key={label} scope="col" className="px-3 py-2 font-medium">{t(label)}</th>)}
               </tr></thead>
-              <tbody>{workspace.cargo.map((line, index) => (
-                <tr key={line.id || `draft-${index}`} className={cn(index === cargoIndex && "bg-[var(--md-surface-soft)]")}>
-                  <td className="px-3 py-1.5"><Button variant="ghost" size="sm" aria-pressed={index === cargoIndex} onClick={() => setSelectedCargoIndex(index)} className="h-auto justify-start whitespace-normal text-left">{index + 1}. {line.description || t("New cargo line")}</Button></td>
+              {workspace.cargo.map((line, index) => (
+                <tbody key={line.id || `draft-${index}`}>
+                <tr className={cn(selectedCargoIndex === index && "bg-[var(--md-surface-soft)]")}>
+                  <td className="px-3 py-1.5"><Button variant="ghost" size="sm" aria-expanded={selectedCargoIndex === index} aria-controls={selectedCargoIndex === index ? `booking-cargo-line-${index}` : undefined} onClick={() => setSelectedCargoIndex(current => current === index ? null : index)} className="h-auto justify-start gap-2 whitespace-normal text-left"><ChevronDown className={cn("size-3.5 shrink-0 transition-transform", selectedCargoIndex !== index && "-rotate-90")} aria-hidden="true" />{index + 1}. {line.description || t("New cargo line")}</Button></td>
                   <td className="px-3 py-1.5">{line.packageQuantity ?? line.pieces ?? "–"} {line.packageType}</td>
                   <td className="px-3 py-1.5">{line.grossWeightKg ?? "–"}</td>
                   {showChargeableWeight ? <td data-i18n-skip className="px-3 py-1.5">{line.chargeableWeightKg == null || String(line.chargeableWeightKg).trim() === "" ? "–" : line.chargeableWeightKg}</td> : null}
                   <td className="px-3 py-1.5">{line.volumeCbm ?? "–"}</td>
+                  <td className="px-3 py-1.5"><span className="text-[var(--md-text)]" data-i18n-skip>{bookingCargoRequirementLabels(line).join(" · ") || "–"}</span></td>
+                  <td className="px-3 py-1.5"><span className="text-[var(--md-text)]" data-i18n-skip>{workspace.cargoAllocationState?.allocations.filter(allocation => allocation.cargoId === line.id).map(allocation => {
+                    const equipmentIndex = workspace.containers.findIndex(item => item.id === allocation.containerId)
+                    const equipment = workspace.containers[equipmentIndex]
+                    const routeIndex = workspace.routes.findIndex(route => route.id === allocation.routeId)
+                    const legLabel = allocation.routeId ? (routeIndex >= 0 ? ` · ${t("Leg")} ${routeIndex + 1}` : ` · ${t("Leg unavailable")}`) : ""
+                    return equipment ? `${equipment.number || `${t(bookingEquipmentPresentation(equipment.equipmentKind).label)} ${equipmentIndex + 1}`}${legLabel}` : ""
+                  }).filter(Boolean).join("; ") || "–"}</span></td>
                   <td className="px-3 py-1.5"><Button variant="ghost" size="icon" disabled={!editable} aria-label={t(`Remove cargo line ${index + 1}`)} onClick={() => setRemovingCargoIndex(index)}><Trash2 className="size-3.5" aria-hidden="true" /></Button></td>
                 </tr>
-              ))}</tbody>
+                {selectedCargoIndex === index ? <tr><td colSpan={showChargeableWeight ? 8 : 7} className="bg-[var(--md-surface-soft)] p-0 align-top"><div id={`booking-cargo-line-${index}`} className="min-w-0">{cargoLineEditor}</div></td></tr> : null}
+                </tbody>
+              ))}
             </table>
           </div>
           {!workspace.cargo.length ? <p className="px-3 py-4 text-[12px] text-[var(--md-text)]">{t("No cargo lines yet.")}</p> : null}
@@ -3498,39 +3604,11 @@ function BookingRecordDetails({
             <DialogFooter><Button variant="outline" onClick={() => setRemovingCargoIndex(null)}>{t("Cancel")}</Button><Button onClick={() => { if (removingCargoIndex !== null) onCargoRemove(removingCargoIndex); setRemovingCargoIndex(null); setSelectedCargoIndex(0) }}>{t("Remove line")}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
-        <BookingCargoWiseGroup title="Goods" contentClassName="sm:grid-cols-2 xl:grid-cols-4">
-          <BookingCargoWiseAmountField label="Booking value" amount={valueAmount} currency={valueCurrency} currencies={currencyOptions} editable={editable} onAmountChange={(nextAmount) => onBookingChange("value", [valueCurrency, nextAmount].filter(Boolean).join(" "))} onCurrencyChange={(nextCurrency) => onBookingChange("value", [nextCurrency, valueAmount].filter(Boolean).join(" "))} />
-          <BookingCargoWiseAmountField label="Cargo line value" amount={cargoValue("declaredValue")} currency={cargoValue("declaredValueCurrency")} currencies={currencyOptions} editable={editable && Boolean(cargo)} onAmountChange={(nextAmount) => onCargoChange(cargoIndex, "declaredValue", nextAmount)} onCurrencyChange={(nextCurrency) => onCargoChange(cargoIndex, "declaredValueCurrency", nextCurrency)} />
-          <BookingCargoWiseField label="Commodity" value={cargoValue("commodity", value(facts, "commodity"))} options={commodityOptions} searchable placeholder="Search commodities" {...editCargo(cargoIndex, "commodity")} />
-          <BookingCargoWiseField label="Other handling" value={bookingCargoOtherHandling(knownCargo)} options={bookingOtherHandlingOptions} placeholder="Choose handling" allowCustom={false} {...editCargo(cargoIndex, "knownCargo")} />
-          {cargo ? <div className="sm:col-span-2 xl:col-span-4">{renderDangerousGoods?.(cargo, (entry, records, unsaved) => <CargoHandlingEditor booking evidence={records} sourceEvidenceEntry={entry} unsaved={unsaved} onLineChange={(field, value) => onCargoChange(cargoIndex, field, value)} value={cargo.handlingDetailsJson ?? (typeof cargo.cargoData?.handlingDetailsJson === "string" ? cargo.cargoData.handlingDetailsJson : JSON.stringify({ ...(cargo.isHazardous ? { hazardous: { tbc: true, details: {} } } : {}), ...(cargo.isTemperatureControlled ? { temperatureControlled: { tbc: true, details: {} } } : {}) }))} line={cargo} editable={editable} onChange={value => onCargoChange(cargoIndex, "handlingDetailsJson", value)} />)}</div> : null}
-          {bookingCargoSafetyConflict(cargo, knownCargo) ? <p className="sm:col-span-2 xl:col-span-4 text-[12px] leading-5 text-[var(--md-text)]">{t("Earlier handling text mentions safety requirements that are not confirmed by this line's flags. Review the source documents before changing them.")} <span data-i18n-skip>{knownCargo}</span></p> : null}
-          {typeof cargo?.cargoData?.cargoCharacteristics === "string" && cargo.cargoData.cargoCharacteristics.trim() ? <details className="sm:col-span-2 xl:col-span-4 text-[12px] text-[var(--md-text)]"><summary className="cursor-pointer">{t("Earlier shipment handling retained")}</summary><p className="pt-2" data-i18n-skip>{cargo.cargoData.cargoCharacteristics}</p></details> : null}
-          <div className="sm:col-span-2 xl:col-span-2 2xl:col-span-2">
-            <div ref={goodsDescriptionRef}><BookingCargoWiseField label="Goods description" value={goodsDescription} placeholder="Describe the goods" {...editCargo(cargoIndex, "description")} /></div>
-          </div>
-          <BookingCargoWiseField label="Marks and numbers" value={cargoValue("marksAndNumbers", cargoDataValue("marksAndNumbers"))} {...editCargo(cargoIndex, "marksAndNumbers")} />
-          <BookingCargoWiseField label="Packages / pieces" value={cargoValue("packageQuantity", value(facts, "packageQuantity"))} {...editCargo(cargoIndex, "packageQuantity")} />
-          <BookingCargoWiseField label="Package type" value={cargoValue("packageType", value(facts, "packageType"))} options={[...freightPackageTypeOptions]} searchable {...editCargo(cargoIndex, "packageType")} />
-          <BookingCargoWiseField label="Gross weight (kg)" value={cargoValue("grossWeightKg", value(facts, "grossWeightKg"))} {...editCargo(cargoIndex, "grossWeightKg")} />
-          <BookingCargoWiseField label="Volume (CBM)" value={cargoValue("volumeCbm", value(facts, "volumeCbm"))} {...editCargo(cargoIndex, "volumeCbm")} />
-          <BookingCargoWiseField label="Length" value={cargoValue("length", value(facts, "length"))} {...editCargo(cargoIndex, "length")} />
-          <BookingCargoWiseField label="Width" value={cargoValue("width", value(facts, "width"))} {...editCargo(cargoIndex, "width")} />
-          <BookingCargoWiseField label="Height" value={cargoValue("height", value(facts, "height"))} {...editCargo(cargoIndex, "height")} />
-          <BookingCargoWiseField label="Dimension unit" value={cargoValue("lengthUnit", value(facts, "lengthUnit", "cm"))} options={["cm", "m", "in"]} allowCustom={false} {...editCargo(cargoIndex, "lengthUnit")} />
-          {showChargeableWeight ? <div ref={lineWeightField}><BookingCargoWiseField label="Line chargeable weight (kg)" inputMode="decimal" error={weightValidation ? bookingChargeableWeightError(cargo?.chargeableWeightKg) : undefined} value={cargoValue("chargeableWeightKg")} {...editCargo(cargoIndex, "chargeableWeightKg")} /></div> : null}
-          <BookingCargoWiseField label="Customs included" value={recordText(editableDetails, "customsIncluded") || value(facts, "customsIncluded")} options={bookingCustomsIncludedOptions} placeholder="Choose" allowCustom={false} {...editDetail("customsIncluded")} />
-          {fieldPolicy.vin ? <BookingCargoWiseField label="VIN" value={cargoValue("vin", cargoDataValue("vin"))} {...editCargo(cargoIndex, "vin")} /> : null}
-          {record.booking.customFields
-            .filter(field => !["Quote type", "Quote ref", "Customer PO", "Incoterms", "Source"].includes(field.label)
-              || Object.prototype.hasOwnProperty.call(editableDetails, `customField:${field.label}`))
-            .map((field, index) => <BookingCargoWiseField key={`${field.label}-${index}`} label={field.label === "Source" ? "Booking source" : field.label}
-              value={detailValue(`customField:${field.label}`, field.value)} {...editDetail(`customField:${field.label}`)} />)}
-        </BookingCargoWiseGroup>
-        {cargo ? renderSecurityEvidence?.(cargo) : null}
       {equipmentKinds.length > 0 || workspace.containers.length > 0 ? (
         <BookingContainerDetails
           containers={workspace.containers}
+          cargo={workspace.cargo}
+          allocations={workspace.cargoAllocationState?.allocations}
           mode={record.booking.mode}
           equipmentKinds={equipmentKinds}
           editable={editable}
@@ -3538,6 +3616,7 @@ function BookingRecordDetails({
           onAdd={onContainerAdd}
           onChange={onContainerChange}
           onRemove={onContainerRemove}
+          onAllocationsChange={onAllocationsChange}
         />
       ) : null}
 
@@ -4799,6 +4878,7 @@ function BookingDetailTabPage({
   renderSecurityEvidence,
   renderMilestones,
   allocationEditor,
+  onAllocationsChange,
   allocationValidationAttempt,
   weightValidation,
   editable,
@@ -4839,6 +4919,7 @@ function BookingDetailTabPage({
   renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
   renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
   allocationEditor?: ReactNode
+  onAllocationsChange: (lines: BookingCargoAllocation[]) => void
   allocationValidationAttempt?: number
   weightValidation?: { attempt: number; index: number | null; field?: "description" }
   editable: boolean
@@ -4871,7 +4952,7 @@ function BookingDetailTabPage({
   record: BookingDetailRecord
   workspace: BookingWorkflowWorkspace
 }) {
-  if (activeTab === "Details") return <BookingRecordDetails weightValidation={weightValidation} renderDangerousGoods={renderDangerousGoods} renderSecurityEvidence={renderSecurityEvidence} renderMilestones={renderMilestones} allocationEditor={allocationEditor} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
+  if (activeTab === "Details") return <BookingRecordDetails weightValidation={weightValidation} renderDangerousGoods={renderDangerousGoods} renderSecurityEvidence={renderSecurityEvidence} renderMilestones={renderMilestones} allocationEditor={allocationEditor} onAllocationsChange={onAllocationsChange} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} blocked={documentBlocked} canGenerate={canGenerateDocument} onWorkspaceSaved={onWorkspaceSaved} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace customsError={customsError} navigate={navigate} onWorkspaceSaved={onWorkspaceSaved} onViewChange={onCustomsViewChange} readiness={customsReadiness} record={record} view={customsView} />
   if (activeTab === "Finance") return planningCharges ?? <BookingFinanceWorkspace record={record} />
@@ -6054,9 +6135,13 @@ export function BookingDetailWorkspace({
               disabledReason={detailsDirty ? "Wait for Booking changes to save before recording a milestone." : undefined}
               onSaved={applySavedWorkspace}
             />}
-            editable={canEditBooking && !applyingQuoteSync}
+            editable={canEditBooking && !savingDetails && !applyingQuoteSync}
             allocationValidationAttempt={allocationValidationAttempt}
             weightValidation={weightValidation}
+            onAllocationsChange={allocations => {
+              if (savingDetails || applyingQuoteSync) return
+              setDraftWorkspace(current => current?.cargoAllocationState ? { ...current, cargoAllocationState: { ...current.cargoAllocationState, allocations } } : current)
+            }}
             allocationEditor={draftWorkspace && (draftWorkspace.cargoAllocationState || draftWorkspace.containers.length) ? <CargoAllocationEditor
               cargo={draftWorkspace.cargo} equipment={draftWorkspace.containers} routes={draftWorkspace.routes}
               allocations={draftWorkspace.cargoAllocationState?.allocations}

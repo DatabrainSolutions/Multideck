@@ -123,6 +123,8 @@ export type BookingWorkflowContainer = {
   id?: string
   number?: string | null
   type?: string | null
+  /** One VIN or chassis identifier per line for vehicle cargo sharing this equipment. */
+  vehicleIdentifiers?: string | null
   equipmentKind?: string | null
   status?: string | null
   packages?: string | number | null

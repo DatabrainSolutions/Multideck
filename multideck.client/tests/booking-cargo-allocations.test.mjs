@@ -27,6 +27,14 @@ test('split cargo: explicit remaining quantities preserve exact decimals and do 
   assert.deepEqual({ cargo, equipment, first, second }, before)
 })
 
+test('ten cargo lines may link to one container without guessing quantities', () => {
+  const tenCargo = Array.from({ length: 10 }, (_, index) => ({ id: id(index + 20), description: `Car ${index + 1}` }))
+  const links = tenCargo.map((item, index) => ({ ...newBookingCargoAllocation(), id: id(index + 40), cargoId: item.id, containerId: id(2) }))
+  assert.equal(analyseCargoAllocations(tenCargo, equipment, routes, links).issues.length, 0)
+  assert.equal(new Set(links.map(item => item.containerId)).size, 1)
+  assert.equal(bookingCargoAllocationPayload({ booking: { jobId: id(10) }, cargoAllocationState: { jobId: id(10), allocations: links } }, { booking: { jobId: id(10), updatedAt: '2026-09-06T10:00:00Z' }, cargoAllocationState: { jobId: id(10), allocations: [] } }).cargoAllocations.length, 10)
+})
+
 test('unknown source/other allocation quantities cannot erase an operator-entered value', () => {
   const goods = [{ ...cargo[0], packageQuantity: null, pieces: '', grossWeightKg: '1000.5', volumeCbm: null }]
   const target = line({ volumeCbm: '4.125' })
