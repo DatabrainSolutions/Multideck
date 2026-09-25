@@ -7,6 +7,7 @@ import test from "node:test"
 
 const migration = readFileSync(new URL("../migrations/20260925134500_uk_vat_cash_calculation_event_lines.sql", import.meta.url), "utf8")
 const cashDraftMigration = readFileSync(new URL("../migrations/20260925140000_uk_vat_cash_draft_calculation.sql", import.meta.url), "utf8")
+const cashControlSourceMigration = readFileSync(new URL("../migrations/20260925141500_uk_vat_cash_control_source_inventory.sql", import.meta.url), "utf8")
 const pgBin = process.env.PG_TEST_BIN ?? "/opt/homebrew/opt/postgresql@17/bin"
 
 test("Cash calculation lines bind exact payment events and box amounts to one draft Cash period", () => {
@@ -55,6 +56,13 @@ test("Cash calculation lines bind exact payment events and box amounts to one dr
         "FINComplianceReg_UpdatedAt" timestamptz);
       create function public._multideck_uk_vat_access(uuid,uuid)
       returns void language plpgsql as $$ begin return; end; $$;
+      create function public._multideck_uk_vat_read_access(uuid,uuid)
+      returns void language plpgsql as $$ begin return; end; $$;
+      create table public."FIN_Documents" (
+        "FINDoc_ID" uuid primary key,"FINDoc_LegalEntityID" uuid,
+        "FINDoc_TypeCode" text,"FINDoc_NativePostingStatusCode" text,
+        "FINDoc_NativePostedAt" timestamptz,"FINDoc_DocumentDate" date,
+        "FINDoc_NativePostingBatchID" uuid);
       create function public._multideck_indirect_tax_immutable()
       returns trigger language plpgsql as $$ begin
         raise exception 'Immutable';
@@ -108,7 +116,34 @@ test("Cash calculation lines bind exact payment events and box amounts to one dr
             jsonb_build_object('eventId','${event}','box',6,'amountGbp',100),
             jsonb_build_object('eventId','${secondEvent}','box',6,'amountGbp',50)),
           '7','[]'::jsonb)) $$;
+      create function public.multideck_uk_vat_cash_projection_integrity(uuid,uuid,uuid)
+      returns jsonb language sql as $$ select jsonb_build_object(
+        'status','current_verified_source_only','startDate','2026-01-01',
+        'endDate','2026-03-31','fingerprint',repeat('a',64)) $$;
+      create function public.multideck_uk_vat_cash_exit_invoice_inventory(uuid,uuid,date,date)
+      returns jsonb language sql as $$ select jsonb_build_object(
+        'truncated',false,'sourceDigest',repeat('c',64),
+        'invoices','[]'::jsonb,'invoiceCount',0) $$;
     `)
+    sql(cashControlSourceMigration)
+    assert.equal(sql(`select public.multideck_uk_vat_cash_control_source_inventory(
+      '${actor}','${entity}','${period}','${projection}')#>>'{dateAnomalies,preEntryDatedPostedInvoices}'`), "0")
+    assert.equal(sql(`select jsonb_typeof(public.multideck_uk_vat_cash_control_source_inventory(
+      '${actor}','${entity}','${period}','${projection}')#>'{paymentPreview,sourceBoxesGbp,1}')`), "string")
+    sql(`do $$ begin
+      begin
+        perform public.multideck_uk_vat_cash_control_source_inventory(
+          '${actor}','${entity}','${period}',
+          '00000000-0000-0000-0000-000000000099');
+        raise exception 'unbound projection was accepted';
+      exception when sqlstate '22023' then null; end;
+    end $$;`)
+    sql(`insert into public."FIN_Documents" values
+      ('00000000-0000-0000-0000-000000000013','${entity}',
+        'sl_invoice','posted','2026-02-01 12:00:00+00','2025-12-31',
+        '00000000-0000-0000-0000-000000000014')`)
+    assert.equal(sql(`select public.multideck_uk_vat_cash_control_source_inventory(
+      '${actor}','${entity}','${period}','${projection}')#>>'{dateAnomalies,preEntryDatedPostedInvoices}'`), "1")
     const calculation = sql(`select public.multideck_uk_vat_calculate_cash_draft(
       '${actor}','${period}','${projection}')->>'calculationId'`)
     assert.equal(sql(`select count(*) from public."FIN_IndirectTaxCashCalculationEventLines"`), "4")
