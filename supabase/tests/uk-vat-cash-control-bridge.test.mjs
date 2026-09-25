@@ -53,6 +53,12 @@ const fixture = () => ({
         expectedVatGbp: "40.0000", postedVatGbp: "40.0000", matched: true },
     ],
   },
+  accountingControls: {
+    status: "verified", digest: "9".repeat(64), periodCount: 1,
+    uncoveredOrOverlappingDays: 0, unverifiedPeriods: 0,
+    periods: [{ periodId: "accounting-quarter-1", status: "verified",
+      sourceDigest: "8".repeat(64), approvalId: "approval-1", reviewId: "review-1" }],
+  },
   paymentPreview: {
     status: "preview_only_no_cash_return_effect", amountEncoding: "decimal_strings",
     projectionId: "projection-1", legalEntityId: "entity-1",
@@ -152,4 +158,10 @@ test("Cash bridge surfaces payment mismatch and blocks incomplete source coverag
   const orphanJournal = fixture()
   orphanJournal.journalEvidence.orphanTaxPostings = 1
   assert.equal(previewUkVatCashControlBridge(orphanJournal).streams, null)
+  const staleMonth = fixture()
+  staleMonth.accountingControls.periods[0].status = "stale"
+  assert.equal(previewUkVatCashControlBridge(staleMonth).streams, null)
+  const missingMonth = fixture()
+  missingMonth.accountingControls.uncoveredOrOverlappingDays = 1
+  assert.equal(previewUkVatCashControlBridge(missingMonth).streams, null)
 })

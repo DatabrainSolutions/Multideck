@@ -86,6 +86,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   const projection = object(source?.paymentPreview)
   const anomalies = object(source?.dateAnomalies)
   const journal = object(source?.journalEvidence)
+  const accounting = object(source?.accountingControls)
   const issues: string[] = []
   let issueCount = 0
   const issue = (message: string) => { issueCount++; if (issues.length < 30) issues.push(message) }
@@ -98,7 +99,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   if (!source || source.status !== "cash_control_source_only"
     || source.returnReady !== false || source.truncated !== false
     || !digestPattern.test(String(source.sourceDigest ?? ""))
-    || !context || !inventory || !projection || !anomalies || !journal
+    || !context || !inventory || !projection || !anomalies || !journal || !accounting
     || inventory.truncated !== false || inventory.amountEncoding !== "decimal_strings"
     || projection.amountEncoding !== "decimal_strings"
     || projection.status !== "preview_only_no_cash_return_effect"
@@ -116,7 +117,10 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     || !Array.isArray(inventory.priceChanges)
     || journal.status !== "invoice_journals_matched"
     || !digestPattern.test(String(journal.digest ?? ""))
-    || !Array.isArray(journal.lines)) {
+    || !Array.isArray(journal.lines)
+    || accounting.status !== "verified"
+    || !digestPattern.test(String(accounting.digest ?? ""))
+    || !Array.isArray(accounting.periods)) {
     issue("A complete invoice and payment inventory bound to one Cash VAT period is required.")
     return empty()
   }
@@ -128,6 +132,19 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
       || errorCount(journal.orphanTaxPostings) !== 0
       || errorCount(journal.lineCount) !== journal.lines.length) {
       issue("Invoice VAT journal postings are incomplete or unmatched.")
+    }
+    if (errorCount(accounting.uncoveredOrOverlappingDays) !== 0
+      || errorCount(accounting.unverifiedPeriods) !== 0
+      || errorCount(accounting.periodCount) !== accounting.periods.length
+      || accounting.periods.length === 0
+      || accounting.periods.some((item) => {
+        const period = object(item)
+        return !period || period.status !== "verified"
+          || !digestPattern.test(String(period.sourceDigest ?? ""))
+          || typeof period.approvalId !== "string"
+          || typeof period.reviewId !== "string"
+      })) {
+      issue("Every accounting month in the Cash VAT period needs a current approved VAT control.")
     }
     start = date(context.periodStart)
     end = date(context.periodEnd)
