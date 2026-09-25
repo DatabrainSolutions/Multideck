@@ -1184,13 +1184,20 @@ function CreateDocumentWorkspace({
         return
       }
       const session = await getDocumentStudioSession(request)
-      const activeTemplateBase64 = studioTemplateBase64 ?? session.templateBase64
+      let pendingDraft: Awaited<ReturnType<typeof getDocumentStudioDraftSource>> = null
+      let draftSourceError: string | null = null
+      if (canManageTemplates && !studioTemplateBase64) {
+        try { pendingDraft = await getDocumentStudioDraftSource(selectedTemplate.id) }
+        catch (cause) { draftSourceError = cause instanceof Error ? cause.message : t("A saved draft could not be reopened.") }
+      }
+      const activeTemplateBase64 = studioTemplateBase64 ?? pendingDraft?.templateBase64 ?? session.templateBase64
       const activeStudioData = studioData ?? session.renderOptions.data
       setStudioRequest(request)
       setStudioSession(session)
       setStudioTemplateBase64(activeTemplateBase64)
+      if (draftSourceError) toast.error(draftSourceError)
       setStudioData(activeStudioData)
-      setSavedTemplate(savedTemplate ?? (activeTemplateBase64 === session.templateBase64 && session.carboneTemplateId && session.carboneVersionId && session.multideckTemplateId
+      setSavedTemplate(savedTemplate ?? pendingDraft ?? (activeTemplateBase64 === session.templateBase64 && session.carboneTemplateId && session.carboneVersionId && session.multideckTemplateId
         ? {
             multideckTemplateId: session.multideckTemplateId,
             templateCode: selectedTemplate.code,
