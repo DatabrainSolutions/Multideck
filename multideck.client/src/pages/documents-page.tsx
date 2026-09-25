@@ -1990,11 +1990,11 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
         )}
       </section>
 
-      <section className="md-section-stack">
-        <div>
-          <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Recent documents")}</h2>
-          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Recent files generated from Job templates. Quote, Booking, Customs and Finance documents stay with their source records.")}</p>
-        </div>
+      <details className="md-section-stack group">
+        <summary className="cursor-pointer text-[13px] font-medium text-[var(--md-text)] marker:text-[var(--md-subtle)]">
+          {t("Recent Job files")}
+          <span className="ms-2 text-[11px] font-normal text-[var(--md-subtle)]">{t("Files previously generated from this workspace")}</span>
+        </summary>
         {documentPageError ? <InlineNotice tone="error" className="mb-3" action={<Button type="button" variant="ghost" onClick={() => { lastDocumentPageKeyRef.current = null; setDocumentSort((current) => current ? { ...current } : { id: "created", direction: "desc" }) }}>{t("Try again")}</Button>}>{documentPageError}</InlineNotice> : null}
         <DataTable
           ariaLabel="Recent documents"
@@ -2020,7 +2020,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           toolbarSearch={<label className="relative min-w-0 sm:w-[240px]"><span className="sr-only">{t("Search documents")}</span><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" /><Input value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className="h-8 ps-9 text-base sm:text-[12px]" placeholder={t("Document, job or customer…")} /></label>}
           emptyState={<div className="py-4 text-center">{!documentPageLoading && !documentPageError ? <EmptyStateIllustration variant={debouncedDocumentQuery ? "search" : "documents"} className="mb-3" /> : null}<p className="text-[11px] text-[var(--md-subtle)]">{documentPageLoading ? t("Loading documents…") : debouncedDocumentQuery ? t("No documents match this search.") : t("No documents have been generated yet.")}</p></div>}
         />
-      </section>
+      </details>
 
       <Dialog open={Boolean(previewDocument)} onOpenChange={(open) => { if (!open) closeDocumentPreview() }}>
         <DialogContent
