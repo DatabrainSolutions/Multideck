@@ -41,8 +41,14 @@
   tests and 10 boundary checks.
 - `npm --prefix multideck.client run build` passed TypeScript and Vite.
 - The WIP selector function was executed with assigned, unassigned and
-  foreign-entity jobs; only the exact entity's job was returned. The final
-  WIP/VAT entity-selection edits passed client TypeScript and `git diff --check`.
+  foreign-entity jobs. Accounting candidates returned only the exact entity's
+  job; the assignment picker added the unassigned job while excluding the
+  foreign one. The WIP/VAT entity-selection edits passed client TypeScript and
+  `git diff --check`.
+- `node --test supabase/tests/finance-job-entity-assignment-postgres.test.mjs`
+  passed unassigned-job assignment, required reason, inactive actor,
+  foreign-company entity and office denials, other-entity denial, service-only
+  SQL execution, exact history/audit record and idempotent repeat.
 - The 30-file non-VAT Finance 1–4 migration manifest installed over the tenant
   schema snapshot with RLS and function grants audited.
 - Finance 4's `FINANCE_FULL_MIGRATIONS=1` integration test passed the complete
@@ -60,10 +66,14 @@ WIP release, management close-run item or direct posting batch. The original
 record and its history were not changed.
 
 The management WIP selector now requires the job's exact legal entity. An
-unassigned job cannot enter any entity's new WIP proposal or the screen's
-assignable-job list. A separately requested audited assignment remains possible
-through the existing Finance API; its provenance and amount need operator
-review before any such assignment or financial use. For the native-only demo,
+unassigned job cannot enter any entity's new WIP proposal. In the App, a Finance
+operator with `Finance.Management.Prepare` can open **Accruals & WIP → Assign job
+period**, enter the exact job reference, choose the matching unassigned
+job, inspect its status, record a reason and assign it to the selected legal
+entity and management period. The service checks company, office and entity
+scope and records job period history and an audit event. The assignment picker
+never preselects a job. The job's provenance and amount need operator review
+before assignment or financial use. For the native-only demo,
 use a newly scoped job assigned to the separately reviewed native-only legal
 entity, and show that job's charge, document and GL source IDs. Do not use
 the existing Databrain Test entity's aggregate WIP as demo or close evidence.

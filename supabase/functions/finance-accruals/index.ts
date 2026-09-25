@@ -41,7 +41,7 @@ async function legalEntity(admin: any, current: any, id: string) {
   return data
 }
 
-async function accessibleJobs(admin: any, current: any, entityId: string, targetPeriod?: string) {
+async function accessibleJobs(admin: any, current: any, entityId: string, targetPeriod?: string, includeUnassigned = false) {
   const { data: offices, error: officeError } = await admin.from("cmp_Offices").select("Office_ID").eq("Company_ID", current.Company_ID)
   if (officeError) throw new HttpError(500, officeError.message)
   const officeIds = (offices ?? []).map((item: any) => item.Office_ID)
@@ -54,7 +54,8 @@ async function accessibleJobs(admin: any, current: any, entityId: string, target
   if (error) throw new HttpError(500, error.message)
   const officeSet = new Set(officeIds)
   return (data ?? []).filter((job: any) =>
-    officeSet.has(job.Job_OrgOfficeID ?? job.Job_OfficeID) && job.Job_LegalEntityID === entityId
+    officeSet.has(job.Job_OrgOfficeID ?? job.Job_OfficeID)
+      && (job.Job_LegalEntityID === entityId || (includeUnassigned && job.Job_LegalEntityID === null))
   )
 }
 
@@ -197,7 +198,7 @@ async function workspace(admin: any, current: any, entityId: string, targetPerio
   const entity = await legalEntity(admin, current, entityId)
   const [candidates, assignableJobs, periodsResult, runs] = await Promise.all([
     calculateCandidates(admin, current, entity, targetPeriod),
-    accessibleJobs(admin, current, entityId),
+    accessibleJobs(admin, current, entityId, undefined, true),
     admin.from("FIN_Periods").select("FINPeriod_ID,FINPeriod_Code,FINPeriod_Name,FINPeriod_StartDate,FINPeriod_EndDate,FINPeriod_StatusCode,FINPeriod_BaseCurrencyCode").eq("FINPeriod_LegalEntityID", entityId).order("FINPeriod_Code", { ascending: false }).limit(60),
     listRuns(admin, entityId),
   ])

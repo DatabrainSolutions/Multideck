@@ -46,6 +46,7 @@ const tests = [
   'finance-release-manifest-postgres.test.mjs',
   'opening-balance-cutover-postgres.test.mjs',
   'finance-charge-lifecycle-queue-postgres.test.mjs',
+  'finance-job-entity-assignment-postgres.test.mjs',
   'finance-accounting-period-close-postgres.test.mjs',
   'finance-trade-control-postgres.test.mjs',
   'finance-daily-operations-postgres.test.mjs',
