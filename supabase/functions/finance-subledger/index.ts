@@ -55,7 +55,9 @@ function isoDate(value: unknown) {
   const parsed = new Date(`${date}T00:00:00Z`)
   return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === date ? date : null
 }
-function isUuid(value: string) { return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value) }
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)
+}
 function vatTenantProjectRef() {
   const configured = Deno.env.get("SUPABASE_URL")?.trim()
   if (!configured) throw new HttpError(503, "The tenant backend identity is not configured.")
