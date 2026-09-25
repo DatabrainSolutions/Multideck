@@ -80,6 +80,7 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925085000_finance_opening_mirror_delivery.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',
+      '20260925102000_finance_multi_entity_dexter_drafts.sql',
     ]
     const laterMigrations = readdirSync(new URL('migrations/', root))
       .filter(name => name >= '20260925070431' && name.endsWith('.sql') && !/_(?:uk_vat|hmrc)_/.test(name))

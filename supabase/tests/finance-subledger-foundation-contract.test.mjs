@@ -16,6 +16,7 @@ const demoTaxControls = read("../migrations/20260829200354_guard_demo_finance_ta
 const demoReadinessControls = read("../migrations/20260829202112_normalise_demo_finance_readiness.sql")
 const documentRecovery = read("../migrations/20260830111301_finance_document_recovery.sql")
 const tenantOwnedFinanceDocuments = read("../migrations/20260901103000_tenant_owned_finance_documents.sql")
+const multiEntityDexterDrafts = read("../migrations/20260925102000_finance_multi_entity_dexter_drafts.sql")
 const providerPartyBulkSync = read("../migrations/20260902113000_provider_party_bulk_sync.sql")
 const atomicExport = read("../migrations/20260917212723_finance_export_atomic_completion.sql")
 const functionSource = read("../functions/finance-subledger/index.ts")
@@ -413,8 +414,17 @@ test("finance drafts validate a selected active entity inside the signed-in tena
   assert.doesNotMatch(documentPageSource, /finance-detail-entity|legalEntityId:/)
   includesEvery(purchaseIntakeSource, ["finance-intake-entity", "legalEntityId: entityId", "Finish or remove this batch before changing legal entity."])
   includesEvery(dexterSource, [
-    "The signed-in tenant company is used automatically.",
-    "type: cleanString(args.type, 40), partyOrgId",
+    "Choose the exact active legal entity before preparing the Finance draft.",
+    "type: cleanString(args.type, 40), legalEntityId, partyOrgId",
+    "FINANCE_EDGE_ACTIONS.has(actionCode) ||",
+    "financeDraftActionChanges(actionCode, argumentsValue)",
+    "Require the exact active legal entity ID within the signed-in company",
+  ])
+  includesEvery(multiEntityDexterDrafts, [
+    "'{properties,legalEntityId}'",
+    "? 'legalEntityId'",
+    "'create_finance_document_draft', 'create_finance_cash_draft'",
+    "AIDexterWatchCapability_Description",
   ])
 })
 
