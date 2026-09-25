@@ -6,6 +6,7 @@ import { join } from "node:path"
 import test from "node:test"
 
 const migration = readFileSync(new URL("../migrations/20260925170000_uk_vat_cash_event_reconciliation.sql", import.meta.url), "utf8")
+const bridgeGateMigration = readFileSync(new URL("../migrations/20260925173000_uk_vat_cash_bridge_signoff_gate.sql", import.meta.url), "utf8")
 const sourceLockMigration = readFileSync(new URL("../migrations/20260924165621_lock_vat_reconciled_transactions.sql", import.meta.url), "utf8")
 const pgBin = process.env.PG_TEST_BIN ?? "/opt/homebrew/opt/postgresql@17/bin"
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
@@ -186,6 +187,20 @@ test("Cash payment events receive immutable VAT reconciliation dates and lock th
       '${actor}','${entity}','${second.calculationId}',repeat('a',64),
       array['${event}']::uuid[],'Changed source must be denied')`)
     assert.equal(sql(`select count(*) from public."FIN_IndirectTaxCashEventReconciliations"`), "2")
+    sql(`update public.test_current_source set digest=repeat('a',64)`)
+    sql(bridgeGateMigration)
+    sql(`do $$begin
+      begin
+        perform public.multideck_uk_vat_reconcile_cash_events(
+          '${actor}','${entity}','${second.calculationId}',repeat('a',64),
+          array['${event}']::uuid[],'Bridge gate must block sign-off');
+        raise exception 'Unreviewed Cash sign-off was allowed';
+      exception when sqlstate '22023' then
+        if sqlerrm not like 'Cash VAT event reconciliation requires the complete control bridge%' then
+          raise;
+        end if;
+      end;
+    end$$;`)
   } finally {
     if (started) run("pg_ctl", ["-D", join(directory, "data"), "-m", "immediate", "-w", "stop"])
     rmSync(directory, { recursive: true, force: true })
