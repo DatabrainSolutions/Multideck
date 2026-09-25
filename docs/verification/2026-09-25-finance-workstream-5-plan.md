@@ -263,8 +263,10 @@ incremental application plan; local filename order is not proof of its state.
 - Vercel alias inspection found `dev.multideck.app` on a preview deployment
   from the `dev` ref, while the same Vercel project also owns
   `multideck.app`/`production.multideck.app`; the current `multideck.app`
-  alias points to a production-target deployment built from a different `dev`
-  commit. A development frontend release therefore needs an explicitly preview
-  deployment and assignment of **only** `dev.multideck.app`, with the
-  production aliases checked before and after. A generic production-target
-  deployment or unverified Git push is unsafe for this release.
+  alias points to a manually rolled-back production-target deployment built
+  from a different `dev` commit. Vercel Settings show production branch
+  tracking is `main`, automatic custom production domain assignment is off,
+  and `dev` belongs to Preview with `dev.multideck.app` assigned to that
+  branch. A development frontend release must verify the new deployment is
+  Preview, confirm **only** the intended development alias moves, and check
+  the production aliases before and after. Do not invoke production promotion.
