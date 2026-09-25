@@ -50,6 +50,27 @@ export interface CashInvoiceBalance {
   paidBeforeGbp: string
 }
 
+/** Arithmetic for the immediate outstanding-tax option when leaving Cash
+ * Accounting. The caller must verify the final Cash period, all payment
+ * history, transition eligibility and reviewed source before using it. */
+export interface CashExitOutstandingInput {
+  invoiceId: string
+  side: "sale" | "purchase"
+  invoiceGrossGbp: string
+  paidThroughExitGbp: string
+  lines: CashAllocationInput["lines"]
+}
+
+export interface CashExitOutstandingResult {
+  invoiceId: string
+  outstandingGrossGbp: string
+  /** A four-decimal allocation may leave a fraction-of-a-penny bridge. */
+  apportionmentRemainderGbp: string
+  lines: CashAllocationResult["lines"]
+  sourceBoxesGbp: CashAllocationResult["sourceBoxesGbp"]
+  status: "calculation_only_no_cash_event"
+}
+
 const moneyPattern = /^(?:0|[1-9]\d*)(?:\.\d{1,4})?$/
 const allowedTreatments = new Set<CashLineTreatment>([
   "domestic_sale", "zero_rated_sale", "exempt_sale", "domestic_purchase",
@@ -133,6 +154,55 @@ export function calculateUkCashAllocation(input: CashAllocationInput): CashAlloc
       6: format(boxes[6]), 7: format(boxes[7]) },
     allocationRemainderGbp: format(paidNow - allocated),
   }
+}
+
+/** HMRC Notice 731 section 6.4 permits outstanding VAT to be brought into
+ * account in the final Cash period. This calculates only the unpaid fraction;
+ * it does not invent a cash receipt/payment or choose the six-month option. */
+export function calculateUkCashExitOutstanding(input: CashExitOutstandingInput): CashExitOutstandingResult {
+  if (!input.invoiceId || !["sale", "purchase"].includes(input.side) || !input.lines.length) {
+    throw new Error("Cash VAT exit needs a reviewed sale or purchase invoice.")
+  }
+  const gross = money(input.invoiceGrossGbp)
+  const paid = money(input.paidThroughExitGbp)
+  if (gross === 0n || paid > gross) throw new Error("Cash VAT exit invoice balance is invalid.")
+  const seen = new Set<string>()
+  const boxes = { 1: 0n, 4: 0n, 6: 0n, 7: 0n }
+  let lineGross = 0n
+  let apportionedOutstanding = 0n
+  const lines = input.lines.map((line) => {
+    if (!line.lineId || !line.reviewedRuleId || seen.has(line.lineId)
+      || !allowedTreatments.has(line.treatment)
+      || (input.side === "sale") !== line.treatment.endsWith("_sale")) {
+      throw new Error("Cash VAT exit needs distinct lines with a reviewed treatment on the correct side.")
+    }
+    seen.add(line.lineId)
+    const net = money(line.netGbp)
+    const vat = money(line.vatGbp)
+    if (net + vat === 0n
+      || ((line.treatment.startsWith("zero_rated") || line.treatment.startsWith("exempt")) && vat !== 0n)) {
+      throw new Error("Cash VAT exit invoice lines have invalid net or VAT amounts.")
+    }
+    lineGross += net + vat
+    const outstandingNet = net - portion(net, paid, gross)
+    const outstandingVat = vat - portion(vat, paid, gross)
+    apportionedOutstanding += outstandingNet + outstandingVat
+    if (input.side === "sale") {
+      boxes[6] += outstandingNet
+      if (line.treatment === "domestic_sale") boxes[1] += outstandingVat
+    } else {
+      boxes[7] += outstandingNet
+      if (line.treatment === "domestic_purchase") boxes[4] += outstandingVat
+    }
+    return { lineId: line.lineId, reviewedRuleId: line.reviewedRuleId,
+      treatment: line.treatment, netGbp: format(outstandingNet), vatGbp: format(outstandingVat) }
+  })
+  if (lineGross !== gross) throw new Error("Cash VAT exit invoice lines do not add to its GBP gross.")
+  return { invoiceId: input.invoiceId, outstandingGrossGbp: format(gross - paid),
+    apportionmentRemainderGbp: format(gross - paid - apportionedOutstanding), lines,
+    sourceBoxesGbp: { 1: format(boxes[1]), 4: format(boxes[4]),
+      6: format(boxes[6]), 7: format(boxes[7]) },
+    status: "calculation_only_no_cash_event" }
 }
 
 /** Split an unallocated payment across invoices in issue-date order. The
