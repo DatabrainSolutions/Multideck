@@ -8,6 +8,7 @@ import { join } from "node:path"
 const migrations = [
   new URL("../migrations/20260925113000_uk_vat_cash_exit_invoice_inventory.sql", import.meta.url).pathname,
   new URL("../migrations/20260925114500_uk_vat_cash_exit_price_change_guard.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925120000_uk_vat_cash_exit_line_sources.sql", import.meta.url).pathname,
 ]
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 
@@ -62,6 +63,24 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
         "FINCashAlloc_AllocatedAt" timestamptz);
       create table public."FIN_IndirectTaxCashPaymentDateReviews"(
         cash_id uuid,legal_entity_id uuid,revision integer,vat_payment_date date);
+      create table public."FIN_DocumentLines"(
+        "FINDocLine_ID" uuid primary key,"FINDocLine_DocumentID" uuid,
+        "FINDocLine_LineNo" integer,"FINDocLine_LocalNetAmount" numeric,
+        "FINDocLine_LocalTaxAmount" numeric,"FINDocLine_LocalGrossAmount" numeric);
+      create table public."FIN_IndirectTaxEvidence"(
+        id uuid primary key,source_document_line_id uuid,source_document_id uuid,
+        source_posting_batch_id uuid,legal_entity_id uuid,jurisdiction_code text,
+        source_kind text,recorded_at timestamptz,
+        signed_net_reporting numeric,signed_tax_reporting numeric);
+      create table public."FIN_IndirectTaxDecisions"(
+        id uuid primary key,evidence_id uuid,revision integer,scheme_code text,
+        treatment_code text,reviewed_rule_reference text);
+      create table public."FIN_IndirectTaxCreditLinks"(
+        legal_entity_id uuid,original_evidence_id uuid);
+      create table public."FIN_IndirectTaxReconciliations"(
+        evidence_id uuid,period_id uuid);
+      create table public."FIN_IndirectTaxPeriods"(
+        id uuid,legal_entity_id uuid,scheme_code text);
       insert into public."cmp_LegalEntities" values
         ('${id(2)}','GB','GBP'),('${id(3)}','US','USD');
       insert into public."FIN_Documents" values
@@ -78,7 +97,19 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
         ('${id(41)}','${id(11)}','${id(31)}',null,'allocated',40,'2026-04-01 12:00Z');
       insert into public."FIN_IndirectTaxCashPaymentDateReviews" values
         ('${id(30)}','${id(2)}',1,'2026-03-01'),
-        ('${id(31)}','${id(2)}',1,'2026-04-01');`)
+        ('${id(31)}','${id(2)}',1,'2026-04-01');
+      insert into public."FIN_DocumentLines" values
+        ('${id(50)}','${id(10)}',1,100,20,120),
+        ('${id(51)}','${id(11)}',1,200,40,240),
+        ('${id(52)}','${id(12)}',1,120,24,144);
+      insert into public."FIN_IndirectTaxEvidence" values
+        ('${id(60)}','${id(50)}','${id(10)}','${id(20)}','${id(2)}','GB',
+          'posted_document_line','2026-01-10 12:00Z',100,20),
+        ('${id(61)}','${id(51)}','${id(11)}','${id(21)}','${id(2)}','GB',
+          'posted_document_line','2026-02-10 12:00Z',200,40);
+      insert into public."FIN_IndirectTaxDecisions" values
+        ('${id(70)}','${id(60)}',1,'cash','domestic_sale','UK20'),
+        ('${id(71)}','${id(61)}',1,'cash','domestic_purchase','UK20');`)
     for (const migration of migrations) {
       const apply = spawnSync(join(bin, "psql"), [...args, "-f", migration],
         { encoding: "utf8", timeout: 30000 })
@@ -90,17 +121,22 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(result.allocationCount, 2)
     assert.equal(result.postedPriceChangeCount, 0)
     assert.equal(result.requiresPriceChangeReview, false)
+    assert.equal(result.lineCount, 3)
+    assert.equal(result.lineSourceIssueCount, 1)
     assert.equal(result.unpostedInvoiceCount, 1)
     assert.equal(result.truncated, false)
     assert.match(result.sourceDigest, /^[0-9a-f]{64}$/)
     const byId = new Map(result.invoices.map((invoice) => [invoice.invoice_id, invoice]))
     assert.equal(byId.get(id(10)).paid_through_exit, 0)
     assert.equal(byId.get(id(10)).candidate_outstanding, 120)
+    assert.equal(byId.get(id(10)).lineSourceIssueCount, 0)
+    assert.equal(byId.get(id(10)).lines[0].decisionScheme, "cash")
     assert.equal(byId.get(id(11)).paid_through_exit, 60)
     assert.equal(byId.get(id(11)).candidate_outstanding, 180)
     assert.equal(byId.get(id(11)).future_allocation_count, 1)
     assert.equal(byId.get(id(11)).allocation_sources.length, 2)
     assert.equal(byId.get(id(12)).source_exception, true)
+    assert.equal(byId.get(id(12)).lineSourceIssueCount, 1)
     sql(`insert into public."FIN_CashTransactions" values
       ('${id(32)}','${id(2)}','posted','2026-03-05 12:00Z','GBP','customer_receipt');
       insert into public."FIN_CashAllocations" values
@@ -118,6 +154,17 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(changedPrice.requiresPriceChangeReview, true)
     assert.equal(changedPrice.priceChanges[0].document_id, id(15))
     assert.notEqual(changedPrice.sourceDigest, changed.sourceDigest)
+    sql(`insert into public."FIN_IndirectTaxCreditLinks" values ('${id(2)}','${id(60)}');`)
+    const linked = JSON.parse(sql(`select ${call};`))
+    assert.notEqual(linked.sourceDigest, changedPrice.sourceDigest)
+    assert.equal(linked.invoices.find((invoice) => invoice.invoice_id === id(10)).lines[0].linkedCreditCount, 1)
+    assert.equal(linked.lineSourceIssueCount, 2)
+    sql(`insert into public."FIN_IndirectTaxPeriods" values ('${id(80)}','${id(2)}','standard');
+      insert into public."FIN_IndirectTaxReconciliations" values ('${id(61)}','${id(80)}');`)
+    const priorSignoff = JSON.parse(sql(`select ${call};`))
+    assert.notEqual(priorSignoff.sourceDigest, linked.sourceDigest)
+    assert.equal(priorSignoff.invoices.find((invoice) => invoice.invoice_id === id(11)).lines[0].priorInvoiceBasisSignoffCount, 1)
+    assert.equal(priorSignoff.lineSourceIssueCount, 3)
     reject(`select public.multideck_uk_vat_cash_exit_invoice_inventory('${id(4)}','${id(2)}','2026-01-01','2026-03-31');`, /VAT access denied/)
     reject(`select public.multideck_uk_vat_cash_exit_invoice_inventory('${id(1)}','${id(3)}','2026-01-01','2026-03-31');`, /VAT access denied/)
     reject(`set role authenticated; select ${call};`, /permission denied/)
