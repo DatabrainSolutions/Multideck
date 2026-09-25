@@ -53,6 +53,46 @@ tax treatment, silently alter a posted amount, approve their own result or trigg
 accounting from a watch. Human decisions and deterministic ledger results remain
 auditable independently of the model.
 
+## Development demonstration target proposal
+
+**Preferred:** create an active, non-default `Multideck Accounts Demo (sandbox)`
+legal entity under the existing development company, with GB/GBP identity,
+no company registration or VAT number invented, and a clear non-statutory demo
+marker. Keep **Databrain Test** and its ERPNext connection unchanged. Verify
+the new entity has zero `ACCI_Connections` and an optional or disabled mirror
+mode that produces no delivery queue. Initialise its chart from the existing
+`freight-forwarder-v1` template (including 1000 bank, 1100 AR, 2000 AP,
+1200/2100 tax and 4000/5000 trading nominals), then add the actual/accrued
+accounts needed for WIP. Configure one explicitly synthetic GBP clearing bank
+mapped to 1000, with no real bank identifiers, plus document sequences and
+review controls. Start with zero opening balances and use only labelled,
+plausible sandbox transactions. Use the App's permissioned Finance
+administration workflow for chart, bank, settings and audit after a controlled
+creation of the entity; review its draft before saving.
+
+**Tax decision remains required before a posted invoice:** the existing
+database tax guard requires either an approved entity-specific revision with
+`localAdviceConfirmed=true`, or the narrow `DEMO-NONTAX` exception for an
+active ERPNext sandbox connection. The proposed unlinked entity qualifies for
+neither. A synthetic zero-tax invoice cannot bypass this guard. A qualified
+finance reviewer must approve the exact GB VAT treatment and effective date
+for the proposed test transaction, including a genuine zero/out-of-scope case
+if one is used. Until then the operator can save a tax-pending draft and see
+the review block; approval, native posting, cash, VAT control and close cannot
+be claimed as connected end-to-end proof for that entity.
+
+**Fallback:** temporarily set the existing Databrain Test mirror mode to
+`disabled` through reviewed Finance administration, retain its active sandbox
+connection, and restore the setting after the demonstration. The queue trigger
+would suppress *new* document/cash mirror rows while disabled, but existing
+queued rows remain independently processable. That book already has three
+approved historical documents/cash records outside the native ledger and an
+implausible historic WIP test job. Its trial balance and management totals
+therefore cannot substantiate a clean Accounts close even if new labelled
+native transactions post successfully. Review the queue and snapshot before
+and after any temporary setting change; never delete or rewrite history to
+make the demo look clean.
+
 ## Execution order and decision
 
 1. Receive stable file/migration/test handoffs from Finance 1–4; preserve VAT and
