@@ -45,9 +45,19 @@ export async function projectFinancePeriod(local: RawLocal, provider: RawProvide
   if (local.company !== provider.company || local.providerCode !== provider.providerCode || !local.currency || !local.entityId || !local.periodId || !local.from || !local.to) throw new Error("The accounting source scopes disagree.")
   const refs = mapUnique(local.externalRefs.filter(row => row.status === "synced"), row => `${row.localTable}:${row.localId}`, row => `${row.externalType}:${row.externalId}`, "External transaction identity")
   if (new Set(refs.values()).size !== refs.size) warnings.push("An external transaction identity is linked to more than one local record.")
-  const unmatchedOpeningDocuments = local.documents.filter(row => row.openingPackageId && !refs.has(`FIN_Documents:${row.id}`)).length
-  const unmatchedOpeningCash = local.cash.filter(row => row.openingPackageId && !refs.has(`FIN_CashTransactions:${row.id}`)).length
-  if (unmatchedOpeningDocuments || unmatchedOpeningCash) warnings.push(`${unmatchedOpeningDocuments} CargoWise opening documents and ${unmatchedOpeningCash} historical unapplied cash records have no matched ERPNext subledger identity. The opening Journal Entry mirrors GL only; period parity remains incomplete.`)
+  const openingGaps = [
+    ...local.documents.filter(row => row.openingPackageId).map(row => ({ row, table: "FIN_Documents", expected: ["sl_invoice", "credit_note"].includes(row.type) ? "Sales Invoice" : "Purchase Invoice" })),
+    ...local.cash.filter(row => row.openingPackageId).map(row => ({ row, table: "FIN_CashTransactions", expected: "Payment Entry" })),
+  ].filter(({ row, table, expected }) => {
+    const ref = refs.get(`${table}:${row.id}`)
+    if (!ref?.startsWith(`${expected}:`)) return true
+    const name = ref.slice(expected.length + 1)
+    return !(provider.details[expected] ?? []).some(item => item.name === name && String(item.docstatus) === "1")
+  })
+  if (openingGaps.length) {
+    const examples = openingGaps.slice(0, 8).map(({ row, table, expected }) => `${table === "FIN_Documents" ? "invoice" : "unapplied cash"} ${row.number || "unnumbered"} [${row.id}] (package ${row.openingPackageId}, needs ${expected})`)
+    warnings.push(`${openingGaps.length} CargoWise opening subledger records lack a synced, submitted ERPNext readback of the required document type: ${examples.join("; ")}${openingGaps.length > examples.length ? `; and ${openingGaps.length - examples.length} more` : ""}. The opening Journal Entry mirrors GL only. Review opening invoices and payments against the exact company, reconcile their AR/AP/bank postings against the opening journal without double counting, retain each submitted provider identity and readback, then rerun the period comparison. Period parity remains incomplete.`)
+  }
   const parties = mapUnique(local.partyMappings.filter(row => ["customer", "supplier", "both"].includes(row.type)), row => `${row.localId}:${row.type}`, row => row.providerId, "Party mapping")
   const accounts = mapUnique(local.accountMappings.filter(row => text(row.localContext).startsWith("nominal:")), row => text(row.localContext).slice(8), row => row.providerAccount, "Nominal mapping")
   const accountReverse = new Map<string, string>()

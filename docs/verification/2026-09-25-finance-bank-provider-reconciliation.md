@@ -23,9 +23,11 @@
   mirror mode and block release until its delivery is matched.
 - The period comparator explicitly holds imported CargoWise opening invoices
   and historical unapplied cash `incomplete` when they lack individual
-  ERPNext subledger identities. A matched opening Journal Entry proves GL
-  delivery only. Historical unapplied cash is not treated as current bank
-  statement movement.
+  synced, submitted ERPNext invoice or Payment Entry readback. The issue
+  names up to eight affected source references and package IDs and directs
+  an operator to reconcile control postings before another run. A matched
+  opening Journal Entry proves GL delivery only. Historical unapplied cash
+  is not treated as current bank statement movement.
 - Finance pages and Dexter read/watch domains expose saved evidence with
   existing permissions. Difference review records a disposition or draft
   proposal; it does not write to either ledger.
@@ -35,7 +37,8 @@
 - `finance-reconciliation-contract.test.mjs`: six passing tests, including
   quoted CSV and running balance rejection, partial/duplicate/conflict
   comparison, matching invoice and payment allocation with GL and controls,
-  and missing/changing ERPNext inventory pages.
+  missing/changing ERPNext inventory pages, and rejection of missing, wrong
+  type or draft opening subledger readback.
 - `finance-bank-statement-postgres.test.mjs`: passes against the real tenant
   baseline and local migrations. Exercises duplicate import, cross-entity
   denial, first-period opening GL, posted cash matching, sign-off, later GL
@@ -64,7 +67,11 @@ Edge deployment or provider opening journal readback has been confirmed.
 The intended tenant, legal entity and accounting period must be selected
 before connected tests. ERPNext tax-row semantics and the actual mapped
 opening/control accounts need matching and deliberate-difference cases on
-that connection. Sage 50 cannot be signed off as period reconciled until the
+that connection. The current linked full opening Journal Entry includes
+AR/AP and bank control balances; ERPNext opening invoices and payments
+would post those controls again. Full cutover therefore needs a reviewed
+residual/clearing journal design and exact submitted provider subledger
+readback before release. Sage 50 cannot be signed off as period reconciled until the
 tenant HyperExt API provides complete paged journal, allocation, tax and
 trial-balance evidence. Do not treat local fixtures or rendered routes as live
 accounting parity.

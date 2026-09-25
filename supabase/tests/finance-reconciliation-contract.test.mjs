@@ -99,10 +99,25 @@ test('a posted invoice matches its ERPNext document, journal, trial balance and 
   const missingLine = await projectFinancePeriod(local, provider, '2026-10-01T09:00:00Z')
   assert.equal(compareFinancePeriod(missingLine.local, missingLine.provider).status, 'incomplete')
   local.documents[0].openingPackageId = 'cargo-opening'
-  local.externalRefs = local.externalRefs.filter(reference => reference.localTable !== 'FIN_Documents')
+  local.documents[0].number = 'CW-INV-17'
+  local.cash[0].openingPackageId = 'cargo-opening'
+  local.cash[0].number = 'CW-REC-4'
+  local.externalRefs = local.externalRefs.filter(reference => reference.localTable !== 'FIN_Documents' && reference.localTable !== 'FIN_CashTransactions')
   const openingWithoutSubledgerMirror = await projectFinancePeriod(local, provider, '2026-10-01T09:00:00Z')
-  assert.ok(openingWithoutSubledgerMirror.warnings.some(warning => warning.includes('opening Journal Entry mirrors GL only')))
+  assert.ok(openingWithoutSubledgerMirror.warnings.some(warning => warning.includes('CW-INV-17') && warning.includes('CW-REC-4') && warning.includes('without double counting')))
   assert.equal(compareFinancePeriod(openingWithoutSubledgerMirror.local, openingWithoutSubledgerMirror.provider).status, 'incomplete')
+  local.externalRefs.push({ localTable: 'FIN_Documents', localId: documentId, externalType: 'Journal Entry', externalId: 'JE-OPEN', status: 'synced' })
+  const wrongOpeningIdentity = await projectFinancePeriod(local, provider, '2026-10-01T09:00:00Z')
+  assert.ok(wrongOpeningIdentity.warnings.some(warning => warning.includes('needs Sales Invoice')))
+  assert.equal(compareFinancePeriod(wrongOpeningIdentity.local, wrongOpeningIdentity.provider).status, 'incomplete')
+  local.externalRefs = [
+    { localTable: 'FIN_Documents', localId: documentId, externalType: 'Sales Invoice', externalId: 'SI-001', status: 'synced' },
+    { localTable: 'FIN_CashTransactions', localId: 'receipt', externalType: 'Payment Entry', externalId: 'PE-001', status: 'synced' },
+  ]
+  provider.details['Sales Invoice'][0].docstatus = 0
+  const draftOpeningInvoice = await projectFinancePeriod(local, provider, '2026-10-01T09:00:00Z')
+  assert.ok(draftOpeningInvoice.warnings.some(warning => warning.includes('CW-INV-17') && !warning.includes('CW-REC-4')))
+  assert.equal(compareFinancePeriod(draftOpeningInvoice.local, draftOpeningInvoice.provider).status, 'incomplete')
 })
 
 test('ERPNext period inventory rejects a missing page and a changing source', async () => {

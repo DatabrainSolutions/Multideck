@@ -104,8 +104,15 @@ source import and release gate are owned by the opening-balance workflow.
 Imported CargoWise open invoices and historical unapplied cash are separate
 operational subledger records. A matched opening Journal Entry does not give
 those records ERPNext invoice or payment identities. The period comparison
-reports them as an explicit incomplete blocker until a safe provider
-subledger bridge or another approved parity contract exists. Historical
+reports each affected source reference and opening package as an explicit
+incomplete blocker unless the exact ERPNext invoice or Payment Entry identity
+has a submitted readback. ERPNext opening invoices and payments create their
+own control-account ledger entries. The current full opening Journal Entry
+already carries those AR/AP and bank control balances, so exporting the
+subledger documents alongside it would double post. A reviewed clearing or
+residual opening journal and exact provider subledger import/readback are
+required before linked full opening packages can be released or period parity
+can be signed off. Historical
 unapplied cash has no current bank account match and is excluded from the
 current bank statement's cash movement.
 
