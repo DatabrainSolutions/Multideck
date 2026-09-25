@@ -325,6 +325,16 @@ incremental application plan; local filename order is not proof of its state.
   `dpl_HWJGgWS1P3W7JZ9ZXb1T9Fnc61B7` at Git `395c0edf` on branch `dev`,
   with no alias error. Both predate Finance 1–4 work; the production target
   should not be mistaken for the development alias version.
+- A later read-only check matched the client's public Supabase URL to that
+  exact project. It found neither the UK VAT foundation evidence/decision/
+  reconciliation tables nor any of 63 tables created by the local 24–25
+  September Finance/VAT chain. Five function names overlap; their ordered
+  migrations replace or rename the existing functions. This is a collision
+  preflight, not proof that the full chain will apply safely to live data.
+- The current checkout passes the serial data-access regression: 119/119
+  PostgreSQL/access cases plus 9/9 boundary contracts, including the staged
+  Finance/VAT chain. A two-entity browser journey and live after-migration
+  access probes remain required.
 - Finance migration names in the local checkout and demo project are not a
   one-to-one timestamp match. Several older local Finance migrations are also
   absent by name from the demo history, including accounting-party profile
