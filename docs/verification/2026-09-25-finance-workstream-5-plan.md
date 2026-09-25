@@ -185,6 +185,11 @@ incremental application plan; local filename order is not proof of its state.
   line. After Finance 3 patched that trigger, the integrated run passed 1/1 on
   25 September. Finance 3 is adding a focused line and locked-period regression;
   rerun this integration check after the remaining workstream changes settle.
+- Finance 4 committed its scoped daily Finance and AI match work as `50da65d3`.
+  Its final local checks passed the focused daily/model/warehouse cases (9/9),
+  the full-chain payment path (1/1), client TypeScript and the Finance
+  operations Edge Deno check. A live model response and deployed operator
+  workflow remain unverified.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.
@@ -252,6 +257,14 @@ incremental application plan; local filename order is not proof of its state.
   has been applied there in this workstream. The local test cannot be treated
   as an installed-tenant result.
 - A wider read-only check on 25 September found none of the 21 tables created
-  by the current 24-file Finance manifest on that development project. This
+  by the current Finance manifest on that development project. This
   confirms the release tables are absent before rollout; it does not establish
   identical definitions for the pre-existing functions those migrations replace.
+- Vercel alias inspection found `dev.multideck.app` on a preview deployment
+  from the `dev` ref, while the same Vercel project also owns
+  `multideck.app`/`production.multideck.app`; the current `multideck.app`
+  alias points to a production-target deployment built from a different `dev`
+  commit. A development frontend release therefore needs an explicitly preview
+  deployment and assignment of **only** `dev.multideck.app`, with the
+  production aliases checked before and after. A generic production-target
+  deployment or unverified Git push is unsafe for this release.
