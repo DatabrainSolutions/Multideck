@@ -6,7 +6,7 @@ export type BankPeriod = { FINPeriod_ID: string; FINPeriod_Code: string; FINPeri
 export type BankControl = { status: "incomplete" | "ready_for_review" | "verified"; reason?: string; statementId?: string; bankId: string; periodId: string; currency?: string; rowCount?: number; unmatchedRows?: number; invalidMatches?: number; unrepresentedCash?: number; orphanBankLines?: number; openingStatement?: string; closingStatement?: string; openingLedger?: string; closingLedger?: string; cashMovement?: string; ledgerMovement?: string; issues?: string[]; verifiedAt?: string | null }
 export type BankLine = { FINStmtLine_ID: string; FINStmtLine_LineNo: number; FINStmtLine_TransactionDate: string; FINStmtLine_Reference: string | null; FINStmtLine_Description: string | null; FINStmtLine_Amount: string; FINStmtLine_BalanceAfter: string; FINStmtLine_MatchStatusCode: string }
 export type BankCash = { FINCash_ID: string; FINCash_Number: string | null; FINCash_TypeCode: string; FINCash_TransactionDate: string; FINCash_AccountingDate: string; FINCash_Amount: string; FINCash_Reference: string | null; FINCash_CurrencyCodeSnapshot: string }
-export type BankWorkspace = { control: BankControl; lines: BankLine[]; matches: Array<{ FINBankMatch_StatementLineID: string; FINBankMatch_CashID: string; FINBankMatch_Notes: string }>; cash: BankCash[] }
+export type BankWorkspace = { control: BankControl; lines: BankLine[]; matches: Array<{ FINBankMatch_StatementLineID: string; FINBankMatch_CashID: string; FINBankMatch_MatchTypeCode: "manual" | "automatic"; FINBankMatch_Notes: string }>; cash: BankCash[] }
 
 async function call<T>(path: string, input?: unknown): Promise<T> {
   const session = await getSupabaseSession()
@@ -17,7 +17,7 @@ async function call<T>(path: string, input?: unknown): Promise<T> {
 }
 export const bankSetup = (legalEntityId: string) => call<{ banks: BankAccount[]; periods: BankPeriod[] }>(`/bank/setup?${new URLSearchParams({ legalEntityId })}`)
 export const bankWorkspace = (legalEntityId: string, periodId: string, bankId: string) => call<BankWorkspace>(`/bank/control?${new URLSearchParams({ legalEntityId, periodId, bankId })}`)
-export const importBankStatement = (input: { legalEntityId: string; bankId: string; fileName: string; csv: string; openingBalance: string; closingBalance: string; dateFrom: string; dateTo: string }) => call<{ id: string; duplicate: boolean; status: string }>("/bank/import", input)
+export const importBankStatement = (input: { legalEntityId: string; bankId: string; fileName: string; csv: string; openingBalance: string; closingBalance: string; dateFrom: string; dateTo: string }) => call<{ id: string; duplicate: boolean; status: string; automaticMatching: { matched: number; requiresReview: number; exceptions?: Array<{ lineId: string; lineNo: number; reason: string }> } }>("/bank/import", input)
 export const matchBankLine = (input: { legalEntityId: string; bankId: string; lineId: string; cashId: string; reason: string }) => call<{ lineId: string; cashId: string; status: string }>("/bank/match", input)
 export const unmatchBankLine = (input: { legalEntityId: string; bankId: string; lineId: string; reason: string }) => call<boolean>("/bank/unmatch", input)
 export const verifyBankStatement = (input: { legalEntityId: string; bankId: string; periodId: string; reason: string }) => call<BankControl>("/bank/verify", input)

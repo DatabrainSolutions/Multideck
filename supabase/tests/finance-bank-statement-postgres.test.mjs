@@ -43,7 +43,7 @@ test('statement import, bank ledger control, sign-off and entity access use post
     sql(baseline.slice(0, boundary))
     run('psql', [...args, '-f', new URL('migrations/20260918123733_general_ledger_journals.sql', root).pathname])
     sql(`set check_function_bodies=false;\n${baseline.slice(boundary)}`)
-    for (const name of ['20260925071153_opening_balance_gl_cutover.sql', '20260925075621_opening_source_items_and_operational_markers.sql', '20260925080000_bank_statement_reconciliation.sql', '20260925085000_finance_opening_mirror_delivery.sql', '20260925090000_finance_provider_period_reconciliation.sql', '20260925100000_finance_reconciliation_dexter.sql']) {
+    for (const name of ['20260925071153_opening_balance_gl_cutover.sql', '20260925075621_opening_source_items_and_operational_markers.sql', '20260925080000_bank_statement_reconciliation.sql', '20260925085000_finance_opening_mirror_delivery.sql', '20260925090000_finance_provider_period_reconciliation.sql', '20260925100000_finance_reconciliation_dexter.sql', '20260925103000_finance_approval_policies.sql', '20260925104000_bank_statement_automatic_matching.sql']) {
       run('psql', [...args, '-f', new URL(`migrations/${name}`, root).pathname])
     }
     sql(`create table finance_test_permissions(actor uuid, permission text);
@@ -53,7 +53,7 @@ test('statement import, bank ledger control, sign-off and entity access use post
       insert into public."cmp_Users"("User_ID","Company_ID","User_Email") values('${id(1)}','${id(2)}','finance@example.test'),('${id(5)}','${id(4)}','other@example.test');
       insert into public."cmp_LegalEntities"("LegalEntity_ID","Company_ID","LegalEntity_Name","LegalEntity_BaseCurrencyCodeSnapshot") values
         ('${id(3)}','${id(2)}','Test Freight','GBP'),('${id(6)}','${id(4)}','Other Freight','GBP');
-      insert into finance_test_permissions values('${id(1)}','Finance.Banks.Manage'),('${id(1)}','Finance.Management.View'),('${id(1)}','Finance.Management.Post'),('${id(1)}','Finance.Integration.Manage'),('${id(5)}','Finance.Banks.Manage');
+      insert into finance_test_permissions values('${id(1)}','Finance.Banks.Manage'),('${id(1)}','Finance.Management.View'),('${id(1)}','Finance.Management.Post'),('${id(1)}','Finance.Integration.Manage'),('${id(1)}','Finance.Configuration.Manage'),('${id(5)}','Finance.Banks.Manage');
       insert into public."sys_AccountingProviders"("ACCP_Code","ACCP_Name","ACCP_DefaultAuthType") values('erpnext','ERPNext','api_token');
       insert into public."sys_AccountingConnectionStatuses"("ACCCS_Code","ACCCS_Name") values('active','Active');
       insert into public."sys_FinancePeriodStatuses"("FINPERST_Code","FINPERST_Name") values('open','Open');
@@ -127,8 +127,39 @@ test('statement import, bank ledger control, sign-off and entity access use post
     sql(`update public."AI_DexterWatches" set "AIDexterWatch_StatusCode"='active' where "AIDexterWatch_ID"='${id(80)}';`)
     assert.equal(JSON.parse(sql(control())).status, 'incomplete')
     const line = n => sql(`select "FINStmtLine_ID" from public."FIN_StatementLines" where "FINStmtLine_LineNo"=${n}`)
+    const importedId = sql(`select "FINStmtImp_ID" from public."FIN_StatementImports" where "FINStmtImp_FileHashSHA256"='${'a'.repeat(64)}';`)
+    const autoMatch = () => JSON.parse(sql(`select public.multideck_bank_statement_auto_match('${id(1)}','${id(3)}','${importedId}');`))
+    reject(`set role authenticated; select public.multideck_bank_statement_auto_match('${id(1)}','${id(3)}','${importedId}');`, /permission denied/)
+    reject(`select public.multideck_bank_statement_auto_match('${id(5)}','${id(3)}','${importedId}');`, /access/)
+    assert.equal(autoMatch().matched, 0)
+    assert.equal(autoMatch().requiresReview, 2)
+    sql(`select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(3)}','bank_match','automatic',100,0,'Automate exact bank matches');`)
+    const ambiguous = JSON.parse(sql(`begin;
+      insert into public."FIN_StatementLines"("FINStmtLine_ImportID","FINStmtLine_LineNo","FINStmtLine_TransactionDate","FINStmtLine_Reference","FINStmtLine_CurrencyCodeSnapshot","FINStmtLine_Amount")
+        values('${importedId}',3,'2026-09-10','Duplicate receipt','GBP',20);
+      select public.multideck_bank_statement_auto_match('${id(1)}','${id(3)}','${importedId}');
+      rollback;`))
+    assert.equal(ambiguous.matched, 1)
+    assert.equal(ambiguous.requiresReview, 2)
+    assert.ok(ambiguous.exceptions.every(item => item.reason === 'ambiguous_statement_lines'))
+    assert.equal(sql(`select count(*) from public."FIN_BankMatches";`), '0')
+    const importWithAuto = JSON.parse(sql(importCommand().replace('multideck_bank_statement_import(', 'multideck_bank_statement_import_with_auto(')))
+    assert.equal(importWithAuto.duplicate, true)
+    assert.equal(importWithAuto.automaticMatching.matched, 2)
+    assert.equal(importWithAuto.automaticMatching.requiresReview, 0)
+    assert.equal(autoMatch().matched, 0)
+    assert.equal(sql(`select count(*) from public."FIN_BankMatches" where "FINBankMatch_MatchTypeCode"='automatic';`), '2')
+    assert.equal(sql(`select count(*) from public."Audit_Events" where "AuditEvent_Action"='auto_match' and "AuditEvent_LegalEntityID"='${id(3)}';`), '2')
+    assert.equal(sql(`select "FINStmtImp_StatusCode" from public."FIN_StatementImports" where "FINStmtImp_ID"='${importedId}';`), 'matched')
+    assert.equal(sql(`select count(*) from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_CapabilityCode"='bank_reconciliation';`), '1')
+    assert.equal(sql(`select "AIDexterWatchSignal_NewJSON"->>'status' from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_CapabilityCode"='bank_reconciliation';`), 'matched')
+    const dexterBank = JSON.parse(sql(`select public.multideck_dexter_domain_bank_reconciliation('${id(2)}','',10);`))
+    assert.equal(dexterBank[0].automaticMatches, 2)
+    assert.equal(dexterBank[0].reviewRows, 0)
+    sql(`select public.multideck_bank_statement_unmatch('${id(1)}','${id(3)}','${line(1)}','Correct match evidence');`)
+    assert.equal(sql(`select "FINStmtImp_StatusCode" from public."FIN_StatementImports" where "FINStmtImp_ID"='${importedId}';`), 'imported')
     sql(`select public.multideck_bank_statement_match('${id(1)}','${id(3)}','${line(1)}','${id(31)}','Exact posted receipt');`)
-    sql(`select public.multideck_bank_statement_match('${id(1)}','${id(3)}','${line(2)}','${id(32)}','Exact posted payment');`)
+    assert.equal(sql(`select "FINStmtImp_StatusCode" from public."FIN_StatementImports" where "FINStmtImp_ID"='${importedId}';`), 'matched')
     assert.equal(JSON.parse(sql(control())).status, 'ready_for_review')
     reject(control(6), /access|not found/)
     assert.equal(JSON.parse(sql(`select public.multideck_bank_statement_verify('${id(1)}','${id(3)}','${id(12)}','${id(10)}','Statement matches posted ledger');`)).status, 'verified')

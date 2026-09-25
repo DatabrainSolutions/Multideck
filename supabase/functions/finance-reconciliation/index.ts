@@ -37,7 +37,7 @@ Deno.serve(async request => {
         try { statement = parseBankStatementCsv(input.csv, input.openingBalance, input.closingBalance, input.dateFrom, input.dateTo) }
         catch (error) { throw new HttpError(400, error instanceof Error ? error.message : "The statement CSV is invalid.") }
         const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input.csv)))].map(value => value.toString(16).padStart(2, "0")).join("")
-        return json(request, checked(await admin.rpc("multideck_bank_statement_import", { p_actor: actor.User_ID, p_entity: entity, p_bank: input.bankId, p_file_name: input.fileName, p_file_hash: hash, p_input: statement })))
+        return json(request, checked(await admin.rpc("multideck_bank_statement_import_with_auto", { p_actor: actor.User_ID, p_entity: entity, p_bank: input.bankId, p_file_name: input.fileName, p_file_hash: hash, p_input: statement })))
       }
       if (parts[1] === "match" || parts[1] === "unmatch") {
         await requirePermission(admin, actor.User_ID, "Finance.Banks.Manage")
@@ -60,7 +60,7 @@ Deno.serve(async request => {
       if (!uuid(statementId)) return json(request, { control, lines: [], cash: [] })
       const lines = checked(await admin.from("FIN_StatementLines").select("FINStmtLine_ID,FINStmtLine_LineNo,FINStmtLine_TransactionDate,FINStmtLine_Reference,FINStmtLine_Description,FINStmtLine_Amount,FINStmtLine_BalanceAfter,FINStmtLine_MatchStatusCode").eq("FINStmtLine_ImportID", statementId).order("FINStmtLine_LineNo").limit(1000))
       const lineIds = lines.map((line: any) => line.FINStmtLine_ID)
-      const matches = lineIds.length ? checked(await admin.from("FIN_BankMatches").select("FINBankMatch_StatementLineID,FINBankMatch_CashID,FINBankMatch_Notes").in("FINBankMatch_StatementLineID", lineIds)) : []
+      const matches = lineIds.length ? checked(await admin.from("FIN_BankMatches").select("FINBankMatch_StatementLineID,FINBankMatch_CashID,FINBankMatch_MatchTypeCode,FINBankMatch_Notes").in("FINBankMatch_StatementLineID", lineIds)) : []
       const period = checked(await admin.from("FIN_Periods").select("FINPeriod_StartDate,FINPeriod_EndDate").eq("FINPeriod_ID", input.periodId).eq("FINPeriod_LegalEntityID", entity).single())
       const cash: any[] = []
       for (let offset = 0; ; offset += 500) {
