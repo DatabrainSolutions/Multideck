@@ -4,6 +4,7 @@ import { AlertCircle, ChartNoAxesCombined, Landmark, LoaderCircle, ReceiptText, 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { FinanceGeneralLedgerPage } from "@/pages/finance-general-ledger-page"
 import { FinanceBankReconciliationPage } from "@/pages/finance-bank-reconciliation-page"
+import { FinanceProviderReconciliationPage } from "@/pages/finance-provider-reconciliation-page"
 import { FinanceDailyPage, type FinanceDailyRoute } from "@/pages/finance-daily-page"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import {
@@ -89,6 +90,7 @@ export type FinanceRoute = FinanceLedgerRoute | FinanceAdministrationRoute | Fin
   | "/finance/general-ledger" | "/finance/general-ledger/accounts" | "/finance/general-ledger/journals"
   | "/finance/reports"
   | "/finance/bank-reconciliation"
+  | "/finance/provider-reconciliation"
   | "/finance/vat"
   | "/finance/payables/intake"
   | "/finance/management/accruals-wip"
@@ -580,6 +582,7 @@ function FinanceSetupPage({ navigate }: { navigate: (path: string) => void }) {
 
 export function FinancePage({ route, navigate, currentUser }: { route: FinanceRoute; navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
   if (route === "/finance/bank-reconciliation") return <FinanceBankReconciliationPage currentUser={currentUser} />
+  if (route === "/finance/provider-reconciliation") return <FinanceProviderReconciliationPage currentUser={currentUser} />
   if (["/finance/receivables/statements", "/finance/receivables/collections", "/finance/payables/payment-runs", "/finance/payables/purchase-orders", "/finance/payables/matching", "/finance/management/profitability"].includes(route)) return <FinanceDailyPage route={route as FinanceDailyRoute} navigate={navigate} currentUser={currentUser} />
   if (route.startsWith("/finance/general-ledger")) return <FinanceGeneralLedgerPage route={route} navigate={navigate} currentUser={currentUser} />
   if (route === "/finance/reports") return <FinanceReportsPage navigate={navigate} />
@@ -588,7 +591,7 @@ export function FinancePage({ route, navigate, currentUser }: { route: FinanceRo
   if (route === "/finance/payables/intake") return <FinancePurchaseIntakePage navigate={navigate} currentUser={currentUser} />
   const detailMatch = route.match(/^\/finance\/(receivables|payables)\/documents\/([0-9a-f-]+)$/i)
   if (detailMatch) return <FinanceDocumentPage documentId={detailMatch[2]} ledger={detailMatch[1] as FinanceLedger} navigate={navigate} currentUser={currentUser} />
-  if (route === "/finance/setup") return <FinanceAdministrationPage navigate={navigate} />
+  if (route === "/finance/setup") return <FinanceAdministrationPage navigate={navigate} currentUser={currentUser} />
   if (route in financeSetupTabByRoute) {
     const administrationRoute = route as FinanceAdministrationRoute
     return <FinanceAdministrationPage navigate={navigate} initialTab={financeSetupTabByRoute[administrationRoute]} />

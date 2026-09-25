@@ -1,5 +1,7 @@
 import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { parseBankStatementCsv } from "../_shared/bank-statement-csv.mts"
+import { runFinancePeriodComparison } from "../_shared/finance-period-service.mts"
+import { deliverFinanceOpeningMirror } from "../_shared/finance-opening-mirror.mts"
 
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)
 function checked(result: any) {
@@ -71,6 +73,50 @@ Deno.serve(async request => {
         if (cash.length > 10000) throw new HttpError(409, "The bank cash register exceeds this review limit. Narrow the period before reconciling.")
       }
       return json(request, { control, lines, matches, cash })
+    }
+    if (parts[0] === "provider" && request.method === "GET" && parts[1] === "setup") {
+      const [connections, periods] = await Promise.all([
+        admin.from("ACCI_Connections").select("ACCIC_ID,ACCIC_Name,ACCIC_ProviderCode,ACCIC_ExternalTenantName,ACCIC_ExternalBaseCurrencyCode,ACCIC_StatusCode")
+          .eq("ACCIC_LegalEntityID", entity).eq("ACCIC_StatusCode", "active").in("ACCIC_ProviderCode", ["erpnext", "sage_50"]).order("ACCIC_Name"),
+        admin.from("FIN_Periods").select("FINPeriod_ID,FINPeriod_Code,FINPeriod_StartDate,FINPeriod_EndDate,FINPeriod_StatusCode,FINPeriod_BaseCurrencyCode")
+          .eq("FINPeriod_LegalEntityID", entity).order("FINPeriod_StartDate", { ascending: false }).limit(36),
+      ])
+      return json(request, { connections: checked(connections), periods: checked(periods) })
+    }
+    if (parts[0] === "provider" && request.method === "POST" && parts[1] === "run") {
+      await requirePermission(admin, actor.User_ID, "Finance.Integration.Manage")
+      if (!uuid(input.periodId) || !uuid(input.connectionId)) throw new HttpError(400, "Choose an accounting period and connection.")
+      const connection = checked(await admin.from("ACCI_Connections").select("ACCIC_ID,ACCIC_ProviderCode,ACCIC_StatusCode,ACCIC_ExternalTenantName,ACCIC_ExternalBaseCurrencyCode,ACCIC_SettingsJSON")
+        .eq("ACCIC_ID", input.connectionId).eq("ACCIC_LegalEntityID", entity).eq("ACCIC_StatusCode", "active").maybeSingle())
+      if (!connection) throw new HttpError(404, "Accounting connection not found in this legal entity.")
+      return json(request, await runFinancePeriodComparison(admin, actor.User_ID, entity, input.periodId, connection))
+    }
+    if (parts[0] === "provider" && request.method === "GET" && parts[1] === "status") {
+      if (!uuid(input.periodId) || !uuid(input.connectionId)) throw new HttpError(400, "Choose an accounting period and connection.")
+      const status = checked(await admin.rpc("multideck_finance_provider_period_status", { p_actor: actor.User_ID, p_entity: entity, p_period: input.periodId, p_connection: input.connectionId }))
+      const runId = status?.runId
+      if (!uuid(runId)) return json(request, { status, differences: [] })
+      const offset = Number(input.offset || 0)
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 5000) throw new HttpError(400, "Choose a valid difference page.")
+      const differences = checked(await admin.from("ACCI_PeriodReconciliationDifferences").select("id,domain,identity,kind,local_snapshot,provider_snapshot,common_snapshot,review_status,review_action,review_reason,reviewed_at")
+        .eq("run_id", runId).order("domain").order("identity").range(offset, offset + 99))
+      return json(request, { status, differences, offset })
+    }
+    if (parts[0] === "provider" && request.method === "POST" && parts[1] === "review") {
+      await requirePermission(admin, actor.User_ID, "Finance.Management.Approve")
+      if (!uuid(input.differenceId) || !["prepare_draft", "requires_adjustment", "expected_difference"].includes(input.action)) throw new HttpError(400, "Choose a difference and review action.")
+      return json(request, checked(await admin.rpc("multideck_finance_period_review_difference", { p_actor: actor.User_ID, p_entity: entity, p_difference: input.differenceId, p_action: input.action, p_reason: input.reason })))
+    }
+    if (parts[0] === "opening" && request.method === "POST" && parts[1] === "deliver") {
+      await requirePermission(admin, actor.User_ID, "Finance.Integration.Manage")
+      if (!uuid(input.packageId)) throw new HttpError(400, "Choose a posted opening package.")
+      return json(request, await deliverFinanceOpeningMirror(admin, actor.User_ID, entity, input.packageId))
+    }
+    if (parts[0] === "opening" && request.method === "GET" && parts[1] === "status") {
+      if (!uuid(input.packageId)) throw new HttpError(400, "Choose a posted opening package.")
+      const result = checked(await admin.from("FIN_OpeningMirrorDeliveries").select("package_id,connection_id,status,external_id,readback_hash,last_error,attempt_count,queued_at,matched_at")
+        .eq("package_id", input.packageId).eq("legal_entity_id", entity).maybeSingle())
+      return json(request, result ?? { package_id: input.packageId, status: "not_queued" })
     }
     throw new HttpError(404, "Finance reconciliation route not found.")
   } catch (error) { return failure(request, error) }

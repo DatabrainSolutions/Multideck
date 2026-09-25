@@ -182,6 +182,7 @@ const validRoutes = new Set([
   "/finance/cash",
   "/finance/cash/reconciliation",
   "/finance/bank-reconciliation",
+  "/finance/provider-reconciliation",
   "/finance/administration",
   "/finance/systems",
   "/finance/currencies",

@@ -46,7 +46,7 @@ begin
   perform public._multideck_bank_statement_access(p_actor,p_entity,'Finance.Banks.Manage');
   select * into b from public."FIN_BankAccounts" where "FINBank_ID"=p_bank and "FINBank_LegalEntityID"=p_entity and "FINBank_IsActive" for share;
   if not found or b."FINBank_NominalAccountID" is null then raise exception 'Choose an active bank with a mapped nominal account.' using errcode='22023'; end if;
-  if p_file_name is null or length(btrim(p_file_name)) not between 1 and 240 or p_file_hash !~ '^[a-f0-9]{64}$'
+  if p_file_name is null or length(btrim(p_file_name)) not between 1 and 240 or p_file_hash is null or p_file_hash !~ '^[a-f0-9]{64}$'
     or jsonb_typeof(p_input->'rows') is distinct from 'array' or jsonb_array_length(p_input->'rows') not between 1 and 1000
     or p_input->>'openingBalance' !~ '^-?[0-9]{1,14}\.[0-9]{4}$'
     or p_input->>'closingBalance' !~ '^-?[0-9]{1,14}\.[0-9]{4}$'
@@ -180,9 +180,12 @@ begin
     where line."FINStmtLine_ImportID"=i."FINStmtImp_ID" and cash."FINCash_AccountingDate" between p."FINPeriod_StartDate" and p."FINPeriod_EndDate"
       and cash."FINCash_BankAccountID"=p_bank and cash."FINCash_NativePostingStatusCode"='posted';
   if unrepresented_cash<>0 then issues:=issues||jsonb_build_array('Posted cash entries and statement matches do not cover each other exactly.'); end if;
-  select coalesce(sum(case when period."FINPeriod_EndDate"<p."FINPeriod_StartDate" then line."FINPostLine_DebitAmount"-line."FINPostLine_CreditAmount" else 0 end),0),
-    coalesce(sum(case when period."FINPeriod_ID"=p_period then line."FINPostLine_DebitAmount"-line."FINPostLine_CreditAmount" else 0 end),0),
-    count(*) filter (where period."FINPeriod_ID"=p_period and (line."FINPostLine_CashID" is null or not exists (
+  select coalesce(sum(case when period."FINPeriod_EndDate"<p."FINPeriod_StartDate"
+      or (period."FINPeriod_ID"=p_period and batch."FINPostBatch_SourceTable"='FIN_OpeningBalancePackages')
+      then line."FINPostLine_DebitAmount"-line."FINPostLine_CreditAmount" else 0 end),0),
+    coalesce(sum(case when period."FINPeriod_ID"=p_period and batch."FINPostBatch_SourceTable" is distinct from 'FIN_OpeningBalancePackages'
+      then line."FINPostLine_DebitAmount"-line."FINPostLine_CreditAmount" else 0 end),0),
+    count(*) filter (where period."FINPeriod_ID"=p_period and batch."FINPostBatch_SourceTable" is distinct from 'FIN_OpeningBalancePackages' and (line."FINPostLine_CashID" is null or not exists (
       select 1 from public."FIN_BankMatches" match join public."FIN_StatementLines" statement_line on statement_line."FINStmtLine_ID"=match."FINBankMatch_StatementLineID"
       where match."FINBankMatch_CashID"=line."FINPostLine_CashID" and statement_line."FINStmtLine_ImportID"=i."FINStmtImp_ID")))
     into opening_gl,movement_gl,orphan_bank_lines

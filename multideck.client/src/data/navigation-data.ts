@@ -266,6 +266,7 @@ export const sidebarAreas: SidebarArea[] = [
           { label: "Transactions", icon: Layers3, route: "/finance/general-ledger" },
           { label: "Account enquiries", icon: FileText, route: "/finance/general-ledger/accounts" },
           { label: "Journals", icon: FileText, route: "/finance/general-ledger/journals" },
+          { label: "Accounts system reconciliation", icon: BadgeCheck, route: "/finance/provider-reconciliation" },
           { label: "Chart of accounts", icon: Calculator, route: "/finance/ledger" },
         ],
       },
