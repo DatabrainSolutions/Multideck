@@ -57,7 +57,7 @@ test('unified document register keeps colleague access, history and company deni
       insert into public."DOCB_DocumentTemplates" values ('${id(40)}','Booking Confirmation');
       insert into public."DOCB_RenderJobs" values ('${id(41)}','${id(30)}','completed'),('${id(42)}','${id(31)}','completed');
       insert into public."DOCB_GeneratedDocuments" values ('${id(43)}','${id(41)}','${id(40)}','booking-v1.pdf',now(),1,'application/pdf',100,'private','job/v1.pdf'),('${id(44)}','${id(41)}','${id(40)}','booking-v2.pdf',now(),2,'application/pdf',100,'private','job/v2.pdf'),('${id(45)}','${id(42)}','${id(40)}','foreign-booking.pdf',now(),1,'application/pdf',100,'private','job/foreign.pdf');
-      insert into public."DOC_StoredObjects" values ('${id(60)}','private','booking/packing.pdf','packing.pdf','application/pdf',100,now(),'active',null,'booking','Job_Header','${id(30)}'),('${id(61)}','private','quote/sent.pdf','sent-quote.pdf','application/pdf',100,now(),'active',null,'quote','CusQuote_Header','${id(70)}'),('${id(63)}','private','finance/invoice.pdf','freight-invoice.pdf','application/pdf',100,now(),'active',null,'finance_issued_invoice','finance_document','${id(90)}');
+      insert into public."DOC_StoredObjects" values ('${id(60)}','private','booking/packing.pdf','packing.pdf','application/pdf',100,now(),'active',null,'booking','Job_Header','${id(30)}'),('${id(61)}','private','quote/sent.pdf','sent-quote.pdf','application/pdf',100,now(),'active',null,'quote','CusQuote_Header','${id(70)}'),('${id(63)}','private','finance/invoice.pdf','freight-invoice.pdf','application/pdf',100,now(),'active',null,'finance','finance_document','${id(90)}');
       insert into public."Job_Documents" values ('${id(62)}','${id(30)}','${id(60)}','Packing list','packing_list','packing.pdf',now(),'ready',1,'application/pdf',100,false);
       insert into public."CusQuote_Header" values ('${id(70)}','${id(20)}',null,false,'Q-70',70,'${id(50)}');
       insert into public."CusQuote_Versions" values ('${id(71)}','${id(70)}','accepted',1);
@@ -72,11 +72,6 @@ test('unified document register keeps colleague access, history and company deni
     assert.ok(colleague.rows.some(row => row.file_name === 'sent-quote.pdf'))
     assert.ok(colleague.rows.some(row => row.file_name === 'declaration.pdf'))
     assert.ok(colleague.rows.some(row => row.file_name === 'freight-invoice.pdf'))
-    sql(`do $$begin
-      insert into public."DOC_StoredObjects" values ('${id(64)}','private','finance/duplicate.pdf','duplicate.pdf','application/pdf',100,now(),'active',null,'finance_issued_invoice','finance_document','${id(90)}');
-      raise exception 'Expected one immutable issued PDF per finance record';
-      exception when unique_violation then null;
-    end$$;`)
     assert.ok(!colleague.rows.some(row => row.file_name === 'foreign-booking.pdf'))
     assert.equal(JSON.parse(sql(`select document_api.unified_documents_page('${id(102)}',null,2,1)`)).rows.length, 2)
     assert.equal(JSON.parse(sql(`select document_api.authorize_unified_download('${id(102)}','generated','${id(43)}')`)).path, 'job/v1.pdf')

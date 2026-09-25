@@ -12,7 +12,6 @@ import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpErro
 import { erpNextCreate, erpNextList, erpNextOrigin, erpNextRequest } from "../_shared/erpnext.ts"
 import { hyperExtConfigured, hyperExtRequest, hyperExtStatus, parseHyperExtNominals } from "../_shared/hyperext.ts"
 import { registerPagination } from "../_shared/register-pagination.ts"
-import { generatedDocumentsBucket } from "../_shared/document-functions.ts"
 
 type LineInput = { description: string; quantity?: number; unitAmount?: number; taxRatePercent?: number; taxCode?: string | null; chargeCode?: string | null; jobCostingLineId?: string | null; lineType?: "service" | "ancillary" }
 type DraftInput = { type: "sl_invoice" | "credit_note" | "pl_invoice" | "debit_note"; partyOrgId: string; documentDate?: string; dueDate?: string | null; currencyCode?: string; exchangeRate?: number; lines: LineInput[]; sourceJobId?: string | null; idempotencyKey?: string; sourceExtractionId?: string }
@@ -1395,9 +1394,6 @@ async function documentDetail(admin: any, current: any, id: string) {
   }
   const { data: jobLinks, error: jobLinkError } = await admin.from("FIN_DocumentLineJobLinks").select("FINDocLineJob_DocumentLineID,FINDocLineJob_JobCostingLineID").eq("FINDocLineJob_DocumentID", id)
   if (jobLinkError) throw new HttpError(500, jobLinkError.message)
-  const issuedInvoice = document.FINDoc_TypeCode === "sl_invoice"
-    ? await issuedInvoiceObject(admin, id)
-    : null
   const costingLineByDocumentLine = new Map((jobLinks ?? []).map((link: any) => [link.FINDocLineJob_DocumentLineID, link.FINDocLineJob_JobCostingLineID]))
   const recordedTaxStatus = clean(document.FINDoc_MetadataJSON?.taxStatus, 20)
   const taxStatus = recordedTaxStatus === "approved" || recordedTaxStatus === "pending"
@@ -1428,75 +1424,7 @@ async function documentDetail(admin: any, current: any, id: string) {
     // tenant-scoped CRM account domain. It does not add a finance write or event:
     // FIN_Documents and Org_Master remain Dexter's evidence/watch boundaries.
     billingAddress,
-    issuedInvoice: issuedInvoice ? { id: issuedInvoice.DOCStoredObject_ID, fileName: issuedInvoice.DOCStoredObject_OriginalFileName,
-      sizeBytes: issuedInvoice.DOCStoredObject_FileSizeBytes, createdAt: issuedInvoice.DOCStoredObject_CreatedAt } : null,
   }
-}
-
-async function issuedInvoiceObject(admin: any, documentId: string) {
-  const { data, error } = await admin.from("DOC_StoredObjects")
-    .select("DOCStoredObject_ID,DOCStoredObject_Container,DOCStoredObject_BlobName,DOCStoredObject_OriginalFileName,DOCStoredObject_FileSizeBytes,DOCStoredObject_CreatedAt")
-    .eq("DOCStoredObject_AggregateType", "finance_document")
-    .eq("DOCStoredObject_AggregateID", documentId)
-    .eq("DOCStoredObject_ConcernCode", "finance_issued_invoice")
-    .eq("DOCStoredObject_StatusCode", "active")
-    .is("DOCStoredObject_DeletedAt", null)
-    .limit(1).maybeSingle()
-  if (error) throw new HttpError(500, "The issued invoice record could not be loaded.")
-  return data
-}
-
-async function issuedInvoiceDownload(admin: any, current: any, documentId: string) {
-  const document = await scopedDocument(admin, current, documentId)
-  await requirePermission(admin, current.User_ID, "Finance.Receivables.View")
-  if (document.FINDoc_TypeCode !== "sl_invoice" || !["approved", "submitted"].includes(document.FINDoc_StatusCode)) {
-    throw new HttpError(404, "An issued invoice is not available for this record.")
-  }
-  const file = await issuedInvoiceObject(admin, documentId)
-  if (!file) throw new HttpError(404, "The issued invoice PDF is not attached yet.")
-  const { data, error } = await admin.storage.from(file.DOCStoredObject_Container).createSignedUrl(file.DOCStoredObject_BlobName, 300)
-  if (error || !data?.signedUrl) throw new HttpError(503, "The issued invoice could not be opened.")
-  return { signedUrl: data.signedUrl, expiresAt: new Date(Date.now() + 300_000).toISOString(), fileName: file.DOCStoredObject_OriginalFileName }
-}
-
-async function attachIssuedInvoice(admin: any, current: any, documentId: string, input: { pdfBase64?: unknown; confirmed?: unknown }) {
-  const document = await scopedDocument(admin, current, documentId)
-  await requirePermission(admin, current.User_ID, "Finance.ReviewAndPost")
-  if (document.FINDoc_TypeCode !== "sl_invoice" || !["approved", "submitted"].includes(document.FINDoc_StatusCode)) {
-    throw new HttpError(409, "Approve and post the sales invoice before attaching its issued PDF.")
-  }
-  if (input.confirmed !== true) throw new HttpError(400, "Confirm that the issued PDF matches the approved invoice and excludes internal costs.")
-  if (await issuedInvoiceObject(admin, documentId)) throw new HttpError(409, "An issued PDF is already retained for this invoice.")
-  const encoded = typeof input.pdfBase64 === "string" ? input.pdfBase64 : ""
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length > 14_000_000) throw new HttpError(400, "Choose a PDF smaller than 10 MB.")
-  let bytes: Uint8Array
-  try { bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0)) }
-  catch { throw new HttpError(400, "The PDF file could not be read.") }
-  if (bytes.byteLength < 100 || bytes.byteLength > 10 * 1024 * 1024 || new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") {
-    throw new HttpError(400, "Choose a valid PDF smaller than 10 MB.")
-  }
-  const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((part) => part.toString(16).padStart(2, "0")).join("")
-  const fileId = crypto.randomUUID()
-  const safeNumber = clean(document.FINDoc_Number, 100).replace(/[^a-z0-9_-]+/gi, "-") || "invoice"
-  const fileName = `${safeNumber}.pdf`
-  const path = `v1/${current.Company_ID}/finance/issued-invoice/${documentId}.pdf`
-  const { error: uploadError } = await admin.storage.from(generatedDocumentsBucket).upload(path, bytes, {
-    contentType: "application/pdf", cacheControl: "0", upsert: false,
-  })
-  if (uploadError) throw new HttpError(409, "The issued invoice could not be stored or was already attached.")
-  const { error: catalogueError } = await admin.from("DOC_StoredObjects").insert({
-    DOCStoredObject_ID: fileId, DOCStoredObject_ConcernCode: "finance_issued_invoice",
-    DOCStoredObject_AggregateType: "finance_document", DOCStoredObject_AggregateID: documentId,
-    DOCStoredObject_ProviderCode: "supabase_storage", DOCStoredObject_Container: generatedDocumentsBucket,
-    DOCStoredObject_BlobName: path, DOCStoredObject_OriginalFileName: fileName,
-    DOCStoredObject_MimeType: "application/pdf", DOCStoredObject_FileSizeBytes: bytes.byteLength,
-    DOCStoredObject_SHA256: digest, DOCStoredObject_CreatedBy: current.User_ID,
-  })
-  if (catalogueError) {
-    await admin.storage.from(generatedDocumentsBucket).remove([path])
-    throw new HttpError(500, "The issued invoice could not be catalogued.")
-  }
-  return { id: fileId, fileName, sizeBytes: bytes.byteLength }
 }
 
 async function cashWorkspace(admin: any, current: any, selectedLedger?: Ledger, paging = { offset: 0, limit: 250 }) {
@@ -2047,7 +1975,6 @@ Deno.serve(async (request) => {
       return json(request, data)
     }
     if (request.method === "GET" && parts[0] === "documents" && parts.length === 2) return json(request, await documentDetail(admin, current, parts[1]))
-    if (request.method === "GET" && parts[0] === "documents" && parts[2] === "issued-pdf") return json(request, await issuedInvoiceDownload(admin, current, parts[1]))
     if (request.method === "GET" && parts[0] === "documents" && parts.length === 1) {
       const params = new URL(request.url).searchParams
       return json(request, await documentWorkspace(admin, current, ledger(params.get("ledger") ?? undefined), false, registerPagination(params)))
@@ -2059,7 +1986,6 @@ Deno.serve(async (request) => {
       return json(request, await cashWorkspace(admin, current, value ? ledger(value) : undefined, registerPagination(params)))
     }
     if (request.method === "POST" && parts[0] === "documents" && parts[1] === "draft") return json(request, await createDocumentDraft(admin, current, await body<DraftInput>(request)), 201)
-    if (request.method === "POST" && parts[0] === "documents" && parts[2] === "issued-pdf") return json(request, await attachIssuedInvoice(admin, current, parts[1], await body<{ pdfBase64?: unknown; confirmed?: unknown }>(request)), 201)
     if (request.method === "PUT" && parts[0] === "documents" && parts[2] === "draft") return json(request, await updateDocumentDraft(admin, current, parts[1], await body<DraftInput>(request)))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "reopen-draft") return json(request, await reopenDocumentDraft(admin, current, parts[1], await optionalReason(request)))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "retry-posting") return json(request, await retryDocumentPosting(admin, current, parts[1]))

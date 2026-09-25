@@ -182,7 +182,6 @@ export type FinanceDocumentDetail = {
     FINDocLine_TaxAmount: number
     FINDocLine_GrossAmount: number
   }>
-  issuedInvoice: null | { id: string; fileName: string; sizeBytes: number; createdAt: string }
   integrationQueue: null | {
     FINIntQ_ID: string
     FINIntQ_StatusCode: string
@@ -564,8 +563,6 @@ export function correctFinanceDocumentBillingParty(id: string, partyOrgId: strin
 export function createFinanceCashDraft(input: FinanceCashInput) { return post<FinanceCashTransaction>("/cash/draft", input) }
 export function requestFinanceDocumentReview(id: string, reason?: string) { return post<FinanceDocument>(`/documents/${encodeURIComponent(id)}/request-review`, { reason }) }
 export function approveFinanceDocument(id: string, reason?: string) { return post<FinanceDocument>(`/documents/${encodeURIComponent(id)}/approve`, { reason }) }
-export function attachFinanceIssuedInvoice(id: string, pdfBase64: string) { return post<{ id: string; fileName: string; sizeBytes: number }>(`/documents/${encodeURIComponent(id)}/issued-pdf`, { pdfBase64, confirmed: true }) }
-export function getFinanceIssuedInvoiceDownload(id: string) { return call<{ signedUrl: string; expiresAt: string; fileName: string }>(`/documents/${encodeURIComponent(id)}/issued-pdf`) }
 export function rejectFinanceDocument(id: string, reason: string) { return post<FinanceDocument>(`/documents/${encodeURIComponent(id)}/reject`, { reason }) }
 export function requestFinanceCashReview(id: string, reason?: string) { return post<FinanceCashTransaction>(`/cash/${encodeURIComponent(id)}/request-review`, { reason }) }
 export function approveFinanceCash(id: string, reason?: string) { return post<FinanceCashTransaction>(`/cash/${encodeURIComponent(id)}/approve`, { reason }) }

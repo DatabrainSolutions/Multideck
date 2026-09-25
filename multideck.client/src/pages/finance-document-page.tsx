@@ -10,7 +10,6 @@ import { SettingsPageHeader, SettingsPanel } from "@/components/multideck/settin
 import { ProviderCustomerSetupWizard } from "@/components/multideck/provider-customer-setup-wizard"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -22,10 +21,8 @@ import { downloadFinanceDocumentWorkbook, parseFinanceDocumentWorkbook } from "@
 import { printFinanceProforma } from "@/lib/finance-proforma"
 import {
   approveFinanceDocument,
-  attachFinanceIssuedInvoice,
   correctFinanceDocumentBillingParty,
   getFinanceDocument,
-  getFinanceIssuedInvoiceDownload,
   getFinanceDraftOptions,
   rejectFinanceDocument,
   reopenFinanceDocumentDraft,
@@ -150,9 +147,6 @@ export function FinanceDocumentPage({
   const [error, setError] = useState<string | null>(null)
   const [reasonAction, setReasonAction] = useState<"reject" | "reopen" | null>(null)
   const [reason, setReason] = useState("")
-  const [issuedPdfOpen, setIssuedPdfOpen] = useState(false)
-  const [issuedPdfFile, setIssuedPdfFile] = useState<File | null>(null)
-  const [issuedPdfConfirmed, setIssuedPdfConfirmed] = useState(false)
   const [partyOrgId, setPartyOrgId] = useState("")
   const [sourceKind, setSourceKind] = useState<"manual" | "job">("manual")
   const [sourceJobId, setSourceJobId] = useState("")
@@ -287,41 +281,6 @@ export function FinanceDocumentPage({
   const approve = () => runAction("approve", () => approveFinanceDocument(documentId), "Document approved and posted; external mirror checked")
   const retry = () => runAction("retry", () => retryFinanceDocumentPosting(documentId), "External mirror delivery completed")
 
-  const attachIssuedPdf = async () => {
-    if (!issuedPdfFile || !issuedPdfConfirmed) return
-    if (issuedPdfFile.size < 100 || issuedPdfFile.size > 10 * 1024 * 1024) {
-      toast.error(t("Choose a PDF smaller than 10 MB.")); return
-    }
-    setPendingAction("issued-pdf")
-    try {
-      const bytes = new Uint8Array(await issuedPdfFile.arrayBuffer())
-      if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") throw new Error(t("Choose a valid PDF file."))
-      let binary = ""
-      for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
-      await attachFinanceIssuedInvoice(documentId, btoa(binary))
-      setIssuedPdfOpen(false)
-      setIssuedPdfFile(null)
-      setIssuedPdfConfirmed(false)
-      toast.success(t("Issued invoice retained in Documents"))
-      await load(true)
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : t("The issued invoice could not be attached."))
-    } finally { setPendingAction(null) }
-  }
-
-  const openIssuedPdf = async () => {
-    const opened = window.open("", "_blank")
-    if (opened) opened.opener = null
-    try {
-      const result = await getFinanceIssuedInvoiceDownload(documentId)
-      if (opened) opened.location.href = result.signedUrl
-      else window.location.href = result.signedUrl
-    } catch (cause) {
-      opened?.close()
-      toast.error(cause instanceof Error ? cause.message : t("The issued invoice could not be opened."))
-    }
-  }
-
   const correctBillingParty = async () => {
     if (!replacementPartyOrgId || !billingPartyReason.trim()) return
     setPendingAction("correct-party")
@@ -435,9 +394,6 @@ export function FinanceDocumentPage({
             {editable ? <><Button type="button" variant="outline" disabled={Boolean(pendingAction)} onClick={() => void saveDraft()}>{pendingAction === "save" ? <LoaderCircle className="animate-spin" /> : <Save />}{t("Save draft")}</Button><Button type="button" disabled={Boolean(pendingAction)} onClick={() => void sendForReview()}>{pendingAction === "review" ? <LoaderCircle className="animate-spin" /> : <Send />}{t("Send for review")}</Button></> : null}
             {document.FINDoc_StatusCode === "awaiting_approval" && canApprove ? <><Button type="button" variant="outline" disabled={Boolean(pendingAction)} onClick={() => { setReason(""); setReasonAction("reject") }}>{t("Reject")}</Button><Button type="button" disabled={Boolean(pendingAction)} onClick={() => void approve()}>{pendingAction === "approve" ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />}{t("Approve & post")}</Button></> : null}
             {document.FINDoc_StatusCode === "rejected" && canDraft && canApprove ? <Button type="button" disabled={Boolean(pendingAction)} onClick={() => { setReason(""); setReasonAction("reopen") }}>{t("Return to draft")}</Button> : null}
-            {type === "sl_invoice" && "issuedInvoice" in detail && ["approved", "submitted"].includes(document.FINDoc_StatusCode) ? detail.issuedInvoice
-              ? <Button type="button" variant="outline" onClick={() => void openIssuedPdf()}>{t("Open issued PDF")}</Button>
-              : canApprove ? <Button type="button" variant="outline" disabled={Boolean(pendingAction)} onClick={() => setIssuedPdfOpen(true)}>{t("Attach issued PDF")}</Button> : null : null}
           </div>
         </div>
 
@@ -502,18 +458,6 @@ export function FinanceDocumentPage({
         onChangeBillingParty={posted && canDraft && canApprove ? () => { setMirrorSetupOpen(false); setReplacementPartyOrgId(""); setBillingPartyReason(""); setBillingPartyOpen(true) } : undefined}
         onReady={() => { setMirrorSetupOpen(false); if (detail.integrationQueue?.retryAvailable) void retry() }}
       />
-
-      <Dialog open={issuedPdfOpen} onOpenChange={(open) => { if (!pendingAction) setIssuedPdfOpen(open) }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>{t("Attach issued invoice PDF")}</DialogTitle><DialogDescription>{t("Keep the approved customer invoice with its finance record and in Documents. This file is retained as issued and cannot be replaced here.")}</DialogDescription></DialogHeader>
-          <div className="space-y-4">
-            <p className="text-[12px] text-[var(--md-text)]">{t("Invoice")} <strong data-i18n-skip>{document.FINDoc_Number}</strong> · <span data-i18n-skip>{document.FINDoc_CurrencyCodeSnapshot} {Number(document.FINDoc_GrossAmount).toFixed(2)}</span></p>
-            <Input type="file" accept=".pdf,application/pdf" onChange={(event) => { setIssuedPdfFile(event.target.files?.[0] ?? null); setIssuedPdfConfirmed(false) }} />
-            <label className="flex items-start gap-2 text-[12px] leading-5 text-[var(--md-text)]"><Checkbox checked={issuedPdfConfirmed} onCheckedChange={(value) => setIssuedPdfConfirmed(value === true)} />{t("I checked that this PDF matches the approved invoice number, customer, totals and tax, and excludes internal costs and notes.")}</label>
-          </div>
-          <DialogFooter><Button type="button" variant="outline" disabled={Boolean(pendingAction)} onClick={() => setIssuedPdfOpen(false)}>{t("Cancel")}</Button><Button type="button" disabled={!issuedPdfFile || !issuedPdfConfirmed || Boolean(pendingAction)} onClick={() => void attachIssuedPdf()}>{pendingAction === "issued-pdf" ? t("Attaching…") : t("Retain issued PDF")}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={billingPartyOpen} onOpenChange={(open) => { if (!open && !pendingAction) setBillingPartyOpen(false) }}>
         <DialogContent className="sm:max-w-[620px]">
