@@ -15,6 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const blankLine = (): JournalLine => ({ accountId: "", description: "", debit: "0", credit: "0" })
 const selectClass = "h-9 w-full min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 text-[13px] text-[var(--md-ink)] focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]"
+const entitySessionKey = "multideck.finance.daily.entity"
+const rememberedEntity = () => { try { return window.sessionStorage.getItem(entitySessionKey) } catch { return null } }
+const rememberEntity = (id: string) => { try { window.sessionStorage.setItem(entitySessionKey, id) } catch { /* Keep the page selection usable. */ } }
 
 export function FinanceGeneralLedgerPage({ route, navigate, currentUser }: { route: string; navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
   const { t, language } = useLanguage()
@@ -33,7 +36,15 @@ export function FinanceGeneralLedgerPage({ route, navigate, currentUser }: { rou
   const canPrepare = hasPermission(currentUser, "Finance.Management.Prepare"), canPost = hasPermission(currentUser, "Finance.Management.Post")
   const currency = entities.find(row => row.LegalEntity_ID === entity)?.LegalEntity_BaseCurrencyCodeSnapshot || "GBP"
   const format = (value: number) => new Intl.NumberFormat(language, { style: "currency", currency, maximumFractionDigits: 4 }).format(value)
-  useEffect(() => { let active = true; void getGlEntities().then(result => { if (active) { setEntities(result.entities); setEntity(result.entities[0]?.LegalEntity_ID ?? ""); if (!result.entities.length) setLoading(false) } }).catch(cause => { if (active) { setError(cause.message); setLoading(false) } }); return () => { active = false } }, [])
+  useEffect(() => { let active = true; void getGlEntities().then(result => { if (active) { const saved = rememberedEntity(); setEntities(result.entities); setEntity(result.entities.some(row => row.LegalEntity_ID === saved) ? saved || "" : result.entities[0]?.LegalEntity_ID ?? ""); if (!result.entities.length) setLoading(false) } }).catch(cause => { if (active) { setError(cause.message); setLoading(false) } }); return () => { active = false } }, [])
+  const changeEntity = (next: string) => {
+    if (next === entity || busy || !entities.some(row => row.LegalEntity_ID === next)) return
+    if (journal && dirty && !window.confirm(t("Discard unsaved journal changes?"))) return
+    generation.current++
+    setWorkspace(null); setJournal(null); setTransaction(null); setTransactionLoading(false); setConfirmPost(false); setDirty(false)
+    setError(""); setNotice(""); setAccount(""); setOffset(0); setJournalOffset(0)
+    setEntity(next); rememberEntity(next)
+  }
   const load = useCallback(async () => {
     if (!entity) return
     const request = ++generation.current
@@ -86,10 +97,11 @@ export function FinanceGeneralLedgerPage({ route, navigate, currentUser }: { rou
     finally { setImporting(false); setBusy(false) }
   }
   const openTransaction = async (id: string) => {
+    const request = generation.current
     setTransactionLoading(true); setError("")
-    try { setTransaction(await getGlTransaction(entity, id)) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Transaction could not be loaded.") }
-    finally { setTransactionLoading(false) }
+    try { const selected = await getGlTransaction(entity, id); if (request === generation.current) setTransaction(selected) }
+    catch (cause) { if (request === generation.current) setError(cause instanceof Error ? cause.message : "Transaction could not be loaded.") }
+    finally { if (request === generation.current) setTransactionLoading(false) }
   }
   const columns: DataTableColumn<GlEntry>[] = [
     { id: "period", label: t("Period"), width: 100, cell: row => `${row.period.slice(0, 4)}-${row.period.slice(4)}`, kind: "date" },
@@ -113,7 +125,7 @@ export function FinanceGeneralLedgerPage({ route, navigate, currentUser }: { rou
       {!journal && error ? <p role="alert" className="text-[var(--md-red)]">{t(error)}</p> : null}
       <nav aria-label={t("General ledger views")} className="flex flex-wrap gap-2">{[["/finance/general-ledger", "Transactions"], ["/finance/general-ledger/accounts", "Account enquiries"], ["/finance/general-ledger/journals", "Journals"]].map(([path, label]) => <Button key={path} variant={route === path ? "default" : "outline"} onClick={() => { setOffset(0); navigate(path) }}>{t(label)}</Button>)}</nav>
       <SettingsPanel title={t("Ledger selection")}><div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
-        <label className="grid gap-1 text-xs">{t("Legal entity")}<select className={selectClass} value={entity} onChange={event => { setWorkspace(null); setEntity(event.target.value); setAccount(""); setOffset(0); setJournalOffset(0) }}>{entities.map(row => <option key={row.LegalEntity_ID} value={row.LegalEntity_ID}>{row.LegalEntity_Name}</option>)}</select></label>
+        <label className="grid gap-1 text-xs">{t("Legal entity")}<select className={selectClass} value={entity} onChange={event => changeEntity(event.target.value)} disabled={busy || importing}>{entities.map(row => <option key={row.LegalEntity_ID} value={row.LegalEntity_ID}>{row.LegalEntity_Name}</option>)}</select></label>
         {!isJournals && <><label className="grid gap-1 text-xs">{t("From period")}<Input type="month" value={from} onChange={event => { setFrom(event.target.value); setOffset(0) }} /></label><label className="grid gap-1 text-xs">{t("To period")}<Input type="month" value={to} onChange={event => { setTo(event.target.value); setOffset(0) }} /></label></>}
         {isEnquiry && <><label className="grid gap-1 text-xs">{t("Account")}<select className={selectClass} value={account} onChange={event => { setAccount(event.target.value); setOffset(0) }}><option value="">{t("Choose account")}</option>{workspace?.accounts.filter(row => row.FINNom_IsActive || showInactiveAccounts || row.FINNom_ID === account).map(row => <option key={row.FINNom_ID} value={row.FINNom_ID}>{row.FINNom_Code} · {row.FINNom_Name}{row.FINNom_IsActive ? "" : ` (${t("inactive")})`}</option>)}</select></label><label className="flex items-end gap-2 pb-2 text-xs"><input type="checkbox" checked={showInactiveAccounts} onChange={event => setShowInactiveAccounts(event.target.checked)} />{t("Show inactive accounts")}</label></>}
         <Button variant="outline" disabled={loading || !entity} onClick={() => void load()}>{t("Refresh")}</Button>
