@@ -62,6 +62,7 @@ const fixture = () => ({
   ledgerMovements: {
     status: "period_movements_matched", digest: "7".repeat(64),
     lineCount: 1, unresolvedLines: 0, verifiedOpeningExcludedLines: 0,
+    acceptedSettlementLines: 0,
     matchedInvoiceLines: 1, expectedPostingCount: 1,
     duplicateSourcePostingReferences: 0, partialAccountingPeriods: 0,
     invalidAccountingPeriodTaxLines: 0,
@@ -91,10 +92,16 @@ const fixture = () => ({
     openingInvoiceNetCreditGbp: "20.0000", openingPackageNetCreditGbp: "0.0000",
     periodInvoiceNetCreditGbp: "-40.0000", periodPackageNetCreditGbp: "0.0000",
     priorAcceptedNetDueGbp: "10.0000",
+    openingSettlementNetCreditGbp: "0.0000",
+    periodSettlementNetCreditGbp: "0.0000",
     accounts: [], lines: [
       { id: "prior-sale-posting", phase: "opening", classification: "matched_invoice" },
       { id: "current-purchase-posting", phase: "current", classification: "matched_invoice" },
     ],
+  },
+  settlements: {
+    status: "verified", digest: "4".repeat(64), count: 0, validCount: 0,
+    openingNetCreditGbp: "0.0000", periodNetCreditGbp: "0.0000", lines: [],
   },
   paymentPreview: {
     status: "preview_only_no_cash_return_effect", amountEncoding: "decimal_strings",
@@ -170,6 +177,7 @@ test("Cash bridge explains prior unpaid VAT, current invoice VAT and period paym
   assert.deepEqual(result.controlBalance, {
     openingNetCredit: "20.0000", periodNetCredit: "-40.0000",
     closingNetCredit: "-20.0000", priorAcceptedNetDue: "10.0000",
+    openingSettlementNetCredit: "0.0000", periodSettlementNetCredit: "0.0000",
     openingDifference: "0.0000", closingDifference: "0.0000",
   })
 })
@@ -224,4 +232,42 @@ test("Cash bridge surfaces payment mismatch and blocks incomplete source coverag
   const unsupportedHistoricalPosting = fixture()
   unsupportedHistoricalPosting.controlBalance.unclassifiedOpeningLines = 1
   assert.equal(previewUkVatCashControlBridge(unsupportedHistoricalPosting).streams, null)
+})
+
+test("Cash bridge subtracts a source-linked accepted HMRC settlement from VAT control", () => {
+  const source = fixture()
+  source.ledgerMovements.lineCount = 2
+  source.ledgerMovements.acceptedSettlementLines = 1
+  source.ledgerMovements.lines.push({ id: "hmrc-vat-1", classification: "accepted_hmrc_settlement" })
+  source.controlBalance.lineCount = 3
+  source.controlBalance.lines.push({ id: "hmrc-vat-1", phase: "current", classification: "accepted_hmrc_settlement" })
+  source.controlBalance.periodNetCreditGbp = "-50.0000"
+  source.controlBalance.closingNetCreditGbp = "-30.0000"
+  source.controlBalance.periodSettlementNetCreditGbp = "-10.0000"
+  source.settlements.count = 1
+  source.settlements.validCount = 1
+  source.settlements.periodNetCreditGbp = "-10.0000"
+  source.settlements.lines = [{ id: "settlement-1", vatPostingLineId: "hmrc-vat-1", valid: true }]
+  const result = previewUkVatCashControlBridge(source)
+  assert.equal(result.calculationValid, true, result.issues.join("; "))
+  assert.equal(result.controlBalance?.periodSettlementNetCredit, "-10.0000")
+  const unproved = structuredClone(source)
+  unproved.settlements.lines[0].valid = false
+  assert.equal(previewUkVatCashControlBridge(unproved).calculationValid, false)
+})
+
+test("Cash bridge carries a prior settled return into the opening VAT-control balance", () => {
+  const source = fixture()
+  source.controlBalance.lineCount = 3
+  source.controlBalance.lines.push({ id: "hmrc-vat-prior", phase: "opening", classification: "accepted_hmrc_settlement" })
+  source.controlBalance.openingNetCreditGbp = "10.0000"
+  source.controlBalance.closingNetCreditGbp = "-30.0000"
+  source.controlBalance.openingSettlementNetCreditGbp = "-10.0000"
+  source.settlements.count = 1
+  source.settlements.validCount = 1
+  source.settlements.openingNetCreditGbp = "-10.0000"
+  source.settlements.lines = [{ id: "settlement-prior", vatPostingLineId: "hmrc-vat-prior", valid: true }]
+  const result = previewUkVatCashControlBridge(source)
+  assert.equal(result.calculationValid, true, result.issues.join("; "))
+  assert.equal(result.controlBalance?.openingSettlementNetCredit, "-10.0000")
 })

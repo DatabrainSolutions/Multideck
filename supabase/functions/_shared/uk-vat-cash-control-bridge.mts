@@ -23,6 +23,8 @@ export type UkVatCashControlBridgePreview = {
     periodNetCredit: string
     closingNetCredit: string
     priorAcceptedNetDue: string
+    openingSettlementNetCredit: string
+    periodSettlementNetCredit: string
     openingDifference: string
     closingDifference: string
   } | null
@@ -103,6 +105,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   const ledger = object(source?.ledgerMovements)
   const history = object(source?.acceptedHistory)
   const balance = object(source?.controlBalance)
+  const settlements = object(source?.settlements)
   const issues: string[] = []
   let issueCount = 0
   const issue = (message: string) => { issueCount++; if (issues.length < 30) issues.push(message) }
@@ -115,7 +118,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   if (!source || source.status !== "cash_control_source_only"
     || source.returnReady !== false || source.truncated !== false
     || !digestPattern.test(String(source.sourceDigest ?? ""))
-    || !context || !inventory || !projection || !anomalies || !journal || !accounting || !ledger || !history || !balance
+    || !context || !inventory || !projection || !anomalies || !journal || !accounting || !ledger || !history || !balance || !settlements
     || inventory.truncated !== false || inventory.amountEncoding !== "decimal_strings"
     || projection.amountEncoding !== "decimal_strings"
     || projection.status !== "preview_only_no_cash_return_effect"
@@ -147,7 +150,10 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     || balance.status !== "balance_rollforward_matched"
     || !digestPattern.test(String(balance.digest ?? ""))
     || !Array.isArray(balance.lines)
-    || !Array.isArray(balance.accounts)) {
+    || !Array.isArray(balance.accounts)
+    || settlements.status !== "verified"
+    || !digestPattern.test(String(settlements.digest ?? ""))
+    || !Array.isArray(settlements.lines)) {
     issue("A complete invoice and payment inventory bound to one Cash VAT period is required.")
     return empty()
   }
@@ -182,9 +188,10 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
       || errorCount(ledger.expectedPostingCount) !== errorCount(ledger.matchedInvoiceLines)
       || errorCount(ledger.lineCount) !== errorCount(ledger.matchedInvoiceLines)
         + errorCount(ledger.verifiedOpeningExcludedLines)
+        + errorCount(ledger.acceptedSettlementLines)
       || ledger.lines.some((item) => {
         const posting = object(item)
-        return !posting || !["matched_invoice", "verified_opening_excluded"]
+        return !posting || !["matched_invoice", "verified_opening_excluded", "accepted_hmrc_settlement"]
           .includes(String(posting.classification ?? ""))
       })) {
       issue("Cash invoice VAT does not cover the posted VAT-control movements.")
@@ -208,7 +215,10 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     if (errorCount(balance.unclassifiedOpeningLines) !== 0
       || errorCount(balance.unclassifiedPeriodLines) !== 0
       || errorCount(balance.invalidAccountingPeriodLines) !== 0
-      || errorCount(balance.lineCount) !== balance.lines.length) {
+      || errorCount(balance.lineCount) !== balance.lines.length
+      || errorCount(settlements.count) !== errorCount(settlements.validCount)
+      || errorCount(settlements.count) !== settlements.lines.length
+      || settlements.lines.some((item) => object(item)?.valid !== true)) {
       issue("The opening-to-closing VAT-control balance has unsupported ledger lines.")
     }
     start = date(context.periodStart)
@@ -484,15 +494,21 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     const openingInvoice = signedUnits(balance.openingInvoiceNetCreditGbp)
     const periodInvoice = signedUnits(balance.periodInvoiceNetCreditGbp)
     const priorDue = signedUnits(balance.priorAcceptedNetDueGbp)
+    const openingSettlement = signedUnits(balance.openingSettlementNetCreditGbp)
+    const periodSettlement = signedUnits(balance.periodSettlementNetCreditGbp)
+    if (openingSettlement !== signedUnits(settlements.openingNetCreditGbp)
+      || periodSettlement !== signedUnits(settlements.periodNetCreditGbp)) {
+      issue("HMRC settlement totals differ from the source-linked ledger lines.")
+    }
     const openingUnpaid = opening.outputVatGbp-opening.inputVatGbp
     const closingUnpaid = closing.outputVatGbp-closing.inputVatGbp
     const currentCashDue = projected.outputVatGbp-projected.inputVatGbp
-    const openingDifference = openingGl-openingPackage-openingUnpaid-priorDue
+    const openingDifference = openingGl-openingPackage-openingUnpaid-priorDue-openingSettlement
     const closingDifference = closingGl-openingPackage-periodPackage
-      -closingUnpaid-priorDue-currentCashDue
+      -closingUnpaid-priorDue-currentCashDue-openingSettlement-periodSettlement
     if (openingGl+periodGl !== closingGl
-      || openingInvoice+openingPackage !== openingGl
-      || periodInvoice+periodPackage !== periodGl
+      || openingInvoice+openingPackage+openingSettlement !== openingGl
+      || periodInvoice+periodPackage+periodSettlement !== periodGl
       || periodInvoice !== posted.outputVatGbp-posted.inputVatGbp
       || openingDifference !== 0n || closingDifference !== 0n) {
       issue("The VAT-control account balance does not reconcile to unpaid invoices and accepted Cash returns.")
@@ -500,6 +516,8 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     const controlBalance = {
       openingNetCredit: money(openingGl),periodNetCredit: money(periodGl),
       closingNetCredit: money(closingGl),priorAcceptedNetDue: money(priorDue),
+      openingSettlementNetCredit: money(openingSettlement),
+      periodSettlementNetCredit: money(periodSettlement),
       openingDifference: money(openingDifference),closingDifference: money(closingDifference),
     }
     return { status: "cash_control_bridge_preview_only", calculationValid: issueCount === 0,
