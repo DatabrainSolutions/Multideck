@@ -9,6 +9,7 @@ const migrations = [
   new URL("../migrations/20260925113000_uk_vat_cash_exit_invoice_inventory.sql", import.meta.url).pathname,
   new URL("../migrations/20260925114500_uk_vat_cash_exit_price_change_guard.sql", import.meta.url).pathname,
   new URL("../migrations/20260925120000_uk_vat_cash_exit_line_sources.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925121500_uk_vat_cash_exit_cash_source_guard.sql", import.meta.url).pathname,
 ]
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 
@@ -55,7 +56,11 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
       create table public."FIN_CashTransactions"(
         "FINCash_ID" uuid primary key,"FINCash_LegalEntityID" uuid,
         "FINCash_NativePostingStatusCode" text,"FINCash_NativePostedAt" timestamptz,
-        "FINCash_CurrencyCodeSnapshot" text,"FINCash_TypeCode" text);
+        "FINCash_CurrencyCodeSnapshot" text,"FINCash_TypeCode" text,
+        "FINCash_TransactionDate" date,"FINCash_AccountingDate" date,
+        "FINCash_NativePostingBatchID" uuid,"FINCash_ExchangeRate" numeric,
+        "FINCash_Amount" numeric,"FINCash_LocalAmount" numeric,
+        "FINCash_UnallocatedAmount" numeric);
       create table public."FIN_CashAllocations"(
         "FINCashAlloc_ID" uuid primary key,"FINCashAlloc_DocumentID" uuid,
         "FINCashAlloc_CashID" uuid,"FINCashAlloc_DocumentLineID" uuid,
@@ -90,8 +95,10 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
         ('${id(13)}','${id(2)}','sl_invoice','2026-02-15','draft',null,null,'GBP',1,50,50),
         ('${id(14)}','${id(3)}','sl_invoice','2026-02-18','posted','2026-02-18 12:00Z','${id(23)}','GBP',1,999,999);
       insert into public."FIN_CashTransactions" values
-        ('${id(30)}','${id(2)}','posted','2026-03-01 12:00Z','GBP','supplier_payment'),
-        ('${id(31)}','${id(2)}','posted','2026-04-01 12:00Z','GBP','supplier_payment');
+        ('${id(30)}','${id(2)}','posted','2026-03-01 12:00Z','GBP','supplier_payment',
+          '2026-03-01','2026-03-01','${id(35)}',1,60,60,0),
+        ('${id(31)}','${id(2)}','posted','2026-04-01 12:00Z','GBP','supplier_payment',
+          '2026-04-01','2026-04-01','${id(36)}',1,40,40,0);
       insert into public."FIN_CashAllocations" values
         ('${id(40)}','${id(11)}','${id(30)}',null,'allocated',60,'2026-03-01 12:00Z'),
         ('${id(41)}','${id(11)}','${id(31)}',null,'allocated',40,'2026-04-01 12:00Z');
@@ -123,6 +130,9 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(result.requiresPriceChangeReview, false)
     assert.equal(result.lineCount, 3)
     assert.equal(result.lineSourceIssueCount, 1)
+    assert.equal(result.cashSourceCount, 1)
+    assert.equal(result.cashAllocationCount, 1)
+    assert.equal(result.cashSourceIssueCount, 0)
     assert.equal(result.unpostedInvoiceCount, 1)
     assert.equal(result.truncated, false)
     assert.match(result.sourceDigest, /^[0-9a-f]{64}$/)
@@ -138,12 +148,14 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(byId.get(id(12)).source_exception, true)
     assert.equal(byId.get(id(12)).lineSourceIssueCount, 1)
     sql(`insert into public."FIN_CashTransactions" values
-      ('${id(32)}','${id(2)}','posted','2026-03-05 12:00Z','GBP','customer_receipt');
+      ('${id(32)}','${id(2)}','posted','2026-03-05 12:00Z','GBP','customer_receipt',
+        '2026-03-05','2026-03-05','${id(37)}',1,20,20,0);
       insert into public."FIN_CashAllocations" values
       ('${id(42)}','${id(10)}','${id(32)}',null,'allocated',20,'2026-03-05 12:00Z');`)
     const changed = JSON.parse(sql(`select ${call};`))
     assert.notEqual(changed.sourceDigest, result.sourceDigest)
     assert.equal(changed.allocationCount, 3)
+    assert.equal(changed.cashSourceIssueCount, 1)
     assert.equal(changed.invoices.find((invoice) => invoice.invoice_id === id(10)).unsupported_allocation_count, 1)
     assert.equal(changed.invoices.find((invoice) => invoice.invoice_id === id(10)).source_exception, true)
     sql(`insert into public."FIN_Documents" values
@@ -154,9 +166,33 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     assert.equal(changedPrice.requiresPriceChangeReview, true)
     assert.equal(changedPrice.priceChanges[0].document_id, id(15))
     assert.notEqual(changedPrice.sourceDigest, changed.sourceDigest)
+    sql(`insert into public."FIN_CashTransactions" values
+      ('${id(33)}','${id(2)}','posted','2026-03-16 12:00Z','GBP','customer_refund',
+        '2026-03-16','2026-03-16','${id(38)}',1,12,12,12);`)
+    const refund = JSON.parse(sql(`select ${call};`))
+    assert.equal(refund.cashSourceCount, 3)
+    assert.equal(refund.cashSourceIssueCount, 2)
+    assert.notEqual(refund.sourceDigest, changedPrice.sourceDigest)
+    sql(`insert into public."FIN_CashTransactions" values
+      ('${id(34)}','${id(2)}','posted','2026-04-02 12:00Z','GBP','customer_receipt',
+        '2026-04-02','2026-04-02','${id(39)}',1,10,10,10);
+      insert into public."FIN_IndirectTaxCashPaymentDateReviews" values
+        ('${id(34)}','${id(2)}',1,'2026-03-31');`)
+    const backdatedReview = JSON.parse(sql(`select ${call};`))
+    assert.equal(backdatedReview.cashSourceCount, 4)
+    assert.equal(backdatedReview.cashSourceIssueCount, 3)
+    assert.notEqual(backdatedReview.sourceDigest, refund.sourceDigest)
+    sql(`insert into public."FIN_CashTransactions" values
+      ('${id(35)}','${id(2)}','reversed','2026-03-20 12:00Z','GBP','customer_receipt',
+        '2026-03-20','2026-03-20','${id(43)}',1,10,10,10);`)
+    const reversed = JSON.parse(sql(`select ${call};`))
+    assert.equal(reversed.cashSourceCount, 5)
+    assert.equal(reversed.cashSourceIssueCount, 4)
+    assert.equal(reversed.cashSources.find((cash) => cash.cash_id === id(35)).native_posting_status, "reversed")
+    assert.notEqual(reversed.sourceDigest, backdatedReview.sourceDigest)
     sql(`insert into public."FIN_IndirectTaxCreditLinks" values ('${id(2)}','${id(60)}');`)
     const linked = JSON.parse(sql(`select ${call};`))
-    assert.notEqual(linked.sourceDigest, changedPrice.sourceDigest)
+    assert.notEqual(linked.sourceDigest, reversed.sourceDigest)
     assert.equal(linked.invoices.find((invoice) => invoice.invoice_id === id(10)).lines[0].linkedCreditCount, 1)
     assert.equal(linked.lineSourceIssueCount, 2)
     sql(`insert into public."FIN_IndirectTaxPeriods" values ('${id(80)}','${id(2)}','standard');
@@ -168,6 +204,15 @@ test("Cash exit inventory includes wholly unpaid invoices and rejects unsupporte
     reject(`select public.multideck_uk_vat_cash_exit_invoice_inventory('${id(4)}','${id(2)}','2026-01-01','2026-03-31');`, /VAT access denied/)
     reject(`select public.multideck_uk_vat_cash_exit_invoice_inventory('${id(1)}','${id(3)}','2026-01-01','2026-03-31');`, /VAT access denied/)
     reject(`set role authenticated; select ${call};`, /permission denied/)
+    sql(`insert into public."FIN_CashTransactions"
+      select gen_random_uuid(),'${id(2)}','posted','2026-03-21 12:00Z',
+        'GBP','customer_refund','2026-03-21','2026-03-21','${id(44)}',1,1,1,1
+      from generate_series(1,996);`)
+    const cashBounded = JSON.parse(sql(`select ${call};`))
+    assert.equal(cashBounded.cashSourceCount, 1001)
+    assert.equal(cashBounded.truncated, true)
+    assert.deepEqual(cashBounded.cashSources, [])
+    assert.deepEqual(cashBounded.invoices, [])
     sql(`insert into public."FIN_Documents"
       select gen_random_uuid(),'${id(2)}','sl_invoice','2026-03-10','posted',
         '2026-03-10 12:00Z','${id(24)}','GBP',1,120,120
