@@ -1616,7 +1616,7 @@ export function FinanceSetupPage({
 
         {tab === "controls" && <FinancePanel
           title={t("Bank statement imports")}
-          description={t("Bank-specific import profiles for this legal entity only. Review is always required; importing must not create ledger postings.")}
+          description={t("Bank-specific import profiles for this legal entity. Exact matches may reconcile under policy; importing never creates ledger postings.")}
           action={<Button type="button" variant="outline" onClick={() => setControls({ bankStatementImportProfiles: JSON.stringify([...statementProfiles, { id: crypto.randomUUID(), name: "New bank format", bankId: "", format: "excel", dateFormat: "DD/MM/YYYY", headerRow: "1", dateColumn: "Date", descriptionColumn: "Description", debitColumn: "Money out", creditColumn: "Money in", referenceColumn: "Reference", balanceColumn: "Balance", pdfNotes: "" }]) })}>{t("Add bank format")}</Button>}
         >
           <div className="divide-y divide-[var(--md-line)]">
@@ -1634,7 +1634,7 @@ export function FinanceSetupPage({
                 </>}
               </div>
               {profile.format === "pdf" && <div className="space-y-1"><FieldLabel htmlFor={`statement-pdf-${profile.id}`}>{t("PDF layout notes")}</FieldLabel><textarea id={`statement-pdf-${profile.id}`} className="min-h-24 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] p-3 text-[13px]" value={profile.pdfNotes || ""} onChange={event => updateStatementProfile(profile.id, { pdfNotes: event.target.value })} placeholder={t("Describe date, transaction, money in/out and balance columns, repeated page headers and debit/credit markers.")} /></div>}
-              <p className="text-[12px] text-[var(--md-subtle)]">{t("Configuration only. Statement upload, extraction and reconciliation are not yet available. These profiles do not enable automatic posting.")}</p>
+              <p className="text-[12px] text-[var(--md-subtle)]">{t("Use Bank reconciliation to import and review statements. Matching does not create ledger postings.")}</p>
             </div>)}
           </div>
         </FinancePanel>}
@@ -4283,6 +4283,8 @@ function ApprovalPolicyPanel({ entityId, baseCurrency, t }: { entityId: string; 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const policy = policies.find((item) => item.workflow === workflow)
+  const boundedAmount = /^\d+(?:\.\d{1,4})?$/.test(amount) && Number(amount) < 1e12
+  const boundedVariance = !variance.trim() || (/^\d+(?:\.\d{1,4})?$/.test(variance) && Number(variance) <= 100)
 
   useEffect(() => {
     let current = true
@@ -4301,7 +4303,7 @@ function ApprovalPolicyPanel({ entityId, baseCurrency, t }: { entityId: string; 
   }, [workflow, policy?.policyId])
 
   const save = async () => {
-    if (busy || !reason.trim() || (mode !== "always_review" && !(Number(amount) >= 0 && amount.trim()))) return
+    if (busy || !reason.trim() || (mode !== "always_review" && (!boundedAmount || !boundedVariance))) return
     setBusy(true)
     setError(null)
     try {
@@ -4319,6 +4321,7 @@ function ApprovalPolicyPanel({ entityId, baseCurrency, t }: { entityId: string; 
     } finally { setBusy(false) }
   }
   return <FinancePanel title={t("Workflow approval policies")} description={t("Choose when each legal entity workflow needs a person to review it. Every automatic decision is bounded and audited.")}>
+    <div className="space-y-4 px-4 py-4">
     {error ? <Notice tone="danger">{t(error)}</Notice> : null}
     {loading ? <p className="text-sm text-[var(--md-subtle)]" role="status">{t("Loading approval policies…")}</p> : <div className="grid gap-4 @min-[760px]/finance:grid-cols-2">
       <SelectField id="approval-workflow" label={t("Workflow")} value={workflow} onChange={(value) => setWorkflow(value as FinanceApprovalWorkflow)}
@@ -4328,6 +4331,15 @@ function ApprovalPolicyPanel({ entityId, baseCurrency, t }: { entityId: string; 
         { value: "exception_review", label: t("Review exceptions") },
         { value: "automatic", label: t("Automatic within limits") },
       ]} />
+      <p className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t(mode === "always_review"
+        ? "Every submitted item waits for a person to review it."
+        : mode === "exception_review"
+          ? "Source-verified items flow through within limits; advisory exceptions wait for review."
+          : "Items flow through within limits unless a hard control requires review.")}</p>
+      {(["opening_balance", "opening_fx", "recognition_mandate", "vat_control", "period_close"] as FinanceApprovalWorkflow[]).includes(workflow) ?
+        <p className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t("This control still needs an explicit operator action. An eligible policy can remove the second review step.")}</p> : null}
+      {workflow === "bank_match" ?
+        <p className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t("Only unique exact bank matches can complete automatically. Statement verification remains a separate action.")}</p> : null}
       {mode !== "always_review" ? <>
         <div className="min-w-0 space-y-1"><FieldLabel htmlFor="approval-amount">{t("Maximum automatic amount")} · {baseCurrency}</FieldLabel>
           <Input id="approval-amount" type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} data-i18n-skip dir="ltr" />
@@ -4340,9 +4352,10 @@ function ApprovalPolicyPanel({ entityId, baseCurrency, t }: { entityId: string; 
         <Input id="approval-reason" value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder={t("Explain this approval policy change")} /></div>
       <div className="flex flex-wrap items-center justify-between gap-3 @min-[760px]/finance:col-span-2">
         <p className="text-xs text-[var(--md-subtle)]">{policy ? `${t("Revision")} ${policy.revision} · ${t("Last reason")}: ${policy.reason}` : t("Default: always review")}</p>
-        <Button type="button" disabled={busy || !reason.trim() || (mode !== "always_review" && (!amount.trim() || !Number.isFinite(Number(amount)) || Number(amount) < 0 || (variance.trim() !== "" && (!Number.isFinite(Number(variance)) || Number(variance) < 0 || Number(variance) > 100))))} onClick={() => void save()}>{t(busy ? "Saving…" : "Save approval policy")}</Button>
+        <Button type="button" disabled={busy || !reason.trim() || (mode !== "always_review" && (!boundedAmount || !boundedVariance))} onClick={() => void save()}>{t(busy ? "Saving…" : "Save approval policy")}</Button>
       </div>
     </div>}
+    </div>
   </FinancePanel>
 }
 
@@ -4411,7 +4424,7 @@ function ControlsTab({
           <FinancePanel
             title={t("Drafts & automation")}
             description={t(
-              "Operations prepare drafts; Finance approves and posts.",
+              "Operations prepare drafts; the legal entity policy controls approval and posting.",
             )}
           >
             <FinanceToggleRow
