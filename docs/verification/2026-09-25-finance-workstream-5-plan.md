@@ -341,6 +341,13 @@ incremental application plan; local filename order is not proof of its state.
   PostgreSQL/access cases plus 9/9 boundary contracts, including the staged
   Finance/VAT chain. A two-entity browser journey and live after-migration
   access probes remain required.
+- The proposed native accounting-month rollout slice has 87 ordered files:
+  every local migration from `20260924082944` through the VAT inventory at
+  `20260925082712`, then nine non-VAT Finance migrations through
+  `20260925102000`. It excludes the later Cash VAT changes. A temporary
+  staged-tenant fixture using exactly this slice passed its PostgreSQL
+  opening/VAT source-lock check. This is a candidate pending the VAT owner's
+  frozen commit and dependency review, not authority to apply a partial chain.
 - Finance migration names in the local checkout and demo project are not a
   one-to-one timestamp match. Several older local Finance migrations are also
   absent by name from the demo history, including accounting-party profile
