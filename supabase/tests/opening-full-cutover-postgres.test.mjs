@@ -266,6 +266,8 @@ test('full CargoWise opening posts one TB and operational AR/AP and unapplied ca
       where "FINPostLine_BatchID"='${supplierPosted.posting_batch_id}' and "FINPostLine_NominalAccountID"='${id(45)}';`), '8.0000')
     const correctionPeriod = sql(`select "FINPostBatch_PeriodID" from public."FIN_PostingBatches"
       where "FINPostBatch_ID"='${fxPosted.posting_batch_id}';`)
+    assert.equal(JSON.parse(sql(policy('opening_fx', 0))).revision, 3,
+      'a later restrictive policy must not invalidate a settled historical allocation')
     const afterSettlement = JSON.parse(sql(`select public.multideck_finance_trade_control_bridge(
       '${id(4)}','${id(3)}','${correctionPeriod}');`))
     assert.equal(afterSettlement.status, 'verified', JSON.stringify(afterSettlement.issues))
