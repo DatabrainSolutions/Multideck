@@ -94,10 +94,12 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 14. `20260925074532_charge_lifecycle_review_replay.sql`
 15. `20260925075054_reviewed_charge_lifecycle_corrections.sql`
 16. `20260925075621_opening_source_items_and_operational_markers.sql`
-17. `20260925080000_bank_statement_reconciliation.sql`
-18. `20260925085000_finance_opening_mirror_delivery.sql`
-19. `20260925090000_finance_provider_period_reconciliation.sql`
-20. `20260925100000_finance_reconciliation_dexter.sql`
+17. `20260925075945_full_open_item_cutover.sql`
+18. `20260925080000_bank_statement_reconciliation.sql`
+19. `20260925080343_opening_trade_control_bridge.sql`
+20. `20260925085000_finance_opening_mirror_delivery.sql`
+21. `20260925090000_finance_provider_period_reconciliation.sql`
+22. `20260925100000_finance_reconciliation_dexter.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -146,13 +148,18 @@ incremental application plan; local filename order is not proof of its state.
   that full access run. The now sixteen-file manifest installed in isolation on
   PostgreSQL at the next checkpoint; lifecycle replay and reviewed correction
   migrations, source-item intake and opening-mirror delivery then brought the
-  provisional manifest to twenty files. The full access suite must run again after
+  provisional manifest to twenty-two files. The full access suite must run again after
   workstream handoff.
 - The 25 September combined client `npm run build` passed TypeScript and Vite
   after Finance 3 completed its in-progress components. Broad
   `finance-*-contract.test.mjs` source contracts passed 91/91 after the
   concurrent VAT copy assertion was aligned. These are local checkpoints, not
   authenticated, connected or deployed verification.
+- The current twenty-two-file manifest, including full open-item cutover and
+  opening trade-control bridge, installs over the local schema snapshot. Its
+  gate enumerates every new Finance table and verifies RLS is enabled, browser
+  roles have no direct read/write grant, and the service role can read it. This
+  does not exercise cutover approval/posting or actor-level tenant access.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.
@@ -198,6 +205,11 @@ incremental application plan; local filename order is not proof of its state.
   mappings, bank statement tables, Dexter signals and the core access/posting
   functions. This resolves basic object absence, not the divergent historical
   migration-name/content comparison or actor-level access proof.
+- Fourteen sampled prerequisite columns for documents, cash, bank statements,
+  posting and provider connections are present. Three existing posting and
+  cost functions sampled from the development project deny `authenticated`
+  execution and allow `service_role`. These are narrow before-migration
+  checks; all new grants and representative actor journeys still need proof.
 - The same development project has none of six sampled new Finance 1–4 tables
   (opening packages, supplier POs, AI proposals, charge lifecycle queue,
   provider period runs and accounting close reviews). No new Finance migration

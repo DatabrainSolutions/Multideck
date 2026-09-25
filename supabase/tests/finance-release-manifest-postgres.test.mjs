@@ -64,7 +64,9 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925074532_charge_lifecycle_review_replay.sql',
       '20260925075054_reviewed_charge_lifecycle_corrections.sql',
       '20260925075621_opening_source_items_and_operational_markers.sql',
+      '20260925075945_full_open_item_cutover.sql',
       '20260925080000_bank_statement_reconciliation.sql',
+      '20260925080343_opening_trade_control_bridge.sql',
       '20260925085000_finance_opening_mirror_delivery.sql',
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',
@@ -75,7 +77,29 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
     assert.deepEqual(migrations, laterMigrations,
       'Review every new post-snapshot migration for this release and update its ordered manifest.')
     for (const migration of migrations) {
+      assert.ok(readFileSync(new URL(`migrations/${migration}`, root), 'utf8').trimEnd().toLowerCase().endsWith('commit;'),
+        `${migration} must finish its transaction before installation`)
       run('psql', [...args, '-f', new URL(`migrations/${migration}`, root).pathname])
+    }
+
+    const newTables = [...new Set(migrations.flatMap(migration =>
+      [...readFileSync(new URL(`migrations/${migration}`, root), 'utf8').matchAll(/create table public\."([^"]+)"/gi)].map(match => match[1])))].sort()
+    const quotedTables = newTables.map(name => `'${name.replaceAll("'", "''")}'`).join(',')
+    const tableAccess = JSON.parse(sql(`select coalesce(jsonb_agg(jsonb_build_object(
+      'name',c.relname,'rls',c.relrowsecurity,
+      'anon_read',has_table_privilege('anon',c.oid,'SELECT'),
+      'anon_write',has_table_privilege('anon',c.oid,'INSERT') or has_table_privilege('anon',c.oid,'UPDATE') or has_table_privilege('anon',c.oid,'DELETE'),
+      'browser_read',has_table_privilege('authenticated',c.oid,'SELECT'),
+      'browser_write',has_table_privilege('authenticated',c.oid,'INSERT') or has_table_privilege('authenticated',c.oid,'UPDATE') or has_table_privilege('authenticated',c.oid,'DELETE'),
+      'service_read',has_table_privilege('service_role',c.oid,'SELECT')) order by c.relname),'[]'::jsonb)
+      from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='public' and c.relkind='r' and c.relname in (${quotedTables});`))
+    assert.equal(tableAccess.length, newTables.length, 'Every new Finance table must install')
+    for (const access of tableAccess) {
+      assert.equal(access.rls, true, `${access.name} must enable RLS`)
+      assert.equal(access.anon_read || access.anon_write || access.browser_read || access.browser_write, false,
+        `${access.name} must not be directly available to browser roles`)
+      assert.equal(access.service_read, true, `${access.name} must be readable by the authorised service boundary`)
     }
 
     const installed = JSON.parse(sql(`select jsonb_build_object(
@@ -98,9 +122,11 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       'lifecycle_recheck', to_regprocedure('public.multideck_finance_charge_lifecycle_requeue(uuid,uuid,uuid,text)') is not null,
       'charge_corrections', to_regclass('public."FIN_ChargeCorrections"') is not null,
       'opening_source_items', to_regclass('public."FIN_OpeningSourceItems"') is not null,
+      'full_opening_validate', to_regprocedure('public._multideck_finance_validate_full_opening(uuid)') is not null,
       'bank_reconciliation_watch', exists(select 1 from pg_trigger where tgname='bank_reconciliation_watch' and not tgisinternal),
       'bank_control', exists(select 1 from pg_proc where proname='multideck_bank_statement_control'),
       'opening_mirror_delivery', to_regclass('public."FIN_OpeningMirrorDeliveries"') is not null,
+      'opening_trade_control', to_regprocedure('public._multideck_finance_opening_trade_control(uuid,uuid)') is not null,
       'provider_period_runs', to_regclass('public."ACCI_PeriodReconciliationRuns"') is not null,
       'provider_period_differences', to_regclass('public."ACCI_PeriodReconciliationDifferences"') is not null,
       'bank_control_service_only', not has_function_privilege('authenticated','public.multideck_bank_statement_control(uuid,uuid,uuid,uuid)','EXECUTE')
