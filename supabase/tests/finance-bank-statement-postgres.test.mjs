@@ -50,10 +50,10 @@ test('statement import, bank ledger control, sign-off and entity access use post
       create or replace function public._multideck_dexter_has_permission(p_user_id uuid,p_permission text)
       returns boolean language sql stable as $$ select exists(select 1 from finance_test_permissions where actor=p_user_id and permission=p_permission) $$;
       insert into public."cmp_Company"("Company_ID","Company_Name") values('${id(2)}','Test tenant'),('${id(4)}','Other tenant');
-      insert into public."cmp_Users"("User_ID","Company_ID","User_Email") values('${id(1)}','${id(2)}','finance@example.test'),('${id(5)}','${id(4)}','other@example.test');
+      insert into public."cmp_Users"("User_ID","Company_ID","User_Email") values('${id(1)}','${id(2)}','finance@example.test'),('${id(7)}','${id(2)}','colleague@example.test'),('${id(5)}','${id(4)}','other@example.test');
       insert into public."cmp_LegalEntities"("LegalEntity_ID","Company_ID","LegalEntity_Name","LegalEntity_BaseCurrencyCodeSnapshot") values
         ('${id(3)}','${id(2)}','Test Freight','GBP'),('${id(6)}','${id(4)}','Other Freight','GBP');
-      insert into finance_test_permissions values('${id(1)}','Finance.Banks.Manage'),('${id(1)}','Finance.Management.View'),('${id(1)}','Finance.Management.Post'),('${id(1)}','Finance.Integration.Manage'),('${id(1)}','Finance.Configuration.Manage'),('${id(5)}','Finance.Banks.Manage');
+      insert into finance_test_permissions values('${id(1)}','Finance.Banks.Manage'),('${id(1)}','Finance.Management.View'),('${id(1)}','Finance.Management.Post'),('${id(1)}','Finance.Integration.Manage'),('${id(1)}','Finance.Configuration.Manage'),('${id(7)}','Finance.Management.View'),('${id(5)}','Finance.Banks.Manage');
       insert into public."sys_AccountingProviders"("ACCP_Code","ACCP_Name","ACCP_DefaultAuthType") values('erpnext','ERPNext','api_token');
       insert into public."sys_AccountingConnectionStatuses"("ACCCS_Code","ACCCS_Name") values('active','Active');
       insert into public."sys_FinancePeriodStatuses"("FINPERST_Code","FINPERST_Name") values('open','Open');
@@ -131,6 +131,7 @@ test('statement import, bank ledger control, sign-off and entity access use post
     const autoMatch = () => JSON.parse(sql(`select public.multideck_bank_statement_auto_match('${id(1)}','${id(3)}','${importedId}');`))
     reject(`set role authenticated; select public.multideck_bank_statement_auto_match('${id(1)}','${id(3)}','${importedId}');`, /permission denied/)
     reject(`select public.multideck_bank_statement_auto_match('${id(5)}','${id(3)}','${importedId}');`, /access/)
+    reject(`select public.multideck_bank_statement_auto_match('${id(7)}','${id(3)}','${importedId}');`, /access/)
     assert.equal(autoMatch().matched, 0)
     assert.equal(autoMatch().requiresReview, 2)
     sql(`select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(3)}','bank_match','automatic',100,0,'Automate exact bank matches');`)
@@ -156,6 +157,8 @@ test('statement import, bank ledger control, sign-off and entity access use post
     const dexterBank = JSON.parse(sql(`select public.multideck_dexter_domain_bank_reconciliation('${id(2)}','',10);`))
     assert.equal(dexterBank[0].automaticMatches, 2)
     assert.equal(dexterBank[0].reviewRows, 0)
+    assert.deepEqual(JSON.parse(sql(`select public.multideck_dexter_domain_bank_reconciliation('${id(4)}','',10);`)), [])
+    assert.equal(JSON.parse(sql(`select public.multideck_bank_statement_control('${id(7)}','${id(3)}','${id(12)}','${id(10)}');`)).status, 'ready_for_review')
     sql(`select public.multideck_bank_statement_unmatch('${id(1)}','${id(3)}','${line(1)}','Correct match evidence');`)
     assert.equal(sql(`select "FINStmtImp_StatusCode" from public."FIN_StatementImports" where "FINStmtImp_ID"='${importedId}';`), 'imported')
     sql(`select public.multideck_bank_statement_match('${id(1)}','${id(3)}','${line(1)}','${id(31)}','Exact posted receipt');`)
