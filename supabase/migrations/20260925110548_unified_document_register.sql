@@ -1,5 +1,11 @@
 -- Read existing document records through their owning workflow boundaries.
 -- The catalogue contains references only; the files stay in private Storage.
+create unique index if not exists "UX_DOC_StoredObjects_issued_invoice"
+  on public."DOC_StoredObjects" ("DOCStoredObject_AggregateID")
+  where "DOCStoredObject_AggregateType" = 'finance_document'
+    and "DOCStoredObject_ConcernCode" = 'finance_issued_invoice'
+    and "DOCStoredObject_StatusCode" = 'active';
+
 create or replace function document_api.unified_documents_page(
   caller_auth_user_id uuid,
   p_search text default null,
@@ -107,7 +113,7 @@ begin
     left join public."Org_Master" customer on customer."Org_id" = invoice."FINDoc_PartyOrgID"
     where document_api.has_permission(caller_auth_user_id, 'Finance.Receivables.View')
       and stored."DOCStoredObject_AggregateType" = 'finance_document'
-      and stored."DOCStoredObject_ConcernCode" = 'finance'
+      and stored."DOCStoredObject_ConcernCode" = 'finance_issued_invoice'
       and stored."DOCStoredObject_MimeType" = 'application/pdf'
       and stored."DOCStoredObject_StatusCode" = 'active'
       and stored."DOCStoredObject_DeletedAt" is null
@@ -211,7 +217,7 @@ begin
     left join public."Org_Master" customer on customer."Org_id" = invoice."FINDoc_PartyOrgID"
     where document_api.has_permission(caller_auth_user_id, 'Finance.Receivables.View')
       and stored."DOCStoredObject_AggregateType" = 'finance_document'
-      and stored."DOCStoredObject_ConcernCode" = 'finance'
+      and stored."DOCStoredObject_ConcernCode" = 'finance_issued_invoice'
       and stored."DOCStoredObject_MimeType" = 'application/pdf'
       and stored."DOCStoredObject_StatusCode" = 'active'
       and stored."DOCStoredObject_DeletedAt" is null
@@ -330,7 +336,7 @@ begin
     where stored."DOCStoredObject_ID" = requested_document_id
       and entity."Company_ID" = app_user."Company_ID"
       and stored."DOCStoredObject_AggregateType" = 'finance_document'
-      and stored."DOCStoredObject_ConcernCode" = 'finance'
+      and stored."DOCStoredObject_ConcernCode" = 'finance_issued_invoice'
       and stored."DOCStoredObject_MimeType" = 'application/pdf'
       and stored."DOCStoredObject_StatusCode" = 'active'
       and stored."DOCStoredObject_DeletedAt" is null;
