@@ -88,13 +88,14 @@ export function FinanceAccrualWipPage({ currentUser }: { currentUser?: AuthUserS
 
   const loadEntities = useCallback(async () => {
     const result = await getFinanceManagementEntities()
+    const saved = rememberedEntity()
     setEntities(result.legalEntities)
     setEntityId((current) => {
-      const saved = rememberedEntity()
       return result.legalEntities.some((entity) => entity.LegalEntity_ID === current) ? current
         : result.legalEntities.some((entity) => entity.LegalEntity_ID === saved) ? saved || ""
-        : result.legalEntities[0]?.LegalEntity_ID || ""
+        : result.legalEntities.length === 1 ? result.legalEntities[0].LegalEntity_ID : ""
     })
+    if (result.legalEntities.length !== 1 && !result.legalEntities.some((entity) => entity.LegalEntity_ID === saved)) setLoading(false)
   }, [])
   const load = useCallback(async (nextEntity = entityId, nextPeriod = period) => {
     const version = ++request.current

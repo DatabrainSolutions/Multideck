@@ -50,7 +50,7 @@ export function FinanceDailyPage({ route, navigate, currentUser }: { route: Fina
     getFinanceOperationEntities().then(({ entities: found }) => {
       if (!active) return
       const saved = rememberedEntity()
-      setEntities(found); setEntityId((current) => found.some((item) => item.LegalEntity_ID === current) ? current : found.some((item) => item.LegalEntity_ID === saved) ? saved || "" : found[0]?.LegalEntity_ID || "")
+      setEntities(found); setEntityId((current) => found.some((item) => item.LegalEntity_ID === current) ? current : found.some((item) => item.LegalEntity_ID === saved) ? saved || "" : found.length === 1 ? found[0].LegalEntity_ID : "")
     }).catch((cause) => { if (active) setError(errorText(cause)) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [version])
@@ -81,7 +81,7 @@ export function FinanceDailyPage({ route, navigate, currentUser }: { route: Fina
       <SettingsPanel title={t("Company") } description={t("Finance records remain scoped to the selected legal entity.")}>
         <div className="max-w-sm px-5 py-4"><label htmlFor="finance-daily-entity" className="mb-2 block text-xs font-medium">{t("Legal entity")}</label><Select value={entityId} onValueChange={(value) => { setEntityId(value); rememberEntity(value) }}><SelectTrigger id="finance-daily-entity"><SelectValue placeholder={t("Choose legal entity")} /></SelectTrigger><SelectContent>{entities.map((item) => <SelectItem key={item.LegalEntity_ID} value={item.LegalEntity_ID}>{item.LegalEntity_Name}</SelectItem>)}</SelectContent></Select></div>
       </SettingsPanel>
-      {loading ? <div className="grid min-h-52 place-items-center"><LoaderCircle className="size-5 animate-spin" /><span className="sr-only">{t("Loading Finance")}</span></div> : !entityId ? error ? null : <InlineNotice>{t("Set up a legal entity before using these Finance workflows.")}</InlineNotice> : <>
+      {loading ? <div className="grid min-h-52 place-items-center"><LoaderCircle className="size-5 animate-spin" /><span className="sr-only">{t("Loading Finance")}</span></div> : !entityId ? error ? null : <InlineNotice>{t(entities.length ? "Choose a legal entity to use these Finance workflows." : "Set up a legal entity before using these Finance workflows.")}</InlineNotice> : <>
         {route === "/finance/receivables/statements" && <StatementsWorkspace entityId={entityId} format={format} navigate={navigate} version={version} />}
         {route === "/finance/receivables/collections" && <CollectionsWorkspace entityId={entityId} format={format} navigate={navigate} currentUser={currentUser} version={version} />}
         {route === "/finance/payables/payment-runs" && <PaymentRunsWorkspace entityId={entityId} currency={currency} format={format} navigate={navigate} currentUser={currentUser} version={version} />}

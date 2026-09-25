@@ -65,7 +65,7 @@ export function FinanceReportsPage({ navigate }: { navigate: (path: string) => v
       setOptions(result)
       const saved = rememberedEntity()
       const selectedEntityId = result.legalEntities.some(entity => entity.LegalEntity_ID === saved)
-        ? saved || "" : result.legalEntities[0]?.LegalEntity_ID ?? ""
+        ? saved || "" : result.legalEntities.length === 1 ? result.legalEntities[0].LegalEntity_ID : ""
       setLegalEntityId(selectedEntityId)
       if (selectedEntityId) void loadReport(selectedEntityId, yearStart(), today())
       else setLoading(false)
