@@ -59,6 +59,17 @@ const fixture = () => ({
     periods: [{ periodId: "accounting-quarter-1", status: "verified",
       sourceDigest: "8".repeat(64), approvalId: "approval-1", reviewId: "review-1" }],
   },
+  ledgerMovements: {
+    status: "period_movements_matched", digest: "7".repeat(64),
+    lineCount: 1, unresolvedLines: 0, verifiedOpeningExcludedLines: 0,
+    matchedInvoiceLines: 1, expectedPostingCount: 1,
+    duplicateSourcePostingReferences: 0, partialAccountingPeriods: 0,
+    invalidAccountingPeriodTaxLines: 0,
+    invalidSourcePeriodLinks: 0,
+    expectedOutputVatGbp: "0.0000", postedOutputVatGbp: "0.0000",
+    expectedInputVatGbp: "40.0000", postedInputVatGbp: "40.0000",
+    lines: [{ id: "input-tax-posting-1", classification: "matched_invoice" }],
+  },
   paymentPreview: {
     status: "preview_only_no_cash_return_effect", amountEncoding: "decimal_strings",
     projectionId: "projection-1", legalEntityId: "entity-1",
@@ -164,4 +175,10 @@ test("Cash bridge surfaces payment mismatch and blocks incomplete source coverag
   const missingMonth = fixture()
   missingMonth.accountingControls.uncoveredOrOverlappingDays = 1
   assert.equal(previewUkVatCashControlBridge(missingMonth).streams, null)
+  const unexplainedControl = fixture()
+  unexplainedControl.ledgerMovements.unresolvedLines = 1
+  assert.equal(previewUkVatCashControlBridge(unexplainedControl).streams, null)
+  const controlMismatch = fixture()
+  controlMismatch.ledgerMovements.postedInputVatGbp = "39.9999"
+  assert.equal(previewUkVatCashControlBridge(controlMismatch).streams, null)
 })

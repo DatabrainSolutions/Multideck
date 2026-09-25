@@ -87,6 +87,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   const anomalies = object(source?.dateAnomalies)
   const journal = object(source?.journalEvidence)
   const accounting = object(source?.accountingControls)
+  const ledger = object(source?.ledgerMovements)
   const issues: string[] = []
   let issueCount = 0
   const issue = (message: string) => { issueCount++; if (issues.length < 30) issues.push(message) }
@@ -99,7 +100,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   if (!source || source.status !== "cash_control_source_only"
     || source.returnReady !== false || source.truncated !== false
     || !digestPattern.test(String(source.sourceDigest ?? ""))
-    || !context || !inventory || !projection || !anomalies || !journal || !accounting
+    || !context || !inventory || !projection || !anomalies || !journal || !accounting || !ledger
     || inventory.truncated !== false || inventory.amountEncoding !== "decimal_strings"
     || projection.amountEncoding !== "decimal_strings"
     || projection.status !== "preview_only_no_cash_return_effect"
@@ -120,7 +121,10 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     || !Array.isArray(journal.lines)
     || accounting.status !== "verified"
     || !digestPattern.test(String(accounting.digest ?? ""))
-    || !Array.isArray(accounting.periods)) {
+    || !Array.isArray(accounting.periods)
+    || ledger.status !== "period_movements_matched"
+    || !digestPattern.test(String(ledger.digest ?? ""))
+    || !Array.isArray(ledger.lines)) {
     issue("A complete invoice and payment inventory bound to one Cash VAT period is required.")
     return empty()
   }
@@ -145,6 +149,22 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
           || typeof period.reviewId !== "string"
       })) {
       issue("Every accounting month in the Cash VAT period needs a current approved VAT control.")
+    }
+    if (errorCount(ledger.unresolvedLines) !== 0
+      || errorCount(ledger.duplicateSourcePostingReferences) !== 0
+      || errorCount(ledger.partialAccountingPeriods) !== 0
+      || errorCount(ledger.invalidAccountingPeriodTaxLines) !== 0
+      || errorCount(ledger.invalidSourcePeriodLinks) !== 0
+      || errorCount(ledger.lineCount) !== ledger.lines.length
+      || errorCount(ledger.expectedPostingCount) !== errorCount(ledger.matchedInvoiceLines)
+      || errorCount(ledger.lineCount) !== errorCount(ledger.matchedInvoiceLines)
+        + errorCount(ledger.verifiedOpeningExcludedLines)
+      || ledger.lines.some((item) => {
+        const posting = object(item)
+        return !posting || !["matched_invoice", "verified_opening_excluded"]
+          .includes(String(posting.classification ?? ""))
+      })) {
+      issue("Cash invoice VAT does not cover the posted VAT-control movements.")
     }
     start = date(context.periodStart)
     end = date(context.periodEnd)
@@ -335,6 +355,18 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   if (journalLines.size !== inventory.invoices.reduce((total, invoice) =>
     total + (Array.isArray(object(invoice)?.lines) ? (object(invoice)?.lines as unknown[]).length : 0), 0)) {
     issue("Posted VAT journal evidence does not cover every Cash invoice line.")
+  }
+  if (issueCount) return empty()
+  try {
+    for (const [stream, prefix] of [["outputVatGbp", "Output"],
+      ["inputVatGbp", "Input"]] as const) {
+      if (units(ledger[`expected${prefix}VatGbp`]) !== posted[stream]
+        || units(ledger[`posted${prefix}VatGbp`]) !== posted[stream]) {
+        issue(`${stream} does not match the posted VAT-control movement inventory.`)
+      }
+    }
+  } catch (error) {
+    issue(error instanceof Error ? error.message : "VAT-control movement amounts are invalid.")
   }
   if (issueCount) return empty()
   const boxLines = object(projection.boxLines)
