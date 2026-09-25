@@ -258,6 +258,11 @@ incremental application plan; local filename order is not proof of its state.
   chain where EUR cash first remains unreconciled, a reviewed later-period
   correction moves local 108 to source AR 100 and credits realised FX 8, and
   the current bridge verifies. These are local results, not dev-tenant evidence.
+- A thirty-first Finance migration requires Dexter's invoice/credit and cash
+  draft actions to name the exact legal entity. The 31-file Finance manifest
+  passed a clean schema-only PostgreSQL install on 25 September, and the
+  separate staged Finance/VAT chain passed its PostgreSQL source-lock fixture.
+  Neither result establishes that the development tenant has been migrated.
 - `FINANCE_FULL_MIGRATIONS=1 node --test
   supabase/tests/finance-daily-operations-postgres.test.mjs` now exercises the
   ordered non-VAT Finance chain on local PostgreSQL through supplier invoice,
@@ -295,10 +300,14 @@ incremental application plan; local filename order is not proof of its state.
   selection throughout document/cash drafts, intake, bank, reports, WIP/close,
   VAT and Dexter. Two `finance-subledger` singleton gates were found in draft
   creation and options; the Edge selection now checks an active entity in the
-  signed-in company and options returns all active entities. F4's UI and Dexter
-  propagation, controlled entity provisioning and connected denial checks are
-  still pending. The current dev WIP data also includes an implausible historic
-  test job, so its aggregate totals are unsuitable as demo proof.
+  signed-in company and options returns all active entities. Document, cash and
+  supplier-intake forms now pass the explicit entity; Dexter's draft action
+  schema and handler require it. The WIP assignment picker also accepts an
+  exact unassigned job reference for the selected entity with audited scope
+  checks. These are local changes: controlled entity provisioning and connected
+  two-entity denial checks are still pending. The current dev WIP data includes
+  an implausible historic test job, so its aggregate totals are unsuitable as
+  demo proof.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.
