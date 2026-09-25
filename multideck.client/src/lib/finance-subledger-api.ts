@@ -831,6 +831,32 @@ export type UkVatCashEventProjectionHistory = {
 }
 export const getUkVatCashEventProjections = (legalEntityId: string, start: string, end: string) =>
   call<UkVatCashEventProjectionHistory>(`${ukVatPath(legalEntityId)}/cash-projections?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+export type UkVatCashControlPreview = {
+  status: "cash_control_bridge_preview_only";
+  calculationValid: boolean;
+  returnReady: false;
+  sourceDigest: string | null;
+  issueCount: number;
+  issues: string[];
+  streams: Record<"outputVatGbp" | "inputVatGbp", {
+    openingUnpaid: string; postedInvoiceVat: string; closingUnpaid: string;
+    derivedPaymentVat: string; projectedPaymentVat: string; difference: string;
+  }> | null;
+  controlBalance: {
+    openingNetCredit: string; periodNetCredit: string; closingNetCredit: string;
+    priorAcceptedNetDue: string; openingSettlementNetCredit: string;
+    periodSettlementNetCredit: string; openingDifference: string; closingDifference: string;
+  } | null;
+  invoiceCount: number;
+}
+export const getUkVatCashControl = (legalEntityId: string, periodId: string, projectionId: string) =>
+  call<{ source: unknown; preview: UkVatCashControlPreview }>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/cash-control?projectionId=${encodeURIComponent(projectionId)}`)
+export const calculateUkVatCashDraft = (legalEntityId: string, periodId: string, projectionId: string) =>
+  post<{ calculationId: string; revision: number; periodId: string; sourceDigest: string;
+    boxes: Record<string, number>; cashProjectionId: string; eventBoxLineCount: number;
+    controlStatus: "unreconciled"; approvalAvailable: false; status: "cash_draft_only" }>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/cash-calculate`, { projectionId })
 export const recordUkVatCashEventProjection = (legalEntityId: string, start: string, end: string) =>
   post<{ projectionId: string; sourceDigest: string; inserted: boolean;
     eventLineCount?: number; status: "source_projection_only_no_cash_return_effect" }>(

@@ -13,6 +13,7 @@ import { erpNextCreate, erpNextList, erpNextOrigin, erpNextRequest } from "../_s
 import { hyperExtConfigured, hyperExtRequest, hyperExtStatus, parseHyperExtNominals } from "../_shared/hyperext.ts"
 import { registerPagination } from "../_shared/register-pagination.ts"
 import { previewUkVatCashSources } from "../_shared/uk-vat-cash-preview.mts"
+import { previewUkVatCashControlBridge } from "../_shared/uk-vat-cash-control-bridge.mts"
 
 type LineInput = { description: string; quantity?: number; unitAmount?: number; taxRatePercent?: number; taxCode?: string | null; chargeCode?: string | null; jobCostingLineId?: string | null; lineType?: "service" | "ancillary" }
 type DraftInput = { type: "sl_invoice" | "credit_note" | "pl_invoice" | "debit_note"; legalEntityId?: string; partyOrgId: string; documentDate?: string; dueDate?: string | null; currencyCode?: string; exchangeRate?: number; lines: LineInput[]; sourceJobId?: string | null; idempotencyKey?: string; sourceExtractionId?: string }
@@ -2289,6 +2290,39 @@ Deno.serve(async (request) => {
       })
       rpcFailure(error, "Cash Accounting projection history could not be read.")
       return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "cash-control" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const projectionId = new URL(request.url).searchParams.get("projectionId")
+      if (!isUuid(parts[3]) || !isUuid(projectionId)) {
+        throw new HttpError(400, "Choose a Cash VAT period and payment projection.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_cash_control_source_inventory", {
+        p_actor: current.User_ID, p_entity: parts[1],
+        p_period: parts[3], p_projection: projectionId,
+      })
+      rpcFailure(error, "Cash VAT control sources could not be read.")
+      return json(request, { source: data, preview: previewUkVatCashControlBridge(data) })
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "cash-calculate" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ projectionId?: unknown }>(request)
+      if (!isUuid(parts[3]) || !isUuid(input.projectionId)) {
+        throw new HttpError(400, "Choose a Cash VAT period and payment projection.")
+      }
+      const { data: period, error: periodError } = await admin.from("FIN_IndirectTaxPeriods")
+        .select("id").eq("id", parts[3]).eq("legal_entity_id", parts[1]).maybeSingle()
+      if (periodError) throw new HttpError(500, periodError.message)
+      if (!period) throw new HttpError(404, "Cash VAT period was not found in this legal entity.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_calculate_cash_draft", {
+        p_actor: current.User_ID, p_period: parts[3], p_projection: input.projectionId,
+      })
+      rpcFailure(error, "Cash VAT draft could not be calculated.")
+      return json(request, data, 201)
     }
     if (parts[0] === "vat" && parts.length === 3 && parts[2] === "cash-projections"
       && request.method === "POST") {
