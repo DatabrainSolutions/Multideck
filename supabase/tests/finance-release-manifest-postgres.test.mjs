@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -65,6 +65,11 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925090000_finance_provider_period_reconciliation.sql',
       '20260925100000_finance_reconciliation_dexter.sql',
     ]
+    const laterMigrations = readdirSync(new URL('migrations/', root))
+      .filter(name => name >= '20260925070431' && name.endsWith('.sql') && !/_(?:uk_vat|hmrc)_/.test(name))
+      .sort()
+    assert.deepEqual(migrations, laterMigrations,
+      'Review every new post-snapshot migration for this release and update its ordered manifest.')
     for (const migration of migrations) {
       run('psql', [...args, '-f', new URL(`migrations/${migration}`, root).pathname])
     }
