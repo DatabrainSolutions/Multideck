@@ -1670,9 +1670,11 @@ async function createCashDraft(admin: any, current: any, input: CashInput) {
 async function transitionDocument(admin: any, current: any, id: string, transition: "request_review" | "approve" | "reject", reason?: string) {
   const document = await scopedDocument(admin, current, id)
   await requirePermission(admin, current.User_ID, transition === "request_review" ? documentPermission(document.FINDoc_TypeCode) : "Finance.ReviewAndPost")
-  const { data, error } = await admin.rpc("multideck_finance_transition_document", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_document_id: id, p_transition: transition, p_reason: clean(reason, 500) || null })
+  const { data, error } = transition === "request_review"
+    ? await admin.rpc("multideck_finance_submit_document", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_document_id: id, p_reason: clean(reason, 500) || null })
+    : await admin.rpc("multideck_finance_transition_document", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_document_id: id, p_transition: transition, p_reason: clean(reason, 500) || null })
   rpcFailure(error, "Could not change the finance document status.")
-  if (transition === "approve") {
+  if (transition === "approve" || data?.FINDoc_StatusCode === "approved") {
     const { data: queue } = await admin.from("FIN_IntegrationQueue").select("FINIntQ_ID").eq("FINIntQ_LocalTable", "FIN_Documents").eq("FINIntQ_LocalID", id).eq("FINIntQ_StatusCode", "queued").order("FINIntQ_CreatedAt", { ascending: false }).limit(1).maybeSingle()
     if (queue?.FINIntQ_ID) await processQueue(admin, current, queue.FINIntQ_ID, true).catch(() => null)
     return await scopedDocument(admin, current, id)
@@ -1683,9 +1685,11 @@ async function transitionDocument(admin: any, current: any, id: string, transiti
 async function transitionCash(admin: any, current: any, id: string, transition: "request_review" | "approve" | "reject", reason?: string) {
   const cash = await scopedCash(admin, current, id)
   await requirePermission(admin, current.User_ID, transition === "request_review" ? cashPermission(cash.FINCash_TypeCode) : "Finance.ReviewAndPost")
-  const { data, error } = await admin.rpc("multideck_finance_transition_cash", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_cash_id: id, p_transition: transition, p_reason: clean(reason, 500) || null })
+  const { data, error } = transition === "request_review"
+    ? await admin.rpc("multideck_finance_submit_cash", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_cash_id: id, p_reason: clean(reason, 500) || null })
+    : await admin.rpc("multideck_finance_transition_cash", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_cash_id: id, p_transition: transition, p_reason: clean(reason, 500) || null })
   rpcFailure(error, "Could not change the cash transaction status.")
-  if (transition === "approve") {
+  if (transition === "approve" || data?.FINCash_StatusCode === "approved") {
     const { data: queue } = await admin.from("FIN_IntegrationQueue").select("FINIntQ_ID").eq("FINIntQ_LocalTable", "FIN_CashTransactions").eq("FINIntQ_LocalID", id).eq("FINIntQ_StatusCode", "queued").order("FINIntQ_CreatedAt", { ascending: false }).limit(1).maybeSingle()
     if (queue?.FINIntQ_ID) await processQueue(admin, current, queue.FINIntQ_ID, true).catch(() => null)
     return await scopedCash(admin, current, id)
@@ -2878,6 +2882,48 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "retry-posting") return json(request, await retryDocumentPosting(admin, current, parts[1]))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "correct-billing-party") return json(request, await correctDocumentBillingParty(admin, current, parts[1], await body<BillingPartyCorrectionInput>(request)))
     if (request.method === "POST" && parts[0] === "cash" && parts[1] === "draft") return json(request, await createCashDraft(admin, current, await body<CashInput>(request)), 201)
+    if (parts[0] === "approval-policies" && parts.length === 2 && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
+      if (!isUuid(parts[1])) throw new HttpError(404, "Legal entity not found.")
+      await legalEntity(admin, current, parts[1])
+      const { data, error } = await admin.rpc("multideck_finance_list_approval_policies", {
+        p_company_id: current.Company_ID, p_entity_id: parts[1],
+      })
+      rpcFailure(error, "Finance approval policies could not be loaded.")
+      return json(request, { policies: Array.isArray(data) ? data : [] })
+    }
+    if (parts[0] === "approval-policies" && parts.length === 3 && request.method === "PUT") {
+      await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
+      if (!isUuid(parts[1])) throw new HttpError(404, "Legal entity not found.")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ mode?: string; maxAutoAmount?: number | null; maxVariancePercent?: number | null; reason?: string }>(request)
+      const modes = ["always_review", "exception_review", "automatic"]
+      if (!modes.includes(input.mode || "") || !clean(input.reason, 501) || clean(input.reason, 501).length > 500) {
+        throw new HttpError(400, "Choose an approval mode and explain the change.")
+      }
+      const amount = input.maxAutoAmount
+      const variance = input.maxVariancePercent
+      if (input.mode !== "always_review" && (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || amount >= 1e12)) {
+        throw new HttpError(400, "Enter a finite base-currency automatic amount limit.")
+      }
+      if (variance != null && (typeof variance !== "number" || !Number.isFinite(variance) || variance < 0 || variance > 100)) {
+        throw new HttpError(400, "Enter a variance limit from zero to 100 percent.")
+      }
+      const { error } = await admin.rpc("multideck_finance_save_approval_policy", {
+        p_company_id: current.Company_ID, p_user_id: current.User_ID, p_entity_id: parts[1],
+        p_workflow: parts[2], p_mode: input.mode, p_max_auto_amount: input.mode === "always_review" ? null : amount,
+        p_max_variance_percent: input.mode === "always_review" ? null : variance ?? null,
+        p_reason: clean(input.reason, 500),
+      })
+      rpcFailure(error, "Finance approval policy could not be saved.")
+      const { data: policies, error: listError } = await admin.rpc("multideck_finance_list_approval_policies", {
+        p_company_id: current.Company_ID, p_entity_id: parts[1],
+      })
+      rpcFailure(listError, "Finance approval policy could not be reloaded.")
+      const saved = Array.isArray(policies) ? policies.find((item: any) => item.workflow === parts[2]) : null
+      if (!saved) throw new HttpError(500, "Finance approval policy was saved but could not be reloaded.")
+      return json(request, saved)
+    }
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "provider-preflight") return json(request, await preflightDocument(admin, current, parts[1]))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "request-review") return json(request, await transitionDocument(admin, current, parts[1], "request_review", await optionalReason(request)))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "approve") return json(request, await transitionDocument(admin, current, parts[1], "approve", await optionalReason(request)))
