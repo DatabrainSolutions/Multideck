@@ -9,6 +9,9 @@ const root = new URL('../', import.meta.url)
 const read = path => readFileSync(new URL(path, root), 'utf8')
 const migration = read('migrations/20260925071010_finance_accounting_period_close.sql')
 const vatSignoff = read('migrations/20260925083125_accounting_period_vat_control_signoff.sql')
+const approvalPolicy = read('migrations/20260925103000_finance_approval_policies.sql')
+const approvalHooks = read('migrations/20260925103300_finance_charge_close_policy_hooks.sql')
+const policyFunction = name => approvalHooks.match(new RegExp(`create or replace function public\\.${name}\\([\\s\\S]*?\\nend; \\$\\$;`))?.[0]
 const baseline = read('baseline/public-schema.sql')
 const table = name => baseline.match(new RegExp(`CREATE TABLE IF NOT EXISTS "public"\\."${name}" \\([\\s\\S]*?^\\);`, 'm'))?.[0]
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -130,6 +133,38 @@ test('independent current close pack locks only a reconciled period and denies l
     sql(`update test_vat_inventory set blocked=false,source_digest=null where period_id='${id(11)}';`)
     assert.equal(JSON.parse(sql(close(1,11,'read'))).snapshot.vatStatus, 'blocked')
     assert.match(reject(vat(1,'prepare',{reason:'Attempt null digest VAT sign-off'})), /Resolve monthly VAT control exceptions/)
+    assert.ok(policyFunction('multideck_finance_accounting_vat_control'))
+    assert.ok(policyFunction('multideck_finance_accounting_close'))
+    sql(`alter table "cmp_LegalEntities" add column "LegalEntity_IsActive" boolean not null default true;
+      create table "FIN_IndirectTaxEvidence"(legal_entity_id uuid,source_posting_batch_id uuid,signed_tax_reporting numeric);
+      insert into permissions values('${id(1)}','Finance.Configuration.Manage');
+      insert into "cmp_LegalEntities"("LegalEntity_ID","Company_ID","LegalEntity_CountryCode","LegalEntity_BaseCurrencyCodeSnapshot")
+        values('${id(30)}','${id(2)}','GB','GBP'),('${id(31)}','${id(2)}','GB','GBP');
+      insert into "FIN_Periods"("FINPeriod_ID","FINPeriod_LegalEntityID","FINPeriod_Code","FINPeriod_Name","FINPeriod_StartDate","FINPeriod_EndDate","FINPeriod_BaseCurrencyCode")
+        values('${id(32)}','${id(30)}','202609','September','2026-09-01','2026-09-30','GBP'),
+          ('${id(33)}','${id(31)}','202609','September','2026-09-01','2026-09-30','GBP');
+      insert into test_vat_inventory values('${id(32)}',repeat('c',64),false),('${id(33)}',repeat('d',64),false);
+      ${approvalPolicy}
+      ${policyFunction('multideck_finance_accounting_vat_control')}
+      ${policyFunction('multideck_finance_accounting_close')}`)
+    const scopedVat = (entity, period, action, input = {}) =>
+      `select public.multideck_finance_accounting_vat_control('${id(1)}','${id(entity)}','${id(period)}','${action}','${JSON.stringify(input)}');`
+    const scopedClose = (entity, period, action, input = {}) =>
+      `select public.multideck_finance_accounting_close('${id(1)}','${id(entity)}','${id(period)}','${action}','${JSON.stringify(input)}');`
+    const defaultReview = JSON.parse(sql(scopedVat(31,33,'prepare',{reason:'Default review needs another actor'})))
+    assert.match(reject(scopedVat(31,33,'approve',{reviewId:defaultReview.id,reason:'Attempt own VAT approval'})), /second authorised/)
+    const savePolicy = (workflow) => `select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(30)}','${workflow}','exception_review',0,0,'Single operator when exact controls are clean');`
+    const vatPolicy = JSON.parse(sql(savePolicy('vat_control')))
+    const closePolicy = JSON.parse(sql(savePolicy('period_close')))
+    const sameVatReview = JSON.parse(sql(scopedVat(30,32,'prepare',{reason:'Reviewed exact September VAT inventory'})))
+    const sameVatApproval = JSON.parse(sql(scopedVat(30,32,'approve',{reviewId:sameVatReview.id,reason:'Sign off clean VAT inventory'})))
+    assert.equal(sameVatApproval.approved_by, id(1))
+    assert.equal(sql(`select "AuditEvent_MetadataJSON"->'approvalDecision'->>'policyId' from "Audit_Events" where "AuditEvent_RecordID"='${sameVatApproval.id}'`), vatPolicy.policyId)
+    const sameCloseReview = JSON.parse(sql(scopedClose(30,32,'prepare',{reason:'Reviewed clean native close controls'})))
+    const sameClosePack = JSON.parse(sql(scopedClose(30,32,'close',{reviewId:sameCloseReview.id,reason:'Lock clean September accounting period'})))
+    assert.equal(sameClosePack.closed_by, id(1))
+    assert.equal(sql(`select "AuditEvent_MetadataJSON"->'approvalDecision'->>'policyId' from "Audit_Events" where "AuditEvent_RecordID"='${sameClosePack.id}'`), closePolicy.policyId)
+    assert.equal(sql(`select "FINPeriod_StatusCode" from "FIN_Periods" where "FINPeriod_ID"='${id(32)}'`), 'locked')
   } finally {
     if (started) spawnSync(join(bin, 'pg_ctl'), ['-D', join(dir, 'data'), '-m', 'immediate', '-w', 'stop'], { encoding: 'utf8' })
     rmSync(dir, { recursive: true, force: true })

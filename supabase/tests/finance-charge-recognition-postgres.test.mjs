@@ -11,6 +11,8 @@ const authority = read('migrations/20260925073443_charge_recognition_authority.s
 const recognition = read('migrations/20260925073708_charge_event_initial_recognition.sql')
 const correction = read('migrations/20260925075054_reviewed_charge_lifecycle_corrections.sql')
 const noBalanceResolution = read('migrations/20260925081349_finance_charge_case_no_balance_resolution.sql')
+const approvalPolicies = read('migrations/20260925103000_finance_approval_policies.sql')
+const policyHooks = read('migrations/20260925103300_finance_charge_close_policy_hooks.sql')
 const baseline = read('baseline/public-schema.sql')
 const table = name => baseline.match(new RegExp(`CREATE TABLE IF NOT EXISTS "public"\\."${name}" \\([\\s\\S]*?^\\);`, 'm'))?.[0]
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -188,6 +190,64 @@ test('approved service evidence posts one exact native recognition and blocks du
     assert.equal(sql(`select status from "FIN_ChargeLifecycleQueue" where charge_id='${id(20)}'`), 'settled')
     assert.match(reject(resolve(4,'approve',{reviewId:freshReview.id,reason:'Approve no balance case outcome'})), /Resolve case blockers/)
     assert.match(reject(`select public.multideck_finance_charge_case_resolution('${id(9)}','${id(3)}','${id(20)}','read','{}');`), /No finance access/)
+    sql(`alter table "cmp_LegalEntities" add column "LegalEntity_IsActive" boolean not null default true;
+      create table "sys_WorkflowRecordTypes"("WorkflowRecordType_Code" text primary key,"WorkflowRecordType_Name" text,
+        "WorkflowRecordType_SourceTable" text,"WorkflowRecordType_Description" text,"WorkflowRecordType_IsActive" boolean,
+        "WorkflowRecordType_SortOrder" integer);
+      insert into permissions values('${id(1)}','Finance.Configuration.Manage');`)
+    sql(approvalPolicies)
+    sql(policyHooks.slice(policyHooks.indexOf('alter table'), policyHooks.indexOf('create or replace function public.multideck_finance_accounting_vat_control')))
+    const savePolicy = (workflow, mode, cap, variance = 'null') => `select public.multideck_finance_save_approval_policy(
+      '${id(2)}','${id(1)}','${id(3)}','${workflow}','${mode}',${cap},${variance},'Reviewed entity limit for charge lifecycle');`
+    sql(`update "Job_Costing_Lines" set "JobCostingLine_CostAmountLocal"=70 where "JobCostingLine_ID"='${id(20)}';
+      insert into "FIN_CostEvidence"(id,legal_entity_id,charge_id,service_completed_on,source_revision,disputed)
+        values('${id(81)}','${id(3)}','${id(20)}',current_date,md5(public._multideck_cost_source('${id(3)}','${id(20)}')::text),false);`)
+    const boundedReview = JSON.parse(sql(correctionAction(1,'cost','prepare',{reason:'Revise accrued cost by ten pounds'})))
+    assert.equal(JSON.parse(sql(savePolicy('charge_correction','automatic',5,20))).revision, 1)
+    assert.match(reject(correctionAction(1,'cost','approve',{reviewId:boundedReview.id,reason:'Post bounded cost correction'})), /amount_limit/)
+    assert.equal(JSON.parse(sql(savePolicy('charge_correction','automatic',20,10))).revision, 2)
+    assert.match(reject(correctionAction(1,'cost','approve',{reviewId:boundedReview.id,reason:'Post bounded cost correction'})), /variance_limit/)
+    const allowedCorrectionPolicy = JSON.parse(sql(savePolicy('charge_correction','automatic',20,20)))
+    assert.equal(JSON.parse(sql(correctionAction(1,'cost','approve',{reviewId:boundedReview.id,reason:'Post bounded cost correction'}))).status, 'posted')
+    assert.equal(sql(`select "AuditEvent_MetadataJSON"->'approvalDecision'->>'policyId' from "Audit_Events"
+      where "AuditEvent_RecordID"='${boundedReview.id}' and "AuditEvent_Action"='post_charge_correction';`), allowedCorrectionPolicy.policyId)
+    sql(`insert into "FIN_RevenueServiceEvidence"(legal_entity_id,charge_id,source_revision,service_completed_on,reason,recorded_by)
+      values('${id(3)}','${id(20)}',md5(public._multideck_cost_source('${id(3)}','${id(20)}')::text),current_date,
+        'Billable service remains complete','${id(1)}');
+      update "FIN_ChargeLifecycleQueue" set status='review',reason='Late evidence checked',source_revision=source_revision+1
+      where charge_id='${id(20)}';`)
+    const boundedCase = JSON.parse(sql(resolve(1,'prepare',{reason:'No remaining balance change after review'})))
+    sql(savePolicy('charge_case_resolution','exception_review',0))
+    assert.match(reject(resolve(1,'approve',{reviewId:boundedCase.id,reason:'Close reviewed no balance case'})), /advisory_exception/)
+    const allowedCasePolicy = JSON.parse(sql(savePolicy('charge_case_resolution','automatic',0)))
+    assert.equal(JSON.parse(sql(resolve(1,'approve',{reviewId:boundedCase.id,reason:'Close reviewed no balance case'}))).status, 'approved')
+    assert.equal(sql(`select "AuditEvent_MetadataJSON"->'approvalDecision'->>'policyId' from "Audit_Events"
+      where "AuditEvent_RecordID"='${boundedCase.id}' and "AuditEvent_Action"='approve_no_balance_resolution';`), allowedCasePolicy.policyId)
+    const activeMandate = sql(`select id from "FIN_RecognitionMandates" where legal_entity_id='${id(3)}' and status='active';`)
+    assert.equal(JSON.parse(sql(action(1,'pause',{id:activeMandate,reason:'Update recognition policy exposure'}))).status, 'paused')
+    const newMandate = JSON.parse(sql(action(1,'propose',{policyId:id(41),costEnabled:true,revenueEnabled:false,
+      effectiveDate:new Date().toISOString().slice(0,10),reason:'Enable bounded service recognition'})))
+    sql(savePolicy('recognition_mandate','exception_review',50))
+    assert.match(reject(action(1,'activate',{id:newMandate.id,reason:'Activate bounded service mandate'})), /advisory_exception/)
+    const mandatePolicy = JSON.parse(sql(savePolicy('recognition_mandate','automatic',50)))
+    const activeBoundedMandate = JSON.parse(sql(action(1,'activate',{id:newMandate.id,reason:'Activate bounded service mandate'})))
+    assert.equal(activeBoundedMandate.approval_policy_id, mandatePolicy.policyId)
+    sql(`insert into "Job_Costing_Lines"("JobCostingLine_ID","Job_ID","JobCostingLine_Number","JobCostingLine_Description",
+      "JobCostingLine_DomainCode","JobCostingLine_CostAmountLocal","JobCostingLine_RevenueAmountLocal",
+      "JobCostingLine_ChargeCodeID","JobCostingLine_CreatedBy")
+      values('${id(82)}','${id(10)}',2,'Warehouse handling','freight',60,90,'${id(29)}','${id(1)}');
+      insert into "FIN_ChargeLifecycleQueue" values('${id(3)}','${id(82)}',1,'pending',null,null,null,null,null,0);
+      insert into "FIN_CostEvidence"(id,legal_entity_id,charge_id,service_completed_on,source_revision,disputed)
+      values('${id(83)}','${id(3)}','${id(82)}',current_date,
+        md5(public._multideck_cost_source('${id(3)}','${id(82)}')::text),false);`)
+    const overCap = JSON.parse(sql(`select public.multideck_charge_recognise_initial('${id(3)}','${id(82)}',1,'cost');`))
+    assert.equal(overCap.status, 'review')
+    assert.equal(sql(`select count(*) from "FIN_ChargeEventRecognitions" where charge_id='${id(82)}';`), '0')
+    sql(savePolicy('recognition_mandate','automatic',100))
+    sql(`update "FIN_ChargeLifecycleQueue" set status='pending',source_revision=source_revision+1 where charge_id='${id(82)}';`)
+    const changedPolicy = JSON.parse(sql(`select public.multideck_charge_recognise_initial('${id(3)}','${id(82)}',2,'cost');`))
+    assert.equal(changedPolicy.status, 'review')
+    assert.equal(sql(`select count(*) from "FIN_ChargeEventRecognitions" where charge_id='${id(82)}';`), '0')
   } finally {
     if (started) spawnSync(join(bin, 'pg_ctl'), ['-D', join(dir, 'data'), '-m', 'immediate', '-w', 'stop'], { encoding: 'utf8' })
     rmSync(dir, { recursive: true, force: true })

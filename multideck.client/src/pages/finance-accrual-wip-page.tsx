@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
+import { getFinanceApprovalPolicies, type FinanceApprovalMode, type FinanceApprovalWorkflow } from "@/lib/finance-approval-api"
 import {
   approveAccrualWipRun,
   assignJobManagementPeriod,
@@ -61,6 +62,18 @@ const periodLabel = (value: string, language: string) => {
   return new Intl.DateTimeFormat(language, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(Number(value.slice(0, 4)), Number(value.slice(4, 6)) - 1, 1)))
 }
 const tone = (status: string): "teal" | "amber" | "red" | "neutral" => status === "posted" || status === "reversed" || status === "approved" ? "teal" : status === "rejected" ? "red" : status === "draft" ? "neutral" : "amber"
+
+function useEntityApprovalMode(entityId: string, workflow: FinanceApprovalWorkflow, refresh = 0): FinanceApprovalMode {
+  const [selection, setSelection] = useState<{ entityId: string; workflow: FinanceApprovalWorkflow; mode: FinanceApprovalMode } | null>(null)
+  useEffect(() => {
+    let current = true
+    void getFinanceApprovalPolicies(entityId).then(({ policies }) => {
+      if (current) setSelection({ entityId, workflow, mode: policies.find(policy => policy.workflow === workflow)?.mode ?? "always_review" })
+    }).catch(() => { if (current) setSelection({ entityId, workflow, mode: "always_review" }) })
+    return () => { current = false }
+  }, [entityId, workflow, refresh])
+  return selection?.entityId === entityId && selection.workflow === workflow ? selection.mode : "always_review"
+}
 
 export function FinanceAccrualWipPage({ currentUser }: { currentUser?: AuthUserSummary | null }) {
   const { language, t } = useLanguage()
@@ -313,6 +326,7 @@ function RecognitionMandatePanel({ entityId }: { entityId: string }) {
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const [refresh, setRefresh] = useState(0)
+  const approvalMode = useEntityApprovalMode(entityId, "recognition_mandate", refresh)
   const [costEnabled, setCostEnabled] = useState(true)
   const [revenueEnabled, setRevenueEnabled] = useState(false)
   const [effectiveDate, setEffectiveDate] = useState("")
@@ -327,15 +341,17 @@ function RecognitionMandatePanel({ entityId }: { entityId: string }) {
   }, [entityId, refresh, t])
   const active = data?.mandates.find((item) => item.status === "active")
   const proposed = data?.mandates.find((item) => item.status === "proposed")
+  const canActivate = proposed && data?.canApprove && data.canPost
+    && (proposed.prepared_by !== data.actorId || approvalMode === "automatic")
   const policy = policies?.policies.find((item) => Boolean(item.approved_by))
   const act = async (action: "propose" | "activate" | "pause", input: Record<string, unknown>) => {
     setBusy(true); setError("")
-    try { await updateRecognitionControls(entityId, action, input); setReason(""); setRefresh((value) => value + 1); toast.success(t(action === "propose" ? "Recognition mandate prepared for independent approval." : action === "activate" ? "Recognition mandate activated." : "Recognition mandate paused.")) }
+    try { await updateRecognitionControls(entityId, action, input); setReason(""); setRefresh((value) => value + 1); toast.success(t(action === "propose" ? "Recognition mandate prepared for approval." : action === "activate" ? "Recognition mandate activated." : "Recognition mandate paused.")) }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Recognition mandate could not be updated.")) }
     finally { setBusy(false) }
   }
   return <section aria-label={t("Completed-service recognition mandate")} className="space-y-3 border-b border-[var(--md-line)] py-4 text-[12px]">
-    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-[14px] font-medium">{t("Completed-service recognition mandate")}</h3><span className={active ? "text-[var(--md-green)]" : "text-[var(--md-amber)]"}>{t(active ? "Active" : proposed ? "Awaiting independent approval" : "Inactive")}</span></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-[14px] font-medium">{t("Completed-service recognition mandate")}</h3><span className={active ? "text-[var(--md-green)]" : "text-[var(--md-amber)]"}>{t(active ? "Active" : proposed ? "Awaiting approval" : "Inactive")}</span></div>
     <p className="text-[var(--md-subtle)]">{t("The mandate permits the tenant worker to post an initial balanced cost accrual or revenue WIP after fresh service evidence, an active dated charge mapping and an open accounting period. Credits, stale evidence and later changes remain review cases.")}</p>
     {error ? <p role="alert" className="text-[var(--md-red)]">{error}<Button type="button" variant="ghost" size="sm" onClick={() => setRefresh((value) => value + 1)}>{t("Retry")}</Button></p> : null}
     {!data && !error ? <DotGridLoader label={t("Loading recognition controls")} /> : null}
@@ -349,8 +365,8 @@ function RecognitionMandatePanel({ entityId }: { entityId: string }) {
       <label className="block space-y-1"><span>{t("Mandate reason")}</span><Textarea required minLength={10} maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
       <Button type="submit" size="sm" disabled={busy || !effectiveDate || !reason.trim() || !costEnabled && !revenueEnabled || costEnabled && !policy}>{t("Prepare recognition mandate")}</Button>
     </form> : null}
-    {proposed && data?.canApprove && proposed.prepared_by !== data.actorId ? <form className="space-y-2" onSubmit={(event) => { event.preventDefault(); void act("activate", { id: proposed.id, reason }) }}><label className="block space-y-1"><span>{t("Independent approval reason")}</span><Textarea required minLength={10} maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} /></label><Button type="submit" size="sm" disabled={busy}>{t("Approve and activate mandate")}</Button></form> : null}
-    {proposed?.prepared_by === data?.actorId ? <p className="text-[var(--md-subtle)]">{t("Another authorised colleague must approve this mandate.")}</p> : null}
+    {canActivate && proposed ? <form className="space-y-2" onSubmit={(event) => { event.preventDefault(); void act("activate", { id: proposed.id, reason }) }}><label className="block space-y-1"><span>{t("Approval reason")}</span><Textarea required minLength={10} maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} /></label><Button type="submit" size="sm" disabled={busy}>{t("Approve and activate mandate")}</Button></form> : null}
+    {proposed?.prepared_by === data?.actorId && approvalMode !== "automatic" ? <p className="text-[var(--md-subtle)]">{t("Another authorised colleague must approve this mandate under the current entity policy.")}</p> : null}
     {active && data?.canApprove ? <form className="space-y-2" onSubmit={(event) => { event.preventDefault(); void act("pause", { id: active.id, reason }) }}><label className="block space-y-1"><span>{t("Pause reason")}</span><Textarea required minLength={10} maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} /></label><Button type="submit" variant="outline" size="sm" disabled={busy}>{t("Pause recognition")}</Button></form> : null}
   </section>
 }
@@ -395,6 +411,7 @@ function ChargeCorrectionPanel({ entityId, chargeId, kind }: { entityId: string;
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [refresh, setRefresh] = useState(0)
+  const approvalMode = useEntityApprovalMode(entityId, "charge_correction", refresh)
   useEffect(() => {
     let current = true
     void Promise.all([getChargeCorrection(entityId, chargeId, kind), getRecognitionControls(entityId)]).then(([correction, controls]) => {
@@ -404,26 +421,28 @@ function ChargeCorrectionPanel({ entityId, chargeId, kind }: { entityId: string;
   }, [entityId, chargeId, kind, refresh, t])
   const latest = data?.reviews.find((item) => item.status === "prepared")
   const actionable = data && Number(data.snapshot.delta) !== 0 && !data.snapshot.blockers.length
+  const canApproveReview = latest && permissions?.canApprove && permissions.canPost
+    && (latest.prepared_by !== permissions.actorId || approvalMode === "automatic")
   const format = (value: number | string) => new Intl.NumberFormat(language, { style: "currency", currency: data?.snapshot.currency || "GBP", maximumFractionDigits: 4 }).format(Number(value))
   const act = async (action: "prepare" | "approve", reviewId?: string) => {
     setBusy(true); setError("")
-    try { await updateChargeCorrection(entityId, chargeId, kind, action, { reason, reviewId }); setReason(""); setRefresh((value) => value + 1); toast.success(t(action === "prepare" ? "Correction prepared for independent approval." : "Dated charge correction posted.")) }
+    try { await updateChargeCorrection(entityId, chargeId, kind, action, { reason, reviewId }); setReason(""); setRefresh((value) => value + 1); toast.success(t(action === "prepare" ? "Correction prepared for approval." : "Dated charge correction posted.")) }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Charge correction could not be completed.")) }
     finally { setBusy(false) }
   }
   return <details className="border-t border-[var(--md-line)] pt-3 text-[12px]"><summary className="font-medium">{t(kind === "cost" ? "Cost balance correction" : "Revenue WIP correction")}</summary><div className="mt-3 space-y-3">
-    <p className="text-[var(--md-subtle)]">{t("Credits, revised estimates and late evidence require a new dated journal. Preparation records the exact current source and original account pair; another finance operator approves it.")}</p>
+    <p className="text-[var(--md-subtle)]">{t("Credits, revised estimates and late evidence require a new dated journal. Preparation records the exact current source and original account pair. Approval follows the legal entity policy.")}</p>
     {error ? <p role="alert" className="text-[var(--md-red)]">{error}<Button type="button" variant="ghost" size="sm" onClick={() => setRefresh((value) => value + 1)}>{t("Refresh")}</Button></p> : null}
     {!data && !error ? <DotGridLoader label={t("Loading charge correction")} /> : null}
     {data ? <>
       <p>{t("Posted open balance")}: {format(data.snapshot.current)} · {t("Evidence-based target")}: {format(data.snapshot.target)} · {t("Proposed dated movement")}: {format(data.snapshot.delta)}</p>
       {data.snapshot.blockers.length ? <ul className="list-disc space-y-1 ps-5 text-[var(--md-amber)]">{data.snapshot.blockers.map((blocker) => <li key={blocker}>{t(blocker)}</li>)}</ul> : null}
       {latest ? <p>{t("Prepared review")}: {new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(latest.prepared_at))} · {format(latest.delta)}</p> : null}
-      {actionable && (permissions?.canPrepare || permissions?.canApprove && permissions.canPost && latest?.prepared_by !== permissions.actorId) ? <form className="space-y-2" onSubmit={(event) => { event.preventDefault(); void act(latest && permissions?.canApprove && permissions.canPost && latest.prepared_by !== permissions.actorId ? "approve" : "prepare", latest?.id) }}>
+      {actionable && (permissions?.canPrepare || canApproveReview) ? <form className="space-y-2" onSubmit={(event) => event.preventDefault()}>
         <label className="block space-y-1"><span>{t("Correction reason")}</span><Textarea required minLength={10} maxLength={2000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         <div className="flex flex-wrap gap-2">
           {permissions?.canPrepare ? <Button type="button" variant="outline" size="sm" disabled={busy || reason.trim().length < 10} onClick={() => void act("prepare")}>{t("Prepare current correction")}</Button> : null}
-          {latest && permissions?.canApprove && permissions.canPost && latest.prepared_by !== permissions.actorId ? <Button type="button" size="sm" disabled={busy || reason.trim().length < 10} onClick={() => void act("approve", latest.id)}>{t("Approve and post correction")}</Button> : null}
+          {canApproveReview && latest ? <Button type="button" size="sm" disabled={busy || reason.trim().length < 10} onClick={() => void act("approve", latest.id)}>{t("Approve and post correction")}</Button> : null}
         </div>
       </form> : null}
       {data.reviews.some((item) => item.status === "posted") ? <p className="text-[var(--md-subtle)]">{t("Posted corrections")}: {data.reviews.filter((item) => item.status === "posted").length}</p> : null}
@@ -514,7 +533,7 @@ function AccountingClosePanel({ entityId, periodId, currency, canPrepare, canApp
       if (kind === "prepare") await prepareAccountingClose(entityId, periodId, reason)
       else await closeAccountingPeriod(entityId, periodId, reviewId!, reason)
       setReason(""); await load(); await onChanged()
-      toast.success(t(kind === "prepare" ? "Close pack prepared for independent review." : "Accounting period locked with a signed close pack."))
+      toast.success(t(kind === "prepare" ? "Close pack prepared for approval." : "Accounting period locked with a signed close pack."))
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Accounting close could not be completed.")) }
     finally { setBusy(false) }
   }
@@ -527,10 +546,10 @@ function AccountingClosePanel({ entityId, periodId, currency, canPrepare, canApp
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Charge case could not be rechecked.")) }
     finally { setBusy(false) }
   }
-  return <SettingsPanel title={t("Accounting period close")} description={t("Reconcile the native ledger and connected controls, prepare an immutable close pack, then have another authorised colleague lock the period.")}>
+  return <SettingsPanel title={t("Accounting period close")} description={t("Reconcile the native ledger and connected controls, prepare an immutable close pack, then explicitly approve and lock the period under the legal entity policy.")}>
     <div className="space-y-3 py-1 text-[12px] text-[var(--md-text)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p role="status" className="font-medium text-[var(--md-ink)]">{closedAt ? `${t("Locked")} · ${new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(closedAt))}` : snapshot?.blockers.length ? `${snapshot.blockers.length} ${t("controls need attention")}` : t("Controls ready for independent close review")}</p>
+        <p role="status" className="font-medium text-[var(--md-ink)]">{closedAt ? `${t("Locked")} · ${new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(closedAt))}` : snapshot?.blockers.length ? `${snapshot.blockers.length} ${t("controls need attention")}` : t("Controls ready for close review")}</p>
         <Button type="button" size="sm" variant="outline" disabled={loading || busy} onClick={() => void load()}><RefreshCw className={loading ? "animate-spin" : ""} />{t("Refresh controls")}</Button>
       </div>
       {error ? <p role="alert" className="text-[var(--md-red)]">{error}</p> : null}
@@ -567,6 +586,7 @@ function ChargeCaseResolutionPanel({ entityId, chargeId, currency, canPrepare, c
 }) {
   const { t, language } = useLanguage()
   const [open, setOpen] = useState(false)
+  const approvalMode = useEntityApprovalMode(entityId, "charge_case_resolution", Number(open))
   const [data, setData] = useState<ChargeCaseResolution | null>(null)
   const [reason, setReason] = useState("")
   const [busy, setBusy] = useState(false)
@@ -582,13 +602,14 @@ function ChargeCaseResolutionPanel({ entityId, chargeId, currency, canPrepare, c
     try {
       await updateChargeCaseResolution(entityId, chargeId, action, { reviewId, reason })
       setReason(""); setData(await getChargeCaseResolution(entityId, chargeId)); await onChanged()
-      toast.success(t(action === "prepare" ? "No-balance review prepared for another finance operator." : "Charge case resolved with signed no-balance evidence."))
+      toast.success(t(action === "prepare" ? "No-balance review prepared for approval." : "Charge case resolved with signed no-balance evidence."))
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("No-balance resolution could not be saved.")) }
     finally { setBusy(false) }
   }
   const latest = data?.reviews[0]
   const ready = data && !data.snapshot.blockers.length && data.snapshot.queueStatus === "review"
-  const approvable = latest?.status === "prepared" && latest.queue_revision === data?.snapshot.queueRevision && latest.prepared_by !== data?.actorId
+  const approvable = latest?.status === "prepared" && latest.queue_revision === data?.snapshot.queueRevision
+    && (latest.prepared_by !== data?.actorId || approvalMode === "automatic")
   const moneyValue = (value: number | string) => new Intl.NumberFormat(language, { style: "currency", currency, maximumFractionDigits: 4 }).format(Number(value))
   return <div className="ps-4">
     <Button type="button" size="sm" variant="ghost" aria-expanded={open} onClick={() => { setOpen(value => !value); if (!open) void load() }}>{t(open ? "Hide no-balance review" : "Review no-balance outcome")}</Button>
@@ -598,7 +619,7 @@ function ChargeCaseResolutionPanel({ entityId, chargeId, currency, canPrepare, c
       {data ? <>
         <p>{t("Source revision")}: <span data-i18n-skip dir="ltr">{data.snapshot.queueRevision}</span></p>
         {(["cost", "revenue"] as const).map(kind => { const item = data.snapshot[kind]; return item ? <p key={kind}>{t(kind === "cost" ? "Cost accrual" : "Revenue WIP")}: {t("current")} <span data-i18n-skip dir="ltr">{moneyValue(item.current)}</span> · {t("target")} <span data-i18n-skip dir="ltr">{moneyValue(item.target)}</span> · {t("difference")} <span data-i18n-skip dir="ltr">{moneyValue(item.delta)}</span></p> : null })}
-        {data.snapshot.blockers.length ? <ul className="list-disc ps-5 text-[var(--md-amber)]">{data.snapshot.blockers.map(item => <li key={item}>{t(item)}</li>)}</ul> : <p className="text-[var(--md-subtle)]">{t("Current evidence shows no charge balance change. A second finance operator can approve the recorded outcome.")}</p>}
+        {data.snapshot.blockers.length ? <ul className="list-disc ps-5 text-[var(--md-amber)]">{data.snapshot.blockers.map(item => <li key={item}>{t(item)}</li>)}</ul> : <p className="text-[var(--md-subtle)]">{t("Current evidence shows no charge balance change. The legal entity policy determines who can approve the recorded outcome.")}</p>}
         {latest ? <p>{t("Latest review")}: {t(latest.status)} · {latest.prepared_reason}</p> : null}
         {ready && (canPrepare || canApprove && approvable) ? <div className="space-y-2">
           <label className="block space-y-1"><span>{t("Review reason")}</span><Textarea required minLength={10} maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} /></label>
@@ -618,6 +639,7 @@ function AccountingVatControlPanel({ entityId, periodId, onChanged }: {
 }) {
   const { t } = useLanguage()
   const [open, setOpen] = useState(false)
+  const approvalMode = useEntityApprovalMode(entityId, "vat_control", Number(open))
   const [data, setData] = useState<AccountingVatControl | null>(null)
   const [reason, setReason] = useState("")
   const [busy, setBusy] = useState(false)
@@ -633,14 +655,15 @@ function AccountingVatControlPanel({ entityId, periodId, onChanged }: {
     try {
       await updateAccountingVatControl(entityId, periodId, action, { reviewId, reason })
       setReason(""); setData(await getAccountingVatControl(entityId, periodId)); await onChanged()
-      toast.success(t(action === "prepare" ? "Monthly VAT control prepared for independent review." : "Monthly VAT control approved."))
+      toast.success(t(action === "prepare" ? "Monthly VAT control prepared for approval." : "Monthly VAT control approved."))
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Monthly VAT control could not be saved.")) }
     finally { setBusy(false) }
   }
   const latest = data?.reviews[0]
   const approved = data?.approvals.some(item => item.review_id === latest?.id)
   const ready = data?.inventory.status === "ready_for_review"
-  const approvable = ready && latest?.source_digest === data.inventory.sourceDigest && latest?.prepared_by !== data.actorId && !approved
+  const approvable = ready && latest?.source_digest === data.inventory.sourceDigest
+    && (latest?.prepared_by !== data.actorId || approvalMode !== "always_review") && !approved
   return <div className="border-t border-[var(--md-line)] pt-2">
     <Button type="button" size="sm" variant="outline" aria-expanded={open} onClick={() => { setOpen(value => !value); if (!open) void load() }}>{t(open ? "Hide monthly VAT control" : "Review monthly VAT control")}</Button>
     {open ? <div className="mt-3 space-y-2">
