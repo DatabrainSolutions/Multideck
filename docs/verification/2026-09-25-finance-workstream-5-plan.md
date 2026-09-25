@@ -1,8 +1,12 @@
-# Finance 1–4 release acceptance plan
+# Native Accounts demonstration and Finance release acceptance
 
 Owner: Finance workstream 5. Prepared 25 September 2026 for the Sunday 27 September
-release decision. UK VAT and HMRC filing are outside this decision and remain a
-separate release. This plan records checks to perform, not passing evidence.
+demonstration decision. The user subsequently prioritised a fully integrated
+native Multideck Accounts journey in the app over ERPNext mirroring. External
+provider parity and Sage 50 are separate release questions; their safety
+guards stay enabled. UK VAT filing/HMRC remain a separate release, while the
+accounting-month VAT control is part of the native close journey. This plan
+records checks to perform, not passing evidence.
 
 ## Release identity and evidence rules
 
@@ -28,11 +32,11 @@ separate release. This plan records checks to perform, not passing evidence.
 | Gate | Required proof | Owner dependency |
 | --- | --- | --- |
 | Native books and migration | Approved source-bound opening batch; exact GL/AR/AP/bank/accrual controls; balanced atomic postings; no duplicate control posting; mapped charge from setup through document, journal and reports; FX, credits, reversals, stale mappings, locked periods and retry. | Finance 1 |
-| Cash and mirrors | Imported bank lines, matches and reconciled bank control; deliberate missing/duplicate/amount/status/allocation/tax/nominal discrepancies; complete ERPNext period inventory including trial balance and AR/AP/cash; partial pages, stale cursor and changed connection never verify; provider-only change and concurrent conflict enter reviewed workflow; retry retains provider identity. Sage 50 must have connected proof for supported paths and an explicit unsupported boundary for the rest. | Finance 2 |
+| Native cash and bank | Approved receipt and payment from open AR/AP, exact allocation and native cash journal; imported bank lines, matched cash, opening and closing bank ledger control, reviewed sign-off, and a deliberate mismatch that blocks verification. Linked-provider delivery must remain guarded for the native-only demo entity. | Finance 2 |
 | Accrual, WIP and close | Initial recognition, £100/£60/£36/£4 cost case, mirrored revenue case, partial/final/credit/late correction, exact relief and idempotency; job subledger to GL control; independently approved close pack, unresolved exception gate and closed-period denial. Automation stays off until tenant policy/cutover and connected posting proof. | Finance 3 |
 | Daily Finance and AI | Supplier PO/invoice match, payment/remittance, statement/collections, aged AR/AP and job profit in operator UI; reviewed proposals have source file/record IDs, field or line/page provenance, model/prompt version, proposal time, reviewer and override reason; posting remains deterministic and permissioned. | Finance 4 |
 | Access and Dexter | Standard permitted colleague can list/open another colleague's finance records and child rows; read-only user cannot approve/post; foreign company/entity, inactive, revoked and anonymous users are denied. Dexter reads same scoped source evidence, writes only allowlisted approved actions, and event-driven watch match/non-match, once-only, pause/resume and isolation pass. Unsupported capabilities answer clearly. | All |
-| Provisioning and deployment | Fresh isolated project installs baseline and later migrations, roles, RLS, reference data and functions; intended tenant has expected migration history and role-aware read-only probes; exact deployed versions and authenticated browser journeys pass, including failure and recovery, mobile, keyboard and console/network checks. | All, after stable handoff |
+| Development rollout and operator demo | Intended development tenant has expected migration history and before/after role-aware probes; a clearly labelled native-only legal entity has no active accounting connection; exact App/Edge versions and authenticated maker/reviewer journeys pass, including failure and recovery, mobile, keyboard and console/network checks. | All, after stable handoff |
 
 ## AI assurance evaluation
 
@@ -55,22 +59,30 @@ auditable independently of the model.
    concurrent edits. Review the combined diff and migration order.
 2. Run focused local contracts and PostgreSQL fixtures, then the serial full data
    access regression. Run client type/build and relevant Edge parsing checks.
-3. Rehearse the full post-snapshot migration chain in a verified disposable
-   project. On the intended tenant, run read-only preflight and compare migration,
-   function and configuration versions before any authorised application.
-4. Exercise authenticated operator and connected ERPNext journeys with deliberate
-   discrepancies and recovery. Test available Sage 50 paths against its exact
-   connection. Check cross-tenant and revoked access before/after changes.
-5. Verify the deployed App/Edge versions and rerun critical journeys there. Obtain
-   finance-owner review of opening balances, unresolved discrepancies, close pack,
-   AI error cases and provider scope. Publish go/no-go with each unverified gate.
+3. Rehearse the full post-snapshot migration chain on local PostgreSQL. On the
+   intended development tenant, run read-only preflight and compare migration,
+   function and configuration versions before applying the reviewed chain.
+4. Establish a clearly labelled native-only demo legal entity without changing
+   the existing ERPNext-linked books. Exercise authenticated maker/reviewer
+   workflows, cash-to-bank-to-GL control, month-end and AI review with deliberate
+   discrepancies and recovery. Check cross-entity and revoked access.
+5. Verify exact deployed App/Edge versions and repeat the operator journey at
+   `dev.multideck.app`. Obtain finance-owner review of opening balances,
+   unresolved discrepancies, close pack and AI error cases. Publish a native
+   demo go/no-go separately from full provider/production release readiness.
 
-**No-go** if a mandatory accounting balance/control differs without approved
-explanation, a partial provider read turns green, a user crosses an access
-boundary, an AI proposal lacks source/reviewer audit or bypasses approval, an
-unapproved automation posts, intended-tenant identity is ambiguous, or deployed
-versions and connected outcomes are unverified. An implementation can be accepted
-as a local increment while the release remains no-go.
+**Native demo no-go** if a mandatory accounting balance/control differs without
+approved explanation, a user crosses an access boundary, an AI proposal lacks
+source/reviewer audit or bypasses approval, an unapproved automation posts,
+the demo entity's mirror isolation is ambiguous, or deployed versions and
+authenticated outcomes are unverified. A local implementation can pass while
+the connected demonstration remains no-go.
+
+**Full provider/production release remains separate:** exact ERPNext opening
+subledger parity, the residual opening journal, Sage 50 coverage, live model
+quality, fresh project provisioning and production deployment are not claims
+of the native demonstration. Existing provider paths must fail closed on
+incomplete evidence and must not be weakened to make the demo pass.
 
 ## Local Finance 1–4 migration manifest
 
@@ -104,9 +116,10 @@ journal split and reporting-access fix, apply these Finance 1–4 files in order
 24. `20260925083125_accounting_period_vat_control_signoff.sql`
 25. `20260925083450_finance_opening_fx_settlement.sql`
 26. `20260925083833_accounting_period_vat_control_dexter_parity.sql`
-27. `20260925085000_finance_opening_mirror_delivery.sql`
-28. `20260925090000_finance_provider_period_reconciliation.sql`
-29. `20260925100000_finance_reconciliation_dexter.sql`
+27. `20260925084337_opening_trade_control_fx_settlement_bridge.sql`
+28. `20260925085000_finance_opening_mirror_delivery.sql`
+29. `20260925090000_finance_provider_period_reconciliation.sql`
+30. `20260925100000_finance_reconciliation_dexter.sql`
 
 `supabase/tests/finance-release-manifest-postgres.test.mjs` installs this chain
 on a local PostgreSQL instance and checks the resulting tables, functions,
@@ -193,6 +206,17 @@ incremental application plan; local filename order is not proof of its state.
   It installed over the local baseline and passed RLS/function-grant auditing
   on 25 September. The owners' focused lifecycle and combined VAT-chain tests
   are still running; this is an install/access result only.
+- The 29-file chain also passed the full-migration daily payment fixture
+  (1/1), including independent payment-run approval and native cash posting.
+  This does not exercise the new linked opening or FX settlement control path.
+- The thirtieth file bridges reviewed FX settlement into opening trade-control
+  reconciliation. Its owner reports focused PostgreSQL coverage for a posted FX
+  gain, source-control reclassification and tamper rejection. The 30-file
+  manifest then installed over the local baseline and passed RLS/function-grant
+  auditing (1/1) at 08:50 UTC. Finance 1/3 also report a passing full opening
+  chain where EUR cash first remains unreconciled, a reviewed later-period
+  correction moves local 108 to source AR 100 and credits realised FX 8, and
+  the current bridge verifies. These are local results, not dev-tenant evidence.
 - `FINANCE_FULL_MIGRATIONS=1 node --test
   supabase/tests/finance-daily-operations-postgres.test.mjs` now exercises the
   ordered non-VAT Finance chain on local PostgreSQL through supplier invoice,
@@ -217,6 +241,18 @@ incremental application plan; local filename order is not proof of its state.
   queued under older code. GL-only opening delivery remains available. Finance
   1's separate batch-post guard is under focused regression; both guard the
   unresolved provider double-count risk.
+- The only active development legal entity, **Databrain Test**
+  (`a8e98266-f5f4-4620-b45a-e3d991a38209`), has an active sandbox ERPNext
+  connection. A native-only demonstration therefore needs an isolated entity
+  with no accounting connection or a separately reviewed mirror policy change.
+  Before adding another active entity, the App must accept an explicit scoped
+  selection throughout document/cash drafts, intake, bank, reports, WIP/close,
+  VAT and Dexter. Two `finance-subledger` singleton gates were found in draft
+  creation and options; the Edge selection now checks an active entity in the
+  signed-in company and options returns all active entities. F4's UI and Dexter
+  propagation, controlled entity provisioning and connected denial checks are
+  still pending. The current dev WIP data also includes an implausible historic
+  test job, so its aggregate totals are unsuitable as demo proof.
 - `.vercel/project.json` names `multideck-app-dev`. The client `.env` contains
   public Supabase URL/key entries only and does not itself establish a production
   tenant slug, exact hostname or authorised deployment target.
