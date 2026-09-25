@@ -82,6 +82,20 @@ const fixture = () => ({
       { invoiceId: "sale-1", lineId: "sale-zero", allocationId: "alloc-a", matched: true },
     ],
   },
+  controlBalance: {
+    status: "balance_rollforward_matched", digest: "5".repeat(64),
+    lineCount: 2, unclassifiedOpeningLines: 0, unclassifiedPeriodLines: 0,
+    invalidAccountingPeriodLines: 0,
+    openingNetCreditGbp: "20.0000", periodNetCreditGbp: "-40.0000",
+    closingNetCreditGbp: "-20.0000",
+    openingInvoiceNetCreditGbp: "20.0000", openingPackageNetCreditGbp: "0.0000",
+    periodInvoiceNetCreditGbp: "-40.0000", periodPackageNetCreditGbp: "0.0000",
+    priorAcceptedNetDueGbp: "10.0000",
+    accounts: [], lines: [
+      { id: "prior-sale-posting", phase: "opening", classification: "matched_invoice" },
+      { id: "current-purchase-posting", phase: "current", classification: "matched_invoice" },
+    ],
+  },
   paymentPreview: {
     status: "preview_only_no_cash_return_effect", amountEncoding: "decimal_strings",
     projectionId: "projection-1", legalEntityId: "entity-1",
@@ -153,6 +167,11 @@ test("Cash bridge explains prior unpaid VAT, current invoice VAT and period paym
     closingUnpaid: "30.0000", derivedPaymentVat: "10.0000",
     projectedPaymentVat: "10.0000", difference: "0.0000",
   })
+  assert.deepEqual(result.controlBalance, {
+    openingNetCredit: "20.0000", periodNetCredit: "-40.0000",
+    closingNetCredit: "-20.0000", priorAcceptedNetDue: "10.0000",
+    openingDifference: "0.0000", closingDifference: "0.0000",
+  })
 })
 
 test("Cash bridge surfaces payment mismatch and blocks incomplete source coverage", () => {
@@ -199,4 +218,10 @@ test("Cash bridge surfaces payment mismatch and blocks incomplete source coverag
   const omittedPriorEvent = fixture()
   omittedPriorEvent.acceptedHistory.sourceLines.pop()
   assert.equal(previewUkVatCashControlBridge(omittedPriorEvent).streams, null)
+  const unexplainedOpening = fixture()
+  unexplainedOpening.controlBalance.openingNetCreditGbp = "19.9999"
+  assert.equal(previewUkVatCashControlBridge(unexplainedOpening).calculationValid, false)
+  const unsupportedHistoricalPosting = fixture()
+  unsupportedHistoricalPosting.controlBalance.unclassifiedOpeningLines = 1
+  assert.equal(previewUkVatCashControlBridge(unsupportedHistoricalPosting).streams, null)
 })

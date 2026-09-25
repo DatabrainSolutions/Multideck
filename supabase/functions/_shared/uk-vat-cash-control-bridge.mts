@@ -18,6 +18,14 @@ export type UkVatCashControlBridgePreview = {
     projectedPaymentVat: string
     difference: string
   }> | null
+  controlBalance: {
+    openingNetCredit: string
+    periodNetCredit: string
+    closingNetCredit: string
+    priorAcceptedNetDue: string
+    openingDifference: string
+    closingDifference: string
+  } | null
   invoiceCount: number
 }
 
@@ -43,6 +51,11 @@ function units(value: unknown): bigint {
   }
   const [whole, fraction = ""] = value.split(".")
   return BigInt(whole) * 10000n + BigInt(fraction.padEnd(4, "0"))
+}
+
+function signedUnits(value: unknown): bigint {
+  if (typeof value !== "string") throw new Error("VAT control balance needs exact GBP strings.")
+  return value.startsWith("-") ? -units(value.slice(1)) : units(value)
 }
 
 function money(value: bigint): string {
@@ -76,9 +89,9 @@ function errorCount(value: unknown): number {
   return parsed
 }
 
-/** Exact arithmetic over a server-bound Cash-period source inventory. This
- * previews the invoice-to-payment timing identity; it never proves that prior
- * Cash events were accepted or that GL VAT-control journals are approved. */
+/** Exact arithmetic over a server-bound Cash-period source inventory. The
+ * preview checks invoice/payment timing and the opening-to-closing GL balance;
+ * it does not authorise a Cash return or reconcile individual transactions. */
 export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlBridgePreview {
   const source = object(value)
   const context = object(source?.context)
@@ -89,6 +102,7 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
   const accounting = object(source?.accountingControls)
   const ledger = object(source?.ledgerMovements)
   const history = object(source?.acceptedHistory)
+  const balance = object(source?.controlBalance)
   const issues: string[] = []
   let issueCount = 0
   const issue = (message: string) => { issueCount++; if (issues.length < 30) issues.push(message) }
@@ -96,12 +110,12 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     status: "cash_control_bridge_preview_only", calculationValid: false,
     returnReady: false, sourceDigest: typeof source?.sourceDigest === "string"
       && digestPattern.test(source.sourceDigest) ? source.sourceDigest : null,
-    issueCount, issues, streams: null, invoiceCount: 0,
+    issueCount, issues, streams: null, controlBalance: null, invoiceCount: 0,
   })
   if (!source || source.status !== "cash_control_source_only"
     || source.returnReady !== false || source.truncated !== false
     || !digestPattern.test(String(source.sourceDigest ?? ""))
-    || !context || !inventory || !projection || !anomalies || !journal || !accounting || !ledger || !history
+    || !context || !inventory || !projection || !anomalies || !journal || !accounting || !ledger || !history || !balance
     || inventory.truncated !== false || inventory.amountEncoding !== "decimal_strings"
     || projection.amountEncoding !== "decimal_strings"
     || projection.status !== "preview_only_no_cash_return_effect"
@@ -129,7 +143,11 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
     || history.status !== "accepted_history_matched"
     || !digestPattern.test(String(history.digest ?? ""))
     || !Array.isArray(history.periods)
-    || !Array.isArray(history.sourceLines)) {
+    || !Array.isArray(history.sourceLines)
+    || balance.status !== "balance_rollforward_matched"
+    || !digestPattern.test(String(balance.digest ?? ""))
+    || !Array.isArray(balance.lines)
+    || !Array.isArray(balance.accounts)) {
     issue("A complete invoice and payment inventory bound to one Cash VAT period is required.")
     return empty()
   }
@@ -186,6 +204,12 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
           || !["receipt", "matched_readback"].includes(String(period.acceptanceKind ?? ""))
       })) {
       issue("Earlier Cash VAT periods need accepted HMRC returns and complete event coverage.")
+    }
+    if (errorCount(balance.unclassifiedOpeningLines) !== 0
+      || errorCount(balance.unclassifiedPeriodLines) !== 0
+      || errorCount(balance.invalidAccountingPeriodLines) !== 0
+      || errorCount(balance.lineCount) !== balance.lines.length) {
+      issue("The opening-to-closing VAT-control balance has unsupported ledger lines.")
     }
     start = date(context.periodStart)
     end = date(context.periodEnd)
@@ -452,9 +476,35 @@ export function previewUkVatCashControlBridge(value: unknown): UkVatCashControlB
         issue(`${stream} does not reconcile to the verified payment events.`)
       }
     }
+    const openingGl = signedUnits(balance.openingNetCreditGbp)
+    const periodGl = signedUnits(balance.periodNetCreditGbp)
+    const closingGl = signedUnits(balance.closingNetCreditGbp)
+    const openingPackage = signedUnits(balance.openingPackageNetCreditGbp)
+    const periodPackage = signedUnits(balance.periodPackageNetCreditGbp)
+    const openingInvoice = signedUnits(balance.openingInvoiceNetCreditGbp)
+    const periodInvoice = signedUnits(balance.periodInvoiceNetCreditGbp)
+    const priorDue = signedUnits(balance.priorAcceptedNetDueGbp)
+    const openingUnpaid = opening.outputVatGbp-opening.inputVatGbp
+    const closingUnpaid = closing.outputVatGbp-closing.inputVatGbp
+    const currentCashDue = projected.outputVatGbp-projected.inputVatGbp
+    const openingDifference = openingGl-openingPackage-openingUnpaid-priorDue
+    const closingDifference = closingGl-openingPackage-periodPackage
+      -closingUnpaid-priorDue-currentCashDue
+    if (openingGl+periodGl !== closingGl
+      || openingInvoice+openingPackage !== openingGl
+      || periodInvoice+periodPackage !== periodGl
+      || periodInvoice !== posted.outputVatGbp-posted.inputVatGbp
+      || openingDifference !== 0n || closingDifference !== 0n) {
+      issue("The VAT-control account balance does not reconcile to unpaid invoices and accepted Cash returns.")
+    }
+    const controlBalance = {
+      openingNetCredit: money(openingGl),periodNetCredit: money(periodGl),
+      closingNetCredit: money(closingGl),priorAcceptedNetDue: money(priorDue),
+      openingDifference: money(openingDifference),closingDifference: money(closingDifference),
+    }
     return { status: "cash_control_bridge_preview_only", calculationValid: issueCount === 0,
       returnReady: false, sourceDigest: source.sourceDigest as string,
-      issueCount,issues,streams,invoiceCount:seenInvoices.size }
+      issueCount,issues,streams,controlBalance,invoiceCount:seenInvoices.size }
   } catch (error) {
     issue(error instanceof Error ? error.message : "Cash VAT boxes are invalid.")
     return empty()
