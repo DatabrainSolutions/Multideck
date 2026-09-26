@@ -20,10 +20,19 @@ jobs:
       - name: Install PostgreSQL for real row-level security tests
         run: |
           sudo apt-get update
-          sudo apt-get install --yes postgresql postgresql-client libpq-dev
+          sudo apt-get install --yes curl ca-certificates postgresql-common
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-17 postgresql-client-17 libpq-dev
       - name: Verify shared access and permission boundaries
         run: |
-          export PG_TEST_BIN="$(pg_config --bindir)"
+          export PG_TEST_BIN=/usr/lib/postgresql/17/bin
           # These fixtures otherwise skip when PostgreSQL is unavailable.
           # CI must fail instead of reporting a skipped security check as green.
           "$PG_TEST_BIN/initdb" --version

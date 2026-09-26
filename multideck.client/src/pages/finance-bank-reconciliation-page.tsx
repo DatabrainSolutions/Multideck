@@ -1,0 +1,80 @@
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Calculator } from "@/components/icons/hugeicons"
+import { SettingsPageHeader, SettingsPanel } from "@/components/multideck/settings-components"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { useLanguage } from "@/i18n/language-provider"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
+import { getGlEntities, type GlEntity } from "@/lib/finance-ledger-api"
+import { bankSetup, bankWorkspace, importBankStatement, matchBankLine, unmatchBankLine, verifyBankStatement, type BankAccount, type BankPeriod, type BankWorkspace } from "@/lib/finance-reconciliation-api"
+
+const selectClass = "h-9 w-full rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 text-[13px] text-[var(--md-ink)] focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]"
+const entitySessionKey = "multideck.finance.daily.entity"
+const rememberedEntity = () => { try { return window.sessionStorage.getItem(entitySessionKey) } catch { return null } }
+const rememberEntity = (id: string) => { try { window.sessionStorage.setItem(entitySessionKey, id) } catch { /* Selection remains available on this page. */ } }
+const errorText = (cause: unknown) => cause instanceof Error && /failed to fetch|networkerror/i.test(cause.message)
+  ? "Bank reconciliation could not be reached. Check the tenant service and try again."
+  : cause instanceof Error ? cause.message : "Bank reconciliation could not be loaded."
+
+export function FinanceBankReconciliationPage({ currentUser }: { currentUser?: AuthUserSummary | null }) {
+  const { t, language } = useLanguage()
+  const canManage = hasPermission(currentUser, "Finance.Banks.Manage")
+  const [entities, setEntities] = useState<GlEntity[]>([]), [entityId, setEntityId] = useState("")
+  const [banks, setBanks] = useState<BankAccount[]>([]), [periods, setPeriods] = useState<BankPeriod[]>([])
+  const [bankId, setBankId] = useState(""), [periodId, setPeriodId] = useState(""), [workspace, setWorkspace] = useState<BankWorkspace | null>(null)
+  const [file, setFile] = useState<File | null>(null), [opening, setOpening] = useState(""), [closing, setClosing] = useState("")
+  const [selectedCash, setSelectedCash] = useState<Record<string, string>>({}), [reason, setReason] = useState(""), [verifyReason, setVerifyReason] = useState("")
+  const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("")
+  const period = periods.find(value => value.FINPeriod_ID === periodId)
+  const bank = banks.find(value => value.FINBank_ID === bankId)
+  const matchedByLine = useMemo(() => new Map((workspace?.matches ?? []).map(match => [match.FINBankMatch_StatementLineID, match])), [workspace])
+  const cashNumber = useMemo(() => new Map((workspace?.cash ?? []).map(cash => [cash.FINCash_ID, cash.FINCash_Number || cash.FINCash_Reference || cash.FINCash_ID])), [workspace])
+  const money = (value: string | number | undefined) => value == null ? "—" : new Intl.NumberFormat(language, { style: "currency", currency: bank?.FINBank_CurrencyCode || "GBP", maximumFractionDigits: 4 }).format(Number(value))
+
+  useEffect(() => { let active = true; void getGlEntities().then(result => { if (active) { const saved = rememberedEntity(); setEntities(result.entities); setEntityId(result.entities.some(item => item.LegalEntity_ID === saved) ? saved || "" : result.entities.length === 1 ? result.entities[0].LegalEntity_ID : "") } }).catch(cause => { if (active) setError(errorText(cause)) }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [])
+  useEffect(() => { if (!entityId) return; let active = true; setLoading(true); setError(""); setWorkspace(null); setBanks([]); setPeriods([]); setBankId(""); setPeriodId(""); setFile(null); setOpening(""); setClosing(""); setSelectedCash({}); void bankSetup(entityId).then(result => { if (active) { setBanks(result.banks); setPeriods(result.periods); setBankId(result.banks[0]?.FINBank_ID || ""); setPeriodId(result.periods[0]?.FINPeriod_ID || "") } }).catch(cause => { if (active) setError(errorText(cause)) }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [entityId])
+  const refresh = useCallback(async () => { if (!entityId || !bankId || !periodId) return; setLoading(true); setError(""); try { setWorkspace(await bankWorkspace(entityId, periodId, bankId)) } catch (cause) { setWorkspace(null); setError(errorText(cause)) } finally { setLoading(false) } }, [entityId, bankId, periodId])
+  useEffect(() => { void refresh() }, [refresh])
+  const act = async <T,>(work: () => Promise<T>, success: string | ((result: T) => string)) => { setBusy(true); setError(""); setNotice(""); try { const result = await work(); setNotice(typeof success === "function" ? success(result) : success); await refresh() } catch (cause) { setError(cause instanceof Error ? cause.message : "Bank reconciliation failed.") } finally { setBusy(false) } }
+  const importFile = () => { if (!file || !period || !entityId || !bankId) return; void act(async () => { if (file.size > 1_000_000) throw new Error("Choose a statement CSV smaller than 1 MB."); return importBankStatement({ legalEntityId: entityId, bankId, fileName: file.name, csv: await file.text(), openingBalance: opening, closingBalance: closing, dateFrom: period.FINPeriod_StartDate, dateTo: period.FINPeriod_EndDate }) }, result => {
+    const { matched, requiresReview } = result.automaticMatching
+    const summary = `${matched} matched automatically; ${requiresReview} need review.`
+    return result.duplicate ? `This statement was already imported. ${summary}` : `Statement imported. ${summary}`
+  }) }
+  const match = (lineId: string) => { const cashId = selectedCash[lineId]; if (!cashId) return; void act(() => matchBankLine({ legalEntityId: entityId, bankId, lineId, cashId, reason }), "Statement line matched.") }
+  const unmatch = (lineId: string) => void act(() => unmatchBankLine({ legalEntityId: entityId, bankId, lineId, reason }), "Statement match removed.")
+  const control = workspace?.control
+  return <>
+    <SettingsPageHeader title={t("Bank reconciliation")} description={t("Import a bank statement, match each line to posted cash and verify the period against the bank ledger.")} icon={Calculator} descriptionPlacement="under-title" actions={<Button variant="outline" onClick={() => void refresh()} disabled={loading || busy}>{t("Refresh")}</Button>} />
+    <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+      {error ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{t(error)}</p> : null}
+      {notice ? <p role="status" className="text-[13px] text-[var(--md-green)]">{t(notice)}</p> : null}
+      <SettingsPanel title={t("Statement scope")} description={t("Select the legal entity, bank and complete accounting period. Statement dates must cover the whole period.")}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="space-y-1 text-[12px] text-[var(--md-text)]">{t("Legal entity")}<select className={selectClass} value={entityId} onChange={event => { const next = event.target.value; if (entities.some(entity => entity.LegalEntity_ID === next)) { setEntityId(next); rememberEntity(next) } }} disabled={busy}><option value="" disabled>{t("Choose legal entity")}</option>{entities.map(entity => <option key={entity.LegalEntity_ID} value={entity.LegalEntity_ID}>{entity.LegalEntity_Name}</option>)}</select></label>
+          <label className="space-y-1 text-[12px] text-[var(--md-text)]">{t("Bank account")}<select className={selectClass} value={bankId} onChange={event => setBankId(event.target.value)} disabled={busy}>{banks.map(value => <option key={value.FINBank_ID} value={value.FINBank_ID}>{value.FINBank_Code} · {value.FINBank_Name} ({value.FINBank_CurrencyCode})</option>)}</select></label>
+          <label className="space-y-1 text-[12px] text-[var(--md-text)]">{t("Period")}<select className={selectClass} value={periodId} onChange={event => setPeriodId(event.target.value)} disabled={busy}>{periods.map(value => <option key={value.FINPeriod_ID} value={value.FINPeriod_ID}>{value.FINPeriod_Code} · {value.FINPeriod_StartDate}–{value.FINPeriod_EndDate}</option>)}</select></label>
+        </div>
+        {period && bank && <p className="mt-3 text-[12px] text-[var(--md-text)]">{t("Coverage")}: <span data-i18n-skip>{period.FINPeriod_StartDate} – {period.FINPeriod_EndDate}</span> · {t("Currency")}: <span data-i18n-skip>{bank.FINBank_CurrencyCode}</span></p>}
+      </SettingsPanel>
+      {canManage && period && bank && control?.status !== "verified" ? <SettingsPanel title={t("Import statement CSV")} description={t("Use date,reference,description,amount,balance columns. Receipts are positive; payments are negative. Each running balance must agree exactly.")}>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <label className="space-y-1 text-[12px] text-[var(--md-text)] sm:col-span-2">{t("CSV file")}<Input key={entityId} type="file" accept=".csv,text/csv" onChange={event => setFile(event.target.files?.[0] || null)} disabled={busy} /></label>
+          <label className="space-y-1 text-[12px] text-[var(--md-text)]">{t("Opening balance")}<Input inputMode="decimal" value={opening} onChange={event => setOpening(event.target.value)} placeholder="0.0000" disabled={busy} /></label>
+          <label className="space-y-1 text-[12px] text-[var(--md-text)]">{t("Closing balance")}<Input inputMode="decimal" value={closing} onChange={event => setClosing(event.target.value)} placeholder="0.0000" disabled={busy} /></label>
+        </div>
+        <Button className="mt-3" disabled={busy || !file || !opening || !closing} onClick={importFile}>{t(busy ? "Working…" : "Import statement")}</Button>
+      </SettingsPanel> : null}
+      {loading ? <p role="status" className="text-[13px] text-[var(--md-text)]">{t("Loading bank reconciliation…")}</p> : control ? <SettingsPanel title={t("Period control")} description={t(control.status === "verified" ? "The current statement, posted cash and bank ledger agree. Recheck after any later posting." : control.status === "ready_for_review" ? "All controls agree. A finance manager can verify this statement." : control.reason || "Complete the statement and resolve every difference before verification.")}>
+        <p className={`text-[13px] font-medium ${control.status === "verified" ? "text-[var(--md-green)]" : control.status === "incomplete" ? "text-[var(--md-amber)]" : "text-[var(--md-ink)]"}`}>{t(({ verified: "Verified", ready_for_review: "Ready for review", incomplete: "Incomplete" })[control.status])}</p>
+        {control.statementId ? <div className="mt-3 grid gap-2 text-[12px] sm:grid-cols-2 lg:grid-cols-4"><p>{t("Statement opening")}: <strong data-i18n-skip>{money(control.openingStatement)}</strong></p><p>{t("Ledger opening")}: <strong data-i18n-skip>{money(control.openingLedger)}</strong></p><p>{t("Statement closing")}: <strong data-i18n-skip>{money(control.closingStatement)}</strong></p><p>{t("Ledger closing")}: <strong data-i18n-skip>{money(control.closingLedger)}</strong></p><p>{t("Unmatched lines")}: <strong data-i18n-skip>{control.unmatchedRows}</strong></p><p>{t("Unrepresented cash")}: <strong data-i18n-skip>{control.unrepresentedCash}</strong></p><p>{t("Unmatched ledger lines")}: <strong data-i18n-skip>{control.orphanBankLines}</strong></p></div> : null}
+        {!!control.issues?.length && <ul className="mt-3 list-inside list-disc space-y-1 text-[12px] text-[var(--md-red)]">{control.issues.map((issue, index) => <li key={index}>{t(issue)}</li>)}</ul>}
+        {canManage && control.status === "ready_for_review" && <div className="mt-3 flex flex-wrap items-end gap-2"><label className="min-w-[260px] flex-1 space-y-1 text-[12px] text-[var(--md-text)]">{t("Verification reason")}<Input value={verifyReason} onChange={event => setVerifyReason(event.target.value)} maxLength={500} disabled={busy} /></label><Button disabled={busy || verifyReason.trim().length < 10} onClick={() => void act(() => verifyBankStatement({ legalEntityId: entityId, bankId, periodId, reason: verifyReason }), "Bank statement verified.")}>{t("Verify reconciliation")}</Button></div>}
+      </SettingsPanel> : null}
+      {!!workspace?.lines.length && <SettingsPanel title={t("Statement lines")} description={t("Automatic matching uses the legal entity policy and only unique, exact posted cash and bank ledger pairs. Other lines need review.")}>
+        {canManage && control?.status !== "verified" && <label className="mb-3 block max-w-xl space-y-1 text-[12px] text-[var(--md-text)]">{t("Match or removal reason")}<Input value={reason} onChange={event => setReason(event.target.value)} maxLength={500} disabled={busy} /></label>}
+        <div className="overflow-x-auto"><table className="w-full min-w-[750px] text-[12px]"><thead><tr className="border-b border-[var(--md-line)] text-left text-[var(--md-text)]"><th className="p-2 font-medium">{t("Date")}</th><th className="p-2 font-medium">{t("Reference and description")}</th><th className="p-2 text-right font-medium">{t("Amount")}</th><th className="p-2 text-right font-medium">{t("Balance")}</th><th className="p-2 font-medium">{t("Cash match")}</th></tr></thead><tbody>{workspace.lines.map(line => { const matched = matchedByLine.get(line.FINStmtLine_ID); const available = workspace.cash.filter(cash => cash.FINCash_TransactionDate === line.FINStmtLine_TransactionDate && (cash.FINCash_TypeCode === "customer_receipt" ? Number(cash.FINCash_Amount) : -Number(cash.FINCash_Amount)) === Number(line.FINStmtLine_Amount) && (!workspace.matches.some(value => value.FINBankMatch_CashID === cash.FINCash_ID) || matched?.FINBankMatch_CashID === cash.FINCash_ID)); return <tr key={line.FINStmtLine_ID} className="border-b border-[var(--md-line)] align-top"><td className="p-2" data-i18n-skip>{line.FINStmtLine_TransactionDate}</td><td className="p-2"><span data-i18n-skip>{line.FINStmtLine_Reference || "—"}</span><p className="text-[var(--md-text)]" data-i18n-skip>{line.FINStmtLine_Description}</p></td><td className="p-2 text-right" data-i18n-skip>{money(line.FINStmtLine_Amount)}</td><td className="p-2 text-right" data-i18n-skip>{money(line.FINStmtLine_BalanceAfter)}</td><td className="p-2">{matched ? <div className="flex flex-wrap items-center gap-2"><span data-i18n-skip>{cashNumber.get(matched.FINBankMatch_CashID) || matched.FINBankMatch_CashID}</span>{matched.FINBankMatch_MatchTypeCode === "automatic" ? <span className="text-[var(--md-green)]">{t("Automatic")}</span> : null}{canManage && control?.status !== "verified" && <Button size="sm" variant="outline" disabled={busy || reason.trim().length < 5} onClick={() => unmatch(line.FINStmtLine_ID)}>{t("Remove match")}</Button>}</div> : canManage && control?.status !== "verified" ? <div className="flex gap-2"><select aria-label={t(`Cash transaction for line ${line.FINStmtLine_LineNo}`)} className={selectClass} value={selectedCash[line.FINStmtLine_ID] || ""} onChange={event => setSelectedCash(value => ({ ...value, [line.FINStmtLine_ID]: event.target.value }))}><option value="">{t("Choose posted cash")}</option>{available.map(cash => <option key={cash.FINCash_ID} value={cash.FINCash_ID}>{cash.FINCash_Number || cash.FINCash_Reference || cash.FINCash_ID}</option>)}</select><Button size="sm" disabled={busy || !selectedCash[line.FINStmtLine_ID] || reason.trim().length < 5} onClick={() => match(line.FINStmtLine_ID)}>{t("Match")}</Button></div> : <span>{t("Unmatched")}</span>}</td></tr> })}</tbody></table></div>
+      </SettingsPanel>}
+    </div>
+  </>
+}

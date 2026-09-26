@@ -1,0 +1,394 @@
+import assert from "node:assert/strict"
+import test from "node:test"
+import { spawnSync } from "node:child_process"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { previewUkVatCashExitImmediate } from "../functions/_shared/uk-vat-cash-exit-preview.mts"
+
+const migrations = [
+  new URL("../migrations/20260925113000_uk_vat_cash_exit_invoice_inventory.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925114500_uk_vat_cash_exit_price_change_guard.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925120000_uk_vat_cash_exit_line_sources.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925121500_uk_vat_cash_exit_cash_source_guard.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925123000_uk_vat_cash_exit_review_fingerprint.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925124500_uk_vat_cash_exit_decimal_strings.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925130000_uk_vat_cash_exit_verified_context.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925131500_uk_vat_cash_exit_due_term_guard.sql", import.meta.url).pathname,
+  new URL("../migrations/20260925133000_uk_vat_cash_exit_treatment_guard.sql", import.meta.url).pathname,
+]
+const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
+
+test("Cash exit inventory includes wholly unpaid invoices and rejects unsupported source", () => {
+  const bin = process.env.PG_TEST_BIN || "/opt/homebrew/opt/postgresql@17/bin"
+  const dir = mkdtempSync(join(tmpdir(), "uk-vat-cash-exit-inventory-"))
+  const args = ["-X", "-qAt", "-h", dir, "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1"]
+  let started = false
+  const command = (name, input) => spawnSync(join(bin, name), name === "psql" ? args : input,
+    { input: name === "psql" ? input : undefined, encoding: "utf8", timeout: 30000 })
+  const sql = (statement) => {
+    const result = command("psql", statement)
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout.trim()
+  }
+  const reject = (statement, expected) => {
+    const result = command("psql", statement)
+    assert.notEqual(result.status, 0, result.stdout)
+    assert.match(result.stderr, expected)
+  }
+  try {
+    const init = command("initdb", ["-D", join(dir, "data"), "-A", "trust", "-U", "postgres", "--no-locale", "--no-sync", "-E", "UTF8"])
+    assert.equal(init.status, 0, init.stderr)
+    const start = command("pg_ctl", ["-D", join(dir, "data"), "-l", join(dir, "log"), "-o", `-k ${dir} -c listen_addresses=''`, "-w", "start"])
+    assert.equal(start.status, 0, start.stderr)
+    started = true
+    sql(`create role anon; create role authenticated; create role service_role;
+      create function public._multideck_uk_vat_read_access(actor uuid, entity uuid)
+      returns void language plpgsql as $$ begin
+        if actor<>'${id(1)}' or entity<>'${id(2)}' then
+          raise exception 'VAT access denied';
+        end if;
+      end $$;
+      create table public."cmp_LegalEntities"(
+        "LegalEntity_ID" uuid primary key,"LegalEntity_CountryCode" text,
+        "LegalEntity_BaseCurrencyCodeSnapshot" text);
+      create table public."FIN_Documents"(
+        "FINDoc_ID" uuid primary key,"FINDoc_LegalEntityID" uuid,
+        "FINDoc_TypeCode" text,"FINDoc_DocumentDate" date,
+        "FINDoc_NativePostingStatusCode" text,"FINDoc_NativePostedAt" timestamptz,
+        "FINDoc_NativePostingBatchID" uuid,"FINDoc_CurrencyCodeSnapshot" text,
+        "FINDoc_ExchangeRate" numeric(20,10),"FINDoc_GrossAmount" numeric,
+        "FINDoc_LocalGrossAmount" numeric,"FINDoc_DueDate" date);
+      create table public."FIN_CashTransactions"(
+        "FINCash_ID" uuid primary key,"FINCash_LegalEntityID" uuid,
+        "FINCash_NativePostingStatusCode" text,"FINCash_NativePostedAt" timestamptz,
+        "FINCash_CurrencyCodeSnapshot" text,"FINCash_TypeCode" text,
+        "FINCash_TransactionDate" date,"FINCash_AccountingDate" date,
+        "FINCash_NativePostingBatchID" uuid,"FINCash_ExchangeRate" numeric(20,10),
+        "FINCash_Amount" numeric,"FINCash_LocalAmount" numeric,
+        "FINCash_UnallocatedAmount" numeric);
+      create table public."FIN_CashAllocations"(
+        "FINCashAlloc_ID" uuid primary key,"FINCashAlloc_DocumentID" uuid,
+        "FINCashAlloc_CashID" uuid,"FINCashAlloc_DocumentLineID" uuid,
+        "FINCashAlloc_AllocationStatusCode" text,"FINCashAlloc_AllocatedAmount" numeric,
+        "FINCashAlloc_AllocatedAt" timestamptz);
+      create table public."FIN_IndirectTaxCashPaymentDateReviews"(
+        cash_id uuid,legal_entity_id uuid,revision integer,vat_payment_date date,
+        id uuid default gen_random_uuid(),source_fingerprint text);
+      create table public."FIN_DocumentLines"(
+        "FINDocLine_ID" uuid primary key,"FINDocLine_DocumentID" uuid,
+        "FINDocLine_LineNo" integer,"FINDocLine_LocalNetAmount" numeric,
+        "FINDocLine_LocalTaxAmount" numeric,"FINDocLine_LocalGrossAmount" numeric);
+      create table public."FIN_IndirectTaxEvidence"(
+        id uuid primary key,source_document_line_id uuid,source_document_id uuid,
+        source_posting_batch_id uuid,legal_entity_id uuid,jurisdiction_code text,
+        source_kind text,recorded_at timestamptz,
+        signed_net_reporting numeric,signed_tax_reporting numeric);
+      create table public."FIN_IndirectTaxDecisions"(
+        id uuid primary key,evidence_id uuid,revision integer,scheme_code text,
+        treatment_code text,reviewed_rule_reference text,tax_point date);
+      create table public."FIN_IndirectTaxCreditLinks"(
+        legal_entity_id uuid,original_evidence_id uuid);
+      create table public."FIN_IndirectTaxReconciliations"(
+        evidence_id uuid,period_id uuid);
+      create table public."FIN_LocalisationPacks"(
+        "FINLocPack_ID" uuid primary key,"FINLocPack_Code" text,"FINLocPack_CountryCode" text);
+      create table public."FIN_ComplianceObligations"(
+        "FINCompliance_ID" uuid primary key,"FINCompliance_PackID" uuid,
+        "FINCompliance_Code" text,"FINCompliance_ObligationTypeCode" text);
+      create table public."FIN_LegalEntityComplianceRegistrations"(
+        "FINComplianceReg_ID" uuid primary key,"FINComplianceReg_LegalEntityID" uuid,
+        "FINComplianceReg_ObligationID" uuid,"FINComplianceReg_StatusCode" text,
+        "FINComplianceReg_FilingMethodCode" text,"FINComplianceReg_RegistrationReference" text,
+        "FINComplianceReg_EffectiveFrom" date,"FINComplianceReg_EffectiveTo" date,
+        "FINComplianceReg_SettingsJSON" jsonb,"FINComplianceReg_UpdatedAt" timestamptz);
+      create table public."FIN_IndirectTaxPeriods"(
+        id uuid,legal_entity_id uuid,scheme_code text,obligation_id uuid,
+        registration_id uuid,jurisdiction_code text,reporting_currency text,
+        start_date date,end_date date,status text);
+      insert into public."FIN_LocalisationPacks" values ('${id(90)}','gb-v1','GB');
+      insert into public."FIN_ComplianceObligations" values
+        ('${id(91)}','${id(90)}','gb-vat-mtd','indirect_tax');
+      insert into public."FIN_LegalEntityComplianceRegistrations" values
+        ('${id(92)}','${id(2)}','${id(91)}','configured','mtd_api','123456789',
+          '2026-01-01','2026-03-31','{"schemeCode":"cash"}','2026-01-01 12:00Z'),
+        ('${id(93)}','${id(2)}','${id(91)}','configured','mtd_api','123456789',
+          '2026-04-01',null,'{"schemeCode":"standard"}','2026-01-02 12:00Z');
+      insert into public."FIN_IndirectTaxPeriods" values
+        ('${id(94)}','${id(2)}','cash','${id(91)}','${id(92)}','GB','GBP',
+          '2026-01-01','2026-03-31','draft');
+      insert into public."cmp_LegalEntities" values
+        ('${id(2)}','GB','GBP'),('${id(3)}','US','USD');
+      insert into public."FIN_Documents" values
+        ('${id(10)}','${id(2)}','sl_invoice','2026-01-10','posted','2026-01-10 12:00Z','${id(20)}','GBP',1,120,120,'2026-02-10'),
+        ('${id(11)}','${id(2)}','pl_invoice','2026-02-10','posted','2026-02-10 12:00Z','${id(21)}','GBP',1,240,240,'2026-03-10'),
+        ('${id(12)}','${id(2)}','sl_invoice','2026-02-12','posted','2026-02-12 12:00Z','${id(22)}','EUR',1.2,120,144,'2026-03-12'),
+        ('${id(13)}','${id(2)}','sl_invoice','2026-02-15','draft',null,null,'GBP',1,50,50,'2026-03-15'),
+        ('${id(14)}','${id(3)}','sl_invoice','2026-02-18','posted','2026-02-18 12:00Z','${id(23)}','GBP',1,999,999,'2026-03-18');
+      insert into public."FIN_CashTransactions" values
+        ('${id(30)}','${id(2)}','posted','2026-03-01 12:00Z','GBP','supplier_payment',
+          '2026-03-01','2026-03-01','${id(35)}',1,60,60,0),
+        ('${id(31)}','${id(2)}','posted','2026-04-01 12:00Z','GBP','supplier_payment',
+          '2026-04-01','2026-04-01','${id(36)}',1,40,40,0);
+      insert into public."FIN_CashAllocations" values
+        ('${id(40)}','${id(11)}','${id(30)}',null,'allocated',60,'2026-03-01 12:00Z'),
+        ('${id(41)}','${id(11)}','${id(31)}',null,'allocated',40,'2026-04-01 12:00Z');
+      insert into public."FIN_IndirectTaxCashPaymentDateReviews"
+        (cash_id,legal_entity_id,revision,vat_payment_date) values
+        ('${id(30)}','${id(2)}',1,'2026-03-01'),
+        ('${id(31)}','${id(2)}',1,'2026-04-01');
+      update public."FIN_IndirectTaxCashPaymentDateReviews" review
+      set source_fingerprint=encode(sha256(convert_to(
+        (to_jsonb(cash)-array['FINCash_StatusCode','FINCash_PostingStatusCode',
+          'FINCash_ExportStatusCode','FINCash_UpdatedAt','FINCash_UpdatedBy'])::text||
+        coalesce((select jsonb_agg(to_jsonb(allocation) order by allocation."FINCashAlloc_ID")
+          from public."FIN_CashAllocations" allocation
+          where allocation."FINCashAlloc_CashID"=cash."FINCash_ID"),'[]'::jsonb)::text,
+        'UTF8')),'hex')
+      from public."FIN_CashTransactions" cash
+      where cash."FINCash_ID"=review.cash_id;
+      insert into public."FIN_DocumentLines" values
+        ('${id(50)}','${id(10)}',1,100,20,120),
+        ('${id(51)}','${id(11)}',1,200,40,240),
+        ('${id(52)}','${id(12)}',1,120,24,144);
+      insert into public."FIN_IndirectTaxEvidence" values
+        ('${id(60)}','${id(50)}','${id(10)}','${id(20)}','${id(2)}','GB',
+          'posted_document_line','2026-01-10 12:00Z',100,20),
+        ('${id(61)}','${id(51)}','${id(11)}','${id(21)}','${id(2)}','GB',
+          'posted_document_line','2026-02-10 12:00Z',200,40);
+      insert into public."FIN_IndirectTaxDecisions" values
+        ('${id(70)}','${id(60)}',1,'cash','domestic_sale','UK20','2026-01-10'),
+        ('${id(71)}','${id(61)}',1,'cash','domestic_purchase','UK20','2026-02-10');`)
+    for (const migration of migrations) {
+      const apply = spawnSync(join(bin, "psql"), [...args, "-f", migration],
+        { encoding: "utf8", timeout: 30000 })
+      assert.equal(apply.status, 0, apply.stderr)
+    }
+    const call = `public.multideck_uk_vat_cash_exit_invoice_inventory('${id(1)}','${id(2)}','2026-01-01','2026-03-31')`
+    const result = JSON.parse(sql(`select ${call};`))
+    assert.equal(result.invoiceCount, 3)
+    assert.equal(result.allocationCount, 2)
+    assert.equal(result.postedPriceChangeCount, 0)
+    assert.equal(result.requiresPriceChangeReview, false)
+    assert.equal(result.lineCount, 3)
+    assert.equal(result.lineSourceIssueCount, 1)
+    assert.equal(result.lineTreatmentIssueCount, 0)
+    assert.equal(result.dueTermIssueCount, 0)
+    assert.equal(result.cashSourceCount, 1)
+    assert.equal(result.cashAllocationCount, 1)
+    assert.equal(result.cashSourceIssueCount, 0)
+    assert.equal(result.cashSources[0].reviewFingerprintMatches, true)
+    assert.equal(result.cashSources[0].cash_amount, "60")
+    assert.equal(result.cashSources[0].allocation_sources[0].allocatedAmount, "60")
+    assert.equal(result.unpostedInvoiceCount, 1)
+    assert.equal(result.truncated, false)
+    assert.equal(result.amountEncoding, "decimal_strings")
+    assert.match(result.sourceDigest, /^[0-9a-f]{64}$/)
+    const byId = new Map(result.invoices.map((invoice) => [invoice.invoice_id, invoice]))
+    assert.equal(byId.get(id(10)).paid_through_exit, "0")
+    assert.equal(byId.get(id(10)).candidate_outstanding, "120")
+    assert.equal(byId.get(id(10)).lines[0].netGbp, "100")
+    assert.equal(byId.get(id(10)).lines[0].evidenceVatGbp, "20")
+    assert.equal(byId.get(id(10)).lines[0].taxPoint, "2026-01-10")
+    assert.equal(byId.get(id(10)).lines[0].taxPointInCashTerm, true)
+    assert.equal(byId.get(id(10)).lines[0].supportedCashTreatment, true)
+    assert.equal(byId.get(id(10)).document_due_date, "2026-02-10")
+    assert.equal(byId.get(id(10)).due_within_six_months, true)
+    assert.equal(byId.get(id(10)).lineSourceIssueCount, 0)
+    assert.equal(byId.get(id(10)).lines[0].decisionScheme, "cash")
+    assert.equal(byId.get(id(11)).paid_through_exit, "60")
+    assert.equal(byId.get(id(11)).candidate_outstanding, "180")
+    assert.equal(byId.get(id(11)).allocation_sources[0].allocatedAmount, "60")
+    assert.equal(byId.get(id(11)).future_allocation_count, 1)
+    assert.equal(byId.get(id(11)).allocation_sources.length, 2)
+    assert.equal(byId.get(id(12)).source_exception, true)
+    assert.equal(byId.get(id(12)).lineSourceIssueCount, 1)
+    const verifiedCall = `public.multideck_uk_vat_cash_exit_verified_inventory('${id(1)}','${id(2)}','${id(92)}','${id(94)}')`
+    const incomplete = JSON.parse(sql(`select ${verifiedCall};`))
+    assert.equal(previewUkVatCashExitImmediate(incomplete).sourceBoxesGbp, null)
+    sql(`update public."FIN_Documents" set "FINDoc_DocumentDate"='2026-04-01'
+      where "FINDoc_ID"='${id(12)}';`)
+    const clean = JSON.parse(sql(`select ${verifiedCall};`))
+    const immediate = previewUkVatCashExitImmediate(clean)
+    assert.equal(immediate.calculationValid, true)
+    assert.equal(immediate.returnReady, false)
+    assert.equal(immediate.sourceDigest, clean.sourceDigest)
+    assert.deepEqual(immediate.sourceBoxesGbp, {
+      1: "20.0000", 4: "30.0000", 6: "100.0000", 7: "150.0000",
+    })
+    assert.equal(immediate.invoiceLines.length, 2)
+    const alteredBalance = structuredClone(clean)
+    alteredBalance.invoices[1].candidate_outstanding = "179.9999"
+    assert.equal(previewUkVatCashExitImmediate(alteredBalance).sourceBoxesGbp, null)
+    const stalePayment = structuredClone(clean)
+    stalePayment.cashSources[0].reviewFingerprintMatches = false
+    assert.equal(previewUkVatCashExitImmediate(stalePayment).sourceBoxesGbp, null)
+    const missingEncoding = structuredClone(clean)
+    delete missingEncoding.amountEncoding
+    assert.equal(previewUkVatCashExitImmediate(missingEncoding).sourceBoxesGbp, null)
+    const unreviewedCredit = structuredClone(clean)
+    unreviewedCredit.postedPriceChangeCount = 1
+    unreviewedCredit.priceChanges = [{ document_id: id(15) }]
+    assert.equal(previewUkVatCashExitImmediate(unreviewedCredit).sourceBoxesGbp, null)
+    sql(`update public."FIN_Documents" set "FINDoc_DocumentDate"='2026-02-12'
+      where "FINDoc_ID"='${id(12)}';`)
+    assert.equal(JSON.parse(sql(`select ${verifiedCall};`)).sourceDigest, incomplete.sourceDigest)
+    sql(`update public."FIN_IndirectTaxDecisions" set treatment_code='reverse_charge'
+      where id='${id(70)}';`)
+    const unsupportedTreatment = JSON.parse(sql(`select ${call};`))
+    assert.equal(unsupportedTreatment.lineTreatmentIssueCount, 1)
+    assert.equal(unsupportedTreatment.lineSourceIssueCount, 2)
+    assert.equal(unsupportedTreatment.invoices.find((invoice) => invoice.invoice_id === id(10)).lines[0].supportedCashTreatment, false)
+    assert.notEqual(unsupportedTreatment.sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_IndirectTaxDecisions" set treatment_code='domestic_sale',
+      tax_point='2025-12-31' where id='${id(70)}';`)
+    const priorTaxPoint = JSON.parse(sql(`select ${call};`))
+    assert.equal(priorTaxPoint.lineTreatmentIssueCount, 1)
+    assert.equal(priorTaxPoint.invoices.find((invoice) => invoice.invoice_id === id(10)).lines[0].taxPointInCashTerm, false)
+    assert.notEqual(priorTaxPoint.sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_IndirectTaxDecisions" set tax_point='2026-01-10'
+      where id='${id(70)}';`)
+    assert.equal(JSON.parse(sql(`select ${call};`)).sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_Documents" set "FINDoc_DueDate"='2026-07-10'
+      where "FINDoc_ID"='${id(10)}';`)
+    const boundaryTerms = JSON.parse(sql(`select ${call};`))
+    assert.equal(boundaryTerms.dueTermIssueCount, 0)
+    assert.equal(boundaryTerms.invoices.find((invoice) => invoice.invoice_id === id(10)).due_within_six_months, true)
+    sql(`update public."FIN_Documents" set "FINDoc_DueDate"='2026-08-11'
+      where "FINDoc_ID"='${id(10)}';`)
+    const longTerms = JSON.parse(sql(`select ${call};`))
+    assert.equal(longTerms.dueTermIssueCount, 1)
+    assert.equal(longTerms.invoices.find((invoice) => invoice.invoice_id === id(10)).due_within_six_months, false)
+    assert.equal(longTerms.invoices.find((invoice) => invoice.invoice_id === id(10)).source_exception, true)
+    assert.notEqual(longTerms.sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_Documents" set "FINDoc_DueDate"=null
+      where "FINDoc_ID"='${id(10)}';`)
+    const missingTerms = JSON.parse(sql(`select ${call};`))
+    assert.equal(missingTerms.dueTermIssueCount, 1)
+    assert.equal(missingTerms.invoices.find((invoice) => invoice.invoice_id === id(10)).source_exception, true)
+    sql(`update public."FIN_Documents" set "FINDoc_DueDate"='2026-02-10'
+      where "FINDoc_ID"='${id(10)}';`)
+    assert.equal(JSON.parse(sql(`select ${call};`)).sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_Documents" set "FINDoc_GrossAmount"=10000000000000.0001,
+        "FINDoc_LocalGrossAmount"=10000000000000.0001 where "FINDoc_ID"='${id(10)}';
+      update public."FIN_DocumentLines" set "FINDocLine_LocalNetAmount"=8333333333333.3334,
+        "FINDocLine_LocalTaxAmount"=1666666666666.6667,
+        "FINDocLine_LocalGrossAmount"=10000000000000.0001 where "FINDocLine_ID"='${id(50)}';
+      update public."FIN_IndirectTaxEvidence" set signed_net_reporting=8333333333333.3334,
+        signed_tax_reporting=1666666666666.6667 where id='${id(60)}';`)
+    const precise = JSON.parse(sql(`select ${call};`))
+    const preciseInvoice = precise.invoices.find((invoice) => invoice.invoice_id === id(10))
+    assert.equal(preciseInvoice.gross_amount, "10000000000000.0001")
+    assert.equal(preciseInvoice.candidate_outstanding, "10000000000000.0001")
+    assert.equal(preciseInvoice.lines[0].netGbp, "8333333333333.3334")
+    assert.equal(preciseInvoice.lines[0].vatGbp, "1666666666666.6667")
+    assert.equal(preciseInvoice.lines[0].evidenceVatGbp, "1666666666666.6667")
+    assert.equal(preciseInvoice.lineSourceIssueCount, 0)
+    assert.notEqual(precise.sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_Documents" set "FINDoc_DocumentDate"='2026-04-01'
+      where "FINDoc_ID"='${id(12)}';`)
+    const precisePreview = previewUkVatCashExitImmediate(JSON.parse(sql(`select ${verifiedCall};`)))
+    assert.equal(precisePreview.calculationValid, true)
+    assert.equal(precisePreview.sourceBoxesGbp?.[1], "1666666666666.6667")
+    assert.equal(precisePreview.sourceBoxesGbp?.[6], "8333333333333.3334")
+    sql(`update public."FIN_Documents" set "FINDoc_DocumentDate"='2026-02-12'
+      where "FINDoc_ID"='${id(12)}';`)
+    sql(`update public."FIN_Documents" set "FINDoc_GrossAmount"=120,
+        "FINDoc_LocalGrossAmount"=120 where "FINDoc_ID"='${id(10)}';
+      update public."FIN_DocumentLines" set "FINDocLine_LocalNetAmount"=100,
+        "FINDocLine_LocalTaxAmount"=20,"FINDocLine_LocalGrossAmount"=120
+        where "FINDocLine_ID"='${id(50)}';
+      update public."FIN_IndirectTaxEvidence" set signed_net_reporting=100,
+        signed_tax_reporting=20 where id='${id(60)}';`)
+    assert.equal(JSON.parse(sql(`select ${call};`)).sourceDigest, result.sourceDigest)
+    sql(`update public."FIN_CashTransactions" set "FINCash_TransactionDate"='2026-03-02'
+      where "FINCash_ID"='${id(30)}';`)
+    const staleReview = JSON.parse(sql(`select ${call};`))
+    assert.equal(staleReview.cashSources[0].reviewFingerprintMatches, false)
+    assert.equal(staleReview.cashSourceIssueCount, 1)
+    sql(`update public."FIN_CashTransactions" set "FINCash_TransactionDate"='2026-03-01'
+      where "FINCash_ID"='${id(30)}';`)
+    assert.equal(JSON.parse(sql(`select ${call};`)).sourceDigest, result.sourceDigest)
+    sql(`insert into public."FIN_CashTransactions" values
+      ('${id(32)}','${id(2)}','posted','2026-03-05 12:00Z','GBP','customer_receipt',
+        '2026-03-05','2026-03-05','${id(37)}',1,20,20,0);
+      insert into public."FIN_CashAllocations" values
+      ('${id(42)}','${id(10)}','${id(32)}',null,'allocated',20,'2026-03-05 12:00Z');`)
+    const changed = JSON.parse(sql(`select ${call};`))
+    assert.notEqual(changed.sourceDigest, result.sourceDigest)
+    assert.equal(changed.allocationCount, 3)
+    assert.equal(changed.cashSourceIssueCount, 1)
+    assert.equal(changed.invoices.find((invoice) => invoice.invoice_id === id(10)).unsupported_allocation_count, 1)
+    assert.equal(changed.invoices.find((invoice) => invoice.invoice_id === id(10)).source_exception, true)
+    sql(`insert into public."FIN_Documents" values
+      ('${id(15)}','${id(2)}','credit_note','2026-03-15','posted',
+        '2026-03-15 12:00Z','${id(25)}','GBP',1,-12,-12,null);`)
+    const changedPrice = JSON.parse(sql(`select ${call};`))
+    assert.equal(changedPrice.postedPriceChangeCount, 1)
+    assert.equal(changedPrice.requiresPriceChangeReview, true)
+    assert.equal(changedPrice.priceChanges[0].document_id, id(15))
+    assert.equal(changedPrice.priceChanges[0].gross_amount, "-12")
+    assert.notEqual(changedPrice.sourceDigest, changed.sourceDigest)
+    sql(`insert into public."FIN_CashTransactions" values
+      ('${id(33)}','${id(2)}','posted','2026-03-16 12:00Z','GBP','customer_refund',
+        '2026-03-16','2026-03-16','${id(38)}',1,12,12,12);`)
+    const refund = JSON.parse(sql(`select ${call};`))
+    assert.equal(refund.cashSourceCount, 3)
+    assert.equal(refund.cashSourceIssueCount, 2)
+    assert.notEqual(refund.sourceDigest, changedPrice.sourceDigest)
+    sql(`insert into public."FIN_CashTransactions" values
+      ('${id(34)}','${id(2)}','posted','2026-04-02 12:00Z','GBP','customer_receipt',
+        '2026-04-02','2026-04-02','${id(39)}',1,10,10,10);
+      insert into public."FIN_IndirectTaxCashPaymentDateReviews"
+        (cash_id,legal_entity_id,revision,vat_payment_date) values
+        ('${id(34)}','${id(2)}',1,'2026-03-31');`)
+    const backdatedReview = JSON.parse(sql(`select ${call};`))
+    assert.equal(backdatedReview.cashSourceCount, 4)
+    assert.equal(backdatedReview.cashSourceIssueCount, 3)
+    assert.notEqual(backdatedReview.sourceDigest, refund.sourceDigest)
+    sql(`insert into public."FIN_CashTransactions" values
+      ('${id(35)}','${id(2)}','reversed','2026-03-20 12:00Z','GBP','customer_receipt',
+        '2026-03-20','2026-03-20','${id(43)}',1,10,10,10);`)
+    const reversed = JSON.parse(sql(`select ${call};`))
+    assert.equal(reversed.cashSourceCount, 5)
+    assert.equal(reversed.cashSourceIssueCount, 4)
+    assert.equal(reversed.cashSources.find((cash) => cash.cash_id === id(35)).native_posting_status, "reversed")
+    assert.notEqual(reversed.sourceDigest, backdatedReview.sourceDigest)
+    sql(`insert into public."FIN_IndirectTaxCreditLinks" values ('${id(2)}','${id(60)}');`)
+    const linked = JSON.parse(sql(`select ${call};`))
+    assert.notEqual(linked.sourceDigest, reversed.sourceDigest)
+    assert.equal(linked.invoices.find((invoice) => invoice.invoice_id === id(10)).lines[0].linkedCreditCount, 1)
+    assert.equal(linked.lineSourceIssueCount, 2)
+    sql(`insert into public."FIN_IndirectTaxPeriods"(id,legal_entity_id,scheme_code)
+      values ('${id(80)}','${id(2)}','standard');
+      insert into public."FIN_IndirectTaxReconciliations" values ('${id(61)}','${id(80)}');`)
+    const priorSignoff = JSON.parse(sql(`select ${call};`))
+    assert.notEqual(priorSignoff.sourceDigest, linked.sourceDigest)
+    assert.equal(priorSignoff.invoices.find((invoice) => invoice.invoice_id === id(11)).lines[0].priorInvoiceBasisSignoffCount, 1)
+    assert.equal(priorSignoff.lineSourceIssueCount, 3)
+    reject(`select public.multideck_uk_vat_cash_exit_invoice_inventory('${id(4)}','${id(2)}','2026-01-01','2026-03-31');`, /VAT access denied/)
+    reject(`select public.multideck_uk_vat_cash_exit_invoice_inventory('${id(1)}','${id(3)}','2026-01-01','2026-03-31');`, /VAT access denied/)
+    reject(`set role authenticated; select ${call};`, /permission denied/)
+    sql(`insert into public."FIN_CashTransactions"
+      select gen_random_uuid(),'${id(2)}','posted','2026-03-21 12:00Z',
+        'GBP','customer_refund','2026-03-21','2026-03-21','${id(44)}',1,1,1,1
+      from generate_series(1,996);`)
+    const cashBounded = JSON.parse(sql(`select ${call};`))
+    assert.equal(cashBounded.cashSourceCount, 1001)
+    assert.equal(cashBounded.truncated, true)
+    assert.deepEqual(cashBounded.cashSources, [])
+    assert.deepEqual(cashBounded.invoices, [])
+    sql(`insert into public."FIN_Documents"
+      select gen_random_uuid(),'${id(2)}','sl_invoice','2026-03-10','posted',
+        '2026-03-10 12:00Z','${id(24)}','GBP',1,120,120,'2026-04-10'
+      from generate_series(1,998);`)
+    const bounded = JSON.parse(sql(`select ${call};`))
+    assert.equal(bounded.invoiceCount, 1001)
+    assert.equal(bounded.truncated, true)
+    assert.deepEqual(bounded.invoices, [])
+  } finally {
+    if (started) spawnSync(join(bin, "pg_ctl"), ["-D", join(dir, "data"), "-m", "immediate", "-w", "stop"],
+      { encoding: "utf8", timeout: 30000 })
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

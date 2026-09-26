@@ -15,6 +15,9 @@ type ReportTab = "profit-loss" | "balance-sheet" | "trial-balance"
 
 const today = () => new Date().toISOString().slice(0, 10)
 const yearStart = () => `${new Date().getFullYear()}-01-01`
+const entitySessionKey = "multideck.finance.daily.entity"
+const rememberedEntity = () => { try { return window.sessionStorage.getItem(entitySessionKey) } catch { return null } }
+const rememberEntity = (id: string) => { try { window.sessionStorage.setItem(entitySessionKey, id) } catch { /* Keep the page selection usable. */ } }
 
 function ReportNotice({ danger = false, children }: { danger?: boolean; children: React.ReactNode }) {
   return <div role={danger ? "alert" : "status"} className={`grid grid-cols-[auto_1fr] gap-3 rounded-[var(--md-radius-lg)] p-4 text-[13px] leading-5 shadow-[var(--md-shadow-line)] ${danger ? "bg-[color-mix(in_srgb,var(--md-red),transparent_90%)] text-[var(--md-red)]" : "bg-[var(--md-surface-soft)] text-[var(--md-text)]"}`}><AlertCircle className="mt-0.5 size-4" strokeWidth={1.4} />{children}</div>
@@ -60,9 +63,11 @@ export function FinanceReportsPage({ navigate }: { navigate: (path: string) => v
     void getFinanceReportOptions().then((result) => {
       if (!active) return
       setOptions(result)
-      const firstEntityId = result.legalEntities[0]?.LegalEntity_ID ?? ""
-      setLegalEntityId(firstEntityId)
-      if (firstEntityId) void loadReport(firstEntityId, yearStart(), today())
+      const saved = rememberedEntity()
+      const selectedEntityId = result.legalEntities.some(entity => entity.LegalEntity_ID === saved)
+        ? saved || "" : result.legalEntities.length === 1 ? result.legalEntities[0].LegalEntity_ID : ""
+      setLegalEntityId(selectedEntityId)
+      if (selectedEntityId) void loadReport(selectedEntityId, yearStart(), today())
       else setLoading(false)
     }).catch((cause) => {
       if (!active) return
@@ -99,7 +104,7 @@ export function FinanceReportsPage({ navigate }: { navigate: (path: string) => v
       {error ? <ReportNotice danger>{t(error)}</ReportNotice> : null}
       <SettingsPanel title={t("Reporting period")} description={t("Reports use complete accounting months and the legal entity’s base currency.")}>
         <div className="grid gap-4 px-5 py-4 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_180px_auto] xl:items-end">
-          <div className="space-y-2"><label htmlFor="report-entity" className="text-[12px] font-medium text-[var(--md-text)]">{t("Legal entity")}</label><Select value={legalEntityId} onValueChange={value => { clearReport(); setLegalEntityId(value) }}><SelectTrigger id="report-entity"><SelectValue placeholder={t("Choose legal entity")} /></SelectTrigger><SelectContent>{(options?.legalEntities ?? []).map((entity) => <SelectItem key={entity.LegalEntity_ID} value={entity.LegalEntity_ID}>{entity.LegalEntity_Name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2"><label htmlFor="report-entity" className="text-[12px] font-medium text-[var(--md-text)]">{t("Legal entity")}</label><Select value={legalEntityId} onValueChange={value => { if (!(options?.legalEntities ?? []).some(entity => entity.LegalEntity_ID === value)) return; clearReport(); setLegalEntityId(value); rememberEntity(value) }}><SelectTrigger id="report-entity"><SelectValue placeholder={t("Choose legal entity")} /></SelectTrigger><SelectContent>{(options?.legalEntities ?? []).map((entity) => <SelectItem key={entity.LegalEntity_ID} value={entity.LegalEntity_ID}>{entity.LegalEntity_Name}</SelectItem>)}</SelectContent></Select></div>
           <div className="space-y-2"><label htmlFor="report-from" className="text-[12px] font-medium text-[var(--md-text)]">{t("From")}</label><Input id="report-from" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} data-i18n-skip dir="ltr" /></div>
           <div className="space-y-2"><label htmlFor="report-to" className="text-[12px] font-medium text-[var(--md-text)]">{t("To")}</label><Input id="report-to" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} data-i18n-skip dir="ltr" /></div>
           <Button type="button" disabled={loading || !legalEntityId} onClick={() => void loadReport(legalEntityId, fromDate, toDate)}>{loading ? <LoaderCircle className="animate-spin" /> : <RefreshCw className="size-4" />}{t("Run report")}</Button>

@@ -8,7 +8,7 @@ import { SettingsPanel } from "@/components/multideck/settings-components"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { useLanguage } from "@/i18n/language-provider"
-import { createNominalGroup, getNominalStructure, mapChargeNominals, saveChargeCatalogueItem, type ChargeApplicability, type ChargeCatalogueItem, type NominalGroup, type NominalStructure } from "@/lib/finance-ledger-api"
+import { chargeMappingCutoverAction, createNominalGroup, getChargeMappingCutovers, getNominalStructure, mapChargeNominals, saveChargeCatalogueItem, type ChargeApplicability, type ChargeCatalogueItem, type ChargeMappingCutover, type NominalGroup, type NominalStructure } from "@/lib/finance-ledger-api"
 import type { FinanceAdministration } from "@/lib/finance-subledger-api"
 
 type GroupDraft = { code: string; name: string; kind: "cost" | "revenue"; actualAccountId: string; accruedAccountId: string; controlAccountId: string }
@@ -29,6 +29,9 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
 }) {
   const { t } = useLanguage()
   const [data, setData] = useState<NominalStructure | null>(null)
+  const [cutovers, setCutovers] = useState<ChargeMappingCutover[]>([])
+  const [effectiveDate, setEffectiveDate] = useState("")
+  const [cutoverReview, setCutoverReview] = useState<{ action: "approve" | "activate"; id: string } | null>(null)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [loading, setLoading] = useState(true)
@@ -43,9 +46,9 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
     const version = ++request.current
     setLoading(true); setError("")
     try {
-      const result = await getNominalStructure(entityId)
+      const [result, existingCutovers] = await Promise.all([getNominalStructure(entityId), getChargeMappingCutovers(entityId)])
       if (version === request.current) {
-        setData(result); setChargeId(""); setCostId(""); setRevenueId("")
+        setData(result); setCutovers(existingCutovers); setChargeId(""); setCostId(""); setRevenueId("")
       }
     } catch (err) { if (version === request.current) setError(message(err)) }
     finally { if (version === request.current) setLoading(false) }
@@ -77,7 +80,18 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
     setBusy(true); setError(""); setNotice("")
     try {
       await mapChargeNominals(entityId, { chargeId, costGroupId: costId || null, revenueGroupId: revenueId || null, version: data?.chargeMappings.find(row => row.charge_id === chargeId)?.version ?? 0 })
-      setNotice(t("Charge mapping saved. Existing postings have not changed.")); await load()
+      setNotice(t("Charge mapping saved. It takes effect after a separately approved dated cutover.")); await load()
+    } catch (err) { setError(message(err)) }
+    finally { setBusy(false) }
+  }
+  const runCutover = async (action: "propose" | "approve" | "activate", id?: string) => {
+    if (!editable) return
+    setBusy(true); setError(""); setNotice("")
+    try {
+      await chargeMappingCutoverAction(entityId, action, action === "propose" ? { effectiveDate } : { id })
+      setCutoverReview(null)
+      setNotice(t(action === "propose" ? "Cutover plan saved for independent review." : action === "approve" ? "Cutover plan approved. Activation is still required." : "Charge mapping cutover activated for documents dated on or after the effective date."))
+      await load()
     } catch (err) { setError(message(err)) }
     finally { setBusy(false) }
   }
@@ -94,6 +108,8 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
   const controlAccounts = scopedAccounts.filter(account => account.FINNom_IsActive && account.FINNom_IsControlAccount && account.FINNom_ReportCategoryCode === (group?.kind === "revenue" ? "asset" : "liability"))
   const mapping = data?.chargeMappings.find(row => row.charge_id === chargeId)
   const mappingChanged = costId !== (mapping?.cost_group_id ?? "") || revenueId !== (mapping?.revenue_group_id ?? "")
+  const activeCutover = cutovers.find(item => item.status === "active")
+  const pendingCutover = cutovers.find(item => item.status === "approved" || item.status === "proposed")
   const editCharge = (row?: ChargeCatalogueItem) => {
     setError(""); setNotice("")
     setChargeDraft(row ? {
@@ -162,6 +178,13 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
           {[costId, revenueId].filter(Boolean).map(id => <p key={id} className="text-[12px] text-[var(--md-text)]">{groupById.get(id)?.name}: {t("Actual")} {memberName(id, "actual")} · {t("Accrued")} {memberName(id, "accrued")} · {t("BS control")} {accountName(groupById.get(id)?.control_account_id)}</p>)}
           <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-[12px] text-[var(--md-subtle)]">{t("Each required direction needs a mapping. Missing accounts must be resolved before posting.")}</p><Button disabled={!editable || !chargeId || (!costId && !revenueId) || !mappingChanged} onClick={() => void saveMapping()}>{t("Save charge mapping")}</Button></div>
         </section>
+        <section aria-labelledby="mapping-cutover-heading" className="space-y-3 border-t border-[var(--md-line)] pt-4">
+          <h3 id="mapping-cutover-heading" className="text-[14px] font-medium">{t("Charge mapping cutover")}</h3>
+          <p className="text-[12px] text-[var(--md-text)]">{t("A second finance operator reviews the saved relationships before activation. Charge-linked documents dated from the cutover must use the mapped actual nominal; their chosen account and mapping version remain on the posted document.")}</p>
+          {activeCutover ? <p role="status" className="text-[13px] text-[var(--md-green)]">{t("Latest active plan from")} <span data-i18n-skip>{activeCutover.effective_date}</span> · {Object.keys(activeCutover.mapping_snapshot).length} {t("charge mappings in that approved plan")}</p> : null}
+          {pendingCutover ? <div className="flex flex-wrap items-center justify-between gap-3 text-[13px]"><p>{t(pendingCutover.status === "proposed" ? "Awaiting independent approval" : "Approved, awaiting activation")} · <span data-i18n-skip>{pendingCutover.effective_date}</span> · {Object.keys(pendingCutover.mapping_snapshot).length} {t("mapped charges")}</p><Button variant="outline" disabled={!editable} onClick={() => setCutoverReview({ action: pendingCutover.status === "proposed" ? "approve" : "activate", id: pendingCutover.id })}>{t(pendingCutover.status === "proposed" ? "Review and approve" : "Review and activate")}</Button></div> : <div className="flex flex-wrap items-end gap-3"><label className="space-y-1 text-[12px]">{t("Effective accounting date")}<Input type="date" value={effectiveDate} disabled={!editable} onChange={event => setEffectiveDate(event.target.value)} /></label><Button variant="outline" disabled={!editable || !effectiveDate || !data.chargeMappings.length} onClick={() => void runCutover("propose")}>{t("Propose cutover")}</Button></div>}
+          <p className="text-[12px] text-[var(--md-subtle)]">{t("Each active plan applies from its effective date. Existing postings are never remapped. Later mapping edits need another approved cutover; activation stops if charge documents have already posted on or after its proposed date.")}</p>
+        </section>
       </> : null}
     </div>
     <Dialog open={group !== null} onOpenChange={open => { if (!open && !busy) setGroup(null) }}><DialogContent><DialogHeader><DialogTitle>{t("Add nominal group")}</DialogTitle><DialogDescription>{t("Choose saved accounts for one P&L category. Account membership is retained permanently to protect historical reporting.")}</DialogDescription></DialogHeader>
@@ -173,6 +196,10 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
         <p className="text-[12px] text-[var(--md-subtle)]">{t("Only active accounts with the correct P&L or balance-sheet classification are offered. Create missing accounts in the chart first.")}</p>
       </div> : null}
       <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setGroup(null)}>{t("Cancel")}</Button><Button disabled={!editable || !group || !Object.values(group).every(value => value.trim())} onClick={() => void saveGroup()}>{t("Save group")}</Button></DialogFooter>
+    </DialogContent></Dialog>
+    <Dialog open={cutoverReview !== null} onOpenChange={open => { if (!open && !busy) setCutoverReview(null) }}><DialogContent><DialogHeader><DialogTitle>{t(cutoverReview?.action === "activate" ? "Activate charge mapping cutover" : "Approve charge mapping cutover")}</DialogTitle><DialogDescription>{t("Review the effective date and saved mappings before continuing. The service rechecks the current chart and requires a second finance operator.")}</DialogDescription></DialogHeader>
+      {cutoverReview ? <p className="text-[13px]">{t("Effective from")} <span data-i18n-skip>{cutovers.find(row => row.id === cutoverReview.id)?.effective_date}</span> · {Object.keys(cutovers.find(row => row.id === cutoverReview.id)?.mapping_snapshot ?? {}).length} {t("mapped charges")}</p> : null}
+      <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setCutoverReview(null)}>{t("Cancel")}</Button><Button disabled={!editable || !cutoverReview} onClick={() => { if (cutoverReview) void runCutover(cutoverReview.action, cutoverReview.id) }}>{t(cutoverReview?.action === "activate" ? "Activate cutover" : "Approve plan")}</Button></DialogFooter>
     </DialogContent></Dialog>
     <Dialog open={chargeDraft !== null} onOpenChange={open => { if (!open && !busy) setChargeDraft(null) }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[760px]"><DialogHeader><DialogTitle>{t(chargeDraft?.id ? "Edit charge code" : "Add charge code")}</DialogTitle><DialogDescription>{t("Select the quote and booking combinations where this charge can be used. Existing codes remain available everywhere until their scope is saved.")}</DialogDescription></DialogHeader>
       {chargeDraft ? <div className="space-y-4">

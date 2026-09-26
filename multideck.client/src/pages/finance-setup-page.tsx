@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { useLanguage } from "@/i18n/language-provider"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import {
   approveFinanceConfigurationRun,
   createFinanceConfigurationRun,
@@ -70,6 +71,13 @@ import { DataTable } from "@/components/multideck/data-table"
 import { FinanceNominalStructurePanel } from "./finance-nominal-structure-panel"
 import { FinanceMigrationPanel } from "./finance-migration-panel"
 import { getFinanceCash, type FinanceCashTransaction } from "@/lib/finance-subledger-api"
+import {
+  getFinanceApprovalPolicies,
+  saveFinanceApprovalPolicy,
+  type FinanceApprovalMode,
+  type FinanceApprovalPolicy,
+  type FinanceApprovalWorkflow,
+} from "@/lib/finance-approval-api"
 import erpNextLogo from "@/assets/integrations/erpnext.svg"
 import xeroLogo from "@/assets/integrations/xero.svg"
 import quickBooksLogo from "@/assets/integrations/quickbooks.svg"
@@ -489,9 +497,9 @@ function buildDraft(
   setup: FinanceSetup,
   legalEntityId: string,
 ): FinanceAdministrationDraft {
-  const entity =
-    setup.legalEntities.find((item) => item.LegalEntity_ID === legalEntityId) ??
-    setup.legalEntities[0]
+  const entity = setup.legalEntities.find(
+    (item) => item.LegalEntity_ID === legalEntityId,
+  )
   const id = entity?.LegalEntity_ID ?? ""
   const administration = setup.administration
   const settings = administration.settings.find(
@@ -523,9 +531,11 @@ function buildDraft(
   const existingNominals = administration.nominalAccounts.filter(
     (item) => item.FINNom_LegalEntityID === id,
   )
+  // Start a new native ledger with the document/cash control codes. Operators can
+  // add the actual/accrued chart for WIP after reviewing the base chart.
   const preferredTemplate = administration.chartTemplateAccounts.some(
-    (item) => item.FINChartTemplate?.FINChartTemplate_Code === "freight-accrual-v1",
-  ) ? "freight-accrual-v1" : "freight-forwarder-v1"
+    (item) => item.FINChartTemplate?.FINChartTemplate_Code === "freight-forwarder-v1",
+  ) ? "freight-forwarder-v1" : "generic-v1"
   const templateNominals = administration.chartTemplateAccounts.filter(
     (item) => item.FINChartTemplate?.FINChartTemplate_Code === preferredTemplate,
   )
@@ -973,9 +983,11 @@ function completeness(
 export function FinanceSetupPage({
   navigate,
   initialTab = "overview",
+  currentUser,
 }: {
   navigate: (path: string) => void
   initialTab?: FinanceSetupTab
+  currentUser?: AuthUserSummary | null
 }) {
   const { t } = useLanguage()
   const [setup, setSetup] = useState<FinanceSetup | null>(null)
@@ -1015,17 +1027,23 @@ export function FinanceSetupPage({
     try {
       const result = await getFinanceSetup()
       setSetup(result)
-      const entityId =
-        preferredEntityId &&
-        result.legalEntities.some(
-          (item) => item.LegalEntity_ID === preferredEntityId,
-        )
-          ? preferredEntityId
-          : result.legalEntities[0]?.LegalEntity_ID || ""
+      let rememberedEntityId = ""
+      try {
+        rememberedEntityId = sessionStorage.getItem("multideck.finance.daily.entity") || ""
+      } catch { /* Browser storage may be unavailable. */ }
+      const validEntityId = (id: string) =>
+        result.legalEntities.some((item) => item.LegalEntity_ID === id)
+      const entityId = validEntityId(preferredEntityId || "")
+        ? preferredEntityId || ""
+        : validEntityId(rememberedEntityId)
+          ? rememberedEntityId
+          : result.legalEntities.length === 1
+            ? result.legalEntities[0].LegalEntity_ID
+            : ""
       setSelectedEntityId(entityId)
-      const nextDraft = buildDraft(result, entityId)
+      const nextDraft = entityId ? buildDraft(result, entityId) : null
       setDraft(nextDraft)
-      baseline.current = JSON.stringify(nextDraft)
+      baseline.current = nextDraft ? JSON.stringify(nextDraft) : ""
       const entity = result.legalEntities.find(
         (item) => item.LegalEntity_ID === entityId,
       )
@@ -1036,7 +1054,7 @@ export function FinanceSetupPage({
           (item) => item.FINChartTemplate?.FINChartTemplate_Code === "freight-accrual-v1",
         ) ? "freight-accrual-v1" : current.chartTemplateCode,
         countryCode:
-          entity?.LegalEntity_CountryCode || nextDraft.organisation.countryCode,
+          entity?.LegalEntity_CountryCode || nextDraft?.organisation.countryCode || "GB",
         taxRegistrationNo: entity?.LegalEntity_VATNumber || "",
         externalCompany: entity?.preferredExternalCompany || "",
       }))
@@ -1166,11 +1184,12 @@ export function FinanceSetupPage({
         : current,
     )
   const selectEntity = (legalEntityId: string) => {
-    if (!setup) return
+    if (!setup?.legalEntities.some((item) => item.LegalEntity_ID === legalEntityId)) return
     const nextDraft = buildDraft(setup, legalEntityId)
     setSelectedEntityId(legalEntityId)
     setDraft(nextDraft)
     baseline.current = JSON.stringify(nextDraft)
+    try { sessionStorage.setItem("multideck.finance.daily.entity", legalEntityId) } catch { /* Browser storage may be unavailable. */ }
     const entity = setup.legalEntities.find(
       (item) => item.LegalEntity_ID === legalEntityId,
     )
@@ -1324,6 +1343,17 @@ export function FinanceSetupPage({
         aria-label={t("Loading finance settings")}
       >
         <DotGridLoader />
+      </div>
+    )
+  if (setup && setup.legalEntities.length > 1 && !selectedEntityId)
+    return (
+      <div className="@container/finance min-w-0">
+        <SettingsPageHeader title={t(bankAccountsSurface ? "Bank accounts" : "Finance administration")} icon={Landmark} />
+        <div className="mt-3 max-w-xl rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <SelectField id="finance-admin-entity" label={t("Legal entity")} value="" onChange={selectEntity}
+            options={setup.legalEntities.map((item) => ({ value: item.LegalEntity_ID, label: item.LegalEntity_Name }))} />
+          <p className="mt-3 text-sm text-[var(--md-subtle)]">{t("Choose a legal entity to view and change its finance settings.")}</p>
+        </div>
       </div>
     )
   if (!setup || !draft)
@@ -1527,7 +1557,7 @@ export function FinanceSetupPage({
             t={t}
           />
           <FinanceNominalStructurePanel key={selectedEntityId} entityId={selectedEntityId} accounts={setup.administration.nominalAccounts} chartDirty={Boolean(dirty)} />
-          <FinanceMigrationPanel key={`migration-${selectedEntityId}`} entityId={selectedEntityId} baseCurrency={selectedEntity?.LegalEntity_BaseCurrencyCodeSnapshot || ""} chartDirty={Boolean(dirty)} />
+          <FinanceMigrationPanel key={`migration-${selectedEntityId}`} entityId={selectedEntityId} baseCurrency={selectedEntity?.LegalEntity_BaseCurrencyCodeSnapshot || ""} chartDirty={Boolean(dirty)} canDeliverOpeningMirror={hasPermission(currentUser, "Finance.Integration.Manage")} canPrepareFX={hasPermission(currentUser, "Finance.Management.Prepare")} canPostFX={hasPermission(currentUser, "Finance.Management.Post")} />
           </>
         ) : null}
         {tab === "tax" ? (
@@ -1574,18 +1604,19 @@ export function FinanceSetupPage({
           />
         ) : null}
         {tab === "controls" ? (
+          <><ApprovalPolicyPanel key={selectedEntityId} entityId={selectedEntityId} baseCurrency={draft.organisation.baseCurrencyCode} t={t} />
           <ControlsTab
             setup={setup}
             draft={draft}
             selectedEntityId={selectedEntityId}
             setControls={setControls}
             t={t}
-          />
+          /></>
         ) : null}
 
         {tab === "controls" && <FinancePanel
           title={t("Bank statement imports")}
-          description={t("Bank-specific import profiles for this legal entity only. Review is always required; importing must not create ledger postings.")}
+          description={t("Bank-specific import profiles for this legal entity. Exact matches may reconcile under policy; importing never creates ledger postings.")}
           action={<Button type="button" variant="outline" onClick={() => setControls({ bankStatementImportProfiles: JSON.stringify([...statementProfiles, { id: crypto.randomUUID(), name: "New bank format", bankId: "", format: "excel", dateFormat: "DD/MM/YYYY", headerRow: "1", dateColumn: "Date", descriptionColumn: "Description", debitColumn: "Money out", creditColumn: "Money in", referenceColumn: "Reference", balanceColumn: "Balance", pdfNotes: "" }]) })}>{t("Add bank format")}</Button>}
         >
           <div className="divide-y divide-[var(--md-line)]">
@@ -1603,7 +1634,7 @@ export function FinanceSetupPage({
                 </>}
               </div>
               {profile.format === "pdf" && <div className="space-y-1"><FieldLabel htmlFor={`statement-pdf-${profile.id}`}>{t("PDF layout notes")}</FieldLabel><textarea id={`statement-pdf-${profile.id}`} className="min-h-24 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] p-3 text-[13px]" value={profile.pdfNotes || ""} onChange={event => updateStatementProfile(profile.id, { pdfNotes: event.target.value })} placeholder={t("Describe date, transaction, money in/out and balance columns, repeated page headers and debit/credit markers.")} /></div>}
-              <p className="text-[12px] text-[var(--md-subtle)]">{t("Configuration only. Statement upload, extraction and reconciliation are not yet available. These profiles do not enable automatic posting.")}</p>
+              <p className="text-[12px] text-[var(--md-subtle)]">{t("Use Bank reconciliation to import and review statements. Matching does not create ledger postings.")}</p>
             </div>)}
           </div>
         </FinancePanel>}
@@ -3125,7 +3156,7 @@ function TaxTab({
       <FinancePanel
         title={t("Tax treatments")}
         description={t(
-          "Operators can select approved treatments only; they cannot enter rates or accounts system templates.",
+          "Operators can select approved treatments only; they cannot enter rates or accounts system templates. For UK services supplied outside the UK, use the separate Box 6 treatment after reviewing the place of supply.",
         )}
         action={
           <Button
@@ -3191,6 +3222,26 @@ function TaxTab({
                     })
                   }
                   ltr
+                />
+                <SelectField
+                  id={`tax-category-${rowKey(row)}`}
+                  label={t("Treatment")}
+                  value={text(row.treatmentCategoryCode, "domestic_standard")}
+                  onChange={(treatmentCategoryCode) =>
+                    patchRow("taxCodes", row, treatmentCategoryCode === "outside_uk_service_box6"
+                      ? { treatmentCategoryCode, ratePercent: 0, transactionTypeCode: "sales", isRecoverable: false }
+                      : { treatmentCategoryCode })
+                  }
+                  options={[
+                    ...universalTaxTreatments.map(([, name, category]) => ({ value: category, label: t(name) })),
+                    ...(text(row.countryCode, draft.organisation.countryCode) === "GB"
+                      ? [{ value: "outside_uk_service_box6", label: t("Service supplied outside the UK · Box 6") }]
+                      : []),
+                    ...(!universalTaxTreatments.some(([, , category]) => category === text(row.treatmentCategoryCode))
+                      && text(row.treatmentCategoryCode) !== "outside_uk_service_box6"
+                      ? [{ value: text(row.treatmentCategoryCode), label: text(row.treatmentCategoryCode) }]
+                      : []),
+                  ]}
                 />
                 <SelectField
                   id={`tax-transaction-${rowKey(row)}`}
@@ -4205,6 +4256,109 @@ function ComplianceTab({
   )
 }
 
+const approvalWorkflows: Array<{ code: FinanceApprovalWorkflow; label: string }> = [
+  { code: "document", label: "Invoices and credit notes" },
+  { code: "cash", label: "Receipts and payments" },
+  { code: "payment_run", label: "Supplier payment runs" },
+  { code: "purchase_order", label: "Supplier purchase orders" },
+  { code: "supplier_match", label: "Supplier invoice matching" },
+  { code: "charge_correction", label: "Charge corrections" },
+  { code: "charge_case_resolution", label: "Charge case resolution" },
+  { code: "recognition_mandate", label: "Cost recognition mandate" },
+  { code: "vat_control", label: "VAT control signoff" },
+  { code: "period_close", label: "Accounting period close" },
+  { code: "opening_balance", label: "Opening balances" },
+  { code: "opening_fx", label: "Opening FX settlement" },
+  { code: "bank_match", label: "Bank statement matching" },
+]
+
+function ApprovalPolicyPanel({ entityId, baseCurrency, t }: { entityId: string; baseCurrency: string; t: (value: string) => string }) {
+  const [policies, setPolicies] = useState<FinanceApprovalPolicy[]>([])
+  const [workflow, setWorkflow] = useState<FinanceApprovalWorkflow>("document")
+  const [mode, setMode] = useState<FinanceApprovalMode>("always_review")
+  const [amount, setAmount] = useState("")
+  const [variance, setVariance] = useState("")
+  const [reason, setReason] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const policy = policies.find((item) => item.workflow === workflow)
+  const boundedAmount = /^\d+(?:\.\d{1,4})?$/.test(amount) && Number(amount) < 1e12
+  const boundedVariance = !variance.trim() || (/^\d+(?:\.\d{1,4})?$/.test(variance) && Number(variance) <= 100)
+
+  useEffect(() => {
+    let current = true
+    getFinanceApprovalPolicies(entityId).then(({ policies: next }) => {
+      if (current) { setPolicies(next); setError(null); setLoading(false) }
+    }).catch((cause) => {
+      if (current) { setError(cause instanceof Error ? cause.message : "Approval policies could not be loaded."); setLoading(false) }
+    })
+    return () => { current = false }
+  }, [entityId])
+  useEffect(() => {
+    setMode(policy?.mode || "always_review")
+    setAmount(policy?.maxAutoAmount == null ? "" : String(policy.maxAutoAmount))
+    setVariance(policy?.maxVariancePercent == null ? "" : String(policy.maxVariancePercent))
+    setReason("")
+  }, [workflow, policy?.policyId])
+
+  const save = async () => {
+    if (busy || !reason.trim() || (mode !== "always_review" && (!boundedAmount || !boundedVariance))) return
+    setBusy(true)
+    setError(null)
+    try {
+      const saved = await saveFinanceApprovalPolicy(entityId, workflow, {
+        mode,
+        maxAutoAmount: mode === "always_review" ? null : Number(amount),
+        maxVariancePercent: mode === "always_review" || !variance.trim() ? null : Number(variance),
+        reason: reason.trim(),
+      })
+      setPolicies((current) => [...current.filter((item) => item.workflow !== workflow), saved])
+      setReason("")
+      toast.success(t("Approval policy saved."))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Approval policy could not be saved.")
+    } finally { setBusy(false) }
+  }
+  return <FinancePanel title={t("Workflow approval policies")} description={t("Choose when each legal entity workflow needs a person to review it. Every automatic decision is bounded and audited.")}>
+    <div className="space-y-4 px-4 py-4">
+    {error ? <Notice tone="danger">{t(error)}</Notice> : null}
+    {loading ? <p className="text-sm text-[var(--md-subtle)]" role="status">{t("Loading approval policies…")}</p> : <div className="grid gap-4 @min-[760px]/finance:grid-cols-2">
+      <SelectField id="approval-workflow" label={t("Workflow")} value={workflow} onChange={(value) => setWorkflow(value as FinanceApprovalWorkflow)}
+        options={approvalWorkflows.map((item) => ({ value: item.code, label: t(item.label) }))} />
+      <SelectField id="approval-mode" label={t("Approval mode")} value={mode} onChange={(value) => setMode(value as FinanceApprovalMode)} options={[
+        { value: "always_review", label: t("Always review") },
+        { value: "exception_review", label: t("Review exceptions") },
+        { value: "automatic", label: t("Automatic within limits") },
+      ]} />
+      <p className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t(mode === "always_review"
+        ? "Every submitted item waits for a person to review it."
+        : mode === "exception_review"
+          ? "Source-verified items flow through within limits; advisory exceptions wait for review."
+          : "Items flow through within limits unless a hard control requires review.")}</p>
+      {(["opening_balance", "opening_fx", "recognition_mandate", "vat_control", "period_close"] as FinanceApprovalWorkflow[]).includes(workflow) ?
+        <p className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t("This control still needs an explicit operator action. An eligible policy can remove the second review step.")}</p> : null}
+      {workflow === "bank_match" ?
+        <p className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t("Only unique exact bank matches can complete automatically. Statement verification remains a separate action.")}</p> : null}
+      {mode !== "always_review" ? <>
+        <div className="min-w-0 space-y-1"><FieldLabel htmlFor="approval-amount">{t("Maximum automatic amount")} · {baseCurrency}</FieldLabel>
+          <Input id="approval-amount" type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} data-i18n-skip dir="ltr" />
+          <p className="text-xs text-[var(--md-subtle)]">{t("Amounts above this limit require review.")}</p></div>
+        <div className="min-w-0 space-y-1"><FieldLabel htmlFor="approval-variance">{t("Maximum variance") } · % · {t("optional")}</FieldLabel>
+          <Input id="approval-variance" type="number" min="0" max="100" step="0.01" value={variance} onChange={(event) => setVariance(event.target.value)} data-i18n-skip dir="ltr" />
+          <p className="text-xs text-[var(--md-subtle)]">{t("If this workflow has no verified comparison amount, it will require review.")}</p></div>
+      </> : null}
+      <div className="min-w-0 space-y-1 @min-[760px]/finance:col-span-2"><FieldLabel htmlFor="approval-reason">{t("Reason for change")}</FieldLabel>
+        <Input id="approval-reason" value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder={t("Explain this approval policy change")} /></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 @min-[760px]/finance:col-span-2">
+        <p className="text-xs text-[var(--md-subtle)]">{policy ? `${t("Revision")} ${policy.revision} · ${t("Last reason")}: ${policy.reason}` : t("Default: always review")}</p>
+        <Button type="button" disabled={busy || !reason.trim() || (mode !== "always_review" && (!boundedAmount || !boundedVariance))} onClick={() => void save()}>{t(busy ? "Saving…" : "Save approval policy")}</Button>
+      </div>
+    </div>}
+    </div>
+  </FinancePanel>
+}
+
 function ControlsTab({
   setup,
   draft,
@@ -4270,7 +4424,7 @@ function ControlsTab({
           <FinancePanel
             title={t("Drafts & automation")}
             description={t(
-              "Operations prepare drafts; Finance approves and posts.",
+              "Operations prepare drafts; the legal entity policy controls approval and posting.",
             )}
           >
             <FinanceToggleRow
@@ -4293,29 +4447,9 @@ function ControlsTab({
                 setControls({ autoCreatePurchaseAccruals })
               }
             />
-            <FinanceToggleRow
-              title={t("Auto-post low-risk items")}
-              description={t(
-                "Keep disabled until the risk policy and approval limits have been tested.",
-              )}
-              checked={bool(draft.controls.autoPostLowRiskItems)}
-              onCheckedChange={(autoPostLowRiskItems) =>
-                setControls({ autoPostLowRiskItems })
-              }
-            />
           </FinancePanel>
         </div>
         <FinancePanel title={t("Posting & approval controls")}>
-          <FinanceToggleRow
-            title={t("Require finance review")}
-            description={t(
-              "Approve invoices, credits, receipts and payments before posting or sending to external accounting.",
-            )}
-            checked={bool(draft.controls.requireFinanceReview, true)}
-            onCheckedChange={(requireFinanceReview) =>
-              setControls({ requireFinanceReview })
-            }
-          />
           <FinanceToggleRow
             title={t("Block locked-period posting")}
             description={t(

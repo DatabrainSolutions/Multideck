@@ -64,6 +64,7 @@ const staticLeafLabels: Record<string, string> = {
   "/finance/banks": "Bank accounts",
   "/finance/ledger": "Nominal accounts",
   "/finance/tax": "Tax & VAT",
+  "/finance/vat": "UK VAT review",
   "/finance/documents": "Document numbering & terms",
   "/finance/mappings": "Accounts system mappings",
   "/finance/compliance": "Compliance obligations",

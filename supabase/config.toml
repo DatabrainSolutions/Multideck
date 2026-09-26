@@ -482,6 +482,13 @@ verify_jwt = true
 [functions.finance-subledger]
 verify_jwt = true
 
+[functions.finance-operations]
+verify_jwt = true
+
+# HMRC redirects carry a one-use OAuth state; start/status authenticate inside.
+[functions.hmrc-vat-oauth]
+verify_jwt = false
+
 [functions.finance-accruals]
 verify_jwt = true
 
@@ -621,6 +628,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.finance-ledger]
+verify_jwt = false
+
+[functions.finance-reconciliation]
 verify_jwt = false
 
 # Validates the bearer with Supabase Auth and the active mileage actor in the handler.

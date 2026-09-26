@@ -55,6 +55,16 @@ type IntakeItem = {
 
 const maxFiles = 25
 const today = () => new Date().toISOString().slice(0, 10)
+const financeEntitySessionKey = "multideck.finance.daily.entity"
+function preferredEntityId(options: FinanceDraftOptions) {
+  let saved: string | null = null
+  try { saved = window.sessionStorage.getItem(financeEntitySessionKey) } catch { /* Browser storage may be unavailable. */ }
+  return options.legalEntities.find((entity) => entity.LegalEntity_ID === saved)?.LegalEntity_ID
+    ?? (options.legalEntities.length === 1 ? options.legalEntities[0].LegalEntity_ID : "")
+}
+function rememberEntity(id: string) {
+  try { window.sessionStorage.setItem(financeEntitySessionKey, id) } catch { /* Selection still applies to this batch. */ }
+}
 
 function normal(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "")
@@ -69,10 +79,9 @@ function exactTaxTreatment(options: FinanceDraftOptions, legalEntityId: string, 
   return matches.length === 1 ? matches[0] : null
 }
 
-function fromExtraction(fileName: string, extraction: FinancePurchaseExtractionResult, options: FinanceDraftOptions): IntakeItem {
-  const legalEntity = options.legalEntities[0]
+function fromExtraction(fileName: string, extraction: FinancePurchaseExtractionResult, options: FinanceDraftOptions, legalEntityId: string): IntakeItem {
+  const legalEntity = options.legalEntities.find((entity) => entity.LegalEntity_ID === legalEntityId)
   const supplierMatches = options.parties.filter((party) => normal(party.Org_Name) === normal(extraction.supplierName))
-  const legalEntityId = legalEntity?.LegalEntity_ID ?? ""
   const lines = extraction.lines.map((line) => {
     const tax = exactTaxTreatment(options, legalEntityId, line.taxRate)
     return {
@@ -108,12 +117,12 @@ function fromExtraction(fileName: string, extraction: FinancePurchaseExtractionR
   }
 }
 
-function blockers(item: IntakeItem, options: FinanceDraftOptions | null, duplicates: Set<string>) {
+function blockers(item: IntakeItem, options: FinanceDraftOptions | null, legalEntityId: string, duplicates: Set<string>) {
   const issues: string[] = []
   if (!item.extraction || !options) return ["Extraction is incomplete"]
   if (!item.partyOrgId) issues.push("Choose the supplier")
   if (!item.type) issues.push("Choose invoice or credit note")
-  if (options.legalEntities.length !== 1) issues.push("Tenant company setup requires attention")
+  if (!options.legalEntities.some((entity) => entity.LegalEntity_ID === legalEntityId)) issues.push("Choose a legal entity")
   if (!item.documentDate) issues.push("Check the document date")
   if (!/^[A-Z]{3}$/.test(item.currencyCode)) issues.push("Check the currency")
   if (!(Number(item.exchangeRate) > 0)) issues.push("Enter the exchange rate")
@@ -129,6 +138,7 @@ function blockers(item: IntakeItem, options: FinanceDraftOptions | null, duplica
 export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
   const { t } = useLanguage()
   const [options, setOptions] = useState<FinanceDraftOptions | null>(null)
+  const [entityId, setEntityId] = useState("")
   const [items, setItems] = useState<IntakeItem[]>([])
   const [activeId, setActiveId] = useState("")
   const [dragging, setDragging] = useState(false)
@@ -140,7 +150,7 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
 
   useEffect(() => {
     getFinanceDraftOptions("payables")
-      .then(setOptions)
+      .then((found) => { setOptions(found); setEntityId((current) => found.legalEntities.some((entity) => entity.LegalEntity_ID === current) ? current : preferredEntityId(found)) })
       .catch((error) => toast.error(error instanceof Error ? error.message : t("Purchase intake could not be loaded.")))
       .finally(() => setLoading(false))
   }, [t])
@@ -157,7 +167,10 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
   }, [items])
 
   const addFiles = async (files: File[]) => {
-    if (!options) return
+    if (!options || !options.legalEntities.some((entity) => entity.LegalEntity_ID === entityId)) {
+      toast.error(t("Choose a legal entity before importing supplier documents."))
+      return
+    }
     const available = Math.max(0, maxFiles - items.length)
     const selected = files.slice(0, available)
     if (files.length > selected.length) toast.error(t("A batch can contain up to 25 documents."))
@@ -179,7 +192,7 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
             extractionId: next.id,
             onStage: (stage) => setItems((current) => current.map((item) => item.id === next.id ? { ...item, stage } : item)),
           })
-          const ready = fromExtraction(next.file.name, extraction, options)
+          const ready = fromExtraction(next.file.name, extraction, options, entityId)
           setItems((current) => current.map((item) => item.id === next.id ? ready : item))
         } catch (error) {
           const message = error instanceof CommercialInvoiceExtractionError ? error.message : t("This supplier document could not be read.")
@@ -192,8 +205,8 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
 
   const update = (id: string, values: Partial<IntakeItem>) => setItems((current) => current.map((item) => item.id === id ? { ...item, ...values } : item))
   const active = items.find((item) => item.id === activeId) ?? null
-  const activeBlockers = active ? blockers(active, options, duplicateIds) : []
-  const readySelected = items.filter((item) => item.selected && blockers(item, options, duplicateIds).length === 0 && !["draft", "review", "posted"].includes(item.status))
+  const activeBlockers = active ? blockers(active, options, entityId, duplicateIds) : []
+  const readySelected = items.filter((item) => item.selected && blockers(item, options, entityId, duplicateIds).length === 0 && !["draft", "review", "posted"].includes(item.status))
   const canApprove = hasPermission(currentUser, "Finance.ReviewAndPost")
 
   const processSelected = async (mode: "draft" | "review" | "post") => {
@@ -205,6 +218,7 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
       try {
         const document = await createFinanceDraft({
           type: item.type as FinanceDocumentType,
+          legalEntityId: entityId,
           partyOrgId: item.partyOrgId,
           documentDate: item.documentDate,
           dueDate: item.dueDate || null,
@@ -230,12 +244,12 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
   }
 
   const taxOptions = useMemo<FinanceDocumentTaxOption[]>(() => (options?.taxTreatments ?? [])
-    .filter((tax) => tax.FINLocTaxTreatment_LegalEntityID === options?.legalEntities[0]?.LegalEntity_ID && ["purchase", "both"].includes(tax.FINLocTaxTreatment_TransactionType))
-    .map((tax) => ({ id: tax.FINLocTaxTreatment_ID, code: tax.FINLocTaxTreatment_Code, name: tax.FINLocTaxTreatment_Name, ratePercent: Number(tax.FINLocTaxTreatment_RatePercent), approved: true })), [options])
+    .filter((tax) => tax.FINLocTaxTreatment_LegalEntityID === entityId && ["purchase", "both"].includes(tax.FINLocTaxTreatment_TransactionType))
+    .map((tax) => ({ id: tax.FINLocTaxTreatment_ID, code: tax.FINLocTaxTreatment_Code, name: tax.FINLocTaxTreatment_Name, ratePercent: Number(tax.FINLocTaxTreatment_RatePercent), approved: true })), [options, entityId])
 
   const counts = {
     extracting: items.filter((item) => item.status === "extracting").length,
-    ready: items.filter((item) => blockers(item, options, duplicateIds).length === 0 && !["draft", "review", "posted"].includes(item.status)).length,
+    ready: items.filter((item) => blockers(item, options, entityId, duplicateIds).length === 0 && !["draft", "review", "posted"].includes(item.status)).length,
     attention: items.filter((item) => item.status === "needs_review" || item.status === "failed").length,
     processed: items.filter((item) => ["draft", "review", "posted"].includes(item.status)).length,
   }
@@ -254,6 +268,8 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
         { label: t("Needs review"), value: String(counts.attention), detail: t("Mapping or totals attention"), tone: "amber", icon: AlertCircle },
       ]} /></div>
 
+      <div className="max-w-sm space-y-2"><label htmlFor="finance-intake-entity" className="block text-[12px] font-medium text-[var(--md-text)]">{t("Legal entity")}</label><Select value={entityId} disabled={loading || items.length > 0} onValueChange={(value) => { if (!options?.legalEntities.some((entity) => entity.LegalEntity_ID === value)) return; setEntityId(value); rememberEntity(value) }}><SelectTrigger id="finance-intake-entity"><SelectValue placeholder={t("Choose legal entity")} /></SelectTrigger><SelectContent>{options?.legalEntities.map((entity) => <SelectItem key={entity.LegalEntity_ID} value={entity.LegalEntity_ID}>{entity.LegalEntity_Name}</SelectItem>)}</SelectContent></Select>{items.length ? <p className="text-[12px] text-[var(--md-subtle)]">{t("Finish or remove this batch before changing legal entity.")}</p> : null}</div>
+
       <input ref={inputRef} type="file" multiple accept={commercialInvoiceFileAccept} className="sr-only" onChange={(event) => { void addFiles([...event.target.files ?? []]); event.target.value = "" }} />
       <div role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click() }} onDragEnter={(event) => { event.preventDefault(); setDragging(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={drop} className={cn("grid min-h-32 cursor-pointer place-items-center rounded-[var(--md-radius-xl)] border border-dashed px-6 py-7 text-center transition-colors", dragging ? "border-[var(--md-accent)] bg-[var(--md-surface-tint)]" : "border-[var(--md-line-strong)] bg-[var(--md-surface)] hover:bg-[var(--md-surface-soft)]") }>
         <div><Upload className="mx-auto size-6 text-[var(--md-accent)]" /><p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t("Drop supplier invoices or credit notes here")}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("PDF, Excel, CSV, Word or image · up to 25 files · 10 MB each")}</p></div>
@@ -263,7 +279,7 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
         <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
           <div className="flex items-center justify-between border-b border-[var(--md-line)] px-4 py-3"><div><h2 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Batch queue")}</h2><p className="mt-0.5 text-[12px] text-[var(--md-subtle)]">{t("Select a document to check its extracted data.")}</p></div><Button type="button" size="sm" variant="ghost" onClick={() => setItems((current) => current.map((item) => ({ ...item, selected: true })))}>{t("Select all")}</Button></div>
           <div className="max-h-[660px] overflow-y-auto divide-y divide-[var(--md-line)]">{items.map((item) => {
-            const issues = blockers(item, options, duplicateIds)
+            const issues = blockers(item, options, entityId, duplicateIds)
             const visibleStatus = item.status === "needs_review" && !issues.length ? "ready" : item.status
             return <button key={item.id} type="button" onClick={() => setActiveId(item.id)} className={cn("flex w-full items-start gap-3 px-4 py-3 text-start hover:bg-[var(--md-surface-soft)]", item.id === activeId && "bg-[var(--md-surface-tint)]")}>
               <input aria-label={t("Select document")} type="checkbox" checked={item.selected} onClick={(event) => event.stopPropagation()} onChange={(event) => update(item.id, { selected: event.target.checked })} className="mt-1" />
