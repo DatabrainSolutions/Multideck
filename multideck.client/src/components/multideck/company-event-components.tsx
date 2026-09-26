@@ -5,6 +5,7 @@ import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { staggerRamp } from "@/lib/motion"
 import TearTicket from "@/components/multideck/tear-ticket"
+import { RefineFrame, type RefineFrameStatus } from "@/components/multideck/refine-frame"
 import { InlineNotice } from "@/components/multideck/inline-notice"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -116,6 +117,8 @@ export type EventTicketProps = {
   timezone: string
   location: string
   imageUrl: string | null
+  imageFrameStatus?: RefineFrameStatus | null
+  onRetryImage?: () => void
   rsvp: EventTicketRsvp
   /** Draft, cancelled or finished: the RSVP button is replaced by this label. */
   closedLabel?: string | null
@@ -134,7 +137,7 @@ export type EventTicketProps = {
  * gesture. The body opens the event; attendance is only ever the explicit RSVP
  * button in the stub.
  */
-export function EventTicket({ title, startsAt, endsAt, timezone, location, imageUrl, rsvp, closedLabel, goingCount = 0, onOpen, onRsvp, muted = false, className }: EventTicketProps) {
+export function EventTicket({ title, startsAt, endsAt, timezone, location, imageUrl, imageFrameStatus = null, onRetryImage, rsvp, closedLabel, goingCount = 0, onOpen, onRsvp, muted = false, className }: EventTicketProps) {
   const { language, t } = useLanguage()
   const rootRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -170,7 +173,7 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
           notch={roomy ? 10 : 9}
           imageSpan={roomy ? 0.64 : 0.62}
           imageRadius={roomy ? 10 : 8}
-          image={imageUrl ?? ""}
+          image={imageFrameStatus ? "" : imageUrl ?? ""}
           imageAlt=""
           scrim={false}
           parallax={0}
@@ -203,7 +206,8 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
             </div>
           }
         >
-          {!imageUrl ? (
+          {imageFrameStatus ? <RefineFrame status={imageFrameStatus} src={imageUrl} alt="" onRetry={onRetryImage} className="md-event-ticket__frame" /> : null}
+          {!imageUrl && !imageFrameStatus ? (
             <span aria-hidden="true" className="md-event-ticket__art absolute">
               <Ticket className="size-6 text-[var(--md-accent)]" strokeWidth={1.3} />
             </span>
@@ -234,7 +238,7 @@ function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?"
 }
 
-function PersonAvatar({ person, photoUrl, className }: { person: EventAttendee; photoUrl?: string; className?: string }) {
+function PersonAvatar({ person, photoUrl, className }: { person: { name: string }; photoUrl?: string; className?: string }) {
   return (
     <Avatar className={cn("size-8 shrink-0", className)}>
       {photoUrl ? <AvatarImage src={photoUrl} alt="" /> : null}
@@ -261,7 +265,7 @@ export function EventAttendeeStrip({ attendees, invitedCount, photoUrls, maxFace
   const faces = going.slice(0, maxFaces)
   const count = (status: RsvpStatus) => attendees.filter((person) => person.status === status).length
   return (
-    <button type="button" className="md-event-strip group/strip" onClick={onOpen} disabled={!onOpen || !attendees.length}>
+    <button type="button" className="md-event-strip group/strip" onClick={onOpen} disabled={!onOpen || (!attendees.length && invitedCount === undefined)}>
       <span className="grid gap-0.5 text-start">
         <span className="text-[13px] font-medium text-[var(--md-ink)]">{t("Who's coming")}</span>
         {attendees.length || invitedCount !== undefined ? (
@@ -292,18 +296,24 @@ export function EventAttendeeStrip({ attendees, invitedCount, photoUrls, maxFace
 }
 
 const guestListRenderLimit = 150
+export type EventGuestStatus = RsvpStatus | "invited"
+type InvitedPerson = Pick<EventAttendee, "userId" | "name" | "photoPath">
 
 /**
- * Everyone who replied, one answer at a time. The three counts are the tabs;
+ * Invited people and everyone who replied, one group at a time. Counts are tabs;
  * search appears once there are enough names to need it; the list has its own
  * height so the view stays still however many people reply. Very long lists
  * render the first 150 matches and ask for a narrower search.
  */
-export function EventGuestList({ attendees, photoUrls, status, onStatusChange, onSelect, listHeight = 320 }: {
+export function EventGuestList({ attendees, invitedCount, invitedPeople, invitationMessage, onRetryInvitations, photoUrls, status, onStatusChange, onSelect, listHeight = 320 }: {
   attendees: EventAttendee[]
+  invitedCount?: number
+  invitedPeople?: InvitedPerson[]
+  invitationMessage?: string
+  onRetryInvitations?: () => void
   photoUrls?: Map<string, string>
-  status: RsvpStatus
-  onStatusChange: (status: RsvpStatus) => void
+  status: EventGuestStatus
+  onStatusChange: (status: EventGuestStatus) => void
   /** Organisers can open one colleague's RSVP answers. */
   onSelect?: (person: EventAttendee) => void
   /** A fixed height, or "fill" to take the rest of a flex column. */
@@ -312,15 +322,18 @@ export function EventGuestList({ attendees, photoUrls, status, onStatusChange, o
   const { t } = useLanguage()
   const [query, setQuery] = useState("")
   const refs = useRef<Array<HTMLButtonElement | null>>([])
-  const counts = Object.fromEntries(rsvpOrder.map((item) => [item, attendees.filter((person) => person.status === item).length])) as Record<RsvpStatus, number>
+  const options: EventGuestStatus[] = invitedCount === undefined ? rsvpOrder : ["invited", ...rsvpOrder]
+  const labels = { ...rsvpLabels, invited: { short: "Invited", icon: Mail } }
+  const counts = { ...Object.fromEntries(rsvpOrder.map((item) => [item, attendees.filter((person) => person.status === item).length])), invited: invitedCount } as Record<EventGuestStatus, number>
   const needle = query.trim().toLocaleLowerCase()
-  const matches = attendees.filter((person) => person.status === status && (!needle || person.name.toLocaleLowerCase().includes(needle)))
+  const people = status === "invited" ? invitedPeople ?? [] : attendees.filter((person) => person.status === status)
+  const matches = people.filter((person) => !needle || person.name.toLocaleLowerCase().includes(needle))
   const shown = matches.slice(0, guestListRenderLimit)
   return (
     <div className={cn("gap-4", listHeight === "fill" ? "flex min-h-0 flex-1 flex-col" : "grid")}>
-      <div role="tablist" aria-label={t("Answer")} className="grid grid-cols-3 gap-2">
-        {rsvpOrder.map((option, index) => {
-          const Icon = rsvpLabels[option].icon
+      <div role="tablist" aria-label={t("Guests")} className={cn("grid gap-2", invitedCount === undefined ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4")}>
+        {options.map((option, index) => {
+          const Icon = labels[option].icon
           return (
             <button key={option} ref={(element) => { refs.current[index] = element }} type="button" role="tab" aria-selected={status === option} tabIndex={status === option ? 0 : -1}
               className="md-event-count" data-selected={status === option || undefined} onClick={() => onStatusChange(option)}
@@ -328,31 +341,32 @@ export function EventGuestList({ attendees, photoUrls, status, onStatusChange, o
                 const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0
                 if (!step) return
                 event.preventDefault()
-                const next = (index + step + rsvpOrder.length) % rsvpOrder.length
-                onStatusChange(rsvpOrder[next]); refs.current[next]?.focus()
+                const next = (index + step + options.length) % options.length
+                onStatusChange(options[next]); refs.current[next]?.focus()
               }}>
               <span className="flex items-center gap-1.5">
                 <Icon className="size-4 md-rsvp-icon" data-status={option} strokeWidth={1.6} aria-hidden="true" />
                 <span className="text-[18px] font-medium leading-none text-[var(--md-ink)] [font-variant-numeric:tabular-nums]">{counts[option]}</span>
               </span>
-              <span className="whitespace-nowrap text-[12px] leading-4 text-[var(--md-text)]">{t(rsvpLabels[option].short)}</span>
+              <span className="whitespace-nowrap text-[12px] leading-4 text-[var(--md-text)]">{t(labels[option].short)}</span>
             </button>
           )
         })}
       </div>
-      {attendees.length > 8 ? (
+      {Math.max(attendees.length, invitedPeople?.length ?? 0) > 8 ? (
         <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search names")} aria-label={t("Search names")} className="h-9 text-base sm:text-[13px]" />
       ) : null}
-      <div className={cn("md-guest-list", listHeight === "fill" && "min-h-[220px] flex-1")} role="tabpanel" aria-label={`${t(rsvpLabels[status].short)}: ${matches.length}`} tabIndex={shown.length > 8 ? 0 : undefined} style={listHeight === "fill" ? undefined : { height: listHeight }}>
+      <div className={cn("md-guest-list", listHeight === "fill" && "min-h-[220px] flex-1")} role="tabpanel" aria-label={`${t(labels[status].short)}: ${matches.length}`} tabIndex={shown.length > 8 ? 0 : undefined} style={listHeight === "fill" ? undefined : { height: listHeight }}>
         {shown.length ? (
           <ul className="grid gap-0.5 sm:grid-cols-2">
             {shown.map((person) => {
               const content = <><PersonAvatar person={person} photoUrl={person.photoPath ? photoUrls?.get(person.photoPath) : undefined} /><span className="min-w-0 truncate text-[13px] text-[var(--md-ink)]" data-i18n-skip title={person.name}>{person.name}</span></>
-              return <li key={person.userId}>{onSelect ? <button type="button" className="md-event-attendee" onClick={() => onSelect(person)}>{content}</button> : <span className="md-event-attendee">{content}</span>}</li>
+              const response = attendees.find((attendee) => attendee.userId === person.userId)
+              return <li key={person.userId}>{onSelect && response ? <button type="button" className="md-event-attendee" onClick={() => onSelect(response)}>{content}</button> : <span className="md-event-attendee">{content}</span>}</li>
             })}
           </ul>
         ) : (
-          <p className="grid h-full place-items-center text-[13px] text-[var(--md-text)]">{needle ? t("No names match.") : t("No one yet.")}</p>
+          <div className="grid h-full place-content-center justify-items-center gap-2 text-[13px] text-[var(--md-text)]"><p>{status === "invited" && !invitedPeople ? invitationMessage : needle ? t("No names match.") : t("No one yet.")}</p>{status === "invited" && onRetryInvitations ? <Button variant="ghost" size="sm" onClick={onRetryInvitations}>{t("Try again")}</Button> : null}</div>
         )}
         {matches.length > shown.length ? <p className="px-1.5 pt-2 text-[11px] text-[var(--md-subtle)]">{t("Showing the first 150. Search to find someone.")}</p> : null}
       </div>
@@ -430,7 +444,7 @@ export function EventAudiencePicker({ audience, invitees, directory, photoUrls, 
                 <li key={person.userId}>
                   <label className="md-audience-row">
                     <Checkbox checked={selected.has(person.userId)} onCheckedChange={() => toggle(person.userId)} />
-                    <PersonAvatar person={{ userId: person.userId, name: person.name, status: "going", photoPath: person.photoPath }} photoUrl={person.photoPath ? photoUrls?.get(person.photoPath) : undefined} className="size-7" />
+                    <PersonAvatar person={person} photoUrl={person.photoPath ? photoUrls?.get(person.photoPath) : undefined} className="size-7" />
                     <span className="grid min-w-0">
                       <span className="truncate text-[13px] text-[var(--md-ink)]" data-i18n-skip>{person.name}</span>
                       {person.jobTitle ? <span className="truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip>{person.jobTitle}</span> : null}

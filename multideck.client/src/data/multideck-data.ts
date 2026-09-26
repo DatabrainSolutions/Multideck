@@ -12,6 +12,8 @@ import todoComponentsSource from "@/components/multideck/todo-components.tsx?raw
 import companyEventComponentsSource from "@/components/multideck/company-event-components.tsx?raw"
 import companyEventComponentsStyles from "@/components/multideck/company-event-components.css?raw"
 import tearTicketSource from "@/components/multideck/tear-ticket.tsx?raw"
+import refineFrameSource from "@/components/multideck/refine-frame.tsx?raw"
+import refineFrameStyles from "@/components/multideck/refine-frame.css?raw"
 import codeSlotsSource from "@/components/multideck/code-slots.tsx?raw"
 import codeSlotsCss from "@/components/multideck/code-slots.css?raw"
 import mileageRouteMapSource from "@/components/multideck/mileage-route-map.tsx?raw"
@@ -494,11 +496,21 @@ export const galleryComponents = [
     id: "event-ticket",
     name: "Event Ticket",
     category: "Events",
-    description: "A company event rendered by the adapted React Bits TearTicket in display-only mode, with an explicit Yes / Maybe / No RSVP menu.",
-    details: "The whole body opens the event. TearTicket runs with interactive={false}: no drag, keyboard tear, fibres or onTear, and no dimming. Tickets run full width and stack vertically. Attendance only changes through the stub's RSVP menu: Yes, Maybe or No. Draft, cancelled and finished events replace the button with a label without dimming the ticket. Saving and Going states come from the server response, never optimistically.",
+    description: "A company event rendered by the adapted React Bits TearTicket, with an explicit RSVP menu and a RefineFrame cover while Dexter creates an image.",
+    details: "The ticket appears as soon as the event is saved. Its image band shows the React Bits RefineFrame sweep while generation runs, then resolves the finished image. A failed cover can be retried without recreating the event. The body opens the event; attendance changes only through the stub's Yes / Maybe / No menu.",
     foundOn: [{ label: "Events", route: "/events" }, { label: "Components", route: "/components?component=event-ticket" }],
-    componentCode: `${companyEventComponentsSource}\n\n/* tear-ticket.tsx (adapted React Bits) */\n${tearTicketSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
-    usageCode: `<EventTicket\n  title={event.title}\n  startsAt={event.startsAt}\n  endsAt={event.endsAt}\n  timezone={event.timezone}\n  location={event.location}\n  imageUrl={imageUrl}\n  goingCount={event.goingCount}\n  rsvp={saving ? "saving" : event.myRsvp?.status ?? "none"}\n  closedLabel={event.status === "cancelled" ? "Cancelled" : null}\n  onOpen={() => navigate(\`/events/\${event.id}\`)}\n  onRsvp={() => rsvp(event)}\n/>`,
+    componentCode: `${companyEventComponentsSource}\n\n/* tear-ticket.tsx (adapted React Bits) */\n${tearTicketSource}\n\n/* refine-frame.tsx (adapted React Bits) */\n${refineFrameSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}\n\n/* refine-frame.css */\n${refineFrameStyles}`,
+    usageCode: `<EventTicket\n  title={event.title}\n  startsAt={event.startsAt}\n  endsAt={event.endsAt}\n  timezone={event.timezone}\n  location={event.location}\n  imageUrl={imageUrl}\n  imageFrameStatus={event.imageGenerationStatus === "generating" ? "generating" : null}\n  onRetryImage={() => startEventImage(event.id)}\n  goingCount={event.goingCount}\n  rsvp={saving ? "saving" : event.myRsvp?.status ?? "none"}\n  onOpen={() => navigate(\`/events/\${event.id}\`)}\n  onRsvp={() => rsvp(event)}\n/>`,
+  },
+  {
+    id: "refine-frame",
+    name: "Refine Frame",
+    category: "Events",
+    description: "React Bits image-generation frame: a reserved cover area and quiet sweep become a staged mosaic reveal when the image is ready.",
+    details: "Used inside Event Ticket while the saved event's cover is being made. Queued, generating, complete and error states are announced; errors offer a retry. Reduced-motion users see a still transition. The frame keeps the ticket layout stable throughout.",
+    foundOn: [{ label: "Events · event ticket", route: "/events" }, { label: "Components", route: "/components?component=refine-frame" }],
+    componentCode: `${refineFrameSource}\n\n/* refine-frame.css */\n${refineFrameStyles}`,
+    usageCode: `<RefineFrame status={imageStatus} src={imageUrl} aspectRatio="21 / 9" onRetry={() => startEventImage(event.id)} />`,
   },
   {
     id: "rsvp-choice",
@@ -534,11 +546,11 @@ export const galleryComponents = [
     id: "event-guest-list",
     name: "Event Guest List",
     category: "Events",
-    description: "The Who's coming view: count cards as tabs for Going, Maybe and Not going, then photos and names with search.",
+    description: "The Who's coming view: count cards as tabs for Invited, Going, Maybe and Not going, then photos and names with search. Organisers can see invited people who have not replied.",
     details: "The count cards are the tabs (arrow keys move between them). The list has its own height so the view stays still however many people reply. Search appears once there are more than eight replies; very long lists render the first 150 matches and ask for a narrower search. Organisers can select a colleague to read their RSVP answers.",
     foundOn: [{ label: "Events · event detail", route: "/events" }, { label: "Components", route: "/components?component=event-guest-list" }],
     componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
-    usageCode: `<EventGuestList attendees={event.attendees ?? []} photoUrls={photoUrls} status={guestStatus} onStatusChange={setGuestStatus} listHeight={320} onSelect={event.canManage ? openAnswers : undefined} />`,
+    usageCode: `<EventGuestList attendees={event.attendees ?? []} invitedCount={event.invitedCount ?? undefined} invitedPeople={invitedPeople} photoUrls={photoUrls} status={guestStatus} onStatusChange={setGuestStatus} listHeight={320} onSelect={event.canManage ? openAnswers : undefined} />`,
   },
   {
     id: "rsvp-form-builder",

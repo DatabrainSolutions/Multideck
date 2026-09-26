@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps,
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { mdEase, mdMotion, staggerRamp } from "@/lib/motion"
 import { ArrowLeft, Ban, CalendarDays, ImagePlus, MapPin, Pencil, Ticket, Trash2 } from "@/components/icons/hugeicons"
-import { EventAttendeeStrip, EventAudiencePicker, EventGuestList, EventTicket, EventsEmptyState, RsvpChoice, RsvpFormBuilder, RsvpFormFields, formatEventWhen, rsvpLabels } from "@/components/multideck/company-event-components"
+import { EventAttendeeStrip, EventAudiencePicker, EventGuestList, EventTicket, EventsEmptyState, RsvpChoice, RsvpFormBuilder, RsvpFormFields, formatEventWhen, rsvpLabels, type EventGuestStatus } from "@/components/multideck/company-event-components"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import { InlineNotice } from "@/components/multideck/inline-notice"
 import { MeetingTimePicker, TimeZoneSelect } from "@/components/multideck/meeting-time-picker"
@@ -15,11 +15,12 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import {
-  EventsApiError, audienceReach, generateEventImage, getEventsDirectory, useProfilePhotoUrls, getEvent, isEventOver, listEvents, saveEvent, saveRsvp, setEventStatus, uploadEventImage, useEventImage, useEventsSettings,
+  EventsApiError, audienceReach, startEventImage, getEventsDirectory, useProfilePhotoUrls, getEvent, isEventOver, listEvents, saveEvent, saveRsvp, setEventStatus, uploadEventImage, useEventImage, useEventsSettings,
   validateRsvpAnswers, validateRsvpForm, type CompanyEvent, type EventDraft, type EventResponse, type EventsDirectory, type RsvpAnswers, type RsvpStatus,
 } from "@/lib/company-events-api"
 import { cn } from "@/lib/utils"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
+import { RefineFrame, type RefineFrameStatus } from "@/components/multideck/refine-frame"
 
 export const eventDetailRoutePattern = /^\/events\/([0-9a-f-]{36})$/
 
@@ -34,13 +35,13 @@ function closedLabel(event: CompanyEvent, t: (text: string) => string) {
   return null
 }
 
-function TicketCard({ event, saving, onOpen, onRsvp }: { event: CompanyEvent; saving: boolean; onOpen: () => void; onRsvp: (status: RsvpStatus) => void }) {
+function TicketCard({ event, saving, imageFrameStatus, onRetryImage, onOpen, onRsvp }: { event: CompanyEvent; saving: boolean; imageFrameStatus: RefineFrameStatus | null; onRetryImage: () => void; onOpen: () => void; onRsvp: (status: RsvpStatus) => void }) {
   const { t } = useLanguage()
   const imageUrl = useEventImage(event.imagePath)
   return (
     <EventTicket
       title={event.title} startsAt={event.startsAt} endsAt={event.endsAt} timezone={event.timezone} location={event.location}
-      imageUrl={imageUrl} goingCount={event.goingCount} closedLabel={closedLabel(event, t)} muted={event.status !== "draft" && isEventOver(event)}
+      imageUrl={imageUrl} imageFrameStatus={imageFrameStatus} onRetryImage={onRetryImage} goingCount={event.goingCount} closedLabel={closedLabel(event, t)} muted={event.status !== "draft" && isEventOver(event)}
       rsvp={saving ? "saving" : event.myRsvp?.status ?? "none"}
       onOpen={onOpen} onRsvp={onRsvp}
     />
@@ -54,6 +55,9 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
   const [loadError, setLoadError] = useState<EventsApiError | null>(null)
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [cardError, setCardError] = useState<{ id: string; status: RsvpStatus; text: string } | null>(null)
+  const [imageErrors, setImageErrors] = useState<Record<string, string>>({})
+  const [recentImageIds, setRecentImageIds] = useState<Set<string>>(new Set())
+  const previousImageStates = useRef(new Map<string, string>())
   const [editing, setEditing] = useState<CompanyEvent | "new" | null>(null)
   const [revealForm, setRevealForm] = useState(false)
   const [view, setView] = useState<"upcoming" | "past">("upcoming")
@@ -69,10 +73,43 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
   }, [])
   useEffect(() => { if (settings?.enabled) void load() }, [load, settings?.enabled])
   useEffect(() => subscribeTopBarAction(topBarActionEvents.createCompanyEvent, () => setEditing("new")), [])
+  useEffect(() => {
+    if (!events?.some((event) => event.imageGenerationStatus === "queued" || event.imageGenerationStatus === "generating")) return
+    const timer = window.setInterval(() => void load(), 2500)
+    return () => window.clearInterval(timer)
+  }, [events, load])
+  useEffect(() => {
+    if (!events) return
+    for (const event of events) {
+      const before = previousImageStates.current.get(event.id)
+      if ((before === "queued" || before === "generating") && event.imageGenerationStatus === "complete") {
+        setRecentImageIds((current) => new Set(current).add(event.id))
+        window.setTimeout(() => setRecentImageIds((current) => { const next = new Set(current); next.delete(event.id); return next }), 6000)
+      }
+      previousImageStates.current.set(event.id, event.imageGenerationStatus)
+    }
+  }, [events])
 
   const replace = useCallback((next: CompanyEvent) => {
     setEvents((current) => current ? (current.some((item) => item.id === next.id) ? current.map((item) => item.id === next.id ? next : item) : [...current, next]) : [next])
   }, [])
+
+  const requestImage = useCallback(async (eventId: string) => {
+    setImageErrors((current) => { const next = { ...current }; delete next[eventId]; return next })
+    try { await startEventImage(eventId) }
+    catch (error) { setImageErrors((current) => ({ ...current, [eventId]: message(error) })) }
+    finally { void load() }
+  }, [load])
+
+  const imageFrameStatus = (event: CompanyEvent): RefineFrameStatus | null => {
+    if (event.imagePath && !recentImageIds.has(event.id)) return null
+    if (imageErrors[event.id] || event.imageGenerationStatus === "failed") return "error"
+    if ((event.imageGenerationStatus === "queued" || event.imageGenerationStatus === "generating") && event.imageGenerationStartedAt
+      && Date.now() - Date.parse(event.imageGenerationStartedAt) > 130_000) return "error"
+    if (event.imageGenerationStatus === "queued" || event.imageGenerationStatus === "generating") return event.imageGenerationStatus
+    if (recentImageIds.has(event.id)) return "complete"
+    return null
+  }
 
   // Explicit RSVP from the ticket menu. Yes to an event with an RSVP form opens
   // the form; every other answer saves straight away.
@@ -112,7 +149,8 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
         <motion.li key={event.id} className="grid gap-2"
           initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
           transition={reduce ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.05) }}>
-          <TicketCard event={event} saving={savingIds.has(event.id)} onOpen={() => { setRevealForm(false); navigate(`/events/${event.id}`) }} onRsvp={(status) => void rsvpFromTicket(event, status)} />
+          <TicketCard event={event} saving={savingIds.has(event.id)} imageFrameStatus={imageFrameStatus(event)} onRetryImage={() => void requestImage(event.id)} onOpen={() => { setRevealForm(false); navigate(`/events/${event.id}`) }} onRsvp={(status) => void rsvpFromTicket(event, status)} />
+          {imageErrors[event.id] ? <InlineNotice tone="error" action={<Button size="sm" variant="outline" onClick={() => void requestImage(event.id)}>{t("Try again")}</Button>}>{imageErrors[event.id]}</InlineNotice> : null}
           {cardError?.id === event.id ? (
             <InlineNotice tone="error" action={<Button size="sm" variant="outline" onClick={() => void rsvpFromTicket(event, cardError.status)}>{t("Try again")}</Button>}>{cardError.text}</InlineNotice>
           ) : null}
@@ -174,7 +212,7 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
       <EventWizard
         target={editing}
         onClose={() => setEditing(null)}
-        onSaved={(event) => { replace(event); setEditing(null); navigate(`/events/${event.id}`) }}
+        onSaved={(event, needsImage) => { replace(event); setEditing(null); navigate(needsImage ? "/events" : `/events/${event.id}`); if (needsImage) void requestImage(event.id) }}
       />
     </div>
   )
@@ -221,16 +259,33 @@ function EventDetailDialog({ eventId, initialRevealForm, onClose, onChanged, onE
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [viewing, setViewing] = useState<EventResponse | null>(null)
   const [view, setView] = useState<"details" | "guests" | "form">("details")
-  const [guestStatus, setGuestStatus] = useState<RsvpStatus>("going")
+  const [guestStatus, setGuestStatus] = useState<EventGuestStatus>("going")
+  const [guestDirectory, setGuestDirectory] = useState<EventsDirectory | null>(null)
+  const [guestDirectoryError, setGuestDirectoryError] = useState<string | null>(null)
+  const [guestDirectoryAttempt, setGuestDirectoryAttempt] = useState(0)
   const [detailsHeight, setDetailsHeight] = useState(0)
   const detailsRef = useRef<HTMLDivElement>(null)
   const wide = useMediaQuery("(min-width: 1180px)")
   const [imageReady, setImageReady] = useState(false)
+  const [imageRetryError, setImageRetryError] = useState<string | null>(null)
   const reduce = useReducedMotion()
   const requestId = useRef<string | null>(null)
   const lastStatus = useRef<RsvpStatus>("going")
   const imageUrl = useEventImage(event?.imagePath ?? null)
-  const photoUrls = useProfilePhotoUrls((event?.attendees ?? []).map((person) => person.photoPath))
+  useEffect(() => {
+    if (view !== "guests" || !event?.canManage) return
+    let active = true
+    setGuestDirectory(null)
+    setGuestDirectoryError(null)
+    getEventsDirectory().then((directory) => { if (active) setGuestDirectory(directory) }, (error) => { if (active) setGuestDirectoryError(message(error)) })
+    return () => { active = false }
+  }, [view, event?.id, event?.canManage, guestDirectoryAttempt])
+  const invitedPeople = useMemo(() => {
+    if (!guestDirectory || !event?.canManage || (event.audience !== "everyone" && !event.invitees)) return undefined
+    const selected = new Set(event.invitees?.map((invitee) => invitee.id))
+    return guestDirectory.people.filter((person) => event.audience === "everyone" || (event.audience === "people" ? selected.has(person.userId) : person.departmentIds.some((id) => selected.has(id))))
+  }, [guestDirectory, event])
+  const photoUrls = useProfilePhotoUrls([...(event?.attendees ?? []), ...(invitedPeople ?? [])].map((person) => person.photoPath))
 
   const apply = useCallback((next: CompanyEvent) => { setEvent(next); onChanged(next) }, [onChanged])
   const load = useCallback(async (id: string) => {
@@ -249,6 +304,18 @@ function EventDetailDialog({ eventId, initialRevealForm, onClose, onChanged, onE
     setEvent(null); setActionError(null); setSaved(null); setFieldErrors({}); setDetailsOpen(false); setViewing(null); setView("details"); setImageReady(false); requestId.current = null
     if (eventId) void load(eventId)
   }, [eventId, load])
+  useEffect(() => {
+    if (!eventId || (event?.imageGenerationStatus !== "queued" && event?.imageGenerationStatus !== "generating")) return
+    const timer = window.setInterval(() => { getEvent(eventId).then(apply, () => undefined) }, 2500)
+    return () => window.clearInterval(timer)
+  }, [eventId, event?.imageGenerationStatus, apply])
+
+  const retryImage = async () => {
+    if (!event) return
+    setImageRetryError(null)
+    try { await startEventImage(event.id); apply(await getEvent(event.id)) }
+    catch (error) { setImageRetryError(message(error)) }
+  }
 
   const submitRsvp = async (status: RsvpStatus) => {
     if (!event || saving) return
@@ -349,7 +416,10 @@ function EventDetailDialog({ eventId, initialRevealForm, onClose, onChanged, onE
                         <DialogDescription className="truncate text-[12px] text-[var(--md-text)]"><span data-i18n-skip>{event.title}</span>{event.invitedCount !== null ? <> · <span className="[font-variant-numeric:tabular-nums]">{event.invitedCount}</span> {t("invited")}</> : null}</DialogDescription>
                       </div>
                     </div>
-                    <EventGuestList attendees={event.attendees ?? []} photoUrls={photoUrls} status={guestStatus} onStatusChange={setGuestStatus}
+                    <EventGuestList attendees={event.attendees ?? []} invitedCount={event.invitedCount ?? undefined} invitedPeople={invitedPeople}
+                      invitationMessage={!event.canManage ? t("Only event organisers can view the invitation list.") : guestDirectoryError ?? t("Loading invited people…")}
+                      onRetryInvitations={guestDirectoryError ? () => setGuestDirectoryAttempt((attempt) => attempt + 1) : undefined}
+                      photoUrls={photoUrls} status={guestStatus} onStatusChange={setGuestStatus}
                       listHeight={detailsHeight ? "fill" : 320}
                       onSelect={event.canManage && event.responses ? (person) => setViewing(event.responses?.find((response) => response.userId === person.userId) ?? null) : undefined} />
                   </motion.section>
@@ -370,13 +440,16 @@ function EventDetailDialog({ eventId, initialRevealForm, onClose, onChanged, onE
                     <div ref={detailsRef}>
                     <div className="relative p-2 pb-0">
                       {/* 3:1 keeps a photo recognisable; the height cap keeps the rest on screen. */}
-                      <div className={cn("relative grid w-full place-items-center overflow-hidden rounded-[calc(var(--md-radius-2xl)-8px)] bg-[color-mix(in_srgb,var(--md-accent)_9%,var(--md-surface-tint))]", event.imagePath ? "aspect-[3/1] max-h-[34vh]" : "h-[112px]")}>
-                        {imageUrl ? (
+                      <div className={cn("relative grid w-full place-items-center overflow-hidden rounded-[calc(var(--md-radius-2xl)-8px)] bg-[color-mix(in_srgb,var(--md-accent)_9%,var(--md-surface-tint))]", event.imagePath || event.imageGenerationStatus !== "none" ? "aspect-[3/1] max-h-[34vh]" : "h-[112px]")}>
+                        {event.imageGenerationStatus === "queued" || event.imageGenerationStatus === "generating" || event.imageGenerationStatus === "failed" ? (
+                          <RefineFrame status={imageRetryError || event.imageGenerationStatus === "failed" || (event.imageGenerationStartedAt && Date.now() - Date.parse(event.imageGenerationStartedAt) > 130_000) ? "error" : event.imageGenerationStatus} src={null} aspectRatio="3 / 1" onRetry={event.canManage ? () => void retryImage() : undefined} />
+                        ) : imageUrl ? (
                           <motion.img src={imageUrl} alt="" className="absolute inset-0 size-full object-cover"
                             initial={reduce ? false : { opacity: 0, scale: 1.04 }} animate={imageReady ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 1.04 }}
                             transition={reduce ? { duration: 0 } : { duration: 0.6, ease: mdEase }} onLoad={() => setImageReady(true)} />
                         ) : <Ticket className="size-8 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />}
                       </div>
+                      {imageRetryError ? <InlineNotice tone="error" action={<Button size="sm" variant="outline" onClick={() => void retryImage()}>{t("Try again")}</Button>}>{imageRetryError}</InlineNotice> : null}
                       <DetailReveal index={0} className="md-event-date-card absolute bottom-0 start-8 translate-y-1/2" aria-hidden="true">
                         <span className="text-[12px] font-medium uppercase tracking-[0.06em] text-[var(--md-accent)]">{new Intl.DateTimeFormat(language, { month: "short", timeZone: event.timezone }).format(new Date(event.startsAt))}</span>
                         <span className="text-[32px] font-medium leading-none tracking-[-0.03em] text-[var(--md-ink)] [font-variant-numeric:tabular-nums]">{new Intl.DateTimeFormat(language, { day: "numeric", timeZone: event.timezone }).format(new Date(event.startsAt))}</span>
@@ -561,7 +634,7 @@ function StepField({ index, children, className }: { index: number; children: Re
   )
 }
 
-function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new" | null; onClose: () => void; onSaved: (event: CompanyEvent) => void }) {
+function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new" | null; onClose: () => void; onSaved: (event: CompanyEvent, needsImage: boolean) => void }) {
   const { language, t } = useLanguage()
   const reduce = useReducedMotion()
   const existing = target && target !== "new" ? target : null
@@ -573,11 +646,9 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [generatingImage, setGeneratingImage] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const imageRequestId = useRef(crypto.randomUUID())
   const imageUrl = useEventImage(draft.imagePath)
   const answeredIds = useMemo(() => [...new Set((existing?.responses ?? []).flatMap((response) => Object.keys(response.answers)))], [existing])
   const [directory, setDirectory] = useState<EventsDirectory | null>(null)
@@ -593,7 +664,6 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
     if (!target) return
     const next = draftFrom(target === "new" ? null : target)
     setDraft(next); setUseForm(next.form.length > 0); setPublishNow(false); setStep("basics")
-    imageRequestId.current = crypto.randomUUID()
     setErrors({}); setFormErrors({}); setError(null)
   }, [target])
 
@@ -632,23 +702,16 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
     setSaving(true); setError(null)
     try {
       if (draft.audience !== "everyone" && !directory) { setError(t("Invitations are not available in this workspace yet. Invite everyone, or try again later.")); return }
-      let imagePath = draft.imagePath
-      if (!existing && !imagePath) {
-        setGeneratingImage(true)
-        try {
-          imagePath = await generateEventImage(draft, imageRequestId.current)
-          update({ imagePath })
-        } finally { setGeneratingImage(false) }
-      }
-      let saved = await saveEvent(existing?.id ?? null, existing?.editVersion ?? 0, { ...draft, imagePath, title: draft.title.trim(), location: draft.location.trim(), form })
+      const needsImage = !existing && !draft.imagePath
+      let saved = await saveEvent(existing?.id ?? null, existing?.editVersion ?? 0, { ...draft, title: draft.title.trim(), location: draft.location.trim(), form })
       // Never publish an event more widely than chosen: a server without
       // invitations would have saved it for everyone.
-      if (saved.audience !== draft.audience) { onSaved(saved); return }
+      if (saved.audience !== draft.audience) { onSaved(saved, needsImage); return }
       if (publishNow && canPublish) {
         // The draft is safe either way; a failed publish lands on the draft, which carries its own Publish action.
         try { saved = await setEventStatus(saved.id, "published", saved.editVersion) } catch { /* shown as Draft in the detail view */ }
       }
-      onSaved(saved)
+      onSaved(saved, needsImage)
     } catch (saveError) { setError(message(saveError)) }
     finally { setSaving(false) }
   }
@@ -670,7 +733,7 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
       steps={steps}
       activeStepId={step}
       onStepChange={(id) => setStep(id as WizardStepId)}
-      submitLabel={generatingImage ? "Creating image…" : saving ? "Saving…" : publishNow && canPublish ? "Save and publish" : existing ? "Save changes" : "Save draft"}
+      submitLabel={saving ? "Saving…" : publishNow && canPublish ? "Save and publish" : existing ? "Save changes" : "Save draft"}
       onSubmit={() => void save()}
       saving={saving}
       submitDisabled={uploading}

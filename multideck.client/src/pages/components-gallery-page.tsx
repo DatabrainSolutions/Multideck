@@ -1,4 +1,5 @@
 import { EventAttendeeStrip, EventAudiencePicker, EventGuestList, EventTicket, EventsEmptyState, RsvpChoice, RsvpFormBuilder, RsvpFormFields } from "@/components/multideck/company-event-components"
+import { RefineFrame } from "@/components/multideck/refine-frame"
 import { validateRsvpAnswers, type EventAttendee, type EventAudience, type EventsDirectory, type RsvpAnswers, type RsvpField, type RsvpStatus } from "@/lib/company-events-api"
 import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"
 import dexterActivityTrailSource from "@/components/multideck/dexter-activity-trail.tsx?raw"
@@ -420,7 +421,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Events",
     helper: "Company events and RSVPs",
-    ids: ["event-ticket", "rsvp-choice", "event-audience-picker", "event-attendee-strip", "event-guest-list", "rsvp-form-builder", "rsvp-form-fields", "events-empty-state"],
+    ids: ["event-ticket", "refine-frame", "rsvp-choice", "event-audience-picker", "event-attendee-strip", "event-guest-list", "rsvp-form-builder", "rsvp-form-fields", "events-empty-state"],
   },
   {
     label: "Warehouse",
@@ -470,8 +471,9 @@ function GalleryAudiencePicker() {
 }
 
 function GalleryGuestList() {
-  const [status, setStatus] = useState<RsvpStatus>("going")
-  return <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><EventGuestList attendees={galleryAttendees} status={status} onStatusChange={setStatus} listHeight={240} /></div>
+  const [status, setStatus] = useState<RsvpStatus | "invited">("invited")
+  const invitedPeople = [...galleryAttendees, { userId: "pending", name: "Alex Morgan", photoPath: null }]
+  return <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><EventGuestList attendees={galleryAttendees} invitedCount={invitedPeople.length} invitedPeople={invitedPeople} status={status} onStatusChange={setStatus} listHeight={240} /></div>
 }
 
 function GalleryRsvpChoice() {
@@ -1205,7 +1207,7 @@ const previewInboxSummary: ThreadSummaryState = {
   text: "Marlow Apparel is waiting on the dual-use licence reference for MD-22455 before the broker will release the declaration. Claire has asked twice and flagged that the Felixstowe free-time window closes on 2 August.",
   keyPoints: [],
   sourceMessageIds: ["msg-1", "msg-2"],
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   updatedAt: "2026-07-31T09:37:00Z",
   error: null,
 }
@@ -2514,12 +2516,15 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "event-ticket" ? (
         <div className="mx-auto grid w-full gap-5 md:w-1/2 md:min-w-[360px]">
+          <EventTicket title="Launching soon" startsAt="2099-06-20T16:30:00Z" endsAt={null} timezone="Europe/London" location="London office" imageUrl={null} imageFrameStatus="generating" onRetryImage={() => undefined} rsvp="none" onOpen={() => undefined} onRsvp={() => undefined} />
           <EventTicket title="Summer social" startsAt="2099-07-03T17:30:00Z" endsAt="2099-07-03T21:00:00Z" timezone="Europe/London" location="Roof terrace, London office" imageUrl={null} goingCount={14} rsvp="none" onOpen={() => undefined} onRsvp={() => undefined} />
           <EventTicket title="Quiz night" startsAt="2099-08-14T18:00:00Z" endsAt={null} timezone="Europe/London" location="Canteen" imageUrl={null} goingCount={9} rsvp="going" onOpen={() => undefined} onRsvp={() => undefined} />
           <EventTicket title="Warehouse barbecue" startsAt="2099-09-02T11:00:00Z" endsAt={null} timezone="Europe/London" location="Felixstowe yard" imageUrl={null} rsvp="maybe" onOpen={() => undefined} onRsvp={() => undefined} />
           <EventTicket title="Christmas lunch" startsAt="2099-12-18T12:00:00Z" endsAt={null} timezone="Europe/London" location="The Anchor" imageUrl={null} rsvp="none" closedLabel="Cancelled" onOpen={() => undefined} />
         </div>
       ) : null}
+
+      {id === "refine-frame" ? <div className="mx-auto aspect-[21/9] w-full max-w-[560px] overflow-hidden rounded-[var(--md-radius-lg)]"><RefineFrame status="generating" src={null} /></div> : null}
 
       {id === "rsvp-choice" ? <GalleryRsvpChoice /> : null}
       {id === "event-attendee-strip" ? (

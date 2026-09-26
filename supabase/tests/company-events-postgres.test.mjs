@@ -21,6 +21,7 @@ const maybeMigration = read('20260925160000_company_events_rsvp_maybe').replace(
 const attendeeMigration = read('20260925170000_company_events_attendee_profiles').replace(/^begin;$/m, '').replace(/^commit;$/m, '')
 const invitationMigration = read('20260925180000_company_event_invitations').replace(/^begin;$/m, '').replace(/^commit;$/m, '')
 const notificationMigration = read('20260925190000_company_event_publish_notifications').replace(/^begin;$/m, '').replace(/^commit;$/m, '')
+const asyncImageMigration = read('20260926064912_company_event_async_images').replace(/^begin;$/m, '').replace(/^commit;$/m, '')
 
 const fixture = `
   create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
@@ -70,6 +71,7 @@ const fixture = `
   ${attendeeMigration}
   ${invitationMigration}
   ${notificationMigration}
+  ${asyncImageMigration}
   grant usage on schema public to authenticated;
 `
 
@@ -133,6 +135,7 @@ begin
     "form":[{"id":"meal","type":"single_choice","label":"Meal","required":true,"options":[{"id":"fish","label":"Fish"},{"id":"veg","label":"Vegetarian"}]},
             {"id":"notes","type":"long_text","label":"Dietary notes"}]}$j$);
   ev_id := (ev->>'id')::uuid; version := (ev->>'editVersion')::int;
+  if ev->>'imageGenerationStatus' <> 'queued' or ev->>'imageGenerationStartedAt' is null then raise exception 'New ticket must be visible while its image is queued'; end if;
   other_id := (public.company_event_save(null,0,'{"title":"Quiz","startsAt":"2099-08-01T18:00:00Z","location":"Canteen"}')->>'id')::uuid;
   perform pg_temp.as_user(colleague);
   if jsonb_array_length(public.company_events_list()) <> 0 then raise exception 'Drafts leaked to colleague'; end if;
@@ -217,6 +220,7 @@ begin
   if exists(select 1 from storage.objects where name = img) then raise exception 'Unreferenced image readable'; end if;
   perform pg_temp.as_user(organiser);
   ev := public.company_event_save(ev_id,version,jsonb_build_object('title','Summer party','startsAt','2099-07-01T19:00:00Z','location','Roof terrace','imagePath',img,'form',ev->'form'));
+  if ev->>'imageGenerationStatus' <> 'none' then raise exception 'An uploaded image must cancel AI generation'; end if;
   version := (ev->>'editVersion')::int;
   perform pg_temp.as_user(colleague);
   if not exists(select 1 from storage.objects where name = img) then raise exception 'Published image not readable'; end if;

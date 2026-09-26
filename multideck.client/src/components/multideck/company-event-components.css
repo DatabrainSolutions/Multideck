@@ -5,6 +5,13 @@
   inset: 8px 8px auto 8px; height: calc(62% - 16px); display: grid; place-items: center;
   border-radius: 8px; background: color-mix(in srgb, var(--md-accent) 9%, var(--md-surface-tint));
 }
+.md-event-ticket__frame {
+  position: absolute; z-index: 3; pointer-events: none;
+  top: 8px; left: 8px; width: calc(100% - 16px);
+  height: calc(var(--tt-body-h) * var(--tt-span) - 16px);
+  border-radius: var(--tt-art-radius);
+}
+.md-event-ticket__frame .refine-frame__retry { pointer-events: auto; }
 .md-event-ticket__open { cursor: pointer; border-radius: 14px; outline: none; }
 .md-event-ticket__open:focus-visible { box-shadow: inset 0 0 0 2px var(--md-accent); }
 .md-event-ticket__badge {

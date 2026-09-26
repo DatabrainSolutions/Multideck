@@ -1,8 +1,14 @@
 import { authenticate, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission } from "../_shared/backend.ts"
 import { eventImageBucket, eventImageLimit, eventImageModel, eventImagePrompt, falImageUrl, isWebp, type ImageBrief } from "./core.ts"
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void }
+
+// Dexter chat and Watching for you deliberately do not start or watch this
+// transient visual job: doing so could silently buy repeated provider images.
+// The event itself remains in Dexter's existing permissioned event domain.
 
 const requestIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const endpoint = `https://queue.fal.run/${eventImageModel}`
+type Admin = Awaited<ReturnType<typeof authenticate>>["admin"]
 
 async function falJson(url: string, key: string, init: RequestInit = {}) {
   let response: Response
@@ -80,6 +86,35 @@ async function imageBytes(url: URL) {
   return bytes
 }
 
+async function createCover(admin: Admin, eventId: string, companyId: string, actorId: string, path: string, startedAt: string, brief: ImageBrief, key: string) {
+  try {
+    const bytes = await imageBytes(await generateImage(key, brief))
+    const { error: uploadError } = await admin.storage.from(eventImageBucket).upload(path, bytes, {
+      contentType: "image/webp", cacheControl: "3600", upsert: false,
+    })
+    if (uploadError) throw new Error("The event image could not be saved.")
+    const { data: updated, error: updateError } = await admin.from("company_events")
+      .update({ image_path: path, image_generation_status: "complete", image_generation_started_at: null, updated_at: new Date().toISOString() })
+      .eq("id", eventId).eq("company_id", companyId).eq("image_generation_status", "generating")
+      .eq("image_generation_started_at", startedAt).is("image_path", null)
+      .in("status", ["draft", "published"]).select("id").maybeSingle()
+    if (updateError) throw new Error("The event cover could not be attached.")
+    if (updated) {
+      await admin.from("company_event_audit").insert({ company_id: companyId, event_id: eventId, actor_id: actorId, kind: "image_generated", details: { source: "fal_muse_image" } })
+    } else {
+      // An organiser uploaded a cover or cancelled the event while this job ran.
+      await admin.storage.from(eventImageBucket).remove([path])
+    }
+  } catch (error) {
+    console.error("Company event cover generation failed", { eventId, reason: error instanceof Error ? error.message.slice(0, 160) : "unknown" })
+    const { error: stateError } = await admin.from("company_events")
+      .update({ image_generation_status: "failed", image_generation_started_at: null })
+      .eq("id", eventId).eq("company_id", companyId).eq("image_generation_status", "generating")
+      .eq("image_generation_started_at", startedAt).is("image_path", null)
+    if (stateError) console.error("Company event cover failure state could not be saved", { eventId })
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
   try {
@@ -92,30 +127,29 @@ Deno.serve(async (request) => {
     if (settingsError) throw new HttpError(500, "Event settings could not be checked.")
     if (!settings?.enabled) throw new HttpError(403, "Events are turned off for this workspace.")
 
-    const input = await request.json().catch(() => null) as (ImageBrief & { requestId?: string }) | null
-    if (!input || typeof input !== "object" || !requestIdPattern.test(input.requestId ?? "")
-      || typeof input.title !== "string" || typeof input.location !== "string"
-      || (input.details !== undefined && typeof input.details !== "string")
-      || (input.startsAt !== undefined && typeof input.startsAt !== "string")) {
-      throw new HttpError(400, "Add valid event details before creating the image.")
-    }
-    if (!input.title.trim() || input.title.length > 160 || !input.location.trim() || input.location.length > 240
-      || (input.details?.length ?? 0) > 8000) throw new HttpError(400, "Check the event title, location and details.")
-    const path = `${user.id}/${input.requestId}.webp`
-    const { data: previous, error: listError } = await admin.storage.from(eventImageBucket)
-      .list(user.id, { search: `${input.requestId}.webp`, limit: 1 })
-    if (listError) throw new HttpError(503, "Event image storage is unavailable. Try again.")
-    if (previous?.some((object) => object.name === `${input.requestId}.webp`)) return json(request, { imagePath: path })
-
+    const input = await request.json().catch(() => null) as { eventId?: string } | null
+    if (!input || !requestIdPattern.test(input.eventId ?? "")) throw new HttpError(400, "Choose a saved event to create the image.")
+    const { data: event, error: eventError } = await admin.from("company_events")
+      .select("id,company_id,title,location,details,starts_at,image_path,status,image_generation_status,image_generation_started_at")
+      .eq("id", input.eventId).eq("company_id", current.Company_ID).maybeSingle()
+    if (eventError) throw new HttpError(500, "The event could not be checked.")
+    if (!event || event.status === "archived" || event.status === "cancelled") throw new HttpError(404, "The event is not available.")
+    if (event.image_path) return json(request, { status: "complete" })
+    if (event.image_generation_status === "generating" && event.image_generation_started_at
+      && Date.now() - Date.parse(event.image_generation_started_at) < 130_000) return json(request, { status: "generating" }, 202)
     const key = Deno.env.get("FAL_API_KEY")?.trim()
     if (!key) throw new HttpError(503, "Event image creation is not configured for this workspace.")
-    const bytes = await imageBytes(await generateImage(key, input))
-    const { error: uploadError } = await admin.storage.from(eventImageBucket).upload(path, bytes, {
-      contentType: "image/webp", cacheControl: "3600", upsert: false,
-    })
-    if (uploadError && !/already exists|duplicate/i.test(uploadError.message)) {
-      throw new HttpError(503, "The event image could not be saved. Try again.")
-    }
-    return json(request, { imagePath: path })
+    const startedAt = new Date().toISOString()
+    let claim = admin.from("company_events")
+      .update({ image_generation_status: "generating", image_generation_started_at: startedAt })
+      .eq("id", event.id).eq("company_id", current.Company_ID).eq("image_generation_status", event.image_generation_status).is("image_path", null)
+    claim = event.image_generation_started_at ? claim.eq("image_generation_started_at", event.image_generation_started_at) : claim.is("image_generation_started_at", null)
+    const { data: claimed, error: claimError } = await claim.select("id").maybeSingle()
+    if (claimError) throw new HttpError(503, "The event image could not be started. Try again.")
+    if (!claimed) return json(request, { status: "generating" }, 202)
+    const path = `${user.id}/${crypto.randomUUID()}.webp`
+    EdgeRuntime.waitUntil(createCover(admin, event.id, current.Company_ID, current.User_ID, path, startedAt,
+      { title: event.title, location: event.location, details: event.details, startsAt: event.starts_at }, key))
+    return json(request, { status: "generating" }, 202)
   } catch (error) { return failure(request, error) }
 })
