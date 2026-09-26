@@ -22611,6 +22611,31 @@ INSERT INTO public."sys_RateChargeCategories" VALUES
 	('other', 'Other', 'Other charge.', false, false, 900);
 
 
+-- Multideck standard charge identities. Customer-specific imported charges,
+-- including CargoWise examples, are intentionally excluded from the baseline.
+-- The complete tenant schema is installed before this reference-data file.
+INSERT INTO public."RATE_ChargeCodes" (
+  "RATECharge_Code", "RATECharge_Name", "RATECharge_Description",
+  "RATECharge_CategoryCode", "RATECharge_DefaultApplicabilityCode",
+  "RATECharge_IsFreight", "RATECharge_IsSurcharge", "RATECharge_IsPassThrough",
+  "RATECharge_IsActive", "RATECharge_ScopeConfigured", "RATECharge_MetadataJSON"
+)
+SELECT v.code, v.name, v.description, v.category, 'both',
+  v.category='freight', false, false, true, false,
+  jsonb_build_object('multideck',jsonb_build_object(
+    'standard',true,'version',1,'nominalFamily',v.family))
+FROM (VALUES
+  ('MD-FREIGHT','Freight','Main carriage by air, sea or road.','freight','FREIGHT'),
+  ('MD-AGENCY','Agency service','Origin or destination agency service.','other','AGENCY'),
+  ('MD-PORT','Port and terminal','Port, terminal or airport service.','terminal','PORT'),
+  ('MD-DOCUMENTATION','Documentation','Shipping and trade documentation service.','documentation','DOCUMENT'),
+  ('MD-WAREHOUSE','Warehouse service','Warehouse storage or handling service.','warehouse','WAREHOUSE'),
+  ('MD-TRANSPORT','Transport service','Pickup, delivery or inland transport service.','haulage','TRANSPORT'),
+  ('MD-OTHER','Other service','Other operational service with a reviewed description.','other','OTHER')
+) AS v(code,name,description,category,family)
+ON CONFLICT ("RATECharge_Code") DO NOTHING;
+
+
 --
 -- Data for Name: sys_RateContractTypes; Type: TABLE DATA; Schema: public; Owner: -
 --

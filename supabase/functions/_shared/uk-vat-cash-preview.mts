@@ -7,6 +7,7 @@ type SourceLine = {
   evidenceNetGbp: Amount | null; evidenceVatGbp: Amount | null;
   standardVatReconciledAt: string | null;
   standardProductionAcceptedAt: string | null;
+  linkedCreditCount: number;
   reviewId: string | null; treatment: string | null;
   decisionScheme: string | null; reviewedRuleId: string | null;
 }
@@ -31,7 +32,10 @@ type Allocation = {
 }
 export type UkVatCashSourceSnapshot = {
   legalEntityId: string; startDate: string; endDate: string;
-  unreviewedPostedCash: number; periodCash: PeriodCash[];
+  unreviewedPostedCash: number; postedPeriodCreditCount: number;
+  priorPartyCreditCount: number; unsupportedPostedCashCount: number;
+  unsupportedPostedCashTypes: Array<{ type: string; count: number }>;
+  periodCash: PeriodCash[];
   allocationCount: number; allocations: Allocation[]; truncated: boolean;
   status: "source_only_not_filing";
 }
@@ -74,6 +78,14 @@ function validDate(value: string) {
 export function previewUkVatCashSources(snapshot: UkVatCashSourceSnapshot): UkVatCashSourcePreview {
   if (!snapshot.legalEntityId || !validDate(snapshot.startDate) || !validDate(snapshot.endDate)
     || snapshot.startDate > snapshot.endDate || snapshot.status !== "source_only_not_filing"
+    || !Number.isSafeInteger(snapshot.postedPeriodCreditCount) || snapshot.postedPeriodCreditCount < 0
+    || !Number.isSafeInteger(snapshot.priorPartyCreditCount) || snapshot.priorPartyCreditCount < 0
+    || !Number.isSafeInteger(snapshot.unsupportedPostedCashCount) || snapshot.unsupportedPostedCashCount < 0
+    || !Array.isArray(snapshot.unsupportedPostedCashTypes)
+    || snapshot.unsupportedPostedCashTypes.some((item) => !item || !item.type
+      || !Number.isSafeInteger(item.count) || item.count < 1)
+    || snapshot.unsupportedPostedCashTypes.reduce((total, item) => total + item.count, 0)
+      !== snapshot.unsupportedPostedCashCount
     || !Array.isArray(snapshot.periodCash) || !Array.isArray(snapshot.allocations)) {
     throw new Error("Cash VAT source snapshot is invalid.")
   }
@@ -85,6 +97,15 @@ export function previewUkVatCashSources(snapshot: UkVatCashSourceSnapshot): UkVa
   }
   if (snapshot.unreviewedPostedCash > 0) {
     issue(`${snapshot.unreviewedPostedCash} posted cash transaction(s) have no reviewed VAT payment date.`)
+  }
+  if (snapshot.postedPeriodCreditCount > 0) {
+    issue(`${snapshot.postedPeriodCreditCount} posted credit or debit note(s) in this period need Cash Accounting price-change and refund review.`)
+  }
+  if (snapshot.priorPartyCreditCount > 0) {
+    issue(`${snapshot.priorPartyCreditCount} earlier posted credit or debit note(s) for a party paid in this period need reviewed application or refund evidence.`)
+  }
+  if (snapshot.unsupportedPostedCashCount > 0) {
+    issue(`${snapshot.unsupportedPostedCashCount} posted refund or other cash event(s) have no reviewed Cash Accounting treatment: ${snapshot.unsupportedPostedCashTypes.map((item) => `${item.type} (${item.count})`).join(", ")}.`)
   }
   const periodCash = new Map<string, PeriodCash>()
   for (const cash of snapshot.periodCash) {
@@ -155,19 +176,26 @@ export function previewUkVatCashSources(snapshot: UkVatCashSourceSnapshot): UkVa
     const side = row.cash_type === "customer_receipt" ? "sale" : "purchase"
     const seenLines = new Set<string>()
     let linesValid = true
+    let hasLinkedCredit = false
     for (const line of row.lines) {
       try {
         if (!line.lineId || seenLines.has(line.lineId) || !line.evidenceId
           || line.evidenceBatchId !== row.document_posting_batch_id || !line.reviewId
           || !line.reviewedRuleId || !["standard", "annual", "cash"].includes(line.decisionScheme || "")
+          || !Number.isSafeInteger(line.linkedCreditCount) || line.linkedCreditCount < 0
           || units(line.netGbp) !== units(line.evidenceNetGbp)
           || units(line.vatGbp) !== units(line.evidenceVatGbp)
           || units(line.netGbp) + units(line.vatGbp) !== units(line.grossGbp)) throw new Error()
+        if (line.linkedCreditCount > 0) hasLinkedCredit = true
         seenLines.add(line.lineId)
       } catch { linesValid = false; break }
     }
     if (!linesValid) {
       issue(`Invoice ${row.document_id} lacks coherent, reviewed posted VAT lines.`)
+      continue
+    }
+    if (hasLinkedCredit) {
+      issue(`Invoice ${row.document_id} has a linked credit or debit note; review its changed price and any refund before Cash Accounting.`)
       continue
     }
     const standardSigned = row.lines.filter((line) => line.standardVatReconciledAt !== null)

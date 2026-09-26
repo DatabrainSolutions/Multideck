@@ -94,6 +94,43 @@ required accountant review or external filing route.
    production Standard or Annual return is excluded with its filing time and
    allocation link, preventing a duplicate candidate amount. Mixed or merely
    signed but unaccepted Standard accounting blocks the preview for review.
+   A later source guard also detects an ordinary credit or debit note linked
+   to the original invoice line, even when no payment was allocated to that
+   note. It invalidates the preview and any earlier recorded event projection.
+   The source now counts every posted credit or debit note dated within the
+   preview period, including notes with no cash allocation or original-line
+   link. Any such note invalidates the Cash preview and the server refuses an
+   event projection. This is a completeness guard while the reviewed
+   price-change and refund event path is being built.
+   A further source check finds earlier posted credit or debit notes for the
+   same party and invoice side as a payment in the selected period. It blocks
+   that preview and stales an earlier projection even if the note was never
+   linked to an invoice. An immutable, audited native credit application can
+   now settle a posted GBP credit note against its linked original invoice.
+   It requires VAT and management approval permissions, a matching party and
+   open accounting period, complete original-line links, and sufficient
+   outstanding balances. It changes only the two subledger balances. An
+   active external accounting mirror blocks it until a reviewed delivery
+   adapter exists. The VAT audit trail now lets an authorised operator check
+   both balances and earlier applications, choose an amount and date, record
+   a reason, and apply the credit. This has only been tested locally. The
+   native ledger still has no reviewed refund cash type,
+   so the Cash preview guard remains in force and a credit application is
+   never treated as a VAT payment.
+   The native cash catalogue also contains refund, on-account, bank-charge
+   and FX entries, while the VAT source extractor currently supports only
+   customer receipts and supplier payments. A source inventory now counts
+   posted entries of every unsupported cash type whose transaction or
+   accounting date is on or before the period end,
+   displays their types in the preview exception, blocks server-side event
+   projection, and makes an earlier projection stale. This prevents a posted
+   refund from disappearing from a candidate return. Each type still needs
+   its proper reviewed tax-point, journal, bank and mirror treatment before
+   Cash Accounting can be enabled.
+   HMRC Notice 731 section 5.12 requires price changes to be evidenced by a
+   credit or debit note and any further payment or refund to be recorded in
+   the payment record. Cash treatment of credits and refunds still needs a
+   dedicated reviewed event path before it can enter a return.
    A manager can now record an immutable, audited projection of supported
    payment allocation events. The database rechecks the source and exact
    cumulative part-payment amounts before recording it; later payment-date
@@ -101,7 +138,13 @@ required accountant review or external filing route.
    re-reads the current source and verifies every stored event, exclusion,
    partial-payment amount and source-box total before a future calculator may
    consume the projection. This projection is not Cash Accounting VAT evidence
-   and cannot enter a return yet.
+   and cannot enter a return yet. A service-only nine-box preview now verifies
+   that projection against its current source, reconstructs Boxes 1, 4, 6 and
+   7 from the immutable payment events, derives Boxes 3 and 5, and exposes
+   each supporting event and candidate filing rounding. It rejects a stale
+   projection or cross-entity read. Boxes 2, 8 and 9 remain zero for the
+   supported domestic GBP subset. The preview has no period review, ledger
+   control or filing authority, so Cash Accounting stays blocked.
    Previous-return errors need a separate dated correction register, not a
    blanket rule based on whether the transaction predates the previous return.
    Under HMRC Notice 700/45, aggregate the signed VAT errors discovered in the
@@ -109,7 +152,8 @@ required accountant review or external filing route.
    at most £10,000, or from £10,000 to £50,000 when it is at most 1% of that
    period's Box 6. Larger net errors, deliberate errors and errors above that
    1% test require Method 2, a separate HMRC error correction notification,
-   not another VAT return;
+   not another VAT return. HMRC currently accepts this notification through
+   its online service or in writing; form VAT652 is no longer accepted;
    Method 2 may also be chosen below those limits. Capture discovery date,
    original period, evidence, input/output treatment, reason, time-limit check,
    reviewer and the notification outcome. Prevent duplicate correction in the
@@ -153,6 +197,10 @@ required accountant review or external filing route.
    It flags an individual error that appears to require immediate Method 2
    notification under Notice 700/45 section 4.8, using the reviewed current
    Box 6 where available and the unconditional £50,000 limit otherwise.
+   The Method 1 plan and native posting now also reject any individual error
+   above £50,000, or above £10,000 and above 1% of the final reviewed Box 6,
+   even when another error offsets it in the aggregate. This closes the gap
+   between the immediate-notification flag and the posting gate.
    This preview is not a reviewed correction decision and creates no return
    line or HMRC notification.
    A separate operator-entered evidence record can now capture the date,
@@ -183,7 +231,7 @@ required accountant review or external filing route.
    the UK civil date when a posted allocation was recorded must fall within
    that period; a later allocation cannot retrospectively remove the risk.
    The readback does not decide the adjustment amount or allow a filing exception.
-   A backend-only exact-decimal kernel now calculates the proportional input
+   An exact-decimal kernel now calculates the proportional input
    VAT repayment and later restoration from the original GBP input VAT,
    source-currency gross amount, cumulative payment and prior repayment. It
    follows [HMRC Notice 700/18, section 4](https://www.gov.uk/guidance/relief-from-vat-on-bad-debts-notice-70018)
@@ -220,8 +268,15 @@ required accountant review or external filing route.
    calculation verifies those entries and includes them in Box 4 and the
    control bridge. A payment with no whole penny of VAT effect advances the
    audited unpaid balance without inventing a tax journal or Box 4 line. These
-   actions remain backend-only until the operator flow and full filing review
-   are verified; no live HMRC filing is enabled by this work. Annual Accounting
+   actions are now exposed in the protected VAT screen: a Compliance Manage
+   operator can inspect the scoped source and history, prepare and review the
+   first repayment, review a later restoration, and authorise each posting.
+   Both the original six-month cases and payments after a first repayment are
+   paged, so a fully settled invoice or a case beyond the first 50 remains
+   reachable for review.
+   The database rechecks the source on every write. The operator must then
+   recalculate, reconcile and review-lock the period; this screen does not
+   enable live HMRC filing. Annual Accounting
    remains blocked for this adjustment pending scheme-specific validation.
 3. An authorised finance user reviews the exact return snapshot, resolves
    exceptions and approves one period key. Duplicate submission, stale source
@@ -699,6 +754,20 @@ release blockers.
 Production consent remains gated, and connection alone cannot file a return.
 This connection has
 not been exercised in the sandbox or deployed to a tenant.
+
+Accounting-month close uses a separate VAT control inventory. It fingerprints
+posted VAT-account and tax-labelled GL movements, the reviewed source VAT
+evidence and sign-offs, period boundaries, and posted document lines that
+should have evidence and a tax posting. An unclassified movement, a tax-point
+cutoff difference, an orphan posting event, or a missing document source blocks
+the inventory. Only the exact posted trial-balance batch linked to an approved
+historical opening package is excluded from current VAT movements. This is a
+read-only input to a distinct two-person monthly close review; a quarterly
+return control review does not clear an accounting month. Historical opening
+AR/AP documents with reviewed source references are likewise excluded from
+current Standard VAT capture, backfill, coverage and calculation. Those
+references are operator supplied and still need accountant verification
+against the original filings before a live cutover.
 
 ## Delivery order
 

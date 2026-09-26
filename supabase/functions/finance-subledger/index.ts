@@ -2291,6 +2291,17 @@ Deno.serve(async (request) => {
       rpcFailure(error, "Cash Accounting projection history could not be read.")
       return json(request, data)
     }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "cash-projections"
+      && parts[4] === "nine-box-preview" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(400, "Choose a valid Cash Accounting projection.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_cash_nine_box_preview", {
+        p_actor: current.User_ID, p_entity: parts[1], p_projection: parts[3],
+      })
+      rpcFailure(error, "Cash Accounting nine-box preview could not be read.")
+      return json(request, data)
+    }
     if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
       && parts[4] === "cash-control" && request.method === "GET") {
       await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
@@ -2448,10 +2459,33 @@ Deno.serve(async (request) => {
       await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
       await legalEntity(admin, current, parts[1])
       if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
-      const { data, error } = await admin.rpc("multideck_uk_vat_clawback_candidates", {
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647) {
+        throw new HttpError(400, "Choose a valid supplier VAT candidate page.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_clawback_candidates_page", {
         p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+        p_offset: offset, p_limit: 50,
       })
       rpcFailure(error, "Unpaid supplier VAT candidates could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "supplier-payment-followups" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647) {
+        throw new HttpError(400, "Choose a valid supplier VAT follow-up page.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_supplier_payment_followups", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+        p_offset: offset, p_limit: 50,
+      })
+      rpcFailure(error, "Supplier VAT payment follow-ups could not be read.")
       return json(request, data)
     }
     if (parts[0] === "vat" && parts[2] === "periods"
@@ -2622,6 +2656,43 @@ Deno.serve(async (request) => {
         p_original: originalId, p_reason: reason,
       })
       rpcFailure(error, "The VAT credit could not be linked to its original invoice.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 4 && parts[2] === "credit-applications" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await requirePermission(admin, current.User_ID, "Finance.Management.Approve")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "The posted credit was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_credit_application_source", {
+        p_actor: current.User_ID, p_entity: parts[1], p_credit: parts[3],
+      })
+      rpcFailure(error, "The posted credit balance could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "credit-applications" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await requirePermission(admin, current.User_ID, "Finance.Management.Approve")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ invoiceId?: unknown; creditId?: unknown; amountGbp?: unknown;
+        appliedOn?: unknown; requestKey?: unknown; reason?: unknown }>(request)
+      const invoiceId = typeof input.invoiceId === "string" ? input.invoiceId : ""
+      const creditId = typeof input.creditId === "string" ? input.creditId : ""
+      const amountGbp = typeof input.amountGbp === "string" ? input.amountGbp : ""
+      const appliedOn = typeof input.appliedOn === "string" ? input.appliedOn : ""
+      const requestKey = typeof input.requestKey === "string" ? input.requestKey : ""
+      const reason = clean(input.reason, 2000)
+      if (!isUuid(invoiceId) || !isUuid(creditId) || invoiceId === creditId
+        || !/^(?:0|[1-9][0-9]{0,13})(?:\.[0-9]{1,4})?$/.test(amountGbp)
+        || Number(amountGbp) <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(appliedOn)
+        || !isUuid(requestKey) || reason.length < 10) {
+        throw new HttpError(400, "Choose the posted GBP invoice and credit, application amount, date and reason.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_apply_credit_to_invoice", {
+        p_actor: current.User_ID, p_entity: parts[1], p_invoice: invoiceId,
+        p_credit: creditId, p_amount: amountGbp, p_applied_on: appliedOn,
+        p_request_key: requestKey, p_reason: reason,
+      })
+      rpcFailure(error, "The posted credit could not be applied to its invoice.")
       return json(request, data)
     }
     if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "tax-postings" && request.method === "GET") {
@@ -2883,6 +2954,48 @@ Deno.serve(async (request) => {
       rpcFailure(error, "Historical UK VAT evidence could not be captured.")
       return json(request, data)
     }
+    if (parts[0] === "approval-policies" && parts.length === 2 && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
+      if (!isUuid(parts[1])) throw new HttpError(404, "Legal entity not found.")
+      await legalEntity(admin, current, parts[1])
+      const { data, error } = await admin.rpc("multideck_finance_list_approval_policies", {
+        p_company_id: current.Company_ID, p_entity_id: parts[1],
+      })
+      rpcFailure(error, "Finance approval policies could not be loaded.")
+      return json(request, { policies: Array.isArray(data) ? data : [] })
+    }
+    if (parts[0] === "approval-policies" && parts.length === 3 && request.method === "PUT") {
+      await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
+      if (!isUuid(parts[1])) throw new HttpError(404, "Legal entity not found.")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ mode?: string; maxAutoAmount?: number | null; maxVariancePercent?: number | null; reason?: string }>(request)
+      const modes = ["always_review", "exception_review", "automatic"]
+      if (!modes.includes(input.mode || "") || !clean(input.reason, 501) || clean(input.reason, 501).length > 500) {
+        throw new HttpError(400, "Choose an approval mode and explain the change.")
+      }
+      const amount = input.maxAutoAmount
+      const variance = input.maxVariancePercent
+      if (input.mode !== "always_review" && (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || amount >= 1e12)) {
+        throw new HttpError(400, "Enter a finite base-currency automatic amount limit.")
+      }
+      if (variance != null && (typeof variance !== "number" || !Number.isFinite(variance) || variance < 0 || variance > 100)) {
+        throw new HttpError(400, "Enter a variance limit from zero to 100 percent.")
+      }
+      const { error } = await admin.rpc("multideck_finance_save_approval_policy", {
+        p_company_id: current.Company_ID, p_user_id: current.User_ID, p_entity_id: parts[1],
+        p_workflow: parts[2], p_mode: input.mode, p_max_auto_amount: input.mode === "always_review" ? null : amount,
+        p_max_variance_percent: input.mode === "always_review" ? null : variance ?? null,
+        p_reason: clean(input.reason, 500),
+      })
+      rpcFailure(error, "Finance approval policy could not be saved.")
+      const { data: policies, error: listError } = await admin.rpc("multideck_finance_list_approval_policies", {
+        p_company_id: current.Company_ID, p_entity_id: parts[1],
+      })
+      rpcFailure(listError, "Finance approval policy could not be reloaded.")
+      const saved = Array.isArray(policies) ? policies.find((item: any) => item.workflow === parts[2]) : null
+      if (!saved) throw new HttpError(500, "Finance approval policy was saved but could not be reloaded.")
+      return json(request, saved)
+    }
     if (request.method === "PUT" && parts[0] === "administration" && parts.length === 2) {
       await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
       await requirePermission(admin, current.User_ID, "Finance.Banks.Manage")
@@ -2956,48 +3069,6 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "retry-posting") return json(request, await retryDocumentPosting(admin, current, parts[1]))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "correct-billing-party") return json(request, await correctDocumentBillingParty(admin, current, parts[1], await body<BillingPartyCorrectionInput>(request)))
     if (request.method === "POST" && parts[0] === "cash" && parts[1] === "draft") return json(request, await createCashDraft(admin, current, await body<CashInput>(request)), 201)
-    if (parts[0] === "approval-policies" && parts.length === 2 && request.method === "GET") {
-      await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
-      if (!isUuid(parts[1])) throw new HttpError(404, "Legal entity not found.")
-      await legalEntity(admin, current, parts[1])
-      const { data, error } = await admin.rpc("multideck_finance_list_approval_policies", {
-        p_company_id: current.Company_ID, p_entity_id: parts[1],
-      })
-      rpcFailure(error, "Finance approval policies could not be loaded.")
-      return json(request, { policies: Array.isArray(data) ? data : [] })
-    }
-    if (parts[0] === "approval-policies" && parts.length === 3 && request.method === "PUT") {
-      await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
-      if (!isUuid(parts[1])) throw new HttpError(404, "Legal entity not found.")
-      await legalEntity(admin, current, parts[1])
-      const input = await body<{ mode?: string; maxAutoAmount?: number | null; maxVariancePercent?: number | null; reason?: string }>(request)
-      const modes = ["always_review", "exception_review", "automatic"]
-      if (!modes.includes(input.mode || "") || !clean(input.reason, 501) || clean(input.reason, 501).length > 500) {
-        throw new HttpError(400, "Choose an approval mode and explain the change.")
-      }
-      const amount = input.maxAutoAmount
-      const variance = input.maxVariancePercent
-      if (input.mode !== "always_review" && (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || amount >= 1e12)) {
-        throw new HttpError(400, "Enter a finite base-currency automatic amount limit.")
-      }
-      if (variance != null && (typeof variance !== "number" || !Number.isFinite(variance) || variance < 0 || variance > 100)) {
-        throw new HttpError(400, "Enter a variance limit from zero to 100 percent.")
-      }
-      const { error } = await admin.rpc("multideck_finance_save_approval_policy", {
-        p_company_id: current.Company_ID, p_user_id: current.User_ID, p_entity_id: parts[1],
-        p_workflow: parts[2], p_mode: input.mode, p_max_auto_amount: input.mode === "always_review" ? null : amount,
-        p_max_variance_percent: input.mode === "always_review" ? null : variance ?? null,
-        p_reason: clean(input.reason, 500),
-      })
-      rpcFailure(error, "Finance approval policy could not be saved.")
-      const { data: policies, error: listError } = await admin.rpc("multideck_finance_list_approval_policies", {
-        p_company_id: current.Company_ID, p_entity_id: parts[1],
-      })
-      rpcFailure(listError, "Finance approval policy could not be reloaded.")
-      const saved = Array.isArray(policies) ? policies.find((item: any) => item.workflow === parts[2]) : null
-      if (!saved) throw new HttpError(500, "Finance approval policy was saved but could not be reloaded.")
-      return json(request, saved)
-    }
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "provider-preflight") return json(request, await preflightDocument(admin, current, parts[1]))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "request-review") return json(request, await transitionDocument(admin, current, parts[1], "request_review", await optionalReason(request)))
     if (request.method === "POST" && parts[0] === "documents" && parts[2] === "approve") return json(request, await transitionDocument(admin, current, parts[1], "approve", await optionalReason(request)))

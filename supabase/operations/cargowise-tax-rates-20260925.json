@@ -1,0 +1,17 @@
+[
+  {"id":"0A7B1FF2-E870-4EE9-AB5B-004E77A54CEE","code":"FREEVAT","country":"GB","type":"RAT","description":"Zero Rated"},
+  {"id":"A63CF556-E9C6-4AF0-82D4-1409B818758D","code":"FREEGST","country":"AU","type":"RAT","description":"Zero Rated"},
+  {"id":"F8386CED-AD2F-462E-A51A-3751C6AD4B22","code":"NOTREPORT","country":"AU","type":"NOT","description":"Not Subject to Tax & Not Reportable"},
+  {"id":"11EA9352-B2ED-4299-B8C4-764A80DFA6E0","code":"LOWVATREV","country":"GB","type":"RVS","description":"Reverse Charge - Reduced Rate"},
+  {"id":"566A59A9-FE6D-488E-A37E-76B9BACC047B","code":"FREEVATREV","country":"GB","type":"RVS","description":"Reverse Charge - Zero Rated"},
+  {"id":"EF810AB9-7A97-44FF-B277-826A2FDDDB86","code":"GST","country":"AU","type":"RAT","description":"Standard Rated (Non-Capital)"},
+  {"id":"B9EEEE2A-9226-4C1F-8212-8B56F9262E61","code":"EXEMPT","country":"GB","type":"EXT","description":"Exempt Rated"},
+  {"id":"B3EA9BC4-D17E-40DE-B107-9102B32F32B0","code":"LOWVAT","country":"GB","type":"RAT","description":"Reduced Rate"},
+  {"id":"E0407161-1D08-4DDF-BBCE-934BEF2C1F3D","code":"CAPGST","country":"AU","type":"CAP","description":"Standard Rated (Capital items)"},
+  {"id":"D6726A9A-6C9F-438E-9C0B-DA421D5BC1F1","code":"VATREV","country":"GB","type":"RVS","description":"Reverse Charge - Standard Rate"},
+  {"id":"75EE959C-5786-4F77-92C2-DEA661552C1E","code":"VAT","country":"GB","type":"RAT","description":"Standard Rated"},
+  {"id":"0033D037-2DC0-42E4-B240-E2D770D102B9","code":"CAPVAT","country":"GB","type":"CAP","description":"Standard Rated - Capital Items"},
+  {"id":"0E4D685F-81A8-4B1F-81F1-E3812E0C75D7","code":"FREECAPGST","country":"AU","type":"CAP","description":"Zero Rated - Capital Items"},
+  {"id":"91EF492D-08E5-45E5-82E7-F4B65B48F750","code":"EXEMPT","country":"AU","type":"EXT","description":"Exempt"},
+  {"id":"8DE00964-C88D-4646-BC7C-FB3A2046AC3E","code":"NOTREPORT","country":"GB","type":"NOT","description":"Not Reportable"}
+]

@@ -30,12 +30,19 @@ const priorErrorNotifications = readFileSync(new URL("../migrations/202609250410
 const postedCashSourceLocks = readFileSync(new URL("../migrations/20260925033355_lock_posted_cash_vat_sources.sql", import.meta.url), "utf8")
 const cashPaymentDateReviews = readFileSync(new URL("../migrations/20260925033916_uk_vat_cash_payment_date_reviews.sql", import.meta.url), "utf8")
 const cashSourceSnapshot = readFileSync(new URL("../migrations/20260925035012_uk_vat_cash_source_snapshot.sql", import.meta.url), "utf8")
+const cashLinkedCreditGuard = readFileSync(new URL("../migrations/20260925074953_uk_vat_cash_linked_credit_guard.sql", import.meta.url), "utf8")
+const cashPeriodCreditInventory = readFileSync(new URL("../migrations/20260925090712_uk_vat_cash_period_credit_inventory.sql", import.meta.url), "utf8")
+const cashPriorPartyCredits = readFileSync(new URL("../migrations/20260925091656_uk_vat_cash_prior_party_credits.sql", import.meta.url), "utf8")
+const cashUnsupportedPostedEvents = readFileSync(new URL("../migrations/20260925094702_uk_vat_cash_unsupported_posted_events.sql", import.meta.url), "utf8")
+const cashCreditApplications = readFileSync(new URL("../migrations/20260925092533_uk_vat_cash_credit_application_native.sql", import.meta.url), "utf8")
 const cashEventProjections = readFileSync(new URL("../migrations/20260925041559_uk_vat_cash_event_projections.sql", import.meta.url), "utf8")
 const priorErrorFilingGate = readFileSync(new URL("../migrations/20260925043400_guard_unresolved_uk_vat_prior_errors_at_filing.sql", import.meta.url), "utf8")
 const priorErrorTimeLimitReviews = readFileSync(new URL("../migrations/20260925045000_uk_vat_prior_error_time_limit_reviews.sql", import.meta.url), "utf8")
 const method1PostingPlans = readFileSync(new URL("../migrations/20260925050000_uk_vat_method1_posting_plans.sql", import.meta.url), "utf8")
 const method1NativePosting = readFileSync(new URL("../migrations/20260925053000_uk_vat_method1_native_posting.sql", import.meta.url), "utf8")
+const method1ImmediateMethod2Guard = readFileSync(new URL("../migrations/20260925101000_uk_vat_immediate_method2_guard.sql", import.meta.url), "utf8")
 const cashProjectionIntegrity = readFileSync(new URL("../migrations/20260925060849_uk_vat_cash_projection_integrity.sql", import.meta.url), "utf8")
+const cashNineBoxPreview = readFileSync(new URL("../migrations/20260925073511_uk_vat_cash_nine_box_preview.sql", import.meta.url), "utf8")
 const inputTaxRepaymentSchedule = readFileSync(new URL("../migrations/20260925061815_uk_vat_input_tax_repayment_schedule.sql", import.meta.url), "utf8")
 const inputTaxRepaymentNativePosting = readFileSync(new URL("../migrations/20260925062121_uk_vat_input_tax_repayment_native_posting.sql", import.meta.url), "utf8")
 const inputTaxRepaymentCalculation = readFileSync(new URL("../migrations/20260925062806_uk_vat_input_tax_repayment_calculation.sql", import.meta.url), "utf8")
@@ -43,8 +50,14 @@ const laterInputTaxRestorationSource = readFileSync(new URL("../migrations/20260
 const laterInputTaxRestorationReviews = readFileSync(new URL("../migrations/20260925065025_uk_vat_later_input_tax_restoration_reviews.sql", import.meta.url), "utf8")
 const laterInputTaxRestorationPosting = readFileSync(new URL("../migrations/20260925065230_uk_vat_later_input_tax_restoration_posting.sql", import.meta.url), "utf8")
 const laterInputTaxRestorationCalculation = readFileSync(new URL("../migrations/20260925065559_uk_vat_later_input_tax_restoration_calculation.sql", import.meta.url), "utf8")
+const openingVatExclusion = readFileSync(new URL("../migrations/20260925075913_uk_vat_opening_source_exclusion.sql", import.meta.url), "utf8")
+const openingVatReadiness = readFileSync(new URL("../migrations/20260925080831_uk_vat_opening_cutover_readiness.sql", import.meta.url), "utf8")
+const openingVatControlScope = readFileSync(new URL("../migrations/20260925082119_uk_vat_opening_balance_control_scope.sql", import.meta.url), "utf8")
+const accountingPeriodInventory = readFileSync(new URL("../migrations/20260925082712_uk_vat_accounting_period_inventory.sql", import.meta.url), "utf8")
+const accountingVatSignoff = readFileSync(new URL("../migrations/20260925083125_accounting_period_vat_control_signoff.sql", import.meta.url), "utf8")
 const multiPeriodInputTaxRestorationSource = readFileSync(new URL("../migrations/20260925065950_uk_vat_multi_period_input_tax_restoration_source.sql", import.meta.url), "utf8")
 const supplierInputTaxHistory = readFileSync(new URL("../migrations/20260925070818_uk_vat_supplier_input_tax_history.sql", import.meta.url), "utf8")
+const supplierPaymentFollowups = readFileSync(new URL("../migrations/20260925072005_uk_vat_supplier_payment_followups.sql", import.meta.url), "utf8")
 const reconciliationHistory = readFileSync(new URL("../migrations/20260924202817_expose_vat_reconciliation_history.sql", import.meta.url), "utf8")
 const latestObligationStatus = readFileSync(new URL("../migrations/20260924182929_prefer_latest_vat_obligation_after_revocation.sql", import.meta.url), "utf8")
 const nominalResolution = readFileSync(new URL("../migrations/20260923150858_finance_chart_nominal_resolution.sql", import.meta.url), "utf8")
@@ -80,7 +93,8 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
         "FINPostLine_DocumentLineID" uuid,"FINPostLine_Description" text,
         "FINPostLine_DebitAmount" numeric(18,4) not null,"FINPostLine_CreditAmount" numeric(18,4) not null,
         "FINPostLine_CurrencyCodeSnapshot" text not null);
-      create table "FIN_Documents"("FINDoc_ID" uuid primary key,"FINDoc_LegalEntityID" uuid not null,"FINDoc_NativePostingStatusCode" text not null,"FINDoc_NativePostingBatchID" uuid,"FINDoc_CurrencyCodeSnapshot" text not null,"FINDoc_ExchangeRate" numeric not null,"FINDoc_DocumentDate" date not null,"FINDoc_NativePostedBy" uuid,"FINDoc_TypeCode" text not null default 'sl_invoice',"FINDoc_Number" text,"FINDoc_StatusCode" text not null default 'approved',"FINDoc_PostingStatusCode" text not null default 'queued',"FINDoc_ExportStatusCode" text not null default 'queued',"FINDoc_OutstandingAmount" numeric not null default 100,"FINDoc_LocalOutstandingAmount" numeric not null default 100,"FINDoc_IsLocked" boolean not null default true,"FINDoc_DueDate" date,"FINDoc_GrossAmount" numeric not null default 100);
+      create table "FIN_Documents"("FINDoc_ID" uuid primary key,"FINDoc_LegalEntityID" uuid not null,"FINDoc_NativePostingStatusCode" text not null,"FINDoc_NativePostingBatchID" uuid,"FINDoc_CurrencyCodeSnapshot" text not null,"FINDoc_ExchangeRate" numeric not null,"FINDoc_DocumentDate" date not null,"FINDoc_NativePostedBy" uuid,"FINDoc_TypeCode" text not null default 'sl_invoice',"FINDoc_Number" text,"FINDoc_StatusCode" text not null default 'approved',"FINDoc_PostingStatusCode" text not null default 'queued',"FINDoc_ExportStatusCode" text not null default 'queued',"FINDoc_OutstandingAmount" numeric not null default 100,"FINDoc_LocalOutstandingAmount" numeric not null default 100,"FINDoc_IsLocked" boolean not null default true,"FINDoc_DueDate" date,"FINDoc_GrossAmount" numeric not null default 100,"FINDoc_UpdatedAt" timestamptz,"FINDoc_UpdatedBy" uuid);
+      create table "ACCI_Connections"("ACCIC_LegalEntityID" uuid not null,"ACCIC_StatusCode" text not null);
       create table "FIN_CashTransactions"("FINCash_ID" uuid primary key,"FINCash_LegalEntityID" uuid not null,"FINCash_TypeCode" text not null,"FINCash_NativePostingStatusCode" text not null,"FINCash_TransactionDate" date not null);
       create table "FIN_CashAllocations"("FINCashAlloc_CashID" uuid not null,"FINCashAlloc_DocumentID" uuid not null,"FINCashAlloc_AllocationStatusCode" text not null,"FINCashAlloc_AllocatedAmount" numeric not null,"FINCashAlloc_AllocatedAt" timestamptz not null default now());
       alter table "FIN_Documents" add column "FINDoc_PartyOrgID" uuid;
@@ -2288,6 +2302,7 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
     sql(`alter table "FIN_Documents" add column "FINDoc_MetadataJSON" jsonb not null default '{}'::jsonb;
       alter table "FIN_Documents" add column "FINDoc_SourceTable" text;
       alter table "FIN_Documents" add column "FINDoc_SourceID" uuid;
+      alter table "FIN_Documents" add column "FINDoc_PeriodID" uuid;
       alter table "FIN_DocumentLines" add column "FINDocLine_LineNo" integer;`)
     sql(reversalLinks)
     sql(reversalAuditLinks)
@@ -2299,13 +2314,278 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
     sql(inputTaxRepaymentNativePosting)
     sql(priorErrorFilingGate)
     sql(method1NativePosting)
+    sql(method1ImmediateMethod2Guard)
     sql(inputTaxRepaymentCalculation)
     sql(laterInputTaxRestorationSource)
     sql(laterInputTaxRestorationReviews)
     sql(laterInputTaxRestorationPosting)
     sql(laterInputTaxRestorationCalculation)
     sql(multiPeriodInputTaxRestorationSource)
+    sql(`create table "FIN_OpeningBalancePackages"(
+      id uuid primary key,legal_entity_id uuid not null,status text not null,package_kind text not null,
+      approved_by uuid,approved_at timestamptz,source_items_count integer not null default 0,
+      posting_batch_id uuid);
+      create table "FIN_OpeningSourceItems"(
+        package_id uuid not null,operational_document_id uuid,kind text,
+        operational_cash_id uuid,historical_vat_evidence_ref text);
+      create function public._multideck_opening_vat_cutover_ready(p_entity uuid,p_package uuid)
+        returns boolean language sql stable as 'select false';
+      alter table "FIN_Documents" add column "FINDoc_OpeningBalancePackageID" uuid;`)
+    sql(openingVatExclusion)
+    sql(openingVatReadiness)
+    sql(openingVatControlScope)
+    sql(`create function public._multideck_journal_access(p_actor uuid,p_entity uuid,p_permission text)
+      returns void language plpgsql as $$ begin
+        if not exists(select 1 from public."cmp_Users" u join public."cmp_LegalEntities" e
+          on e."Company_ID"=u."Company_ID"
+          where u."User_ID"=p_actor and u."User_AccessStatus"='active'
+            and e."LegalEntity_ID"=p_entity and e."LegalEntity_IsActive")
+          or p_actor not in ('00000000-0000-0000-0000-000000000003'::uuid,
+            '00000000-0000-0000-0000-000000000004'::uuid)
+          or p_permission not in ('Finance.Management.View','Finance.Management.Prepare',
+            'Finance.Management.Approve') then
+          raise exception 'Management access denied' using errcode='42501';
+        end if;
+      end $$;`)
+    sql(accountingPeriodInventory)
+    sql(`create function public._multideck_accounting_close_immutable() returns trigger
+      language plpgsql as $$ begin raise exception 'Immutable accounting review' using errcode='22023'; end $$;
+      create or replace function public._multideck_dexter_has_permission(p_actor uuid,p_permission text)
+      returns boolean language sql stable as $$
+        select (p_actor in ('00000000-0000-0000-0000-000000000003'::uuid,
+          '00000000-0000-0000-0000-000000000004'::uuid)
+          and p_permission in ('Finance.Compliance.Manage','Finance.Compliance.View',
+            'Finance.Management.View','Finance.Management.Prepare','Finance.Management.Approve'))
+          or (p_actor='00000000-0000-0000-0000-000000000018'::uuid
+            and p_permission='Finance.Compliance.View');
+      $$;
+      insert into "cmp_Users"("User_ID") values('00000000-0000-0000-0000-000000000004');`)
+    sql(accountingVatSignoff)
+    sql(cashCreditApplications)
+    assert.equal(sql(`select has_function_privilege('authenticated',
+      'public.multideck_uk_vat_apply_credit_to_invoice(uuid,uuid,uuid,uuid,numeric,date,uuid,text)',
+      'EXECUTE')`), "f")
+    assert.equal(sql(`select has_function_privilege('authenticated',
+      'public.multideck_uk_vat_credit_application_source(uuid,uuid,uuid)',
+      'EXECUTE')`), "f")
+    assert.equal(sql(`select count(*) from information_schema.role_table_grants
+      where table_name='FIN_IndirectTaxCreditApplications'
+        and grantee in ('authenticated','anon')`), "0")
+    assert.equal(sql(`select count(*) from information_schema.role_table_grants
+      where table_name='FIN_IndirectTaxCreditApplications'
+        and grantee='service_role' and privilege_type in ('INSERT','UPDATE','DELETE')`), "0")
+    assert.equal(sql(`do $credit_application$
+      declare entity_id uuid:=gen_random_uuid(); other_entity uuid:=gen_random_uuid();
+        actor uuid:='00000000-0000-0000-0000-000000000003';
+        invoice_id uuid:=gen_random_uuid(); credit_id uuid:=gen_random_uuid();
+        invoice_line uuid:=gen_random_uuid(); credit_line uuid:=gen_random_uuid();
+        invoice_batch uuid:=gen_random_uuid(); credit_batch uuid:=gen_random_uuid();
+        invoice_evidence uuid; credit_evidence uuid; party_id uuid:=gen_random_uuid();
+        request_id uuid:=gen_random_uuid(); result jsonb;
+      begin
+        insert into "cmp_LegalEntities"("LegalEntity_ID","LegalEntity_IsActive","LegalEntity_CountryCode","Company_ID")
+          values(entity_id,true,'GB','00000000-0000-0000-0000-000000000020'),
+            (other_entity,true,'GB','00000000-0000-0000-0000-000000000021');
+        insert into "FIN_Periods"("FINPeriod_ID","FINPeriod_LegalEntityID",
+          "FINPeriod_StartDate","FINPeriod_EndDate")
+          values(gen_random_uuid(),entity_id,current_date-10,current_date+10);
+        insert into "FIN_PostingBatches"("FINPostBatch_ID","FINPostBatch_LegalEntityID","FINPostBatch_StatusCode")
+          values(invoice_batch,entity_id,'posted'),(credit_batch,entity_id,'posted');
+        insert into "FIN_Documents"("FINDoc_ID","FINDoc_LegalEntityID",
+          "FINDoc_NativePostingStatusCode","FINDoc_NativePostingBatchID",
+          "FINDoc_CurrencyCodeSnapshot","FINDoc_ExchangeRate","FINDoc_DocumentDate",
+          "FINDoc_NativePostedBy","FINDoc_TypeCode","FINDoc_PartyOrgID",
+          "FINDoc_OutstandingAmount","FINDoc_LocalOutstandingAmount")
+          values(invoice_id,entity_id,'draft',invoice_batch,'GBP',1,current_date-2,
+            actor,'sl_invoice',party_id,120,120),
+            (credit_id,entity_id,'draft',credit_batch,'GBP',1,current_date-1,
+            actor,'credit_note',party_id,-36,-36);
+        insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID",
+          "FINDocLine_NetAmount","FINDocLine_TaxAmount","FINDocLine_LocalNetAmount",
+          "FINDocLine_LocalTaxAmount")
+          values(invoice_line,invoice_id,100,20,100,20),
+            (credit_line,credit_id,-30,-6,-30,-6);
+        update "FIN_Documents" set "FINDoc_NativePostingStatusCode"='posted'
+          where "FINDoc_ID" in (invoice_id,credit_id);
+        select id into invoice_evidence from "FIN_IndirectTaxEvidence"
+          where source_document_line_id=invoice_line;
+        select id into credit_evidence from "FIN_IndirectTaxEvidence"
+          where source_document_line_id=credit_line;
+        if invoice_evidence is null or credit_evidence is null then
+          raise exception 'posted VAT evidence was not captured for credit application'; end if;
+        result:=public.multideck_uk_vat_credit_application_source(actor,entity_id,credit_id);
+        if result->>'status'<>'link_every_credit_line_to_one_invoice'
+          or result->>'invoiceId' is not null then
+          raise exception 'unlinked credit source exposed an eligible invoice'; end if;
+        begin
+          perform public.multideck_uk_vat_apply_credit_to_invoice(actor,entity_id,
+            invoice_id,credit_id,12,current_date,gen_random_uuid(),
+            'Unlinked posted credit cannot settle the original invoice');
+          raise exception 'unlinked VAT credit application succeeded';
+        exception when sqlstate '22023' then null; end;
+        perform public.multideck_uk_vat_link_credit(actor,entity_id,credit_evidence,
+          invoice_evidence,'Original invoice line corrected by the posted credit');
+        result:=public.multideck_uk_vat_credit_application_source(actor,entity_id,credit_id);
+        if result->>'status'<>'ready' or result->>'invoiceId'<>invoice_id::text
+          or (result->>'availableGbp')::numeric<>36
+          or jsonb_array_length(result->'applications')<>0 then
+          raise exception 'linked credit source did not show the available balance: %',result;
+        end if;
+        begin
+          perform public.multideck_uk_vat_apply_credit_to_invoice(actor,other_entity,
+            invoice_id,credit_id,12,current_date,gen_random_uuid(),
+            'Foreign company attempted to settle a credit');
+          raise exception 'cross-tenant credit application succeeded';
+        exception when sqlstate '42501' then null; end;
+        begin
+          perform public.multideck_uk_vat_apply_credit_to_invoice(actor,entity_id,
+            invoice_id,credit_id,37,current_date,gen_random_uuid(),
+            'Credit overapplication must be blocked');
+          raise exception 'excess credit application succeeded';
+        exception when sqlstate '22023' then null; end;
+        result:=public.multideck_uk_vat_apply_credit_to_invoice(actor,entity_id,
+          invoice_id,credit_id,12,current_date,request_id,
+          'Reviewed posted credit and original invoice settlement');
+        if result->>'inserted'<>'true'
+          or result->>'status'<>'subledger_settlement_only_no_cash_vat_effect'
+          or (select "FINDoc_OutstandingAmount" from "FIN_Documents"
+            where "FINDoc_ID"=invoice_id)<>108
+          or (select "FINDoc_OutstandingAmount" from "FIN_Documents"
+            where "FINDoc_ID"=credit_id)<>-24
+          or not exists(select 1 from "Audit_Events"
+            where "AuditEvent_RecordID"=(result->>'applicationId')::uuid
+              and "AuditEvent_Action"='apply_credit_to_invoice') then
+          raise exception 'credit application did not settle and audit both balances'; end if;
+        if public.multideck_uk_vat_apply_credit_to_invoice(actor,entity_id,
+          invoice_id,credit_id,12,current_date,request_id,
+          'Reviewed posted credit and original invoice settlement')->>'inserted'<>'false' then
+          raise exception 'credit application retry was not idempotent'; end if;
+        result:=public.multideck_uk_vat_credit_application_source(actor,entity_id,credit_id);
+        if result->>'status'<>'ready' or (result->>'availableGbp')::numeric<>24
+          or jsonb_array_length(result->'applications')<>1
+          or result#>>'{applications,0,requestKey}'<>request_id::text then
+          raise exception 'credit application source did not refresh after settlement: %',result;
+        end if;
+        begin
+          update "FIN_IndirectTaxCreditApplications" set amount_gbp=1
+            where request_key=request_id;
+          raise exception 'credit application audit row was mutable';
+        exception when sqlstate '22023' then null; end;
+        insert into "ACCI_Connections"("ACCIC_LegalEntityID","ACCIC_StatusCode")
+          values(entity_id,'active');
+        result:=public.multideck_uk_vat_credit_application_source(actor,entity_id,credit_id);
+        if result->>'status'<>'accounting_mirror_requires_adapter' then
+          raise exception 'credit application source did not block an active mirror'; end if;
+        begin
+          perform public.multideck_uk_vat_apply_credit_to_invoice(actor,entity_id,
+            invoice_id,credit_id,1,current_date,gen_random_uuid(),
+            'Accounting mirror must be reviewed before settlement');
+          raise exception 'linked accounting mirror accepted credit application';
+        exception when sqlstate '22023' then null; end;
+      end $credit_application$;
+      select 'verified';`), "verified")
+    assert.equal(sql(`do $monthly_inventory$
+      declare entity_id uuid:=gen_random_uuid(); period_id uuid:=gen_random_uuid();
+        account_id uuid:=gen_random_uuid(); batch_id uuid:=gen_random_uuid();
+        package_id uuid:=gen_random_uuid(); result jsonb; first_digest text;
+        document_id uuid:=gen_random_uuid(); document_line_id uuid:=gen_random_uuid();
+        source_batch_id uuid:=gen_random_uuid(); foreign_country_entity uuid:=gen_random_uuid();
+        foreign_country_period uuid:=gen_random_uuid(); review_id uuid;
+      begin
+        insert into "cmp_LegalEntities"("LegalEntity_ID","LegalEntity_IsActive","LegalEntity_CountryCode")
+          values(entity_id,true,'GB');
+        insert into "FIN_Periods"("FINPeriod_ID","FINPeriod_LegalEntityID",
+          "FINPeriod_StartDate","FINPeriod_EndDate")
+          values(period_id,entity_id,'2026-04-01','2026-04-30');
+        insert into "FIN_NominalAccounts"("FINNom_ID","FINNom_LegalEntityID","FINNom_Code",
+          "FINNom_ControlTypeCode") values(account_id,entity_id,'2100','vat');
+        result:=public.multideck_uk_vat_accounting_period_inventory(
+          '00000000-0000-0000-0000-000000000003',entity_id,period_id);
+        if result->>'status'<>'ready_for_review' or result->>'lineCount'<>'0'
+          or length(result->>'sourceDigest')<>64 then
+          raise exception 'empty monthly VAT control was not deterministic'; end if;
+        first_digest:=result->>'sourceDigest';
+        insert into "FIN_PostingBatches"("FINPostBatch_ID","FINPostBatch_LegalEntityID",
+          "FINPostBatch_StatusCode","FINPostBatch_PeriodID","FINPostBatch_SourceTable",
+          "FINPostBatch_SourceID")
+          values(batch_id,entity_id,'posted',period_id,'FIN_OpeningBalancePackages',package_id);
+        insert into "FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo",
+          "FINPostLine_NominalAccountID","FINPostLine_Description",
+          "FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot")
+          values(batch_id,1,account_id,'Opening VAT liability',0,100,'GBP');
+        result:=public.multideck_uk_vat_accounting_period_inventory(
+          '00000000-0000-0000-0000-000000000003',entity_id,period_id);
+        if result->>'status'<>'blocked' or result->>'unclassifiedLines'<>'1'
+          or result->>'sourceDigest'=first_digest then
+          raise exception 'unlinked opening control movement did not block close'; end if;
+        insert into "FIN_OpeningBalancePackages"(id,legal_entity_id,status,package_kind,posting_batch_id)
+          values(package_id,entity_id,'posted','full',batch_id);
+        result:=public.multideck_uk_vat_accounting_period_inventory(
+          '00000000-0000-0000-0000-000000000003',entity_id,period_id);
+        if result->>'status'<>'ready_for_review' or result->>'openingExcludedLines'<>'1'
+          or result->>'sourceDigest'=first_digest then
+          raise exception 'verified historical opening control was not isolated'; end if;
+        review_id:=(public.multideck_finance_accounting_vat_control(
+          '00000000-0000-0000-0000-000000000003',entity_id,period_id,'prepare',
+          '{"reason":"Opening VAT control checked against historical trial balance"}'::jsonb)->>'id')::uuid;
+        begin
+          perform public.multideck_finance_accounting_vat_control(
+            '00000000-0000-0000-0000-000000000003',entity_id,period_id,'approve',
+            jsonb_build_object('reviewId',review_id,'reason','Independent monthly VAT approval'));
+          raise exception 'monthly VAT review self-approved';
+        exception when sqlstate '42501' then null; end;
+        perform public.multideck_finance_accounting_vat_control(
+          '00000000-0000-0000-0000-000000000004',entity_id,period_id,'approve',
+          jsonb_build_object('reviewId',review_id,'reason','Independent monthly VAT approval'));
+        if public.multideck_finance_accounting_vat_control_status(
+          '00000000-0000-0000-0000-000000000003',entity_id,period_id)->>'status'<>'verified' then
+          raise exception 'real VAT inventory did not reach two-person monthly approval'; end if;
+        insert into "FIN_PostingBatches"("FINPostBatch_ID","FINPostBatch_LegalEntityID",
+          "FINPostBatch_StatusCode","FINPostBatch_PeriodID")
+          values(source_batch_id,entity_id,'posted',period_id);
+        -- Model a legacy/corrupt posted source that bypassed native capture.
+        alter table "FIN_Documents" disable trigger user;
+        insert into "FIN_Documents"("FINDoc_ID","FINDoc_LegalEntityID",
+          "FINDoc_NativePostingStatusCode","FINDoc_NativePostingBatchID",
+          "FINDoc_CurrencyCodeSnapshot","FINDoc_ExchangeRate","FINDoc_DocumentDate",
+          "FINDoc_PeriodID")
+          values(document_id,entity_id,'posted',source_batch_id,'GBP',1,'2026-04-12',period_id);
+        insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID",
+          "FINDocLine_NetAmount","FINDocLine_TaxAmount",
+          "FINDocLine_LocalNetAmount","FINDocLine_LocalTaxAmount")
+          values(document_line_id,document_id,100,20,100,20);
+        alter table "FIN_Documents" enable trigger user;
+        result:=public.multideck_uk_vat_accounting_period_inventory(
+          '00000000-0000-0000-0000-000000000003',entity_id,period_id);
+        if result->>'status'<>'blocked' or result->>'missingDocumentSources'<>'1'
+          or result->>'unclassifiedLines'<>'0' then
+          raise exception 'posted source missing evidence and VAT GL line did not block close'; end if;
+        if public.multideck_finance_accounting_vat_control_status(
+          '00000000-0000-0000-0000-000000000003',entity_id,period_id)->>'status'<>'blocked' then
+          raise exception 'missing VAT source left prior monthly approval current'; end if;
+        insert into "cmp_LegalEntities"("LegalEntity_ID","LegalEntity_IsActive","LegalEntity_CountryCode")
+          values(foreign_country_entity,true,'US');
+        insert into "FIN_Periods"("FINPeriod_ID","FINPeriod_LegalEntityID",
+          "FINPeriod_StartDate","FINPeriod_EndDate")
+          values(foreign_country_period,foreign_country_entity,'2026-04-01','2026-04-30');
+        begin
+          perform public.multideck_uk_vat_accounting_period_inventory(
+            '00000000-0000-0000-0000-000000000003',foreign_country_entity,foreign_country_period);
+          raise exception 'non-GB entity accessed UK monthly VAT control';
+        exception when sqlstate '22023' then null; end;
+        begin
+          perform public.multideck_uk_vat_accounting_period_inventory(
+            '00000000-0000-0000-0000-000000000018',entity_id,period_id);
+          raise exception 'read-only actor accessed monthly management control';
+        exception when sqlstate '42501' then null; end;
+        begin
+          perform public.multideck_uk_vat_accounting_period_inventory(
+            '00000000-0000-0000-0000-000000000017',entity_id,period_id);
+          raise exception 'foreign actor accessed monthly management control';
+        exception when sqlstate '42501' then null; end;
+      end $monthly_inventory$; select 'monthly inventory checked';`), "monthly inventory checked")
     sql(supplierInputTaxHistory)
+    sql(supplierPaymentFollowups)
     assert.equal(sql(`select has_function_privilege('authenticated',
       'public.multideck_uk_vat_clawback_source_snapshot(uuid,uuid,uuid,uuid)','EXECUTE')`), "f")
     assert.equal(sql(`select has_function_privilege('authenticated',
@@ -2370,6 +2650,7 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
         cash_a uuid:=gen_random_uuid(); cash_b uuid:=gen_random_uuid();
         cash_after uuid:=gen_random_uuid(); cash_full uuid:=gen_random_uuid();
         cash_small uuid:=gen_random_uuid(); cash_zero uuid:=gen_random_uuid();
+        cash_probe uuid:=gen_random_uuid();
         result jsonb; before_fingerprint text;
         proposal_id uuid; offset_account uuid:=gen_random_uuid();
         replacement_account uuid:=gen_random_uuid(); control_account uuid:=gen_random_uuid();
@@ -2997,6 +3278,49 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
           'supplier_payment','posted','2025-04-01');
         insert into "FIN_CashAllocations" values(cash_zero,doc_id,'allocated',0.01,
           '2025-04-01 12:00:00+00');
+        result:=public.multideck_uk_vat_supplier_payment_followups(
+          '00000000-0000-0000-0000-000000000018',entity_id,zero_period,0,50);
+        if (result->>'total')::integer<>1
+          or result#>>'{items,0,document_id}'<>doc_id::text
+          or (result#>>'{items,0,paid_in_period}')::numeric<>0.01 then
+          raise exception 'read-only colleague could not find later supplier payment: %',result;
+        end if;
+        result:=public.multideck_uk_vat_clawback_candidates_page(
+          '00000000-0000-0000-0000-000000000018',entity_id,zero_period,0,50);
+        if (result->>'totalCandidates')::integer<>1
+          or result#>>'{items,0,document_id}'<>doc_id::text
+          or jsonb_array_length(public.multideck_uk_vat_clawback_candidates_page(
+            actor,entity_id,zero_period,1,50)->'items')<>0 then
+          raise exception 'paged supplier VAT candidates lost a source: %',result;
+        end if;
+        begin
+          perform public.multideck_uk_vat_supplier_payment_followups(
+            '00000000-0000-0000-0000-000000000017',entity_id,zero_period,0,50);
+          raise exception 'foreign colleague read supplier VAT follow-ups';
+        exception when sqlstate '42501' then null; end;
+        begin
+          perform public.multideck_uk_vat_clawback_candidates_page(
+            '00000000-0000-0000-0000-000000000017',entity_id,zero_period,0,50);
+          raise exception 'foreign colleague read paged supplier VAT candidates';
+        exception when sqlstate '42501' then null; end;
+        begin
+          insert into "FIN_CashTransactions" values(cash_probe,entity_id,
+            'supplier_payment','posted','2025-04-02');
+          insert into "FIN_CashAllocations" values(cash_probe,doc_id,'allocated',39.99,
+            '2025-04-02 12:00:00+00');
+          if (public.multideck_uk_vat_clawback_candidates(actor,entity_id,zero_period)
+              #>>'{items,0,unpaid_at_period_end}')::numeric<>0
+            or (public.multideck_uk_vat_supplier_payment_followups(
+              actor,entity_id,zero_period,0,50)->>'total')::integer<>1
+            or (public.multideck_uk_vat_supplier_payment_followups(
+              actor,entity_id,zero_period,0,50)
+              #>>'{items,0,paid_in_period}')::numeric<>40 then
+            raise exception 'fully paid invoice was missing from VAT follow-up review';
+          end if;
+          raise exception 'rollback fully paid follow-up probe' using errcode='P0001';
+        exception when sqlstate 'P0001' then
+          if sqlerrm<>'rollback fully paid follow-up probe' then raise; end if;
+        end;
         result:=public.multideck_uk_vat_later_input_tax_restoration_source(
           actor,entity_id,zero_period,doc_id);
         if result->>'status'<>'source_only_no_tax_effect'
@@ -3014,7 +3338,9 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
           'Confirmed the zero-penny supplier VAT effect without a journal',true);
         if result->>'status'<>'zero_tax_effect_confirmed'
           or result->>'batchId' is not null
-          or (result->>'eventCount')::integer<>0 then
+          or (result->>'eventCount')::integer<>0
+          or (public.multideck_uk_vat_supplier_payment_followups(
+              actor,entity_id,zero_period,0,50)->>'total')::integer<>0 then
           raise exception 'zero-penny supplier payment created an invalid journal: %',result;
         end if;
         result:=public.multideck_uk_vat_calculate_draft(actor,zero_period);
@@ -3326,6 +3652,7 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
       select 'ok';
     `), "ok")
     sql(`alter table "FIN_CashTransactions"
+      add column "FINCash_AccountingDate" date not null default '2026-08-01',
       add column "FINCash_StatusCode" text not null default 'approved',
       add column "FINCash_ExportStatusCode" text not null default 'queued',
       add column "FINCash_UpdatedAt" timestamptz not null default now(),
@@ -3444,8 +3771,13 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
         add column if not exists "FINDocLine_LocalGrossAmount" numeric not null default 100;
       alter table "FIN_CashAllocations" add column if not exists "FINCashAlloc_DocumentLineID" uuid;`)
     sql(cashSourceSnapshot)
+    sql(cashLinkedCreditGuard)
     sql(cashEventProjections)
+    sql(cashPeriodCreditInventory)
+    sql(cashPriorPartyCredits)
+    sql(cashUnsupportedPostedEvents)
     sql(cashProjectionIntegrity)
+    sql(cashNineBoxPreview)
     assert.equal(sql(`do $cash_snapshot$
       declare v_result jsonb;
       begin
@@ -3454,11 +3786,21 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
           '00000000-0000-0000-0000-000000000001','2026-07-01','2026-09-30');
         if v_result->>'status'<>'source_only_not_filing'
           or v_result->>'unreviewedPostedCash'<>'0'
+          or (v_result->>'postedPeriodCreditCount')::integer<1
           or v_result->>'allocationCount'<>'1'
           or v_result#>>'{periodCash,0,vat_payment_date}'<>'2026-08-05'
           or v_result#>>'{allocations,0,document_type}'<>'credit_note'
           or jsonb_array_length(v_result#>'{allocations,0,lines}')<>1 then
           raise exception 'cash source snapshot missed reviewed payment or invoice evidence'; end if;
+        begin
+          perform public.multideck_uk_vat_record_cash_event_projection(
+            '00000000-0000-0000-0000-000000000018',
+            '00000000-0000-0000-0000-000000000001',
+            '2026-07-01','2026-09-30',v_result,'{}'::jsonb);
+          raise exception 'posted period credit was allowed into a cash event projection';
+        exception when sqlstate '22023' then
+          if sqlerrm not like 'Posted credits need reviewed Cash Accounting application and refund events%' then raise; end if;
+        end;
         begin
           perform public.multideck_uk_vat_cash_source_snapshot(
             '00000000-0000-0000-0000-000000000017',
@@ -3579,6 +3921,109 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
           if sqlerrm<>'prior_filing_gate_probe_rollback' then raise; end if;
         end;
       end $prior_filing_gate$; select 'prior filing gated';`), "prior filing gated")
+    assert.equal(sql(`do $opening_vat$
+      declare v_entity uuid:='00000000-0000-0000-0000-000000000001';
+        v_actor uuid:='00000000-0000-0000-0000-000000000003';
+        v_package uuid:='00000000-0000-0000-0000-0000000000e1';
+        v_doc uuid:='00000000-0000-0000-0000-0000000000e2';
+        v_line uuid:='00000000-0000-0000-0000-0000000000e3';
+        v_batch uuid:='00000000-0000-0000-0000-0000000000e4';
+        v_nominal uuid:='00000000-0000-0000-0000-0000000000e5';
+        v_offset uuid:='00000000-0000-0000-0000-0000000000e6';
+        v_calc uuid; v_accounting uuid;
+        v_before jsonb; v_after jsonb; v_inventory_before jsonb; v_inventory_after jsonb;
+      begin
+        begin
+          insert into "FIN_OpeningBalancePackages"(id,legal_entity_id,status,package_kind,
+            approved_by,approved_at,source_items_count)
+            values(v_package,v_entity,'approved','full_open_items',v_actor,now(),1);
+          insert into "FIN_OpeningSourceItems"(package_id,operational_document_id,kind,
+            historical_vat_evidence_ref)
+            values(v_package,v_doc,'customer_invoice','Prior accepted VAT return Q2 2026');
+          if not public._multideck_opening_vat_cutover_ready(v_entity,v_package) then
+            raise exception 'reviewed Standard opening package did not clear the VAT hook'; end if;
+          update "FIN_OpeningSourceItems" set historical_vat_evidence_ref=''
+            where package_id=v_package;
+          if public._multideck_opening_vat_cutover_ready(v_entity,v_package) then
+            raise exception 'opening package without prior filing reference cleared the VAT hook'; end if;
+          update "FIN_OpeningSourceItems"
+            set historical_vat_evidence_ref='Prior accepted VAT return Q2 2026'
+            where package_id=v_package;
+          v_before:=public.multideck_uk_vat_source_coverage(v_actor,v_entity);
+          insert into "FIN_Documents"("FINDoc_ID","FINDoc_LegalEntityID",
+            "FINDoc_NativePostingStatusCode","FINDoc_CurrencyCodeSnapshot",
+            "FINDoc_ExchangeRate","FINDoc_DocumentDate","FINDoc_TypeCode",
+            "FINDoc_OpeningBalancePackageID","FINDoc_NativePostedBy")
+          values(v_doc,v_entity,'draft','GBP',1,'2026-06-30','sl_invoice',v_package,v_actor);
+          insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID",
+            "FINDocLine_NetAmount","FINDocLine_TaxAmount",
+            "FINDocLine_LocalNetAmount","FINDocLine_LocalTaxAmount")
+          values(v_line,v_doc,80,20,80,20);
+          update "FIN_Documents" set "FINDoc_NativePostingStatusCode"='posted'
+            where "FINDoc_ID"=v_doc;
+          if exists(select 1 from "FIN_IndirectTaxEvidence" where source_document_id=v_doc) then
+            raise exception 'opening invoice became current VAT evidence'; end if;
+          v_after:=public.multideck_uk_vat_source_coverage(v_actor,v_entity);
+          if v_after->>'postedDocumentLines' is distinct from v_before->>'postedDocumentLines'
+            or v_after->>'missingCapturedLines' is distinct from v_before->>'missingCapturedLines' then
+            raise exception 'historically filed opening invoice changed VAT source coverage'; end if;
+          perform public.multideck_uk_vat_backfill_posted(
+            v_actor,v_entity,100,'Verify opening evidence is excluded from backfill');
+          if exists(select 1 from "FIN_IndirectTaxEvidence" where source_document_id=v_doc) then
+            raise exception 'historically filed opening invoice was backfilled'; end if;
+          begin
+            insert into "FIN_IndirectTaxEvidence"(legal_entity_id,jurisdiction_code,
+              source_kind,source_id,source_posting_batch_id,source_document_id,
+              source_document_line_id,source_version,currency_code,exchange_rate,
+              signed_net_amount,signed_tax_amount,signed_net_reporting,
+              signed_tax_reporting,recorded_by)
+            values(v_entity,'GB','posted_document_line',v_line,gen_random_uuid(),v_doc,
+              v_line,'opening-probe','GBP',1,80,20,80,20,v_actor);
+            raise exception 'opening invoice accepted manufactured current VAT evidence' using errcode='ZX001';
+          exception when sqlstate '22023' then null; end;
+          begin
+            update "FIN_Documents" set "FINDoc_OpeningBalancePackageID"=v_package
+              where "FINDoc_ID"='00000000-0000-0000-0000-000000000008';
+            raise exception 'ordinary posted invoice acquired opening marker' using errcode='ZX001';
+          exception when sqlstate '22023' then null; end;
+          select calculation.id,accounting."FINPeriod_ID" into v_calc,v_accounting
+          from "FIN_IndirectTaxCalculations" calculation
+          join "FIN_IndirectTaxPeriods" period on period.id=calculation.period_id
+          join "FIN_Periods" accounting
+            on accounting."FINPeriod_LegalEntityID"=period.legal_entity_id
+            and accounting."FINPeriod_StartDate"<=period.end_date
+            and accounting."FINPeriod_EndDate">=period.start_date
+          where period.legal_entity_id=v_entity
+          order by calculation.revision desc,calculation.id limit 1;
+          if v_calc is null then raise exception 'opening VAT control fixture lacks a calculation'; end if;
+          v_inventory_before:=public.multideck_uk_vat_tax_posting_inventory(
+            v_actor,v_entity,v_calc,0,1);
+          insert into "FIN_NominalAccounts"("FINNom_ID","FINNom_LegalEntityID",
+            "FINNom_Code","FINNom_Name") values
+            (v_nominal,v_entity,'2100','Opening VAT control'),
+            (v_offset,v_entity,'3999','Opening retained balance');
+          insert into "FIN_PostingBatches"("FINPostBatch_ID","FINPostBatch_LegalEntityID",
+            "FINPostBatch_StatusCode","FINPostBatch_PeriodID",
+            "FINPostBatch_SourceTable","FINPostBatch_SourceID")
+          values(v_batch,v_entity,'posted',v_accounting,'FIN_OpeningBalancePackages',v_package);
+          insert into "FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo",
+            "FINPostLine_NominalAccountID","FINPostLine_Description",
+            "FINPostLine_DebitAmount","FINPostLine_CreditAmount",
+            "FINPostLine_CurrencyCodeSnapshot") values
+            (v_batch,1,v_nominal,'Historical opening VAT balance',0,5,'GBP'),
+            (v_batch,2,v_offset,'Historical opening offset',5,0,'GBP');
+          update "FIN_OpeningBalancePackages" set status='posted',posting_batch_id=v_batch
+            where id=v_package;
+          v_inventory_after:=public.multideck_uk_vat_tax_posting_inventory(
+            v_actor,v_entity,v_calc,0,1);
+          if v_inventory_after->>'postingDigest' is distinct from v_inventory_before->>'postingDigest'
+            or v_inventory_after->>'unlinkedLines' is distinct from v_inventory_before->>'unlinkedLines'
+            or v_inventory_after#>>'{controlBridge,differenceGbp}'
+              is distinct from v_inventory_before#>>'{controlBridge,differenceGbp}' then
+            raise exception 'opening VAT balance was treated as current-period VAT movement'; end if;
+          raise exception 'opening_vat_probe_rollback' using errcode='ZX002';
+        exception when sqlstate 'ZX002' then null; end;
+      end $opening_vat$; select 'opening excluded';`), "opening excluded")
     assert.equal(sql(`do $cash_projection$
       declare v_entity uuid:='00000000-0000-0000-0000-000000000001';
         v_actor uuid:='00000000-0000-0000-0000-000000000003';
@@ -3586,7 +4031,8 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
         v_line uuid:='00000000-0000-0000-0000-0000000000d2';
         v_batch uuid:='00000000-0000-0000-0000-0000000000d3';
         v_cash uuid:='00000000-0000-0000-0000-0000000000d4';
-        v_evidence uuid; v_decision uuid; v_source jsonb; v_preview jsonb;
+        v_party uuid:='00000000-0000-0000-0000-0000000000d5';
+        v_evidence uuid; v_credit_evidence uuid; v_decision uuid; v_source jsonb; v_preview jsonb;
         v_allocation jsonb; v_source_line jsonb; v_result jsonb; v_history jsonb;
       begin
         begin
@@ -3595,10 +4041,10 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
           insert into "FIN_Documents"("FINDoc_ID","FINDoc_LegalEntityID",
             "FINDoc_NativePostingStatusCode","FINDoc_NativePostingBatchID",
             "FINDoc_CurrencyCodeSnapshot","FINDoc_ExchangeRate","FINDoc_DocumentDate",
-            "FINDoc_DueDate","FINDoc_TypeCode","FINDoc_GrossAmount",
+            "FINDoc_DueDate","FINDoc_TypeCode","FINDoc_PartyOrgID","FINDoc_GrossAmount",
             "FINDoc_LocalGrossAmount","FINDoc_Number","FINDoc_NativePostedBy")
           values(v_doc,v_entity,'draft',v_batch,'GBP',1,'2026-08-08',
-            '2026-09-08','sl_invoice',120,120,'CASH-EVENT-1',v_actor);
+            '2026-09-08','sl_invoice',v_party,120,120,'CASH-EVENT-1',v_actor);
           insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID",
             "FINDocLine_LineNo","FINDocLine_NetAmount","FINDocLine_TaxAmount",
             "FINDocLine_LocalNetAmount","FINDocLine_LocalTaxAmount",
@@ -3639,6 +4085,9 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
             'Reviewed the bank receipt for partial Cash Accounting allocation');
           v_source:=public.multideck_uk_vat_cash_source_snapshot(
             v_actor,v_entity,'2026-08-09','2026-08-09');
+          if v_source->>'postedPeriodCreditCount'<>'0'
+            or v_source->>'priorPartyCreditCount'<>'0' then
+            raise exception 'cash event fixture contains an unsupported period credit'; end if;
           v_allocation:=v_source#>'{allocations,0}';
           v_source_line:=v_allocation#>'{lines,0}';
           if v_source->>'unreviewedPostedCash'<>'0'
@@ -3699,6 +4148,93 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
             or length(v_result->>'fingerprint')<>64 then
             raise exception 'cash VAT event integrity did not match the current source';
           end if;
+          v_history:=public.multideck_uk_vat_cash_nine_box_preview(
+            '00000000-0000-0000-0000-000000000018',v_entity,
+            (v_result->>'projectionId')::uuid);
+          if v_history->>'status'<>'preview_only_no_cash_return_effect'
+            or (v_history#>>'{sourceBoxesGbp,1}')::numeric<>10
+            or (v_history#>>'{sourceBoxesGbp,6}')::numeric<>50
+            or (v_history#>>'{candidateFilingBoxes,3}')::numeric<>10
+            or (v_history#>>'{candidateFilingBoxes,5}')::numeric<>10
+            or (v_history#>>'{candidateFilingBoxes,6}')::numeric<>50
+            or jsonb_array_length(v_history#>'{boxLines,1}')<>1
+            or jsonb_array_length(v_history#>'{boxLines,6}')<>1
+            or v_history#>>'{boxLines,1,0,paymentReviewId}' is null then
+            raise exception 'cash VAT nine-box preview lost source or review evidence'; end if;
+          begin
+            declare v_refund uuid:=gen_random_uuid(); v_refund_source jsonb;
+            begin
+              insert into "FIN_CashTransactions"("FINCash_ID","FINCash_LegalEntityID",
+                "FINCash_TypeCode","FINCash_NativePostingStatusCode",
+                "FINCash_TransactionDate","FINCash_AccountingDate","FINCash_Amount")
+              values(v_refund,v_entity,'refund','draft','2026-08-09','2026-09-15',12);
+              update "FIN_CashTransactions" set "FINCash_NativePostingStatusCode"='posted'
+                where "FINCash_ID"=v_refund;
+              v_refund_source:=public.multideck_uk_vat_cash_source_snapshot(
+                v_actor,v_entity,'2026-08-09','2026-08-09');
+              if v_refund_source->>'unsupportedPostedCashCount'<>'1'
+                or v_refund_source#>>'{unsupportedPostedCashTypes,0,type}'<>'refund'
+                or v_refund_source#>>'{unsupportedPostedCashTypes,0,count}'<>'1' then
+                raise exception 'posted refund disappeared from Cash Accounting source'; end if;
+              begin
+                perform public.multideck_uk_vat_record_cash_event_projection(v_actor,v_entity,
+                  '2026-08-09','2026-08-09',v_refund_source,v_preview);
+                raise exception 'posted refund entered a Cash Accounting projection';
+              exception when sqlstate '22023' then
+                if sqlerrm not like 'Posted refund or other cash events need reviewed Cash Accounting treatment%' then raise; end if;
+              end;
+              begin
+                perform public.multideck_uk_vat_cash_projection_integrity(v_actor,v_entity,
+                  (v_result->>'projectionId')::uuid);
+                raise exception 'posted refund did not stale a prior cash projection';
+              exception when sqlstate '22023' then null; end;
+              raise exception 'cash_refund_inventory_probe_rollback' using errcode='ZX004';
+            end;
+          exception when sqlstate 'ZX004' then null; end;
+          begin
+            declare v_prior_credit uuid:=gen_random_uuid(); v_prior_line uuid:=gen_random_uuid();
+              v_prior_source jsonb;
+            begin
+              insert into "FIN_Documents"("FINDoc_ID","FINDoc_LegalEntityID",
+                "FINDoc_NativePostingStatusCode","FINDoc_NativePostingBatchID",
+                "FINDoc_CurrencyCodeSnapshot","FINDoc_ExchangeRate","FINDoc_DocumentDate",
+                "FINDoc_TypeCode","FINDoc_PartyOrgID","FINDoc_GrossAmount",
+                "FINDoc_LocalGrossAmount","FINDoc_Number","FINDoc_NativePostedBy")
+              values(v_prior_credit,v_entity,'draft',v_batch,'GBP',1,'2026-08-08',
+                'credit_note',v_party,-12,-12,'EARLIER-CREDIT',v_actor);
+              insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID",
+                "FINDocLine_LineNo","FINDocLine_NetAmount","FINDocLine_TaxAmount",
+                "FINDocLine_LocalNetAmount","FINDocLine_LocalTaxAmount",
+                "FINDocLine_LocalGrossAmount")
+              values(v_prior_line,v_prior_credit,1,-10,-2,-10,-2,-12);
+              update "FIN_Documents" set "FINDoc_NativePostingStatusCode"='posted'
+                where "FINDoc_ID"=v_prior_credit;
+              v_prior_source:=public.multideck_uk_vat_cash_source_snapshot(
+                v_actor,v_entity,'2026-08-09','2026-08-09');
+              if v_prior_source->>'postedPeriodCreditCount'<>'0'
+                or v_prior_source->>'priorPartyCreditCount'<>'1' then
+                raise exception 'earlier same-party credit was absent from cash sources'; end if;
+              begin
+                perform public.multideck_uk_vat_record_cash_event_projection(v_actor,v_entity,
+                  '2026-08-09','2026-08-09',v_prior_source,v_preview);
+                raise exception 'earlier same-party credit entered the cash projection';
+              exception when sqlstate '22023' then
+                if sqlerrm not like 'Posted credits need reviewed Cash Accounting application and refund events%' then raise; end if;
+              end;
+              begin
+                perform public.multideck_uk_vat_cash_projection_integrity(v_actor,v_entity,
+                  (v_result->>'projectionId')::uuid);
+                raise exception 'earlier same-party credit did not stale the cash projection';
+              exception when sqlstate '22023' then null; end;
+              raise exception 'prior_party_credit_probe_rollback' using errcode='ZX003';
+            end;
+          exception when sqlstate 'ZX003' then null; end;
+          begin
+            perform public.multideck_uk_vat_cash_nine_box_preview(
+              '00000000-0000-0000-0000-000000000017',v_entity,
+              (v_result->>'projectionId')::uuid);
+            raise exception 'foreign colleague read cash VAT nine-box preview';
+          exception when sqlstate '42501' then null; end;
           begin
             perform set_config('session_replication_role','replica',true);
             update "FIN_IndirectTaxCashEventLines" set vat_gbp=11
@@ -3730,6 +4266,30 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
               '2026-08-09','2026-08-09');
             raise exception 'foreign colleague read a cash VAT projection';
           exception when sqlstate '42501' then null; end;
+          begin
+            select evidence.id into v_credit_evidence
+            from "FIN_IndirectTaxEvidence" evidence
+            where evidence.legal_entity_id=v_entity and evidence.id<>v_evidence
+              and not exists(select 1 from "FIN_IndirectTaxCreditLinks" linked
+                where linked.credit_evidence_id=evidence.id)
+            order by evidence.id limit 1;
+            if v_credit_evidence is null then
+              raise exception 'cash credit guard fixture lacks another evidence row'; end if;
+            insert into "FIN_IndirectTaxCreditLinks"(
+              credit_evidence_id,original_evidence_id,legal_entity_id,reason,linked_by)
+            values(v_credit_evidence,v_evidence,v_entity,
+              'Fixture linked credit changes the cash price',v_actor);
+            v_source:=public.multideck_uk_vat_cash_source_snapshot(
+              v_actor,v_entity,'2026-08-09','2026-08-09');
+            if v_source#>>'{allocations,0,lines,0,linkedCreditCount}'<>'1' then
+              raise exception 'cash source did not disclose the linked credit'; end if;
+            begin
+              perform public.multideck_uk_vat_cash_projection_integrity(v_actor,v_entity,
+                (v_result->>'projectionId')::uuid);
+              raise exception 'linked credit did not stale the cash event projection' using errcode='ZX001';
+            exception when sqlstate '22023' then null; end;
+            raise exception 'cash_linked_credit_probe_rollback' using errcode='ZX002';
+          exception when sqlstate 'ZX002' then null; end;
           perform public.multideck_uk_vat_review_cash_payment_date(v_actor,v_entity,v_cash,
             'bank_credit_or_debit','2026-08-09',null,'BANK-CASH-EVENT-REVISED',
             'Revised the bank evidence reference after the projection');
@@ -3741,6 +4301,11 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
             perform public.multideck_uk_vat_cash_projection_integrity(v_actor,v_entity,
               (v_result->>'projectionId')::uuid);
             raise exception 'stale cash VAT projection passed integrity';
+          exception when sqlstate '22023' then null; end;
+          begin
+            perform public.multideck_uk_vat_cash_nine_box_preview(v_actor,v_entity,
+              (v_result->>'projectionId')::uuid);
+            raise exception 'stale cash VAT nine-box preview passed integrity';
           exception when sqlstate '22023' then null; end;
           begin
             perform public.multideck_uk_vat_record_cash_event_projection(
@@ -3880,6 +4445,7 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
         v_tax_nominal uuid:=gen_random_uuid(); v_plan_id uuid;
         v_calculation jsonb; v_plan jsonb; v_items jsonb;
         v_posted jsonb; v_inventory jsonb; v_projection jsonb; v_lock jsonb;
+        v_monthly jsonb; v_accounting_period uuid;
       begin
         insert into "cmp_LegalEntities"("LegalEntity_ID","LegalEntity_IsActive","LegalEntity_CountryCode")
           values(v_entity,true,'GB');
@@ -4010,6 +4576,43 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
             raise exception 'conditional threshold probe complete' using errcode='ZX001';
           end;
         exception when sqlstate 'ZX001' then null; end;
+        begin
+          declare v_large uuid; v_offsetting uuid; v_offset_items jsonb;
+          begin
+            v_large:=(public.multideck_uk_vat_record_prior_period_error(v_actor,v_entity,v_period,
+              '2025-10-01','2025-12-31','2026-04-17','OUTPUT-LARGE-INDIVIDUAL',
+              'output',60000,'undetermined','One large output tax error needs immediate notification')->>'intakeId')::uuid;
+            v_offsetting:=(public.multideck_uk_vat_record_prior_period_error(v_actor,v_entity,v_period,
+              '2025-10-01','2025-12-31','2026-04-17','OUTPUT-OFFSETTING-INDIVIDUAL',
+              'output',-60000,'undetermined','Another error offsets the aggregate VAT amount')->>'intakeId')::uuid;
+            perform public.multideck_uk_vat_review_prior_error_conduct(v_actor,v_entity,v_large,
+              'reasonable_care','The large individual error was separately assessed');
+            perform public.multideck_uk_vat_review_prior_error_conduct(v_actor,v_entity,v_offsetting,
+              'reasonable_care','The offsetting individual error was separately assessed');
+            perform public.multideck_uk_vat_review_prior_error_time_limit(v_actor,v_entity,v_large,
+              'output_underdeclared','VAT-RETURN-2025-12',null,'LARGE-SOURCE',
+              'The original submitted return and source records were checked');
+            perform public.multideck_uk_vat_review_prior_error_time_limit(v_actor,v_entity,v_offsetting,
+              'output_overdeclared','VAT-RETURN-2025-12',null,'OFFSET-SOURCE',
+              'The original submitted return and source records were checked');
+            v_offset_items:=v_items||jsonb_build_array(
+              jsonb_build_object('intakeId',v_large,'boxNetDeltaGbp',300000,
+                'offsetNominalId',v_offset,'evidenceReference','LARGE-SOURCE'),
+              jsonb_build_object('intakeId',v_offsetting,'boxNetDeltaGbp',-300000,
+                'offsetNominalId',v_offset,'evidenceReference','OFFSET-SOURCE'));
+            begin
+              perform public.multideck_uk_vat_review_method1_plan(v_actor,v_entity,v_period,
+                (v_calculation->>'calculationId')::uuid,v_calculation->>'sourceDigest',
+                v_offset_items,'Netting must not hide immediate Method 2 notification',true);
+              raise exception 'an individual £60,000 error passed Method 1 after offsetting';
+            exception when sqlstate '22023' then
+              if sqlerrm not like 'An individual prior-return error requires immediate separate HMRC notification%' then
+                raise;
+              end if;
+            end;
+            raise exception 'individual_method2_probe_complete' using errcode='ZX003';
+          end;
+        exception when sqlstate 'ZX003' then null; end;
         if exists(select 1 from "FIN_PostingBatches" where "FINPostBatch_LegalEntityID"=v_entity)
           or exists(select 1 from "FIN_IndirectTaxEvidence" where legal_entity_id=v_entity) then
           raise exception 'a reviewed plan incorrectly posted or created VAT evidence'; end if;
@@ -4026,6 +4629,15 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
         exception when sqlstate '42501' then null; end;
         v_posted:=public.multideck_uk_vat_post_method1_plan(v_actor,v_entity,v_plan_id,
           'Native correction checked against the original return',true);
+        select "FINPostBatch_PeriodID" into v_accounting_period from "FIN_PostingBatches"
+          where "FINPostBatch_ID"=(v_posted->>'batchId')::uuid;
+        v_monthly:=public.multideck_uk_vat_accounting_period_inventory(
+          v_actor,v_entity,v_accounting_period);
+        if v_monthly->>'status'<>'ready_for_review'
+          or v_monthly->>'lineCount'<>'1'
+          or v_monthly->>'unclassifiedLines'<>'0'
+          or v_monthly->>'unreviewedCutoffDifferences'<>'0' then
+          raise exception 'reviewed native Method 1 VAT posting did not clear monthly source inventory: %',v_monthly; end if;
         if v_posted->>'status'<>'posted_pending_vat_calculation_and_signoff'
           or (select "FINPostBatch_StatusCode" from "FIN_PostingBatches"
             where "FINPostBatch_ID"=(v_posted->>'batchId')::uuid)<>'posted'

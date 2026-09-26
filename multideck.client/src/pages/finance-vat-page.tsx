@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { suggestUkVatQuarter } from "@/lib/uk-vat-quarter.mts"
+import { exactGbp, validGbpApplicationAmount } from "@/lib/uk-vat-credit-amount.mts"
 import { beginHmrcVatConnection, getHmrcVatConnections, refreshHmrcVatConnection, type HmrcVatConnection } from "@/lib/hmrc-vat-api"
 import {
   backfillUkVatPostedLines, calculateUkVatDraft, getUkVatAccount, getUkVatCalculationDetail, getUkVatCoverage, getUkVatEntities,
@@ -23,22 +24,25 @@ import {
   getUkVatMethod1OffsetNominals, getUkVatMethod1Plans, reviewUkVatMethod1Plan,
   getUkVatMethod1Postings, postUkVatMethod1Plan,
   getUkVatExternalErrorNotifications, recordUkVatExternalErrorNotification,
-  getUkVatCashPaymentDateQueue, getUkVatCashSourcePreview, getUkVatCashEventProjections,
+  getUkVatCashPaymentDateQueue, getUkVatCashSourcePreview, getUkVatCashEventProjections, getUkVatCashNineBoxPreview,
   recordUkVatCashEventProjection, reviewUkVatCashPaymentDate,
-  getUkVatClawbackCandidates, getUkVatSupplierInputTaxHistory,
+  getUkVatClawbackCandidates, getUkVatSupplierPaymentFollowups, getUkVatSupplierInputTaxHistory,
   getUkVatSupplierInputTaxSource, prepareUkVatFirstInputTaxRepayment,
   reviewUkVatFirstInputTaxRepayment, postUkVatFirstInputTaxRepayment,
   reviewUkVatLaterInputTaxRestoration, postUkVatLaterInputTaxRestoration,
-  findUkVatCreditCandidates, linkUkVatCredit,
+  findUkVatCreditCandidates, linkUkVatCredit, getUkVatCreditApplicationSource, applyUkVatCreditToInvoice,
   getUkVatRegistration, configureUkVatRegistration, scheduleUkVatRegistration,
   reviewUkVatEvidence, type UkVatAccount, type UkVatCalculationDetail, type UkVatCoverage, type UkVatPeriodList,
   type UkVatReviewItem, type UkVatReviewQueue, type UkVatTaxPostingInventory, type UkVatControlReviews,
   type UkVatFilingProjectionPreview, type UkVatFilingProjections,
   type UkVatReviewLocks,
   type UkVatFilingStatus,
+  type UkVatCashNineBoxPreview,
   type UkVatRegistration,
   type UkVatCreditCandidate,
+  type UkVatCreditApplicationSource,
   type UkVatClawbackCandidates,
+  type UkVatSupplierPaymentFollowups,
   type UkVatSupplierInputTaxSource, type UkVatSupplierInputTaxHistory,
   type UkVatPriorPeriodErrorIntake,
   type UkVatPriorPeriodErrorPreview,
@@ -50,6 +54,14 @@ import {
 
 type Entity = Awaited<ReturnType<typeof getUkVatEntities>>["entities"][number]
 const message = (cause: unknown) => cause instanceof Error ? cause.message : "The VAT request could not be completed."
+const entitySessionKey = "multideck.finance.daily.entity"
+const rememberedEntity = () => { try { return window.sessionStorage.getItem(entitySessionKey) } catch { return null } }
+const rememberEntity = (id: string) => { try { window.sessionStorage.setItem(entitySessionKey, id) } catch { /* Keep the page selection usable. */ } }
+const londonToday = () => {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date())
+  const value = (kind: string) => parts.find((part) => part.type === kind)?.value ?? ""
+  return `${value("year")}-${value("month")}-${value("day")}`
+}
 
 // Cash Accounting is deferred until its full return workflow is verified.
 const cashAccountingEnabled = false
@@ -57,6 +69,7 @@ const cashAccountingEnabled = false
 export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUserSummary | null; navigate: (path: string) => void }) {
   const { t, language } = useLanguage()
   const canManage = hasPermission(currentUser, "Finance.Compliance.Manage")
+  const canApplyCredit = canManage && hasPermission(currentUser, "Finance.Management.Approve")
   const canOpenPayables = hasPermission(currentUser, "Finance.Payables.View")
   const [entities, setEntities] = useState<Entity[]>([])
   const [entityId, setEntityId] = useState("")
@@ -76,6 +89,10 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
   const [clawback, setClawback] = useState<UkVatClawbackCandidates | null>(null)
   const [clawbackError, setClawbackError] = useState<string | null>(null)
   const [clawbackRefresh, setClawbackRefresh] = useState(0)
+  const [clawbackOffset, setClawbackOffset] = useState(0)
+  const [supplierFollowups, setSupplierFollowups] = useState<UkVatSupplierPaymentFollowups | null>(null)
+  const [supplierFollowupError, setSupplierFollowupError] = useState<string | null>(null)
+  const [supplierFollowupOffset, setSupplierFollowupOffset] = useState(0)
   const [supplierDocumentId, setSupplierDocumentId] = useState<string | null>(null)
   const [supplierKind, setSupplierKind] = useState<"first" | "later">("first")
   const [supplierSource, setSupplierSource] = useState<UkVatSupplierInputTaxSource | null>(null)
@@ -102,6 +119,14 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
   const [creditReason, setCreditReason] = useState("")
   const [creditBusy, setCreditBusy] = useState(false)
   const [creditError, setCreditError] = useState<string | null>(null)
+  const [creditApplicationId, setCreditApplicationId] = useState("")
+  const [creditApplicationSource, setCreditApplicationSource] = useState<UkVatCreditApplicationSource | null>(null)
+  const [creditApplicationAmount, setCreditApplicationAmount] = useState("")
+  const [creditApplicationDate, setCreditApplicationDate] = useState("")
+  const [creditApplicationReason, setCreditApplicationReason] = useState("")
+  const [creditApplicationKey, setCreditApplicationKey] = useState("")
+  const [creditApplicationBusy, setCreditApplicationBusy] = useState(false)
+  const [creditApplicationError, setCreditApplicationError] = useState<string | null>(null)
   const [taxPostings, setTaxPostings] = useState<UkVatTaxPostingInventory | null>(null)
   const [taxPostingOffset, setTaxPostingOffset] = useState(0)
   const [taxPostingError, setTaxPostingError] = useState<string | null>(null)
@@ -191,6 +216,9 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
   const [cashPreviewLoading, setCashPreviewLoading] = useState(false)
   const [cashProjections, setCashProjections] = useState<UkVatCashEventProjectionHistory | null>(null)
   const [cashProjectionError, setCashProjectionError] = useState<string | null>(null)
+  const [cashNineBox, setCashNineBox] = useState<UkVatCashNineBoxPreview | null>(null)
+  const [cashNineBoxError, setCashNineBoxError] = useState<string | null>(null)
+  const [cashNineBoxLoading, setCashNineBoxLoading] = useState(false)
   const [quarterReference, setQuarterReference] = useState<"last" | "next">("last")
   const [returnPeriodEnd, setReturnPeriodEnd] = useState("")
   const [reviewItem, setReviewItem] = useState<UkVatReviewItem | null>(null)
@@ -205,8 +233,26 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
   const [notice, setNotice] = useState<string | null>(null)
   const activeEntity = useRef("")
   const cashPreviewRequest = useRef(0)
+  const cashNineBoxRequest = useRef(0)
   const activeCreditLink = useRef("")
+  const activeCreditApplication = useRef("")
   const creditSearchRequest = useRef(0)
+  const creditApplicationRequest = useRef(0)
+  const selectEntity = (next: string) => {
+    if (!entities.some((entity) => entity.LegalEntity_ID === next)) return
+    activeEntity.current = ""
+    cashPreviewRequest.current += 1
+    cashNineBoxRequest.current += 1
+    creditSearchRequest.current += 1
+    setPeriods(null); setCoverage(null); setQueue(null); setRegistration(null); setPeriodId("")
+    setDetail(null); setAccount(null); setClawback(null); setSupplierFollowups(null)
+    setSupplierDocumentId(null); setSupplierSource(null); setSupplierHistory(null)
+    setTaxPostings(null); setControlReviews(null); setFilingPreview(null); setFilingReviews(null)
+    setReviewLocks(null); setFilingStatus(null); setHmrcConnections(null); setHmrcSandboxConfigured(false)
+    setCashPreview(null); setCashProjections(null); setCashNineBox(null)
+    closeCreditApplication()
+    setEntityId(next); rememberEntity(next)
+  }
   const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
   const money = useMemo(() => new Intl.NumberFormat(language, { style: "currency", currency: "GBP" }), [language])
   const sourceAmount = useMemo(() => new Intl.NumberFormat(language, { minimumFractionDigits: 2, maximumFractionDigits: 4 }), [language])
@@ -230,13 +276,19 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     return nextPeriods
   }, [])
 
+  useEffect(() => { setClawbackOffset(0) }, [entityId, periodId])
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     getUkVatEntities().then((result) => {
       if (cancelled) return
       setEntities(result.entities)
-      setEntityId((current) => current || result.entities[0]?.LegalEntity_ID || "")
+      setEntityId((current) => {
+        const saved = rememberedEntity()
+        return result.entities.some((entity) => entity.LegalEntity_ID === current) ? current
+          : result.entities.some((entity) => entity.LegalEntity_ID === saved) ? saved || ""
+          : result.entities.length === 1 ? result.entities[0].LegalEntity_ID : ""
+      })
     }).catch((cause) => { if (!cancelled) setError(message(cause)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -284,6 +336,7 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     activeCreditLink.current = ""
     creditSearchRequest.current += 1
     setCreditLinkId("")
+    closeCreditApplication()
     setTaxPostings(null)
     setTaxPostingOffset(0)
     setControlReviews(null)
@@ -346,6 +399,7 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     setCashEvidenceReference("")
     setCashReviewReason("")
     cashPreviewRequest.current += 1
+    cashNineBoxRequest.current += 1
     setCashPreviewStart("")
     setCashPreviewEnd("")
     setCashPreview(null)
@@ -353,6 +407,9 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     setCashPreviewLoading(false)
     setCashProjections(null)
     setCashProjectionError(null)
+    setCashNineBox(null)
+    setCashNineBoxError(null)
+    setCashNineBoxLoading(false)
     refreshEntity(entityId).then((result) => {
       if (!cancelled) setPeriodId(result.periods[0]?.period_id || "")
     }).catch((cause) => { if (!cancelled) setError(message(cause)) })
@@ -458,11 +515,22 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     let cancelled = false
     setClawback(null)
     setClawbackError(null)
-    getUkVatClawbackCandidates(entityId, periodId)
+    getUkVatClawbackCandidates(entityId, periodId, clawbackOffset)
       .then((result) => { if (!cancelled) setClawback(result) })
       .catch((cause) => { if (!cancelled) setClawbackError(message(cause)) })
     return () => { cancelled = true }
-  }, [entityId, periodId, clawbackRefresh])
+  }, [entityId, periodId, clawbackOffset, clawbackRefresh])
+  useEffect(() => { setSupplierFollowupOffset(0) }, [entityId, periodId])
+  useEffect(() => {
+    if (!entityId || !periodId) { setSupplierFollowups(null); return }
+    let cancelled = false
+    setSupplierFollowups(null)
+    setSupplierFollowupError(null)
+    getUkVatSupplierPaymentFollowups(entityId, periodId, supplierFollowupOffset)
+      .then((result) => { if (!cancelled) setSupplierFollowups(result) })
+      .catch((cause) => { if (!cancelled) setSupplierFollowupError(message(cause)) })
+    return () => { cancelled = true }
+  }, [entityId, periodId, supplierFollowupOffset, clawbackRefresh])
   useEffect(() => {
     setSupplierDocumentId(null)
     setSupplierSource(null)
@@ -489,6 +557,7 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     activeCreditLink.current = ""
     creditSearchRequest.current += 1
     setCreditLinkId("")
+    closeCreditApplication()
   }, [periodId])
   useEffect(() => {
     if (!entityId || !selectedPeriod?.latest_calculation_id) { setDetail(null); return }
@@ -822,13 +891,12 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     })
   }
 
-  function openSupplierVat(item: UkVatClawbackCandidates["items"][number]) {
-    setSupplierDocumentId(item.document_id)
+  function openSupplierVat(documentId: string, kind: "first" | "later") {
+    setSupplierDocumentId(documentId)
     setSupplierSource(null)
     setSupplierHistory(null)
     setSupplierError(null)
-    setSupplierKind(item.first_possible_clawback_date >= (selectedPeriod?.start_date ?? "")
-      ? "first" : "later")
+    setSupplierKind(kind)
     setSupplierPrepareReason("")
     setSupplierReviewReason("")
     setSupplierPostReason("")
@@ -942,11 +1010,15 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
       setCashReviewReason("")
       setCashDateRefresh((value) => value + 1)
       cashPreviewRequest.current += 1
+      cashNineBoxRequest.current += 1
       setCashPreview(null)
       setCashPreviewError(null)
       setCashPreviewLoading(false)
       setCashProjections(null)
       setCashProjectionError(null)
+      setCashNineBox(null)
+      setCashNineBoxError(null)
+      setCashNineBoxLoading(false)
       setNotice(t(result.inserted
         ? "Dated cash VAT payment review recorded. It has not changed a return."
         : "The existing cash VAT payment review was retained."))
@@ -957,11 +1029,15 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     if (!entityId || !cashPreviewStart || !cashPreviewEnd) return
     const requestedEntity = entityId
     const requestId = ++cashPreviewRequest.current
+    cashNineBoxRequest.current += 1
     setCashPreviewLoading(true)
     setCashPreviewError(null)
     setCashPreview(null)
     setCashProjections(null)
     setCashProjectionError(null)
+    setCashNineBox(null)
+    setCashNineBoxError(null)
+    setCashNineBoxLoading(false)
     try {
       const result = await getUkVatCashSourcePreview(requestedEntity, cashPreviewStart, cashPreviewEnd)
       if (activeEntity.current !== requestedEntity || cashPreviewRequest.current !== requestId) return
@@ -995,6 +1071,27 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
         ? "Cash VAT payment event projection recorded. It has not changed or approved a return."
         : "The existing cash VAT payment event projection was retained."))
     })
+  }
+
+  async function showCashNineBox(projectionId: string) {
+    if (!entityId) return
+    const requestedEntity = entityId
+    const previewRequestId = cashPreviewRequest.current
+    const requestId = ++cashNineBoxRequest.current
+    setCashNineBoxLoading(true)
+    setCashNineBox(null)
+    setCashNineBoxError(null)
+    try {
+      const result = await getUkVatCashNineBoxPreview(requestedEntity, projectionId)
+      if (activeEntity.current === requestedEntity && cashPreviewRequest.current === previewRequestId
+        && cashNineBoxRequest.current === requestId) setCashNineBox(result)
+    } catch (cause) {
+      if (activeEntity.current === requestedEntity && cashPreviewRequest.current === previewRequestId
+        && cashNineBoxRequest.current === requestId) setCashNineBoxError(message(cause))
+    } finally {
+      if (activeEntity.current === requestedEntity && cashPreviewRequest.current === previewRequestId
+        && cashNineBoxRequest.current === requestId) setCashNineBoxLoading(false)
+    }
   }
 
   async function calculate() {
@@ -1111,6 +1208,90 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     }
   }
 
+  function closeCreditApplication() {
+    creditApplicationRequest.current += 1
+    activeCreditApplication.current = ""
+    setCreditApplicationId("")
+    setCreditApplicationSource(null)
+    setCreditApplicationAmount("")
+    setCreditApplicationDate("")
+    setCreditApplicationReason("")
+    setCreditApplicationKey("")
+    setCreditApplicationBusy(false)
+    setCreditApplicationError(null)
+  }
+
+  async function chooseCreditApplication(creditId: string) {
+    if (!entityId || !canApplyCredit) return
+    if (activeCreditApplication.current === creditId) { closeCreditApplication(); return }
+    closeCreditApplication()
+    activeCreditApplication.current = creditId
+    setCreditApplicationId(creditId)
+    setCreditApplicationBusy(true)
+    const requestId = creditApplicationRequest.current
+    try {
+      const source = await getUkVatCreditApplicationSource(entityId, creditId)
+      if (activeEntity.current !== entityId || activeCreditApplication.current !== creditId
+        || creditApplicationRequest.current !== requestId) return
+      setCreditApplicationSource(source)
+      setCreditApplicationAmount(String(source.availableGbp))
+      setCreditApplicationDate(londonToday())
+      setCreditApplicationKey(crypto.randomUUID())
+    } catch (cause) {
+      if (activeEntity.current === entityId && activeCreditApplication.current === creditId
+        && creditApplicationRequest.current === requestId) setCreditApplicationError(message(cause))
+    } finally {
+      if (activeCreditApplication.current === creditId && creditApplicationRequest.current === requestId) setCreditApplicationBusy(false)
+    }
+  }
+
+  async function saveCreditApplication() {
+    const source = creditApplicationSource
+    const creditId = activeCreditApplication.current
+    const amount = creditApplicationAmount.trim()
+    const date = creditApplicationDate
+    const earliest = source?.invoiceDate && source.creditDate > source.invoiceDate ? source.creditDate : source?.invoiceDate ?? ""
+    if (!entityId || !canApplyCredit || !source || source.status !== "ready"
+      || !source.invoiceId || !creditId || !creditApplicationKey
+      || !validGbpApplicationAmount(amount, source.availableGbp)
+      || !date || date < earliest || date > londonToday()
+      || creditApplicationReason.trim().length < 10) return
+    setCreditApplicationBusy(true)
+    setCreditApplicationError(null)
+    try {
+      await applyUkVatCreditToInvoice(entityId, {
+        invoiceId: source.invoiceId, creditId, amountGbp: amount, appliedOn: date,
+        requestKey: creditApplicationKey, reason: creditApplicationReason.trim(),
+      })
+      if (activeEntity.current === entityId && activeCreditApplication.current === creditId) {
+        closeCreditApplication()
+        setAccountRefresh((current) => current + 1)
+        setNotice(t("Posted credit applied to the invoice balance. This does not create a Cash Accounting VAT event."))
+      }
+    } catch (cause) {
+      if (activeEntity.current === entityId && activeCreditApplication.current === creditId) {
+        try {
+          const current = await getUkVatCreditApplicationSource(entityId, creditId)
+          if (activeEntity.current !== entityId || activeCreditApplication.current !== creditId) return
+          if (current.applications.some((application) => application.requestKey === creditApplicationKey)) {
+            closeCreditApplication()
+            setAccountRefresh((value) => value + 1)
+            setNotice(t("Posted credit applied to the invoice balance. This does not create a Cash Accounting VAT event."))
+            return
+          }
+          setCreditApplicationSource(current)
+          if (!validGbpApplicationAmount(amount, current.availableGbp)) {
+            setCreditApplicationAmount(String(current.availableGbp))
+            setCreditApplicationKey(crypto.randomUUID())
+          }
+        } catch { /* Keep the original submission error and its retry key. */ }
+        setCreditApplicationError(message(cause))
+      }
+    } finally {
+      if (activeCreditApplication.current === creditId) setCreditApplicationBusy(false)
+    }
+  }
+
   async function reviewControl() {
     if (!entityId || !detail || !canReviewControl || controlReason.trim().length < 10) return
     await run(async () => {
@@ -1217,8 +1398,9 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
       {!loading && !entities.length && !error ? <p className="text-[13px] text-[var(--md-subtle)]">{t("No active UK legal entity is available for VAT review.")}</p> : null}
       {entities.length ? <>
         <div className="flex flex-wrap items-end gap-3">
-          <label className="grid min-w-52 gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("Legal entity")}<Select value={entityId} onValueChange={setEntityId} disabled={busy || loading}><SelectTrigger aria-label={t("Legal entity")}><SelectValue /></SelectTrigger><SelectContent>{entities.map((entity) => <SelectItem key={entity.LegalEntity_ID} value={entity.LegalEntity_ID}>{entity.LegalEntity_Name}</SelectItem>)}</SelectContent></Select></label>
+          <label className="grid min-w-52 gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("Legal entity")}<Select value={entityId} onValueChange={selectEntity} disabled={busy || loading}><SelectTrigger aria-label={t("Legal entity")}><SelectValue placeholder={t("Choose a legal entity")} /></SelectTrigger><SelectContent>{entities.map((entity) => <SelectItem key={entity.LegalEntity_ID} value={entity.LegalEntity_ID}>{entity.LegalEntity_Name}</SelectItem>)}</SelectContent></Select></label>
         </div>
+        {entityId ? <>
         <SettingsPanel title={t("UK VAT registration")} description={t("Record the legal entity's VAT number and accounting scheme before preparing periods.")}>
           {registration?.registration && registration.registration.status !== "not_configured" ? <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-[12px] text-[var(--md-text)]">
             <strong className="font-medium text-[var(--md-ink)]" data-i18n-skip>{registration.registration.vrn}</strong>
@@ -1306,9 +1488,9 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
         </SettingsPanel>
         <SettingsPanel title={t("Cash Accounting source preview")} description={t("Check posted GBP invoice allocations against reviewed payment dates and VAT lines. This is a source preview only; it cannot create or approve a return.")}>
           <div className="flex flex-wrap items-end gap-3 py-2">
-            <label className="grid gap-1 text-[12px] text-[var(--md-text)]">{t("Start date")}<Input type="date" value={cashPreviewStart} onChange={(event) => { cashPreviewRequest.current += 1; setCashPreviewStart(event.target.value); setCashPreview(null); setCashPreviewError(null); setCashPreviewLoading(false) }} /></label>
-            <label className="grid gap-1 text-[12px] text-[var(--md-text)]">{t("End date")}<Input type="date" value={cashPreviewEnd} onChange={(event) => { cashPreviewRequest.current += 1; setCashPreviewEnd(event.target.value); setCashPreview(null); setCashPreviewError(null); setCashPreviewLoading(false) }} /></label>
-            {selectedPeriod ? <Button type="button" size="sm" variant="outline" disabled={cashPreviewLoading} onClick={() => { cashPreviewRequest.current += 1; setCashPreviewStart(selectedPeriod.start_date); setCashPreviewEnd(selectedPeriod.end_date); setCashPreview(null); setCashPreviewError(null); setCashPreviewLoading(false) }}>{t("Use selected period")}</Button> : null}
+            <label className="grid gap-1 text-[12px] text-[var(--md-text)]">{t("Start date")}<Input type="date" value={cashPreviewStart} onChange={(event) => { cashPreviewRequest.current += 1; setCashPreviewStart(event.target.value); setCashPreview(null); setCashNineBox(null); setCashNineBoxLoading(false); setCashNineBoxError(null); setCashPreviewError(null); setCashPreviewLoading(false) }} /></label>
+            <label className="grid gap-1 text-[12px] text-[var(--md-text)]">{t("End date")}<Input type="date" value={cashPreviewEnd} onChange={(event) => { cashPreviewRequest.current += 1; setCashPreviewEnd(event.target.value); setCashPreview(null); setCashNineBox(null); setCashNineBoxLoading(false); setCashNineBoxError(null); setCashPreviewError(null); setCashPreviewLoading(false) }} /></label>
+            {selectedPeriod ? <Button type="button" size="sm" variant="outline" disabled={cashPreviewLoading} onClick={() => { cashPreviewRequest.current += 1; setCashPreviewStart(selectedPeriod.start_date); setCashPreviewEnd(selectedPeriod.end_date); setCashPreview(null); setCashNineBox(null); setCashNineBoxLoading(false); setCashNineBoxError(null); setCashPreviewError(null); setCashPreviewLoading(false) }}>{t("Use selected period")}</Button> : null}
             <Button type="button" size="sm" variant="outline" disabled={cashPreviewLoading || !entityId || !cashPreviewStart || !cashPreviewEnd || cashPreviewEnd < cashPreviewStart} onClick={() => void previewCashSources()}>{cashPreviewLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Calculator className="size-4" />}{t("Preview cash sources")}</Button>
           </div>
           {cashPreviewError ? <p role="alert" className="py-2 text-[12px] text-[var(--md-red)]">{cashPreviewError}</p> : null}
@@ -1320,8 +1502,11 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
             {cashPreview.excludedAllocations.length ? <details className="text-[11px] text-[var(--md-subtle)]"><summary className="cursor-pointer">{t("Show excluded Standard-accounted payments")} · <span data-i18n-skip>{cashPreview.excludedAllocations.length}</span></summary><div className="mt-2 max-h-72 divide-y divide-[var(--md-line)] overflow-auto">{cashPreview.excludedAllocations.map((item) => <p key={item.allocationId} className="py-2"><span data-i18n-skip>{item.paymentDate} · {item.invoiceId} · {item.allocationId}</span> · {t("Production return accepted")} <time dateTime={item.standardAcceptedAt} data-i18n-skip>{dateTime.format(new Date(item.standardAcceptedAt))}</time></p>)}</div></details> : null}
             {canManage && cashPreview.calculationValid ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void recordCashProjection()}>{t("Record cash payment events")}</Button> : null}
             {cashProjectionError ? <p role="alert" className="text-[var(--md-red)]">{cashProjectionError}</p> : null}
-            {cashProjections?.items.length ? <details className="text-[11px] text-[var(--md-subtle)]"><summary className="cursor-pointer">{t("Recorded cash event projections")} · <span data-i18n-skip>{cashProjections.items.length}</span></summary><div className="mt-2 max-h-72 divide-y divide-[var(--md-line)] overflow-auto">{cashProjections.items.map((item) => <div key={item.id} className="py-2"><p><time dateTime={item.projected_at} data-i18n-skip>{dateTime.format(new Date(item.projected_at))}</time> · {t(item.source_current ? "Current sources" : "Sources changed; recalculate")}</p><p>{t("Payment event lines")}: <span data-i18n-skip>{item.event_lines.length}</span> · {t("Candidate allocations")}: <span data-i18n-skip>{item.candidate_allocation_count}</span> · {t("Excluded Standard-accounted allocations")}: <span data-i18n-skip>{item.excluded_allocation_count}</span></p><p>{t("Source digest")}: <span className="break-all" data-i18n-skip>{item.source_digest}</span></p></div>)}</div></details> : null}
-            <p className="text-[11px] text-[var(--md-subtle)]">{t("These are unrounded source amounts for supported GBP invoices. Accepted Standard-return invoices are excluded; unresolved or mixed scheme transitions block the preview. Recorded payment events are audit preparation only. Cash Accounting remains unavailable until credits, advances, currency conversion, VAT control and nine-box review are implemented.")}</p>
+            {cashProjections?.items.length ? <details className="text-[11px] text-[var(--md-subtle)]"><summary className="cursor-pointer">{t("Recorded cash event projections")} · <span data-i18n-skip>{cashProjections.items.length}</span></summary><div className="mt-2 max-h-72 divide-y divide-[var(--md-line)] overflow-auto">{cashProjections.items.map((item) => <div key={item.id} className="py-2"><p><time dateTime={item.projected_at} data-i18n-skip>{dateTime.format(new Date(item.projected_at))}</time> · {t(item.source_current ? "Current sources" : "Sources changed; recalculate")}</p><p>{t("Payment event lines")}: <span data-i18n-skip>{item.event_lines.length}</span> · {t("Candidate allocations")}: <span data-i18n-skip>{item.candidate_allocation_count}</span> · {t("Excluded Standard-accounted allocations")}: <span data-i18n-skip>{item.excluded_allocation_count}</span></p><p>{t("Source digest")}: <span className="break-all" data-i18n-skip>{item.source_digest}</span></p><Button type="button" size="sm" variant="outline" className="mt-2" disabled={!item.source_current || cashNineBoxLoading} onClick={() => void showCashNineBox(item.id)}>{t("View nine-box preview")}</Button></div>)}</div></details> : null}
+            {cashNineBoxLoading ? <p role="status" className="text-[11px] text-[var(--md-subtle)]">{t("Checking nine-box sources…")}</p> : null}
+            {cashNineBoxError ? <p role="alert" className="text-[11px] text-[var(--md-red)]">{cashNineBoxError}</p> : null}
+            {cashNineBox ? <div className="space-y-3 border-t border-[var(--md-line)] pt-3"><p className="font-medium text-[var(--md-ink)]">{t("Cash Accounting nine-box preview")} · <span data-i18n-skip>{cashNineBox.startDate} – {cashNineBox.endDate}</span></p><div className="grid gap-3 sm:grid-cols-3">{Array.from({ length: 9 }, (_, index) => String(index + 1)).map((box) => <div key={box} className="text-[11px]"><p className="font-medium text-[var(--md-text)]">{t("Box")} <span data-i18n-skip>{box}</span></p><p>{t("Source")}: <strong data-i18n-skip>{preciseMoney.format(Number(cashNineBox.sourceBoxesGbp[box]))}</strong></p><p>{t("Candidate filing value")}: <strong data-i18n-skip>{money.format(Number(cashNineBox.candidateFilingBoxes[box]))}</strong></p>{cashNineBox.boxLines[box]?.length ? <details><summary className="cursor-pointer">{t("Source lines")} · <span data-i18n-skip>{cashNineBox.boxLines[box].length}</span></summary><div className="mt-1 max-h-40 space-y-2 overflow-auto">{cashNineBox.boxLines[box].map((line) => <p key={line.eventId} className="break-all" data-i18n-skip>{line.paymentDate} · {line.invoiceId} · {line.allocationId} · {preciseMoney.format(Number(line.amountGbp))}</p>)}</div></details> : null}</div>)}</div><p className="text-[11px] text-[var(--md-subtle)]">{t("Verified payment events")}: <span data-i18n-skip>{cashNineBox.eventLineCount}</span> · {t("Excluded Standard-accounted allocations")}: <span data-i18n-skip>{cashNineBox.excludedAllocationCount}</span>. {t("This preview cannot approve or submit a Cash Accounting return.")}</p><details className="text-[11px] text-[var(--md-subtle)]"><summary className="cursor-pointer">{t("Source fingerprint")}</summary><p className="break-all" data-i18n-skip>{cashNineBox.sourceFingerprint}</p></details></div> : null}
+            <p className="text-[11px] text-[var(--md-subtle)]">{t("These are unrounded source amounts for supported GBP invoices. Accepted Standard-return invoices are excluded; unresolved or mixed scheme transitions block the preview. Recorded payment events and nine-box values are audit preparation only. Cash Accounting remains unavailable until credits, advances, currency conversion, VAT control and scheme transitions are implemented.")}</p>
           </div> : null}
         </SettingsPanel>
         </> : null}
@@ -1448,16 +1633,39 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
               <div className="min-w-0"><p className="font-medium text-[var(--md-ink)]" data-i18n-skip>{item.document_number || item.document_id}</p>
                 <p className="mt-1 text-[var(--md-subtle)]">{t("First possible clawback date")}: <span data-i18n-skip>{item.first_possible_clawback_date}</span> · {t("Due")}: <span data-i18n-skip>{item.due_date || item.document_date}</span> · {t("Unpaid at period end")}: <span data-i18n-skip>{item.currency_code} {sourceAmount.format(Number(item.unpaid_at_period_end))}</span></p></div>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="outline" onClick={() => openSupplierVat(item)}>{t(canManage ? "Review VAT" : "VAT history")}</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => openSupplierVat(
+                  item.document_id, item.first_possible_clawback_date >= selectedPeriod.start_date ? "first" : "later",
+                )}>{t(canManage ? "Review VAT" : "VAT history")}</Button>
                 {canOpenPayables ? <Button type="button" size="sm" variant="outline" onClick={() => navigate(`/finance/payables/documents/${item.document_id}`)}>{t("Open invoice")}</Button> : null}
               </div>
             </div>)}
           </div> : clawback && !clawbackError ? <p className="py-2 text-[12px] text-[var(--md-subtle)]">{t("No aged unpaid supplier VAT candidates were found for this period.")}</p> : null}
-          {clawback && clawback.totalCandidates > clawback.items.length ? <p className="pt-2 text-[11px] text-[var(--md-subtle)]">{t("Showing the first 50 cases. Review the remaining supplier invoices before calculating this period.")}</p> : null}
+          {clawback && clawback.totalCandidates > 50 ? <div className="flex items-center justify-end gap-2 pt-2 text-[11px] text-[var(--md-subtle)]">
+            <Button type="button" size="sm" variant="outline" disabled={clawbackOffset === 0} onClick={() => setClawbackOffset(Math.max(0, clawbackOffset - 50))}>{t("Previous")}</Button>
+            <span data-i18n-skip>{clawbackOffset + 1}–{Math.min(clawbackOffset + clawback.items.length, clawback.totalCandidates)} / {clawback.totalCandidates}</span>
+            <Button type="button" size="sm" variant="outline" disabled={clawbackOffset + clawback.items.length >= clawback.totalCandidates} onClick={() => setClawbackOffset(clawbackOffset + 50)}>{t("Next")}</Button>
+          </div> : null}
+          <div className="border-t border-[var(--md-line)] pt-3">
+            <p className="font-medium text-[var(--md-ink)]">{t("Payments after a supplier VAT repayment")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Review each later payment, including payments that settle an invoice in full.")}</p>
+            {supplierFollowupError ? <p role="alert" className="mt-2 text-[12px] text-[var(--md-red)]">{supplierFollowupError}</p> : null}
+            {supplierFollowups?.items.length ? <div className="mt-2 divide-y divide-[var(--md-line)]">{supplierFollowups.items.map((item) => <div key={item.document_id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-[12px]">
+              <div><p className="font-medium text-[var(--md-ink)]" data-i18n-skip>{item.document_number || item.document_id}</p>
+                <p className="mt-1 text-[var(--md-subtle)]">{t("First repayment period ended")}: <span data-i18n-skip>{item.first_period_end}</span> · {t("Payments this period")}: <span data-i18n-skip>{item.payment_count}</span> · <span data-i18n-skip>{money.format(Number(item.paid_in_period))}</span></p></div>
+              <Button type="button" size="sm" variant="outline" onClick={() => openSupplierVat(item.document_id, "later")}>{t(canManage ? "Review restoration" : "VAT history")}</Button>
+            </div>)}</div> : supplierFollowups ? <p className="mt-2 text-[12px] text-[var(--md-subtle)]">{t("No later supplier payments need review in this period.")}</p> : !supplierFollowupError ? <p className="mt-2 text-[12px] text-[var(--md-subtle)]">{t("Checking later supplier payments...")}</p> : null}
+            {supplierFollowups && supplierFollowups.total > 50 ? <div className="mt-2 flex items-center justify-end gap-2 text-[11px] text-[var(--md-subtle)]">
+              <Button type="button" size="sm" variant="outline" disabled={supplierFollowupOffset === 0} onClick={() => setSupplierFollowupOffset(Math.max(0, supplierFollowupOffset - 50))}>{t("Previous")}</Button>
+              <span data-i18n-skip>{supplierFollowupOffset + 1}–{Math.min(supplierFollowupOffset + supplierFollowups.items.length, supplierFollowups.total)} / {supplierFollowups.total}</span>
+              <Button type="button" size="sm" variant="outline" disabled={supplierFollowupOffset + supplierFollowups.items.length >= supplierFollowups.total} onClick={() => setSupplierFollowupOffset(supplierFollowupOffset + 50)}>{t("Next")}</Button>
+            </div> : null}
+          </div>
           {supplierDocumentId ? <div className="mt-3 space-y-3 border-t border-[var(--md-line)] pt-3 text-[12px] text-[var(--md-text)]">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div><p className="font-medium text-[var(--md-ink)]">{t(supplierKind === "first" ? "Six-month input VAT repayment" : "Later supplier payment restoration")}</p>
-                <p className="mt-1" data-i18n-skip>{clawback?.items.find((item) => item.document_id === supplierDocumentId)?.document_number || supplierDocumentId}</p></div>
+                <p className="mt-1" data-i18n-skip>{clawback?.items.find((item) => item.document_id === supplierDocumentId)?.document_number
+                  || supplierFollowups?.items.find((item) => item.document_id === supplierDocumentId)?.document_number
+                  || supplierDocumentId}</p></div>
               <Button type="button" size="sm" variant="outline" onClick={() => setSupplierDocumentId(null)}>{t("Close")}</Button>
             </div>
             {supplierError ? <p role="alert" className="text-[var(--md-red)]">{supplierError}</p> : null}
@@ -1566,7 +1774,8 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
           {accountError ? <p role="alert" className="py-2 text-[12px] text-[var(--md-red)]">{accountError}</p> : null}
           {account && account.calculationId === detail.calculationId ? <>
             <p className="py-2 text-[12px] text-[var(--md-text)]">{t("Transactions signed off")}: <strong data-i18n-skip>{account.signedTransactions}/{account.totalTransactions}</strong> · {t("Return approval")}: <strong>{t("Pending")}</strong></p>
-            <div className="divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{account.rows.map((item) => {
+            <div className="divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{account.rows.map((item, index) => {
+              const firstCreditDocumentRow = item.document_id !== null && account.rows.findIndex((row) => row.document_id === item.document_id) === index
               const originalLedger = item.original_document_type === "sl_invoice" || item.original_document_type === "credit_note"
                 ? "receivables" : item.original_document_type === "pl_invoice" || item.original_document_type === "debit_note"
                   ? "payables" : null
@@ -1583,13 +1792,29 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
                   {item.reverses_evidence_id && item.original_document_id ? <p className="mt-1 text-[var(--md-text)]">{t("Reverses original transaction")}: {canOpenOriginal ? <button type="button" className="rounded-sm font-medium text-[var(--md-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]" onClick={() => navigate(`/finance/${originalLedger}/documents/${item.original_document_id}`)} data-i18n-skip>{item.original_document_number || item.original_document_id}</button> : <span data-i18n-skip>{item.original_document_number || item.original_document_id}</span>}{item.original_vat_reconciled_at ? <> · {t("Original VAT reconciled")} <time dateTime={item.original_vat_reconciled_at} data-i18n-skip>{dateTime.format(new Date(item.original_vat_reconciled_at))}</time></> : null}</p> : null}
                   {item.credit_original_evidence_id && item.credit_original_document_id ? <p className="mt-1 text-[var(--md-text)]">{t("Credit linked to original invoice")}: {canOpenCreditOriginal ? <button type="button" className="rounded-sm font-medium text-[var(--md-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]" onClick={() => navigate(`/finance/${creditOriginalLedger}/documents/${item.credit_original_document_id}`)} data-i18n-skip>{item.credit_original_document_number || item.credit_original_document_id}</button> : <span data-i18n-skip>{item.credit_original_document_number || item.credit_original_document_id}</span>}{item.credit_linked_at ? <> · {t("Linked")} <time dateTime={item.credit_linked_at} data-i18n-skip>{dateTime.format(new Date(item.credit_linked_at))}</time></> : null}</p> : null}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">{item.vat_reconciled_at ? <span className="text-[11px] text-[var(--md-subtle)]">{t("VAT reconciled")} <time dateTime={item.vat_reconciled_at} data-i18n-skip>{dateTime.format(new Date(item.vat_reconciled_at))}</time></span> : <span className="text-[11px] text-[var(--md-subtle)]">{t("Awaiting sign-off")}</span>}{item.source_locked ? <span className="text-[11px] text-[var(--md-subtle)]">· {t("Source locked")}</span> : null}{canManage && (item.document_type === "credit_note" || item.document_type === "debit_note") && !item.reverses_evidence_id && !item.credit_original_evidence_id ? <Button type="button" size="sm" variant="outline" disabled={busy || creditBusy} onClick={() => chooseCreditLink(item.evidence_id)}>{t(creditLinkId === item.evidence_id ? "Cancel link" : "Link original invoice")}</Button> : null}</div>
+                <div className="flex flex-wrap items-center gap-2">{item.vat_reconciled_at ? <span className="text-[11px] text-[var(--md-subtle)]">{t("VAT reconciled")} <time dateTime={item.vat_reconciled_at} data-i18n-skip>{dateTime.format(new Date(item.vat_reconciled_at))}</time></span> : <span className="text-[11px] text-[var(--md-subtle)]">{t("Awaiting sign-off")}</span>}{item.source_locked ? <span className="text-[11px] text-[var(--md-subtle)]">· {t("Source locked")}</span> : null}{canManage && (item.document_type === "credit_note" || item.document_type === "debit_note") && !item.reverses_evidence_id && !item.credit_original_evidence_id ? <Button type="button" size="sm" variant="outline" disabled={busy || creditBusy} onClick={() => chooseCreditLink(item.evidence_id)}>{t(creditLinkId === item.evidence_id ? "Cancel link" : "Link original invoice")}</Button> : null}{canApplyCredit && firstCreditDocumentRow && item.credit_original_document_id && (item.document_type === "credit_note" || item.document_type === "debit_note") ? <Button type="button" size="sm" variant="outline" disabled={busy || creditApplicationBusy} onClick={() => void chooseCreditApplication(item.document_id!)}>{t(creditApplicationId === item.document_id ? "Close application" : "Apply credit")}</Button> : null}</div>
                 {creditLinkId === item.evidence_id ? <div className="w-full border-t border-[var(--md-line)] pt-3">
                   <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Find the original invoice by number, choose the matching line, then explain the credit. This records an audit link without editing either transaction.")}</p>
                   <div className="mt-3 flex flex-wrap items-end gap-2"><label className="grid min-w-48 flex-1 gap-1 text-[12px] text-[var(--md-text)]">{t("Original invoice number")}<Input value={creditSearch} maxLength={80} onChange={(event) => { creditSearchRequest.current += 1; setCreditSearch(event.target.value); setCreditCandidates(null); setCreditOriginalId(""); setCreditBusy(false) }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchCreditOriginal() } }} /></label><Button type="button" size="sm" variant="outline" disabled={creditBusy || creditSearch.trim().length < 2} onClick={() => void searchCreditOriginal()}>{creditBusy ? <LoaderCircle className="animate-spin" /> : null}{t("Find invoice")}</Button></div>
                   {creditCandidates ? creditCandidates.length ? <label className="mt-3 grid gap-1 text-[12px] text-[var(--md-text)]">{t("Original invoice line")}<Select value={creditOriginalId} onValueChange={setCreditOriginalId}><SelectTrigger aria-label={t("Original invoice line")}><SelectValue placeholder={t("Choose the matching line")} /></SelectTrigger><SelectContent>{creditCandidates.map((candidate) => <SelectItem key={candidate.evidenceId} value={candidate.evidenceId}><span data-i18n-skip>{candidate.documentNumber || candidate.documentId} · {t("Line")} {candidate.lineNo} · {candidate.documentDate} · {postingAmount(Number(candidate.remainingNet), candidate.currencyCode)} {t("net available")} · {postingAmount(Number(candidate.remainingVat), candidate.currencyCode)} {t("VAT available")}</span></SelectItem>)}</SelectContent></Select></label> : <p className="mt-3 text-[12px] text-[var(--md-subtle)]">{t("No eligible invoice lines match. Check the number, customer, currency and remaining credit amount.")}</p> : null}
                   {creditCandidates?.length ? <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"><label className="grid gap-1 text-[12px] text-[var(--md-text)]">{t("Credit correction reason")}<Textarea value={creditReason} onChange={(event) => setCreditReason(event.target.value)} minLength={10} maxLength={2000} placeholder={t("Explain why this credit belongs to the selected invoice line.")} /></label><Button type="button" size="sm" disabled={creditBusy || !creditOriginalId || creditReason.trim().length < 10} onClick={() => void saveCreditLink()}>{creditBusy ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />}{t("Record credit link")}</Button></div> : null}
                   {creditError ? <p role="alert" className="mt-2 text-[12px] text-[var(--md-red)]">{creditError}</p> : null}
+                </div> : null}
+                {firstCreditDocumentRow && creditApplicationId === item.document_id ? <div className="w-full border-t border-[var(--md-line)] pt-3">
+                  <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Apply this posted credit to its linked invoice balance. The VAT source and return boxes do not change. A refund must be recorded separately.")}</p>
+                  {creditApplicationBusy && !creditApplicationSource ? <p className="mt-2 text-[12px] text-[var(--md-subtle)]" role="status">{t("Checking linked documents and balances…")}</p> : null}
+                  {creditApplicationSource ? <>
+                    <p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Credit outstanding")}: <strong data-i18n-skip>{exactGbp(creditApplicationSource.creditOutstandingGbp.replace(/^-/, ""), preciseMoney)}</strong> · {t("Invoice outstanding")}: <strong data-i18n-skip>{creditApplicationSource.invoiceOutstandingGbp === null ? "—" : exactGbp(creditApplicationSource.invoiceOutstandingGbp, preciseMoney)}</strong> · {t("Available to apply")}: <strong data-i18n-skip>{exactGbp(creditApplicationSource.availableGbp, preciseMoney)}</strong></p>
+                    {creditApplicationSource.status !== "ready" ? <p className="mt-2 text-[12px] text-[var(--md-amber)]" role="status">{t(creditApplicationSource.status === "link_every_credit_line_to_one_invoice" ? "Link every credit line to one original invoice before applying it." : creditApplicationSource.status === "accounting_mirror_requires_adapter" ? "This entity has an active accounting mirror. Credit application needs a reviewed mirror delivery path." : creditApplicationSource.status === "fully_applied" ? "The credit or invoice has no outstanding balance to apply." : "The posted document is not eligible for this GBP credit application.")}</p> : null}
+                    {creditApplicationSource.applications.length ? <div className="mt-3 border-t border-[var(--md-line)] pt-2"><p className="text-[12px] font-medium text-[var(--md-text)]">{t("Earlier applications")}</p>{creditApplicationSource.applications.map((application) => <p key={application.applicationId} className="mt-1 text-[12px] text-[var(--md-subtle)]"><time dateTime={application.appliedOn} data-i18n-skip>{application.appliedOn}</time> · <span data-i18n-skip>{exactGbp(application.amountGbp, preciseMoney)}</span> · <span data-i18n-skip>{application.reason}</span></p>)}</div> : null}
+                    {creditApplicationSource.status === "ready" && creditApplicationSource.invoiceId ? <div className="mt-3 grid gap-3 border-t border-[var(--md-line)] pt-3 sm:grid-cols-2">
+                      <label className="grid gap-1 text-[12px] text-[var(--md-text)]">{t("Amount to apply (GBP)")}<Input inputMode="decimal" value={creditApplicationAmount} disabled={creditApplicationBusy} onChange={(event) => { setCreditApplicationAmount(event.target.value); setCreditApplicationKey(crypto.randomUUID()) }} aria-label={t("Amount to apply in GBP")} /></label>
+                      <label className="grid gap-1 text-[12px] text-[var(--md-text)]">{t("Application date")}<Input type="date" value={creditApplicationDate} disabled={creditApplicationBusy} min={creditApplicationSource.invoiceDate && creditApplicationSource.creditDate > creditApplicationSource.invoiceDate ? creditApplicationSource.creditDate : creditApplicationSource.invoiceDate ?? undefined} max={londonToday()} onChange={(event) => { setCreditApplicationDate(event.target.value); setCreditApplicationKey(crypto.randomUUID()) }} /></label>
+                      <label className="grid gap-1 text-[12px] text-[var(--md-text)] sm:col-span-2">{t("Settlement reason")}<Textarea value={creditApplicationReason} disabled={creditApplicationBusy} onChange={(event) => { setCreditApplicationReason(event.target.value); setCreditApplicationKey(crypto.randomUUID()) }} minLength={10} maxLength={2000} placeholder={t("Explain why this posted credit is being applied to the linked invoice.")} /></label>
+                      <div className="sm:col-span-2"><Button type="button" size="sm" disabled={creditApplicationBusy || !validGbpApplicationAmount(creditApplicationAmount, creditApplicationSource.availableGbp) || !creditApplicationDate || creditApplicationDate > londonToday() || creditApplicationDate < (creditApplicationSource.invoiceDate && creditApplicationSource.creditDate > creditApplicationSource.invoiceDate ? creditApplicationSource.creditDate : creditApplicationSource.invoiceDate ?? "") || creditApplicationReason.trim().length < 10} onClick={() => void saveCreditApplication()}>{creditApplicationBusy ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />}{t("Apply to invoice balance")}</Button></div>
+                    </div> : null}
+                  </> : null}
+                  {creditApplicationError ? <p role="alert" className="mt-2 text-[12px] text-[var(--md-red)]">{creditApplicationError}</p> : null}
                 </div> : null}
               </div>
             })}</div>
@@ -1624,6 +1849,7 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
           </> : !taxPostingError ? <p className="py-3 text-[12px] text-[var(--md-subtle)]">{t("GL tax postings are loading.")}</p> : null}
         </SettingsPanel> : null}
         <p className="text-[11px] leading-5 text-[var(--md-subtle)]">{t("This workspace does not submit a VAT return. HMRC obligation verification, scheme rules, current control-review revalidation and return approval are required first.")}</p>
+        </> : <p role="status" className="text-[13px] text-[var(--md-subtle)]">{t("Choose a legal entity to review its VAT records.")}</p>}
       </> : null}
     </div>
   </>

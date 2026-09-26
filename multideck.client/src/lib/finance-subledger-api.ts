@@ -831,6 +831,19 @@ export type UkVatCashEventProjectionHistory = {
 }
 export const getUkVatCashEventProjections = (legalEntityId: string, start: string, end: string) =>
   call<UkVatCashEventProjectionHistory>(`${ukVatPath(legalEntityId)}/cash-projections?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+export type UkVatCashNineBoxPreview = {
+  projectionId: string; legalEntityId: string; startDate: string; endDate: string;
+  sourceDigest: string; sourceFingerprint: string;
+  sourceBoxesGbp: Record<string, number>; candidateFilingBoxes: Record<string, number>;
+  boxLines: Record<string, Array<{ eventId: string; cashId: string; allocationId: string;
+    invoiceId: string; invoiceLineId: string; paymentDate: string; evidenceId: string;
+    paymentReviewId: string; treatmentReviewId: string; amountGbp: number }>>;
+  eventLineCount: number; candidateAllocationCount: number; excludedAllocationCount: number;
+  excludedAllocations: UkVatCashSourcePreview["excludedAllocations"];
+  status: "preview_only_no_cash_return_effect";
+}
+export const getUkVatCashNineBoxPreview = (legalEntityId: string, projectionId: string) =>
+  call<UkVatCashNineBoxPreview>(`${ukVatPath(legalEntityId)}/cash-projections/${encodeURIComponent(projectionId)}/nine-box-preview`)
 export type UkVatCashControlPreview = {
   status: "cash_control_bridge_preview_only";
   calculationValid: boolean;
@@ -881,7 +894,7 @@ export const reviewUkVatCashPaymentDate = (legalEntityId: string, cashId: string
 export const calculateUkVatDraft = (legalEntityId: string, periodId: string) =>
   post<UkVatDraftCalculation>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/calculate`)
 export type UkVatClawbackCandidates = {
-  periodId: string; legalEntityId: string; periodEnd: string; totalCandidates: number;
+  periodId: string; legalEntityId: string; periodEnd: string; totalCandidates: number; offset: number;
   items: Array<{
     document_id: string; document_number: string | null; document_date: string;
     due_date: string | null; currency_code: string; gross_amount: number;
@@ -889,8 +902,17 @@ export type UkVatClawbackCandidates = {
     first_possible_clawback_date: string;
   }>;
 }
-export const getUkVatClawbackCandidates = (legalEntityId: string, periodId: string) =>
-  call<UkVatClawbackCandidates>(`${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/clawback-candidates`)
+export const getUkVatClawbackCandidates = (legalEntityId: string, periodId: string, offset = 0) =>
+  call<UkVatClawbackCandidates>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/clawback-candidates?offset=${offset}`)
+export type UkVatSupplierPaymentFollowups = {
+  periodId: string; legalEntityId: string; total: number; offset: number;
+  items: Array<{ document_id: string; document_number: string | null;
+    first_period_end: string; payment_count: number; paid_in_period: number }>;
+}
+export const getUkVatSupplierPaymentFollowups = (legalEntityId: string, periodId: string, offset = 0) =>
+  call<UkVatSupplierPaymentFollowups>(
+    `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/supplier-payment-followups?offset=${offset}`)
 const supplierInputTaxPath = (legalEntityId: string, periodId: string, documentId: string) =>
   `${ukVatPath(legalEntityId)}/periods/${encodeURIComponent(periodId)}/supplier-input-tax/${encodeURIComponent(documentId)}`
 export type UkVatSupplierInputTaxSource = {
@@ -970,6 +992,27 @@ export const findUkVatCreditCandidates = (legalEntityId: string, creditEvidenceI
 export const linkUkVatCredit = (legalEntityId: string, creditEvidenceId: string, originalEvidenceId: string, reason: string) =>
   post<{ linkId: string; linkedAt: string; creditEvidenceId: string; originalEvidenceId: string; inserted: boolean }>(
     `${ukVatPath(legalEntityId)}/credit-links`, { creditEvidenceId, originalEvidenceId, reason })
+export const applyUkVatCreditToInvoice = (legalEntityId: string, input: {
+  invoiceId: string; creditId: string; amountGbp: string; appliedOn: string;
+  requestKey: string; reason: string;
+}) => post<{ applicationId: string; appliedAt: string; invoiceId: string; creditId: string;
+  amountGbp: number; inserted: boolean; status: "subledger_settlement_only_no_cash_vat_effect" }>(
+  `${ukVatPath(legalEntityId)}/credit-applications`, input)
+export type UkVatCreditApplicationSource = {
+  creditId: string; creditNumber: string | null; creditDate: string;
+  creditOutstandingGbp: string; invoiceId: string | null;
+  invoiceNumber: string | null; invoiceDate: string | null;
+  invoiceOutstandingGbp: string | null;
+  availableGbp: string; lineCount: number; linkedLineCount: number;
+  activeAccountingMirror: boolean;
+  status: "ready" | "unsupported_credit" | "link_every_credit_line_to_one_invoice"
+    | "unsupported_invoice" | "accounting_mirror_requires_adapter" | "fully_applied";
+  applications: Array<{ applicationId: string; requestKey: string; appliedOn: string; appliedAt: string;
+    amountGbp: string; reason: string; appliedBy: string }>;
+}
+export const getUkVatCreditApplicationSource = (legalEntityId: string, creditId: string) =>
+  call<UkVatCreditApplicationSource>(
+    `${ukVatPath(legalEntityId)}/credit-applications/${encodeURIComponent(creditId)}`)
 export const getUkVatTaxPostingInventory = (legalEntityId: string, calculationId: string, offset = 0, limit = 100) =>
   call<UkVatTaxPostingInventory>(`${ukVatPath(legalEntityId)}/calculations/${encodeURIComponent(calculationId)}/tax-postings?offset=${offset}&limit=${limit}`)
 export const reconcileUkVatTransactions = (legalEntityId: string, calculationId: string,

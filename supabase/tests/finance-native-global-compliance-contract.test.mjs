@@ -116,10 +116,11 @@ test("Cash Accounting payment dates and event projections stay scoped and do not
     'previewUkVatCashSources(data)',
     'multideck_uk_vat_record_cash_event_projection',
     'multideck_uk_vat_cash_event_projection_history',
+    'multideck_uk_vat_cash_nine_box_preview',
     'p_actor: current.User_ID',
   ])
-  includesEvery(vatPage, ["Cash Accounting payment dates", "Review payment date", "Payment date review history", "they do not affect a VAT return yet.", "Cash Accounting source preview", "it cannot create or approve a return.", "Record cash payment events", "Recorded cash event projections"])
-  includesEvery(dexter, ["Cash Accounting payment-date reviews, the source preview and recorded cash event projections are operator-screen-only."])
+  includesEvery(vatPage, ["Cash Accounting payment dates", "Review payment date", "Payment date review history", "they do not affect a VAT return yet.", "Cash Accounting source preview", "it cannot create or approve a return.", "Record cash payment events", "Recorded cash event projections", "View nine-box preview", "This preview cannot approve or submit a Cash Accounting return."])
+  includesEvery(dexter, ["Cash Accounting payment-date reviews, the source and nine-box previews, recorded cash event projections, and native credit applications are manual Finance controls.", "Cash Accounting return calculation is still unavailable."])
 })
 
 test("new-tenant snapshot contains the native finance schema and jurisdiction reference catalogue", () => {
