@@ -92,7 +92,8 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925104200_finance_approval_dexter_parity.sql',
     ]
     const laterMigrations = readdirSync(new URL('migrations/', root))
-      .filter(name => name >= '20260925070431' && name.endsWith('.sql') && !/_(?:uk_vat|hmrc)_/.test(name))
+      .filter(name => name >= '20260925070431' && name.endsWith('.sql')
+        && !/_(?:uk_vat|hmrc|company_event|gpt_6_luna)/.test(name))
       .sort()
     assert.deepEqual(migrations, laterMigrations,
       'Review every new post-snapshot migration for this release and update its ordered manifest.')

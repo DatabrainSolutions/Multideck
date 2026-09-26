@@ -42,7 +42,14 @@ test('staged tenant schema accepts the UK VAT migration chain and source locks',
       create extension btree_gist;
       create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
       create function auth.role() returns text language sql stable as $$ select 'service_role'::text $$;
-      create table auth.users(id uuid primary key);`)
+      create table auth.users(id uuid primary key);
+      create table storage.buckets(id text primary key, name text, public boolean,
+        file_size_limit bigint, allowed_mime_types text[]);
+      create table storage.objects(bucket_id text, name text, primary key(bucket_id, name));
+      alter table storage.objects enable row level security;
+      create function storage.foldername(name text) returns text[] language sql immutable as $$
+        select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1)-1]
+      $$;`)
     const baseline = readFileSync(baselinePath, 'utf8')
     const boundary = baseline.indexOf(marker)
     assert.ok(boundary > 0 && baseline.indexOf(marker, boundary + 1) < 0,
