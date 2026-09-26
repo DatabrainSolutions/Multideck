@@ -3,14 +3,15 @@ import test from 'node:test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 
 const migration = readFileSync(new URL('../migrations/20260925103000_finance_approval_policies.sql', import.meta.url), 'utf8')
 const submissions = readFileSync(new URL('../migrations/20260925103100_finance_policy_document_cash_submission.sql', import.meta.url), 'utf8')
 const dexter = readFileSync(new URL('../migrations/20260925104200_finance_approval_dexter_parity.sql', import.meta.url), 'utf8')
+const decisionLock = readFileSync(new URL('../migrations/20260926095252_finance_approval_decision_entity_lock.sql', import.meta.url), 'utf8')
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 
-test('entity-scoped approval policy defaults to review and audits bounded changes', () => {
+test('entity-scoped approval policy defaults to review and audits bounded changes', async () => {
   const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
   const dir = mkdtempSync(join(tmpdir(), 'finance-approval-'))
   let started = false
@@ -78,6 +79,7 @@ test('entity-scoped approval policy defaults to review and audits bounded change
       ${migration}
       ${submissions}
       ${dexter}
+      ${decisionLock}
       insert into public."sys_AIDexterDataDomains" values('finance','Original',now());
       insert into public."sys_AIDexterWatchCapabilities" values('finance','Original','["status"]',now());
       insert into public."cmp_Users" values('${id(1)}','${id(2)}','active'),('${id(5)}','${id(6)}','active');
@@ -129,6 +131,28 @@ test('entity-scoped approval policy defaults to review and audits bounded change
     sql(`update public."AI_DexterWatches" set "AIDexterWatch_StatusCode"='active' where "AIDexterWatch_CompanyID"='${id(2)}';`)
     sql(`select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(3)}','document','always_review',null,null,'Return to mandatory review');`)
     assert.equal(sql(`select count(*) from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_CompanyID"='${id(2)}'`), '2')
+    const writer = spawn(join(bin, 'psql'), args, { stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 })
+    let writerOutput = '', writerError = ''
+    writer.stderr.on('data', chunk => { writerError += chunk })
+    const writerReady = new Promise((resolve, rejectReady) => {
+      writer.stdout.on('data', chunk => {
+        writerOutput += chunk
+        if (writerOutput.includes('policy_saved')) resolve()
+      })
+      writer.once('error', rejectReady)
+      writer.once('exit', code => {
+        if (!writerOutput.includes('policy_saved')) rejectReady(new Error(`Policy writer exited ${code}: ${writerError}`))
+      })
+    })
+    const writerDone = new Promise(resolve => writer.once('close', resolve))
+    writer.stdin.write(`begin; select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(3)}','document','automatic',100,null,'Concurrent policy revision');\n\\echo policy_saved\n`)
+    await writerReady
+    assert.match(reject(`set lock_timeout='150ms'; select public.multideck_finance_approval_decision('${id(2)}','${id(3)}','document',50,'{"hardException":false,"advisoryException":false}');`), /canceling statement due to lock timeout/)
+    writer.stdin.end('commit;\n')
+    assert.equal(await writerDone, 0, writerError)
+    const concurrentDecision = decision(2, 3, 50)
+    assert.equal(concurrentDecision.revision, 4)
+    assert.equal(concurrentDecision.canAuto, true)
     assert.match(reject(`set role authenticated; select public.multideck_finance_approval_decision('${id(2)}','${id(3)}','document',1,'{}');`), /permission denied/)
   } finally {
     if (started) run('pg_ctl', ['-D', join(dir, 'data'), '-m', 'immediate', '-w', 'stop'])

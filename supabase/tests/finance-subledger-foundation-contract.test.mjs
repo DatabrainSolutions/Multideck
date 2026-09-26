@@ -440,7 +440,7 @@ test("the operator UI covers both ledgers, cash, ad hoc and job sources", () => 
     "Supplier payment",
     "Open document allocations",
     "Exchange rate to",
-    "Send for review",
+    't("Submit")',
     "Approve",
     "unallocatedCashTotals",
     "FINDoc_NativePostingStatusCode",
