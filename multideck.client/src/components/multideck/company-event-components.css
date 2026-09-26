@@ -1,6 +1,7 @@
 /* Ticket chrome around the adapted React Bits TearTicket (display-only mode). */
-.md-event-ticket { position: relative; transition: transform var(--md-motion), opacity var(--md-motion); }
-.md-event-ticket:hover { transform: translateY(-2px); }
+.md-event-ticket { position: relative; transition: opacity var(--md-motion); }
+.md-event-ticket .tear-ticket__image { scale: 1; transition: scale 500ms cubic-bezier(0.22, 1, 0.36, 1), filter 700ms ease; }
+.md-event-ticket:hover .tear-ticket__image { scale: 1.045; }
 .md-event-ticket__art {
   inset: 8px 8px auto 8px; height: calc(62% - 16px); display: grid; place-items: center;
   border-radius: 8px; background: color-mix(in srgb, var(--md-accent) 9%, var(--md-surface-tint));
@@ -22,6 +23,12 @@
 }
 .md-event-ticket__badge[data-tone="going"] { color: var(--md-green); }
 .md-event-ticket__badge[data-tone="maybe"] { color: var(--md-amber); }
+.md-event-ticket__cancelled-label {
+  position: absolute; z-index: 4; inset-block-start: 18px; inset-inline-start: 18px;
+  padding: 6px 10px; border-radius: var(--md-radius-md);
+  background: var(--md-ink); color: var(--md-surface);
+  font-size: 12px; font-weight: 500; letter-spacing: 0.03em; pointer-events: none;
+}
 
 /* Yes / Maybe / No */
 .md-rsvp-choice-group {
@@ -43,7 +50,8 @@
 [data-status="not_going"] > .md-rsvp-choice-group__pill { background: var(--md-surface-tint); box-shadow: var(--md-premium-stroke-soft); }
 @media (prefers-reduced-motion: reduce) {
   .md-event-ticket { transition: none; }
-  .md-event-ticket:hover { transform: none; }
+  .md-event-ticket .tear-ticket__image { transition: none; }
+  .md-event-ticket:hover .tear-ticket__image { scale: 1; }
 }
 
 /* RSVP choice buttons */
@@ -131,9 +139,12 @@ button.md-event-attendee:focus-visible { outline: none; box-shadow: 0 0 0 3px va
   background: var(--md-surface-tint); color: var(--md-text);
 }
 
-/* Past tickets: quieter and greyed, but still readable and clickable. */
+/* Closed tickets stay readable and clickable while their artwork recedes. */
 .md-event-ticket[data-muted] { opacity: 0.62; filter: grayscale(0.9); }
 .md-event-ticket[data-muted]:hover { opacity: 0.82; }
+.md-event-ticket[data-cancelled] { opacity: 0.72; filter: grayscale(1); }
+.md-event-ticket[data-cancelled]:hover { opacity: 0.88; }
+.md-event-ticket[data-cancelled] img { filter: brightness(0.72); }
 
 .md-event-strip {
   display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 10px 14px;

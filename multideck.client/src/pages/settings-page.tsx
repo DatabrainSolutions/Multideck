@@ -30,7 +30,6 @@ import {
   Globe2,
   History,
   ImagePlus,
-  Info,
   KeyRound,
   Laptop,
   LifeBuoy,
@@ -65,6 +64,8 @@ import outlookLogo from "@/assets/integrations/outlook.png"
 import sageLogo from "@/assets/integrations/sage.svg"
 import xeroLogo from "@/assets/integrations/xero.svg"
 import { Button } from "@/components/ui/button"
+import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
+import { InlineNotice } from "@/components/multideck/inline-notice"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -95,7 +96,7 @@ import {
   SettingsChoiceGroup,
   SettingsFieldRow,
   SettingsInput,
-  SettingsIntegrationRow,
+  SettingsIntegrationCard,
   SettingsOptionCard,
   SettingsPageHeader,
   SettingsPanel,
@@ -159,6 +160,7 @@ import {
   listInboxProviders,
   listMailboxes,
   readEmailConnectionResult,
+  removeGmailGroupMailbox,
   resolveDefaultInboxProvider,
   syncMailbox,
   type InboxConnection,
@@ -171,6 +173,7 @@ import {
   saveDefaultInboxProvider,
 } from "@/lib/inbox-provider-preference"
 import { useShortcutBinding } from "@/lib/keyboard-shortcuts"
+import { useInboxWorkspace } from "@/lib/inbox-workspace"
 import {
   readPreferredMicrophone,
   savePreferredMicrophone,
@@ -3745,6 +3748,7 @@ const mailProviderLogos: Record<MailProvider, string> = {
  */
 function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   const { t } = useLanguage()
+  const { refreshAccounts, selectMailbox } = useInboxWorkspace()
   const [connections, setConnections] = useState<InboxConnection[] | null>(null)
   const [mailboxes, setMailboxes] = useState<Mailbox[] | null>(null)
   const [providerAvailability, setProviderAvailability] = useState<InboxProviderAvailability[] | null>(null)
@@ -3753,12 +3757,19 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   const [mailboxLoadError, setMailboxLoadError] = useState<string | null>(null)
   const [busyProvider, setBusyProvider] = useState<MailProvider | null>(null)
   const [disconnectCandidate, setDisconnectCandidate] = useState<InboxConnection | null>(null)
+  const [detailsProvider, setDetailsProvider] = useState<MailProvider | null>(null)
+  const [settingsProvider, setSettingsProvider] = useState<MailProvider | null>(null)
+  const [accountingDetails, setAccountingDetails] = useState<"xero" | "sage" | null>(null)
+  const integrationDialogTriggerRef = useRef<HTMLElement | null>(null)
+  const rememberIntegrationDialogTrigger = () => { integrationDialogTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null }
+  const restoreIntegrationDialogFocus = (event: Event) => { event.preventDefault(); integrationDialogTriggerRef.current?.focus() }
   const [defaultInboxProvider, setDefaultInboxProvider] = useState<MailProvider | null>(null)
   const [defaultInboxProviderLoaded, setDefaultInboxProviderLoaded] = useState(false)
   const [defaultInboxProviderError, setDefaultInboxProviderError] = useState<string | null>(null)
   const [savingDefaultInboxProvider, setSavingDefaultInboxProvider] = useState<MailProvider | null>(null)
   const [groupMailboxAddress, setGroupMailboxAddress] = useState("")
   const [groupMailboxError, setGroupMailboxError] = useState<string | null>(null)
+  const [removingGroupMailboxId, setRemovingGroupMailboxId] = useState<string | null>(null)
   const [sharedMailboxAddress, setSharedMailboxAddress] = useState("")
   const [sharedMailboxError, setSharedMailboxError] = useState<string | null>(null)
   const [writingProfilePrompt, setWritingProfilePrompt] = useState<DexterWritingProfile | null>(null)
@@ -3950,7 +3961,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   async function addGroupMailbox(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const connection = connections?.find((candidate) => candidate.provider === "gmail")
-    if (!connection || !groupMailboxAddress.trim()) return
+    if (!connection || !groupMailboxAddress.trim() || busyProvider || removingGroupMailboxId) return
 
     setBusyProvider("gmail")
     setGroupMailboxError(null)
@@ -3961,6 +3972,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
         mailbox,
       ])
       setGroupMailboxAddress("")
+      void refreshAccounts()
       void syncMailbox(mailbox.id).catch(() => {
         toast.error(t("The Google Group inbox was added, but its first sync could not finish. Open it and try Refresh."))
       })
@@ -3971,6 +3983,21 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
       toast.error(message)
     } finally {
       setBusyProvider(null)
+    }
+  }
+
+  async function removeGroupMailbox(mailbox: Mailbox) {
+    if (busyProvider || removingGroupMailboxId) return
+    setRemovingGroupMailboxId(mailbox.id)
+    try {
+      await removeGmailGroupMailbox(mailbox.id)
+      setMailboxes((current) => current?.filter((candidate) => candidate.id !== mailbox.id) ?? null)
+      void refreshAccounts()
+      toast.success(t("Google Group inbox removed"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("Unable to remove this Google Group inbox. Try again."))
+    } finally {
+      setRemovingGroupMailboxId(null)
     }
   }
 
@@ -4013,87 +4040,85 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
     }
   }
 
+  const detailsConnection = connections?.find((candidate) => candidate.provider === detailsProvider)
+  const detailsConfigured = providerAvailability?.find((candidate) => candidate.provider === detailsProvider)?.configured === true
+  const detailsStatus = !detailsConfigured ? "Unavailable" : !detailsConnection ? "Not connected" : detailsConnection.status === "reauthorization_required" ? "Reconnect needed" : detailsConnection.status === "syncing" ? "Syncing" : detailsConnection.status === "error" ? "Sync problem" : detailsConnection.status === "disconnected" ? "Not connected" : "Connected"
+
   return (
     <>
-      <SettingsPageHeader
-        eyebrow="Workspace / Integrations"
-        title="Integrations"
-      />
-      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+      <SettingsPageHeader title="Integrations" description="Connect the tools your team uses for mail, calendars and accounting." descriptionPlacement="under-title" />
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-section-gap)]">
         <CalendarConnectionSettings navigate={navigate} />
-        <SettingsPanel
-          title={(
-            <span className="inline-flex items-center gap-1.5">
-              <span>{t("Mail")}</span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={t("About mail sync")}
-                    className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] transition-[background-color,color,scale] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.94] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:active:scale-100"
-                  >
-                    <Info className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" align="start" sideOffset={6} className="max-w-[360px] text-pretty leading-5">
-                  {t("Mail powers the Inbox workspace. Multideck securely syncs the last 12 months of useful mail, 30 days of Spam and Trash, and current drafts so operators can search, reply and use Dexter; Gmail or Microsoft remains the source mailbox.")}
-                </TooltipContent>
-              </Tooltip>
-            </span>
-          )}
-          action={
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-8 rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/75"
-              onClick={() => navigate("/inbox")}
-            >
-              Open Inbox
-            </Button>
-          }
-        >
+        <section aria-labelledby="mail-integrations-heading">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 id="mail-integrations-heading" className="text-[16px] font-medium tracking-[-0.01em] text-[var(--md-ink)]">{t("Mail")}</h2>
+              <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{t("Connect a mailbox for Inbox, replies and approved Dexter drafts.")}</p>
+            </div>
+            <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)]" onClick={() => navigate("/inbox")}>{t("Open Inbox")}</Button>
+          </div>
           {writingProfilePrompt ? (
-            <div className="grid gap-4 bg-[var(--md-accent-a10)] px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-              <div className="min-w-0">
-                <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Let Dexter learn how you write")}</p>
-                <p className="mt-1 max-w-[68ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">
-                  {t("Dexter can learn tone and structure from your eligible sent emails. Nothing is analysed until you accept, and copied email bodies are never stored in the profile.")}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                <Button type="button" variant="ghost" disabled={writingProfilePromptBusy} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-text)]" onClick={dismissWritingProfilePrompt}>
-                  {t("Not now")}
-                </Button>
-                <Button type="button" disabled={writingProfilePromptBusy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => void acceptWritingProfilePrompt()}>
-                  {writingProfilePromptBusy ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <WandSparkles className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
-                  {t(writingProfilePromptBusy ? "Learning your style" : "Learn my email style")}
-                </Button>
-              </div>
+            <div className="mb-4 grid gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <div className="min-w-0"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Let Dexter learn how you write")}</p><p className="mt-1 max-w-[68ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Dexter can learn tone and structure from your eligible sent emails. Nothing is analysed until you accept, and copied email bodies are never stored in the profile.")}</p></div>
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end"><Button type="button" variant="ghost" disabled={writingProfilePromptBusy} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-text)]" onClick={dismissWritingProfilePrompt}>{t("Not now")}</Button><Button type="button" disabled={writingProfilePromptBusy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)]" onClick={() => void acceptWritingProfilePrompt()}>{writingProfilePromptBusy ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <WandSparkles className="size-3.5" aria-hidden="true" />}{t(writingProfilePromptBusy ? "Learning your style" : "Learn my email style")}</Button></div>
             </div>
           ) : null}
-          {loadError ? (
-            <div className="px-5 py-4">
-              <p className="text-[13px] font-medium text-[var(--md-ink)]" role="alert">Unable to load your mail connections</p>
-              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{loadError}</p>
-              <Button
-                type="button"
-                variant="ghost"
-                className="mt-3 h-8 rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/75"
-                onClick={() => void loadConnections()}
-              >
-                Try again
-              </Button>
+          {loadError ? <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><p className="text-[13px] font-medium text-[var(--md-ink)]" role="alert">{t("Unable to load your mail connections")}</p><p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{loadError}</p><Button type="button" variant="ghost" className="mt-3 h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 text-[12px] shadow-[var(--md-shadow-line)]" onClick={() => void loadConnections()}>{t("Try again")}</Button></div> : connections === null ? <div className="flex min-h-44 items-center gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]" role="status"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{t("Checking your mail connections…")}</div> : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {(["gmail", "outlook"] as MailProvider[]).map((provider) => {
+                const connection = connections.find((candidate) => candidate.provider === provider)
+                const configured = providerAvailability?.find((candidate) => candidate.provider === provider)?.configured === true
+                const isConnected = connection?.status === "connected" || connection?.status === "syncing"
+                const needsReconnect = connection?.status === "reauthorization_required" || connection?.status === "error"
+                const status = !configured ? "Unavailable" : !connection ? "Not connected" : connection.status === "reauthorization_required" ? "Reconnect needed" : connection.status === "syncing" ? "Syncing" : connection.status === "error" ? "Sync problem" : connection.status === "disconnected" ? "Not connected" : "Connected"
+                return <SettingsIntegrationCard
+                  key={provider}
+                  logoSrc={mailProviderLogos[provider]}
+                  title={mailProviderCopy[provider].label}
+                  description={provider === "gmail" ? t("Find customer conversations in one Inbox, reply faster and prepare drafts with Dexter.") : t("Work from Microsoft 365 mail and shared mailboxes in one Inbox, with replies and Dexter drafts.")}
+                  status={t(status)}
+                  statusTone={status === "Connected" ? "connected" : needsReconnect ? "review" : status === "Syncing" ? "workspace" : "ready"}
+                  onDetails={() => { rememberIntegrationDialogTrigger(); setDetailsProvider(provider) }}
+                  onSettings={connection ? () => { rememberIntegrationDialogTrigger(); setSettingsProvider(provider) } : undefined}
+                  active={isConnected}
+                  toggleDisabled={!configured || busyProvider !== null}
+                  onActiveChange={(nextActive) => {
+                    if (nextActive) void connect(provider)
+                    else if (connection) { rememberIntegrationDialogTrigger(); setDisconnectCandidate(connection) }
+                  }}
+                />
+              })}
             </div>
-          ) : connections === null ? (
-            <div className="px-5 py-4">
-              <p className="text-[12px] text-[var(--md-text)]">Checking your mail connections...</p>
-            </div>
-          ) : (
-            <>
+          )}
+        </section>
+        <section aria-labelledby="accounting-integrations-heading">
+          <div className="mb-4"><h2 id="accounting-integrations-heading" className="text-[16px] font-medium tracking-[-0.01em] text-[var(--md-ink)]">{t("Accounting")}</h2><p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{t("External accounts systems being prepared for Multideck.")}</p></div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <SettingsIntegrationCard logoSrc={xeroLogo} title="Xero" description={t("Planned: review invoices and credit limits alongside customer accounts.")} status={t("Coming soon")} statusTone="workspace" onDetails={() => { rememberIntegrationDialogTrigger(); setAccountingDetails("xero") }} active={false} toggleDisabled />
+            <SettingsIntegrationCard logoSrc={sageLogo} title="Sage" description={t("Planned: see balances and ledger context alongside customer freight work.")} status={t("Coming soon")} statusTone="workspace" onDetails={() => { rememberIntegrationDialogTrigger(); setAccountingDetails("sage") }} active={false} toggleDisabled />
+          </div>
+        </section>
+      </div>
+      <Dialog open={detailsProvider !== null} onOpenChange={(open) => !open && setDetailsProvider(null)}>
+        <DialogContent className="sm:max-w-[500px]" onCloseAutoFocus={restoreIntegrationDialogFocus}><DialogHeader className="pe-8 text-start"><DialogTitle>{detailsProvider ? mailProviderCopy[detailsProvider].label : ""}</DialogTitle><DialogDescription>{t("Mail powers the Inbox workspace. Gmail or Microsoft remains the source mailbox; Multideck syncs useful mail for search, replies and approved Dexter work.")}</DialogDescription></DialogHeader><div className="grid gap-3 text-[13px] leading-5"><p><span className="text-[var(--md-subtle)]">{t("Status")} · </span><span className="font-medium text-[var(--md-ink)]">{t(detailsStatus)}</span></p>{detailsConnection?.address ? <p><span className="text-[var(--md-subtle)]">{t("Account")} · </span><bdi data-i18n-skip dir="ltr" className="break-all text-[var(--md-ink)]">{detailsConnection.address}</bdi></p> : null}{detailsConnection?.error ? <p role="alert" className="text-[var(--md-red)]">{detailsConnection.error}</p> : null}{!detailsConfigured ? <p className="text-[var(--md-text)]">{providerAvailabilityError ?? t("This provider has not been configured for this workspace yet. Ask a Multideck administrator to add it.")}</p> : null}</div></DialogContent>
+      </Dialog>
+      <Dialog open={accountingDetails !== null} onOpenChange={(open) => !open && setAccountingDetails(null)}><DialogContent className="sm:max-w-[460px]" onCloseAutoFocus={restoreIntegrationDialogFocus}><DialogHeader className="pe-8 text-start"><DialogTitle>{accountingDetails === "xero" ? "Xero" : "Sage"}</DialogTitle><DialogDescription>{accountingDetails === "xero" ? t("Planned: review invoices and credit limits alongside customer accounts.") : t("Planned: see balances and ledger context alongside customer freight work.")}</DialogDescription></DialogHeader><p className="text-[13px] leading-5 text-[var(--md-text)]">{t("Coming soon. This connection cannot be enabled yet.")}</p></DialogContent></Dialog>
+      <Dialog open={settingsProvider !== null} onOpenChange={(open) => !open && !busyProvider && setSettingsProvider(null)}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[620px]" onCloseAutoFocus={restoreIntegrationDialogFocus}><DialogHeader className="px-5 pb-3 pt-5 pe-12 text-start"><DialogTitle>{settingsProvider ? `${mailProviderCopy[settingsProvider].label} ${t("settings")}` : ""}</DialogTitle><DialogDescription>{t("Choose your default mail provider and manage connected mailboxes.")}</DialogDescription></DialogHeader>
+          {settingsProvider ? (() => {
+            const provider = settingsProvider
+            const connection = connections?.find((candidate) => candidate.provider === provider) ?? null
+            const isConnected = connection?.status === "connected" || connection?.status === "syncing"
+            const needsConnection = !isConnected
+            const needsReconnect = connection?.status === "reauthorization_required" || connection?.status === "error"
+            const groupMailboxes = provider === "gmail" ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "gmail" && mailbox.kind === "group") : []
+            const sharedMailboxes = provider === "outlook" ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "outlook" && mailbox.kind !== "personal") : []
+            return <div className="max-h-[min(70dvh,650px)] overflow-y-auto overscroll-contain shadow-[var(--md-stroke-top)]">
               <SettingsFieldRow
                 label={t("Default mail provider")}
                 description={t("Opens first in Inbox and new emails.")}
                 align="start"
+                className="md:grid-cols-1"
               >
                 <div>
                   <div
@@ -4151,110 +4176,50 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                   ) : null}
                 </div>
               </SettingsFieldRow>
-              {(["gmail", "outlook"] as MailProvider[]).map((provider) => {
-                const connection = connections.find((candidate) => candidate.provider === provider) ?? null
-                const copy = mailProviderCopy[provider]
-                const configured = providerAvailability?.find((candidate) => candidate.provider === provider)?.configured === true
-                const isConnected = connection?.status === "connected" || connection?.status === "syncing"
-                const needsConnection = !connection || !isConnected
-                const statusKey =
-                  !configured ? "Unavailable" :
-                  !connection ? "Not connected" :
-                  connection.status === "reauthorization_required" ? "Reconnect needed" :
-                  connection.status === "syncing" ? "Syncing" :
-                  connection.status === "error" ? "Sync problem" :
-                  connection.status === "disconnected" ? "Not connected" :
-                  "Connected"
-                const problemDescription = !configured
-                  ? providerAvailabilityError ?? t(`${copy.label} has not been configured for this workspace yet. Ask a Multideck administrator to add the provider credentials.`)
-                  : connection?.error?.trim() || undefined
-                const needsReconnect = connection?.status === "reauthorization_required" || connection?.status === "error"
-                const actionLabel = isConnected ? `Disconnect ${copy.label}` : `${needsReconnect ? "Reconnect" : "Connect"} ${copy.label}`
-                const busyLabel = isConnected ? "Disconnecting" : needsReconnect ? "Reconnecting" : "Connecting"
-
-                const sharedMailboxes = provider === "outlook"
-                  ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "outlook" && mailbox.kind !== "personal")
-                  : []
-                const groupMailboxes = provider === "gmail"
-                  ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "gmail" && mailbox.kind === "group")
-                  : []
-
-                return (
-                  <Fragment key={provider}>
-                    <SettingsIntegrationRow
-                    logoSrc={mailProviderLogos[provider]}
-                    title={copy.label}
-                    description={problemDescription}
-                    status={t(statusKey)}
-                    statusTone={
-                      statusKey === "Connected" ? "connected" :
-                      statusKey === "Reconnect needed" || statusKey === "Sync problem" ? "review" :
-                      statusKey === "Syncing" ? "workspace" :
-                      "ready"
-                    }
-                    action={(
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        aria-label={t(actionLabel)}
-                        disabled={busyProvider !== null || (needsConnection && !configured)}
-                        className={cn(
-                          "h-8 w-fit rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] duration-200 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a18)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
-                          isConnected
-                            ? "bg-white/48 text-[var(--md-red)] hover:bg-[rgba(194,63,63,0.08)] hover:text-[var(--md-red)]"
-                            : needsReconnect
-                              ? "bg-[rgba(221,138,43,0.1)] text-[var(--md-amber)] hover:bg-[rgba(221,138,43,0.16)] hover:text-[var(--md-amber)]"
-                              : "bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-deep)] hover:text-[var(--md-accent-ink)]",
-                        )}
-                        onClick={() => {
-                          if (busyProvider) return
-                          if (isConnected && connection) {
-                            setDisconnectCandidate(connection)
-                            return
-                          }
-                          void connect(provider)
-                        }}
-                      >
-                        {busyProvider === provider ? (
-                          <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                        ) : isConnected ? (
-                          <X className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                        ) : needsReconnect ? (
-                          <RefreshCw className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-                        ) : (
-                          <Plug className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-                        )}
-                        {t(busyProvider === provider ? busyLabel : actionLabel)}
-                      </Button>
-                    )}
-                    />
-                    {provider === "gmail" && connection && !needsConnection ? (
+                                {provider === "gmail" && connection && !needsConnection ? (
                     <SettingsFieldRow
                       label={t("Google Group inboxes")}
                       description={t("Separate Inbox, Spam and Trash views for groups delivered to this Gmail account.")}
                       align="start"
+                      className="md:grid-cols-1"
                       labelFor="gmail-group-mailbox-address"
                     >
                       <div>
                         {mailboxLoadError ? (
                           <p className="mb-3 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{mailboxLoadError}</p>
                         ) : groupMailboxes.length > 0 ? (
-                          <ul className="mb-3 grid gap-1.5" aria-label={t("Connected Google Group inboxes")}>
+                          <ul className="mb-3 flex flex-wrap gap-2" aria-label={t("Connected Google Group inboxes")}>
                             {groupMailboxes.map((mailbox) => (
                               <li
                                 key={mailbox.id}
-                                className="flex min-h-10 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 py-2 shadow-[var(--md-shadow-line)]"
+                                className="inline-flex max-w-[min(100%,16rem)] items-center rounded-full bg-[var(--md-surface-tint)] ps-1 pe-1 shadow-[var(--md-shadow-line)]"
                               >
-                                <Users className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
-                                <bdi data-i18n-skip dir="ltr" className="min-w-0 flex-1 truncate text-[12px] text-[var(--md-ink)]">
-                                  {mailbox.address}
-                                </bdi>
                                 <button
                                   type="button"
-                                  className="shrink-0 rounded-[var(--md-radius-sm)] px-2 py-1 text-[11px] font-medium text-[var(--md-accent)] transition-[background-color,color] hover:bg-[var(--md-accent-a10)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
-                                  onClick={() => navigate(`/inbox?provider=gmail&view=shared&mailbox=${encodeURIComponent(mailbox.id)}`)}
+                                  aria-label={`${t("Open group inbox")} ${mailbox.address}`}
+                                  title={mailbox.address}
+                                  className="flex min-h-9 min-w-0 items-center gap-1.5 rounded-full ps-2 pe-1 text-[12px] font-medium text-[var(--md-ink)] outline-none transition-[color,transform] duration-150 active:scale-[0.98] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100 [@media(hover:hover)]:hover:text-[var(--md-accent)] [@media(pointer:coarse)]:min-h-10"
+                                  onClick={() => {
+                                    selectMailbox(mailbox)
+                                    navigate(`/inbox?provider=gmail&view=shared&mailbox=${encodeURIComponent(mailbox.id)}`)
+                                  }}
                                 >
-                                  {t("Open")}
+                                  <Users className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+                                  <bdi data-i18n-skip dir="ltr" className="min-w-0 truncate">{mailbox.address}</bdi>
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`${t("Remove group inbox")} ${mailbox.address}`}
+                                  title={t("Remove group inbox")}
+                                  disabled={busyProvider !== null || removingGroupMailboxId !== null}
+                                  className="grid size-8 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] outline-none transition-[background-color,color,transform] duration-150 active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:cursor-wait motion-reduce:transition-none motion-reduce:active:scale-100 [@media(hover:hover)]:hover:bg-[var(--md-hover)] [@media(hover:hover)]:hover:text-[var(--md-red)] [@media(pointer:coarse)]:size-10"
+                                  onClick={() => void removeGroupMailbox(mailbox)}
+                                >
+                                  {removingGroupMailboxId === mailbox.id ? (
+                                    <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                                  ) : (
+                                    <X className="size-3.5" strokeWidth={1.7} aria-hidden="true" />
+                                  )}
                                 </button>
                               </li>
                             ))}
@@ -4282,7 +4247,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                           <Button
                             type="submit"
                             variant="ghost"
-                            disabled={busyProvider !== null || !groupMailboxAddress.trim()}
+                            disabled={busyProvider !== null || removingGroupMailboxId !== null || !groupMailboxAddress.trim()}
                             className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] motion-reduce:active:scale-100"
                           >
                             {busyProvider === "gmail" ? t("Adding inbox") : t("Add group inbox")}
@@ -4292,7 +4257,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                           <p id="gmail-group-mailbox-error" className="mt-2 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{groupMailboxError}</p>
                         ) : (
                           <p id="gmail-group-mailbox-help" className="mt-2 text-[11.5px] leading-5 text-[var(--md-subtle)]">
-                            {t("Read-only as the group address. Replies use your Gmail account unless Google has configured a send-as identity.")}
+                            {t("Google Group inboxes are read-only as the group address. Replies use your Gmail account unless Google has configured a send-as identity.")}
                           </p>
                         )}
                       </div>
@@ -4303,6 +4268,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                       label={t("Shared Outlook mailboxes")}
                       description={t("Requires mailbox access and Microsoft Send As or Send on Behalf permission to send.")}
                       align="start"
+                      className="md:grid-cols-1"
                       labelFor={connection.sharedMailboxAccess ? "outlook-shared-mailbox-address" : undefined}
                     >
                       {!connection.sharedMailboxAccess ? (
@@ -4385,30 +4351,13 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                       )}
                     </SettingsFieldRow>
                   ) : null}
-                </Fragment>
-              )
-              })}
-            </>
-          )}
-        </SettingsPanel>
-
-        <SettingsPanel title={t("Accounting")}>
-          <SettingsIntegrationRow
-            logoSrc={xeroLogo}
-            title="Xero"
-            description={t("Sync invoices and credit-limit snapshots.")}
-            status={t("Coming soon")}
-            statusTone="workspace"
-          />
-          <SettingsIntegrationRow
-            logoSrc={sageLogo}
-            title="Sage"
-            description={t("Sync invoices, customer balances, and ledger context.")}
-            status={t("Coming soon")}
-            statusTone="workspace"
-          />
-        </SettingsPanel>
-      </div>
+              <div className="flex flex-wrap items-center gap-3 px-5 py-4 shadow-[var(--md-stroke-top)]">
+                {connection ? <Button type="button" variant="ghost" disabled={busyProvider !== null} className={cn("h-9 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)]", isConnected ? "bg-[var(--md-surface-soft)] text-[var(--md-red)]" : "bg-[var(--md-accent)] text-[var(--md-accent-ink)]")} onClick={() => { if (isConnected) { setSettingsProvider(null); setDisconnectCandidate(connection) } else void connect(provider) }}>{busyProvider === provider ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : isConnected ? <X className="size-3.5" aria-hidden="true" /> : <RefreshCw className="size-3.5" aria-hidden="true" />}{t(isConnected ? `Disconnect ${mailProviderCopy[provider].label}` : `${needsReconnect ? "Reconnect" : "Connect"} ${mailProviderCopy[provider].label}`)}</Button> : null}
+              </div>
+            </div>
+          })() : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={disconnectCandidate !== null}
@@ -4416,7 +4365,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
           if (!open && !busyProvider) setDisconnectCandidate(null)
         }}
       >
-        <DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[440px]">
+        <DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[440px]" onCloseAutoFocus={restoreIntegrationDialogFocus}>
           <DialogHeader className="px-6 pb-4 pt-6 pe-14">
             <DialogTitle className="text-[16px] font-medium text-[var(--md-ink)]">
               {disconnectCandidate ? t(`Disconnect ${mailProviderCopy[disconnectCandidate.provider].label}?`) : ""}
@@ -4486,7 +4435,15 @@ function ApiTab() {
   )
 }
 
+function openWorkspaceRoute(route: string) {
+  window.history.pushState({}, "", route)
+  window.dispatchEvent(new PopStateEvent("popstate"))
+}
+
+const subscriptionMailto = (subject: string) => `mailto:support@multideck.co.uk?subject=${encodeURIComponent(`Multideck: ${subject}`)}`
+
 export function AdminBillingContent() {
+  const { t } = useLanguage()
   const [usage, setUsage] = useState<DexterUsage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -4500,18 +4457,71 @@ export function AdminBillingContent() {
   useEffect(() => { void load() }, [load])
   const subscription = usage?.subscription
   const money = (value: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(value)
+  const seatLimit = subscription?.paidSeats ?? subscription?.seatLimit ?? null
+  const seatShare = subscription && seatLimit ? Math.min(1, subscription.occupiedSeats / seatLimit) : 0
+  const seatsFull = Boolean(subscription && seatLimit && subscription.remainingSeats <= 0)
+  const card = "min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]"
+  const options = [
+    { title: "Add seats", detail: "Invite more colleagues than your plan covers.", href: subscriptionMailto("add seats"), action: "Request seats" },
+    { title: "Change plan", detail: "Move up or down a plan, or discuss enterprise terms.", href: subscriptionMailto("change plan"), action: "Discuss plan" },
+    { title: "Invoices & payment terms", detail: "Issued by Multideck under your agreement.", href: subscriptionMailto("invoice copy"), action: "Request an invoice" },
+  ]
+
   return <>
-    <SettingsPageHeader eyebrow="Workspace / Billing" title="Billing" />
-    <div className="mt-[var(--md-page-stack-gap)] space-y-4">
-      {loading ? <p role="status">Loading subscription…</p> : error ? <div role="alert"><p>{error}</p><Button variant="outline" onClick={() => void load()}>Retry</Button></div> :
-        <SettingsPanel title={subscription?.planName ?? "Subscription"} description="Your contracted users and monthly platform price.">
-          <SettingsFieldRow label="Paid seats"><span>{subscription?.paidSeats ?? "Awaiting contract confirmation"}</span></SettingsFieldRow>
-          <SettingsFieldRow label="Occupied seats"><span>{subscription?.occupiedSeats ?? "Unavailable"} · includes pending invitations</span></SettingsFieldRow>
-          <SettingsFieldRow label="Monthly price"><span>{subscription?.monthlyGbp != null ? money(subscription.monthlyGbp) + " excluding VAT and optional add-ons" : "Confirmed in your agreement"}</span></SettingsFieldRow>
-          {subscription?.baseMonthlyGbp != null && subscription?.paidSeats != null ? <SettingsFieldRow label="Price breakdown"><span>{money(subscription.baseMonthlyGbp)} platform + {subscription.paidSeats} × £149</span></SettingsFieldRow> : null}
-          <SettingsFieldRow label="Manage subscription"><a href="mailto:support@multideck.co.uk?subject=Multideck%20subscription" className="underline">Request seats or discuss your plan</a></SettingsFieldRow>
-        </SettingsPanel>}
-      <p className="text-[12px] text-[var(--md-text)]">Enterprise pricing, invoices, payment terms and any existing agreement are managed with Multideck. Changes to seats or plans require confirmation before they take effect.</p>
+    <SettingsPageHeader title={t("Plan & Subscription")} description={t("Your contracted plan, seats and monthly price. Changes are confirmed with Multideck before they take effect.")} descriptionPlacement="under-title" />
+    <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+      {loading ? <DotGridLoaderPanel label={t("Loading subscription…")} minHeight={220} /> : error ? (
+        <InlineNotice tone="error" title={t("Subscription could not be loaded.")} action={<Button type="button" size="sm" variant="outline" onClick={() => void load()}>{t("Retry")}</Button>}>{error}</InlineNotice>
+      ) : <>
+        <div className="grid items-start gap-[var(--md-page-stack-gap)] lg:grid-cols-2">
+          <section className={card} aria-labelledby="billing-plan-heading">
+            <p id="billing-plan-heading" className="text-[12px] text-[var(--md-text)]">{t("Current plan")}</p>
+            <p className="mt-1 text-[24px] font-medium leading-tight tracking-[-0.02em] text-[var(--md-ink)]" data-i18n-skip>{subscription?.planName ?? t("Awaiting contract confirmation")}</p>
+            <p className="mt-3 text-[18px] tabular-nums text-[var(--md-ink)]">{subscription?.monthlyGbp != null ? <>{money(subscription.monthlyGbp)}<span className="ms-1 text-[12px] text-[var(--md-text)]">{t("a month")}</span></> : t("Price confirmed in your agreement")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Excluding VAT and optional add-ons")}</p>
+            {subscription?.baseMonthlyGbp != null && subscription?.paidSeats != null ? (
+              <dl className="mt-4 grid gap-2 border-t border-[var(--md-hairline)] pt-4 text-[13px]">
+                <div className="flex justify-between gap-3"><dt className="text-[var(--md-text)]">{t("Platform")}</dt><dd className="tabular-nums text-[var(--md-ink)]">{money(subscription.baseMonthlyGbp)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-[var(--md-text)]">{subscription.paidSeats} {t("seats")} × {money(subscription.seatMonthlyGbp ?? 149)}</dt><dd className="tabular-nums text-[var(--md-ink)]">{money(subscription.paidSeats * (subscription.seatMonthlyGbp ?? 149))}</dd></div>
+              </dl>
+            ) : null}
+          </section>
+          <section className={card} aria-labelledby="billing-seats-heading">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p id="billing-seats-heading" className="text-[12px] text-[var(--md-text)]">{t("Seats in use")}</p>
+                <p className="mt-1 text-[24px] font-medium leading-tight tracking-[-0.02em] tabular-nums text-[var(--md-ink)]">{subscription ? (seatLimit ? `${subscription.occupiedSeats} / ${seatLimit}` : subscription.occupiedSeats) : "–"}</p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={() => openWorkspaceRoute("/admin/users")}>{t("Manage users")}</Button>
+            </div>
+            {seatLimit ? (
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" role="meter" aria-valuemin={0} aria-valuemax={seatLimit} aria-valuenow={subscription?.occupiedSeats ?? 0} aria-label={t("Seats in use")}>
+                <div className={cn("h-full origin-left rounded-full transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none rtl:origin-right", seatsFull ? "bg-[var(--md-amber)]" : "bg-[var(--md-accent)]")} style={{ transform: `scaleX(${seatShare})` }} />
+              </div>
+            ) : null}
+            <p className="mt-2 text-[12px] text-[var(--md-text)]">{subscription && seatLimit ? (seatsFull ? t("Every seat is taken. Request more before inviting anyone else.") : `${subscription.remainingSeats} ${t("left · includes pending invitations")}`) : t("Includes pending invitations")}</p>
+            <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--md-hairline)] pt-4 text-[13px]">
+              <span className="text-[var(--md-text)]">{t("Dexter allowance used this period")}</span>
+              <button type="button" className="rounded-[var(--md-radius-sm)] tabular-nums text-[var(--md-ink)] underline decoration-[var(--md-hairline)] underline-offset-4 transition-colors duration-150 hover:decoration-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" onClick={() => openWorkspaceRoute("/admin/usage")}>{usage ? `${Math.round(usage.includedUsagePercent)}%` : "–"}</button>
+            </div>
+          </section>
+        </div>
+        <section aria-labelledby="billing-options-heading">
+          <h2 id="billing-options-heading" className="mb-2 px-1 text-[13px] font-medium text-[var(--md-ink)]">{t("Billing options")}</h2>
+          <ul className="divide-y divide-[var(--md-hairline)] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
+            {options.map((option) => (
+              <li key={option.title} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium text-[var(--md-ink)]">{t(option.title)}</span>
+                  <span className="mt-0.5 block text-[12px] text-[var(--md-text)]">{t(option.detail)}</span>
+                </span>
+                <Button asChild type="button" size="sm" variant="outline" className="shrink-0"><a href={option.href}>{t(option.action)}</a></Button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 px-1 text-[12px] text-[var(--md-subtle)]">{t("Options open an email to Multideck. Nothing changes until the request is confirmed.")}</p>
+        </section>
+      </>}
     </div>
   </>
 }

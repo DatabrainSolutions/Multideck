@@ -143,3 +143,27 @@ test("late failed writes from the previous account cannot restore its private fe
   assert.equal(store.getState().error, null)
   stop()
 })
+
+test("focus and visibility revalidation join the current read without a trailing request", async () => {
+  let finish, revalidate, reads = 0
+  const store = createNotificationStore({
+    load: () => { reads++; return new Promise(resolve => { finish = resolve }) },
+    connect: (_changed, refresh) => { revalidate = refresh; return () => {} }, onError: assert.fail,
+  })
+  const stop = store.subscribe(() => {})
+  revalidate(); revalidate(); revalidate()
+  finish([notification]); await flush()
+  assert.equal(reads, 1)
+  assert.equal(store.getSnapshot()[0], notification)
+  stop()
+})
+
+test("unchanged background results retain snapshots without notifying subscribers", async () => {
+  let emits = 0
+  const store = createNotificationStore({ load: async () => [{ ...notification, metadata: {} }], connect: () => () => {}, onError: assert.fail })
+  const stop = store.subscribe(() => { emits++ })
+  await flush(); const rows = store.getSnapshot(), state = store.getState(), before = emits
+  await store.refresh()
+  assert.equal(store.getSnapshot(), rows); assert.equal(store.getState(), state); assert.equal(emits, before)
+  stop()
+})

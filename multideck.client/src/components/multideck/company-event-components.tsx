@@ -129,6 +129,8 @@ export type EventTicketProps = {
   onRsvp?: (status: RsvpStatus) => void
   /** Past events: drawn quieter and greyed out. */
   muted?: boolean
+  /** Cancelled events: a prominent label and neutral ticket treatment. */
+  cancelled?: boolean
   className?: string
 }
 
@@ -138,7 +140,7 @@ export type EventTicketProps = {
  * gesture. The body opens the event; attendance is only ever the explicit RSVP
  * button in the stub.
  */
-export function EventTicket({ title, startsAt, endsAt, timezone, location, imageUrl, imagePriority = false, imageFrameStatus = null, onRetryImage, rsvp, closedLabel, goingCount = 0, onOpen, onRsvp, muted = false, className }: EventTicketProps) {
+export function EventTicket({ title, startsAt, endsAt, timezone, location, imageUrl, imagePriority = false, imageFrameStatus = null, onRetryImage, rsvp, closedLabel, goingCount = 0, onOpen, onRsvp, muted = false, cancelled = false, className }: EventTicketProps) {
   const { language, t } = useLanguage()
   const rootRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -161,7 +163,7 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
   // a 252px-high mobile card across the desktop column.
   const height = Math.round(Math.max(252, Math.min(332, width * 0.5)))
   return (
-    <div ref={rootRef} className={cn("md-event-ticket min-w-0", className)} data-rsvp={rsvp} data-closed={closedLabel ? true : undefined} data-muted={muted || undefined}>
+    <div ref={rootRef} className={cn("md-event-ticket min-w-0", className)} data-rsvp={rsvp} data-closed={closedLabel ? true : undefined} data-muted={muted || undefined} data-cancelled={cancelled || undefined}>
       {width > 0 ? (
         <TearTicket
           interactive={false}
@@ -176,12 +178,12 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
           imageRadius={roomy ? 10 : 8}
           image={imageFrameStatus ? "" : imageUrl ?? ""}
           imageAlt=""
-          imageLoading={imagePriority ? "eager" : "lazy"}
+          imageLoading="eager"
           imagePriority={imagePriority ? "high" : "auto"}
           scrim={false}
           parallax={0}
           background="var(--md-surface)"
-          stubBackground="color-mix(in srgb, var(--md-accent) 8%, var(--md-surface))"
+          stubBackground={cancelled ? "var(--md-surface-tint)" : "color-mix(in srgb, var(--md-accent) 8%, var(--md-surface))"}
           color="var(--md-ink)"
           borderColor="var(--md-line-strong)"
           stub={
@@ -215,7 +217,9 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
               <Ticket className="size-6 text-[var(--md-accent)]" strokeWidth={1.3} />
             </span>
           ) : null}
+          {cancelled ? <span aria-hidden="true" className="md-event-ticket__cancelled-label">{t("Cancelled")}</span> : null}
           <button type="button" onClick={onOpen} className={cn("md-event-ticket__open absolute inset-0 flex flex-col justify-end text-start", roomy ? "px-5 pb-5" : "px-4 pb-4")}>
+            {cancelled ? <span className="sr-only">{t("Cancelled")}. </span> : null}
             <span className={cn("grid min-w-0", roomy ? "gap-1.5" : "gap-1")}>
               <span className={cn("truncate font-medium text-[var(--md-ink)]", roomy ? "text-[17px] leading-6" : "text-[15px] leading-5")} dir="auto" data-i18n-skip>{title}</span>
               <span className={cn("flex min-w-0 items-center gap-1.5 text-[var(--md-text)]", roomy ? "text-[13px]" : "text-[12px]")}>

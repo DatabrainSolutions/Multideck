@@ -1524,18 +1524,19 @@ function CreateDocumentWorkspace({
 
 export function DocumentsPage({ navigate, initialWorkspace, preview = false }: DocumentsPageProps) {
   const { language, t } = useLanguage()
+  const initialDocumentSearch = new URLSearchParams(window.location.search).get("search")?.trim() ?? ""
   const [workspace, setWorkspace] = useState<DocumentBuilderWorkspace | null>(initialWorkspace ?? documentWorkspaceCache)
   const [loading, setLoading] = useState(!initialWorkspace && !documentWorkspaceCache)
   const [error, setError] = useState<string | null>(null)
   const [documentOffset, setDocumentOffset] = useState(0)
   const [documentPageSize, setDocumentPageSize] = useState(defaultPaginationPageSize)
-  const [documentQuery, setDocumentQuery] = useState("")
-  const [debouncedDocumentQuery, setDebouncedDocumentQuery] = useState("")
+  const [documentQuery, setDocumentQuery] = useState(initialDocumentSearch)
+  const [debouncedDocumentQuery, setDebouncedDocumentQuery] = useState(initialDocumentSearch)
   const [documentSort, setDocumentSort] = useState<{ id: string; direction: "asc" | "desc" } | null>({ id: "created", direction: "desc" })
   const [documentPageLoading, setDocumentPageLoading] = useState(false)
   const [documentPageError, setDocumentPageError] = useState<string | null>(null)
   const documentRequestIdRef = useRef(0)
-  const lastDocumentPageKeyRef = useRef<string | null>(initialWorkspace ? `0|${defaultPaginationPageSize}||created:desc` : null)
+  const lastDocumentPageKeyRef = useRef<string | null>(initialWorkspace && !initialDocumentSearch ? `0|${defaultPaginationPageSize}||created:desc` : null)
   // Entering Documents is always an overview. A retained local draft is only
   // considered after the operator explicitly starts document creation.
   const [createOpen, setCreateOpen] = useState(false)

@@ -41,6 +41,7 @@ const tests = [
   'email-signatures-postgres.test.mjs',
   'company-events-postgres.test.mjs',
   'email-tracking-postgres.test.mjs',
+  'group-mailbox-removal-postgres.test.mjs',
   'crm-contact-communication-access-postgres.test.mjs',
   'general-ledger-postgres.test.mjs',
   'finance-baseline-install-postgres.test.mjs',

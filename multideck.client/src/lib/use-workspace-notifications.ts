@@ -1,3 +1,4 @@
+import { connectVisibleRefresh } from "@/lib/visible-refresh"
 import { toast } from "sonner"
 import { useSyncExternalStore } from "react"
 import { authenticatedAccessChangedEvent, getSupabaseSession, supabase } from "@/lib/supabase"
@@ -16,24 +17,28 @@ const store = createNotificationStore({
     assertCurrent()
     return result
   },
-  connect(changed) {
+  connect(changed, revalidate) {
     const client = supabase
     if (!client) return () => undefined
-    const channel = client.channel(`workspace-notifications-${++connectionSequence}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "Comm_Notifications" }, changed)
-      .subscribe((status) => { if (status === "SUBSCRIBED") changed() })
-    const onVisible = () => { if (document.visibilityState === "visible") changed() }
-    window.addEventListener("focus", changed)
-    window.addEventListener("online", changed)
-    document.addEventListener("visibilitychange", onVisible)
-    const timer = window.setInterval(onVisible, 60_000)
-    return () => {
-      window.removeEventListener("focus", changed)
-      window.removeEventListener("online", changed)
-      document.removeEventListener("visibilitychange", onVisible)
-      window.clearInterval(timer)
-      void client.removeChannel(channel)
+    let dirtyWhileHidden = false
+    let subscribed = false
+    const invalidate = () => {
+      if (document.visibilityState === "visible") changed()
+      else dirtyWhileHidden = true
     }
+    const channel = client.channel(`workspace-notifications-${++connectionSequence}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "Comm_Notifications" }, invalidate)
+      .subscribe(status => {
+        if (status !== "SUBSCRIBED") return
+        if (subscribed) invalidate()
+        else if (document.visibilityState === "visible") revalidate()
+        subscribed = true
+      })
+    const stopRefresh = connectVisibleRefresh(() => {
+      if (dirtyWhileHidden) { dirtyWhileHidden = false; changed() }
+      else revalidate()
+    })
+    return () => { stopRefresh(); void client.removeChannel(channel) }
   },
   onError(error, operation) { if (operation === "save" && !(error instanceof Error && error.name === "AbortError")) toast.error("Notifications could not be updated. Please try again.") },
 })
@@ -51,7 +56,7 @@ export function useWorkspaceNotifications() {
     notifications,
     refresh: store.refresh,
     hasMore: notifications.length < state.total,
-    loadMore: () => { visibleLimit = visibleLimit + 20; return store.refresh() },
+    loadMore: () => { visibleLimit = visibleLimit + 20; return store.invalidate() },
     updateNotificationStatus: (id: string, status: "read" | "unread") => store.mutate(
       (current) => current.map((notification) => notification.id === id ? { ...notification, status } : notification),
       () => status === "read" ? markWorkspaceNotificationRead(id) : markWorkspaceNotificationUnread(id),

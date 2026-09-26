@@ -363,7 +363,7 @@ export function TopBar({
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="hidden min-w-[210px] md:block" />
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isTodo ? t("Task, tag, job, quote or customer…") : isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isFinance ? t("Invoice, credit, payment, party or job...") : isPartyRegister ? `Search ${partyRegisterType}s, contacts, or bookings...` : isCrmRoute ? "Search calls, leads, companies, contacts, or deals..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
+            <CommandInput placeholder={t("Search jobs, quotes, companies, contacts and more…")} onNavigate={navigate} />
           </div>
           {isEvents ? (
             eventsSettings?.enabled && eventsSettings.canManage ? (

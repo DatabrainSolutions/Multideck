@@ -1,3 +1,4 @@
+import { useRegisterPage } from "@/lib/use-register-page"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
@@ -7,7 +8,7 @@ import { toast } from "sonner"
 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
-import { RegisterViewSwitch } from "@/components/multideck/register-toolbar"
+import { RegisterViewSwitch, RegisterRevalidatingMark, RegisterRefreshButton } from "@/components/multideck/register-toolbar"
 import { Pagination } from "@/components/multideck/pagination"
 import { Input } from "@/components/ui/input"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
@@ -22,7 +23,7 @@ import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { type RegisterSort } from "@/lib/application-data-api"
-import { listSalesQuotesPage, subscribeSalesQuotes } from "@/lib/quote-api"
+import { listSalesQuotesPage, quoteRegisterResource, subscribeSalesQuotes } from "@/lib/quote-api"
 import { createDevelopmentQuoteFixture } from "@/lib/quote-development-fixture"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
@@ -92,11 +93,6 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(defaultPaginationPageSize)
   const [serverSort, setServerSort] = useState<RegisterSort | null>(() => readSavedSort(quoteTableStorageKey, { id: "updatedAt", direction: "desc" }))
-  const [quotes, setQuotes] = useState<QuoteRegisterRecord[]>([])
-  const [quoteTotal, setQuoteTotal] = useState(0)
-  const [availableQuoteTotal, setAvailableQuoteTotal] = useState(0)
-  const [quotesLoading, setQuotesLoading] = useState(true)
-  const [quotesError, setQuotesError] = useState<string | null>(null)
   const [quoteRevision, setQuoteRevision] = useState(0)
   const [creatingTestQuote, setCreatingTestQuote] = useState(false)
 
@@ -105,29 +101,22 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
     return () => globalThis.clearTimeout(timer)
   }, [quickSearch])
 
-  useEffect(() => {
-    const controller = new AbortController()
-    setQuotesLoading(true)
-    setQuotesError(null)
-    void listSalesQuotesPage({
-      search: debouncedQuickSearch,
-      filterQuery: withQuoteOwnerScope(search, scope, currentUser?.name),
-      sort: serverSort,
-      limit: rowsPerPage,
-      offset: (page - 1) * rowsPerPage,
-    }, controller.signal).then((result) => {
-      setQuotes(result.rows)
-      setQuoteTotal(result.total)
-      setAvailableQuoteTotal(result.availableTotal)
-    }).catch((error) => {
-      if ((error as { name?: string })?.name !== "AbortError") {
-        setQuotesError(error instanceof Error ? error.message : defaultQuoteLoadError)
-      }
-    }).finally(() => {
-      if (!controller.signal.aborted) setQuotesLoading(false)
-    })
-    return () => controller.abort()
-  }, [currentUser?.name, debouncedQuickSearch, page, quoteRevision, rowsPerPage, scope, search, serverSort])
+  const registerInput = useMemo(() => ({
+    search: debouncedQuickSearch,
+    filterQuery: withQuoteOwnerScope(search, scope, currentUser?.name),
+    sort: serverSort,
+    limit: rowsPerPage,
+    offset: (page - 1) * rowsPerPage,
+  }), [debouncedQuickSearch, search, scope, currentUser?.name, serverSort, rowsPerPage, page])
+  const { data: quotePage, loading: quotesLoading, initialLoading, error: quotesError, refreshing, refresh } = useRegisterPage({
+    scope: currentUser?.id,
+    resource: quoteRegisterResource(registerInput),
+    load: (signal) => listSalesQuotesPage(registerInput, signal),
+    revision: quoteRevision,
+  })
+  const quotes = quotePage?.rows ?? []
+  const quoteTotal = quotePage?.total ?? 0
+  const availableQuoteTotal = quotePage?.availableTotal ?? 0
 
   useEffect(() => subscribeSalesQuotes(() => setQuoteRevision((revision) => revision + 1)), [])
 
@@ -165,8 +154,8 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
 
   useEffect(() => setPage(1), [quickSearch, rowsPerPage, scope, search, serverSort])
   useEffect(() => {
-    if (page > pageCount) setPage(pageCount)
-  }, [page, pageCount])
+    if (!quotesLoading && quotePage && page > pageCount) setPage(pageCount)
+  }, [page, pageCount, quotesLoading, quotePage])
 
   const quotesErrorTitle = t(defaultQuoteLoadError)
   const quotesErrorDetail = quotesError && !isRepeatedQuoteLoadError(quotesError, quotesErrorTitle)
@@ -277,9 +266,9 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
       {quotesError ? (
         <div role="alert" className="flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-[var(--md-red)]">{quotesErrorTitle}</p>
+            <p className="text-[13px] font-medium text-[var(--md-red)]">{quotePage ? t("Quotes could not be refreshed.") : quotesErrorTitle}</p>
             <p className="mt-0.5 text-[12px] leading-5 text-[var(--md-text)]" dir="auto">
-              {quotesErrorDetail ?? t("The connection may have been interrupted. Try loading the register again.")}
+              {quotePage ? t("Showing the last loaded results. Try again to get the latest changes.") : quotesErrorDetail ?? t("The connection may have been interrupted. Try loading the register again.")}
             </p>
           </div>
           <Button
@@ -287,7 +276,7 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
             variant="outline"
             size="sm"
             className="h-8 shrink-0 self-start rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] sm:self-auto"
-            onClick={() => setQuoteRevision((revision) => revision + 1)}
+            onClick={refresh}
           >
             <RefreshCw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
             {t("Try again")}
@@ -299,7 +288,7 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
         ariaLabel="Quote register"
         columnsButtonLabel="Manage quote columns"
         columns={columns}
-        rows={quotesLoading ? [] : quotes}
+        rows={quotes}
         getRowKey={(quote) => quote.reference}
         storageKey={quoteTableStorageKey}
         exportConfig={{ fileName: "multideck-quotes", register: {
@@ -317,6 +306,7 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
             : "hover:bg-[var(--md-hover)]",
         )}
         onRowClick={(quote) => navigate(`/quotes/${quote.reference.toLowerCase()}`)}
+        toolbarOptions={<><RegisterRevalidatingMark active={refreshing} /><RegisterRefreshButton pending={quotesLoading} onRefresh={() => { if (!quotesLoading) refresh() }} /></>}
         toolbarTabs={(
           <RegisterViewSwitch
             options={quoteScopes}
@@ -384,8 +374,10 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
               totalCount={availableQuoteTotal}
             />
         )}
-        emptyState={quotesLoading ? (
+        emptyState={initialLoading ? (
           <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading quotes…" /></div>
+        ) : quotesError && !quotePage ? (
+          <div className="grid min-h-[180px] place-items-center text-[13px] text-[var(--md-text)]">{t("Quotes could not be loaded. Use Try again above to reload them.")}</div>
         ) : scope === "Mine" && !quickSearch && filterQueryIsEmpty(search) ? (
           <div className="mx-auto grid max-w-sm place-items-center py-5 text-center">
             <EmptyStateIllustration variant="documents" className="mb-3" />
@@ -410,7 +402,8 @@ export function QuotesRegisterPage({ navigate, currentUser }: { navigate: (path:
         totalItems={quoteTotal}
         pageSize={rowsPerPage}
         pageSizeOptions={rowsPerPageOptions}
-        loading={quotesLoading}
+        loading={initialLoading}
+        error={Boolean(quotesError) && !quotePage}
         itemCount={quotes.length}
         itemLabel="quotes"
         onPageChange={setPage}

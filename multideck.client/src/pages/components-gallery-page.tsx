@@ -44,6 +44,8 @@ import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
 import toastSuccessIcon from "@/assets/toasts/toast-success.png"
+import gmailIntegrationLogo from "@/assets/integrations/gmail.svg"
+import outlookIntegrationLogo from "@/assets/integrations/outlook.png"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Iphone } from "@/components/ui/iphone"
@@ -85,7 +87,6 @@ import { Input } from "@/components/ui/input"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Textarea } from "@/components/ui/textarea"
 import { DriveFileTile, DriveFolderTile } from "@/components/multideck/drive-components"
 import { accentShiftDurationMs, useAccentPresetId } from "@/lib/accent-theme"
 import type { DriveFile, DriveFolder, DriveFolderStats } from "@/lib/drive-api"
@@ -254,6 +255,7 @@ import {
   SettingsChoiceGroup,
   SettingsFieldRow,
   SettingsInput,
+  SettingsIntegrationCard,
   SettingsIntegrationRow,
   SettingsOptionCard,
   SettingsPanel,
@@ -327,6 +329,30 @@ import { ScreenshotCaptureEditor, SupportTicketAttachmentPreview } from "@/compo
 import { TicketAttachmentsPreview } from "@/components/multideck/ticket-attachments-preview"
 import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
+import { AdminSettingsExplorer, type ExplorerArea } from "@/components/multideck/admin-settings-explorer"
+import { adminHubs } from "@/data/navigation-data"
+
+const explorerPreviewAreas: ExplorerArea[] = adminHubs.map((hub) => ({
+  id: hub.id,
+  label: hub.label,
+  sections: hub.blocks.map((block) => ({ id: block.id, title: block.title, icon: block.icon, description: block.description, settings: block.links, comingSoon: block.comingSoon })),
+  groups: hub.groups?.map((group) => ({ id: group.id, title: group.title, sectionIds: group.blockIds })),
+}))
+
+function AdminSettingsExplorerPreview() {
+  const [query, setQuery] = useState("")
+  const [sectionId, setSectionId] = useState<string | null>("tax")
+  const [opened, setOpened] = useState<string | null>(null)
+  return (
+    <div className="grid w-full gap-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try vat, bank or users" aria-label="Filter the preview" className="h-9 w-full max-w-[260px]" />
+        <span className="text-[12px] text-[var(--md-subtle)]" role="status">{opened ? `Would open ${opened}` : "Links stay inside the preview"}</span>
+      </div>
+      <AdminSettingsExplorer areas={explorerPreviewAreas} areaId="finance" query={query} sectionId={sectionId} onSectionChange={(id) => { setSectionId(id); setQuery("") }} onOpen={({ setting }) => setOpened(setting.label)} empty={<p className="py-8 text-center text-[12px] text-[var(--md-text)]">No settings match that search.</p>} />
+    </div>
+  )
+}
 
 function LocationAutocompletePreview() {
   const [location, setLocation] = useState("")
@@ -391,7 +417,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "bell-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "value-slider", "swatch-picker", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "bell-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "admin-settings-explorer", "value-slider", "swatch-picker", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -451,7 +477,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Settings",
     helper: "Configuration surfaces",
-    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "usage-allowance-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
+    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-integration-card", "settings-summary-card", "usage-allowance-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
   },
   {
     label: "Inbox",
@@ -2127,6 +2153,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewAuthCode, setPreviewAuthCode] = useState("742")
   const [previewSettingsTab, setPreviewSettingsTab] = useState("profile")
   const [previewSettingsChoice, setPreviewSettingsChoice] = useState("Always ask")
+  const [previewIntegrationActive, setPreviewIntegrationActive] = useState({ gmail: true, outlook: false })
   const [previewSettingsOption, setPreviewSettingsOption] = useState("Suggest")
   const [previewInlineCompany, setPreviewInlineCompany] = useState("Marlow Apparel")
   const [previewInlineType, setPreviewInlineType] = useState("Customer")
@@ -2808,7 +2835,7 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "empty-state-illustration" ? (
         <div className="grid w-full grid-cols-2 gap-x-6 gap-y-8 py-5 sm:grid-cols-3">
-          {(["search", "tasks", "documents", "contacts", "cargo", "chart", "calendar", "mail", "phone", "route", "activity"] as const).map((variant) => (
+          {(["search", "tasks", "documents", "contacts", "cargo", "chart", "calendar", "mail", "phone", "route", "activity", "settings"] as const).map((variant) => (
             <div key={variant} className="min-w-0 text-center">
               <EmptyStateIllustration variant={variant} />
               <p className="mt-3 text-[12px] capitalize text-[var(--md-text)]">{t(variant)}</p>
@@ -2998,10 +3025,6 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "command" ? (
         <div className="w-full max-w-[680px]">
           <CommandInput />
-          <Textarea
-            className="mt-3 min-h-[110px] rounded-[var(--md-radius-lg)] border-0 bg-white/70 text-[13px] shadow-[var(--md-shadow-line)]"
-            defaultValue="Ask: show bookings with customs risk today"
-          />
         </div>
       ) : null}
 
@@ -3486,6 +3509,8 @@ function ComponentPreview({ id }: { id: string }) {
           <SegmentedControl options={bookingViewModes} value={previewBookingView} onChange={setPreviewBookingView} />
         </div>
       ) : null}
+
+      {id === "admin-settings-explorer" ? <AdminSettingsExplorerPreview /> : null}
 
       {id === "choice-control" ? (
         <div className="grid w-full max-w-[620px] gap-5 rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
@@ -4782,6 +4807,13 @@ function ComponentPreview({ id }: { id: string }) {
               onAction={() => toast.success("Google Drive settings opened")}
             />
           </SettingsPanel>
+        </div>
+      ) : null}
+
+      {id === "settings-integration-card" ? (
+        <div className="grid w-full max-w-[760px] gap-4 sm:grid-cols-2">
+          <SettingsIntegrationCard logoSrc={gmailIntegrationLogo} title="Gmail" description="Find customer conversations in one Inbox, reply faster and prepare drafts with Dexter." status={previewIntegrationActive.gmail ? "Connected" : "Not connected"} statusTone={previewIntegrationActive.gmail ? "connected" : "ready"} onDetails={() => toast.info("Gmail connection details opened")} onSettings={() => toast.info("Gmail settings opened")} active={previewIntegrationActive.gmail} onActiveChange={(active) => setPreviewIntegrationActive((current) => ({ ...current, gmail: active }))} />
+          <SettingsIntegrationCard logoSrc={outlookIntegrationLogo} title="Outlook" description="Work from Microsoft 365 mail and shared mailboxes in one Inbox, with replies and Dexter drafts." status={previewIntegrationActive.outlook ? "Connected" : "Not connected"} statusTone={previewIntegrationActive.outlook ? "connected" : "ready"} onDetails={() => toast.info("Outlook connection details opened")} active={previewIntegrationActive.outlook} onActiveChange={(active) => setPreviewIntegrationActive((current) => ({ ...current, outlook: active }))} />
         </div>
       ) : null}
 

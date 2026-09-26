@@ -1,3 +1,4 @@
+import { useRegisterPage } from "@/lib/use-register-page"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { bookingLifecycleLabel } from "@/lib/booking-lifecycle"
 import { defaultPaginationPageSize } from "@/lib/pagination"
@@ -22,7 +23,7 @@ import { DataTable, type DataTableColumn } from "@/components/multideck/data-tab
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
-import { RegisterViewSwitch } from "@/components/multideck/register-toolbar"
+import { RegisterViewSwitch, RegisterRevalidatingMark, RegisterRefreshButton } from "@/components/multideck/register-toolbar"
 import { ChoiceControl } from "@/components/multideck/workflow-components"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -39,6 +40,7 @@ import {
 } from "@/lib/advanced-filters"
 import {
   listLiveBookingsPage,
+  bookingRegisterResource,
   type BookingRegisterSummary,
   type LiveBooking,
   type RegisterSort,
@@ -140,12 +142,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
   const { language, t } = useLanguage()
   const [scope, setScope] = useState<BookingScope>("All")
   const [viewMode, setViewMode] = useState<BookingViewMode>(() => getSavedView(bookingViewStorageKey, bookingViewModes, bookingViewModes[0]))
-  const [boardRecords, setBoardRecords] = useState<LiveBooking[]>([])
-  const [tableRows, setTableRows] = useState<LiveBooking[]>([])
-  const [tableTotal, setTableTotal] = useState(0)
-  const [tableSummary, setTableSummary] = useState<BookingRegisterSummary>(emptyBookingSummary)
-  const [bookingsLoading, setBookingsLoading] = useState(true)
-  const [bookingsError, setBookingsError] = useState<string | null>(null)
+  const [boardOrder, setBoardOrder] = useState<string[]>([])
   // The register's own favourite flag is the saved truth; anything the operator
   // stars here is kept alongside it so Home and every other screen agree.
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
@@ -160,7 +157,7 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
   const [modeFilter, setModeFilter] = useState<(typeof modeFilters)[number]>(modeFilters[0])
   const [shipmentTypeFilter, setShipmentTypeFilter] = useState<ShipmentTypeFilter>("All types")
   const shipmentTypeFilters = shipmentTypeFiltersByMode[modeFilter]
-  const registerScope = scope === "Mine" ? "My Jobs" : "All Jobs"
+  const registerScope: "My Jobs" | "All Jobs" = scope === "Mine" ? "My Jobs" : "All Jobs"
   const currentOperatorCode = currentUser?.initials ?? ""
   const { isStarred, toggleStar } = useStarredJobs(currentUser?.id)
 
@@ -169,41 +166,33 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
     return () => globalThis.clearTimeout(timer)
   }, [quickSearch])
 
+  const registerInput = useMemo(() => ({
+    search: debouncedQuickSearch,
+    scope: registerScope,
+    operatorCode: currentOperatorCode,
+    direction: directionFilter === "All directions" ? undefined : directionFilter,
+    mode: modeFilter === "All modes" ? undefined : modeFilter,
+    shipmentType: shipmentTypeFilter === "All types" ? undefined : shipmentTypeFilter,
+    filterQuery: search,
+    sort: serverSort,
+    limit: rowsPerPage,
+    offset: (page - 1) * rowsPerPage,
+  }), [debouncedQuickSearch, registerScope, currentOperatorCode, directionFilter, modeFilter, shipmentTypeFilter, search, serverSort, rowsPerPage, page])
+  const { data: bookingPage, loading: bookingsLoading, initialLoading, error: bookingsError, refreshing, refresh } = useRegisterPage({
+    scope: currentUser?.id,
+    resource: bookingRegisterResource(registerInput),
+    load: signal => listLiveBookingsPage(registerInput, signal),
+  })
+  const tableRows = bookingPage?.rows ?? []
+  const tableTotal = bookingPage?.total ?? 0
+  const tableSummary = bookingPage?.summary ?? emptyBookingSummary
+  const visibleBookings = useMemo(() => {
+    const order = new Map(boardOrder.map((id, index) => [id, index]))
+    return [...(bookingPage?.rows ?? [])].sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity))
+  }, [bookingPage, boardOrder])
   useEffect(() => {
-    const controller = new AbortController()
-    setBookingsLoading(true)
-    setBookingsError(null)
-    void listLiveBookingsPage({
-      search: debouncedQuickSearch,
-      scope: registerScope,
-      operatorCode: currentOperatorCode,
-      direction: directionFilter === "All directions" ? undefined : directionFilter,
-      mode: modeFilter === "All modes" ? undefined : modeFilter,
-      shipmentType: shipmentTypeFilter === "All types" ? undefined : shipmentTypeFilter,
-      filterQuery: search,
-      sort: serverSort,
-      limit: rowsPerPage,
-      offset: (page - 1) * rowsPerPage,
-    }, controller.signal).then((result) => {
-      if (viewMode === "Table") setTableRows(result.rows)
-      else setBoardRecords(result.rows)
-      setTableTotal(result.total)
-      setTableSummary(result.summary)
-      setFavouriteIds((current) => new Set([...current, ...result.rows.filter((record) => record.isFavourite).map((record) => record.id)]))
-    }).catch((error) => {
-      if ((error as { name?: string })?.name !== "AbortError") {
-        setBookingsError(error instanceof Error ? error.message : "Bookings could not be loaded.")
-      }
-    }).finally(() => {
-      if (!controller.signal.aborted) setBookingsLoading(false)
-    })
-    return () => controller.abort()
-  }, [currentOperatorCode, debouncedQuickSearch, directionFilter, modeFilter, page, registerScope, rowsPerPage, search, serverSort, shipmentTypeFilter, viewMode])
-
-  // Board rows are already filtered, sorted and paged by the same tenant-safe
-  // read model as the table. Keeping the current slice bounded prevents a board
-  // from turning 100,000 bookings into 100,000 React cards.
-  const visibleBookings = boardRecords
+    if (bookingPage) setFavouriteIds(new Set(bookingPage.rows.filter(record => record.isFavourite).map(record => record.id)))
+  }, [bookingPage])
 
   const countDraftMatches = useCallback((draft: FilterQuery) => {
     return listLiveBookingsPage({
@@ -232,8 +221,8 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
   }, [viewMode])
 
   useEffect(() => {
-    if (page > pageCount) setPage(pageCount)
-  }, [page, pageCount])
+    if (!bookingsLoading && bookingPage && page > pageCount) setPage(pageCount)
+  }, [page, pageCount, bookingsLoading, bookingPage])
 
 
   function openBooking(booking: Booking) {
@@ -500,13 +489,16 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
         onViewModeChange={setViewMode}
         onSpeakToDexter={() => setDexterOpen(true)}
       />
-      {bookingsError ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 text-[13px] text-[var(--md-red)]">{t("Bookings could not be loaded.")} {bookingsError}</div> : null}
+      {bookingsError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-4 py-3 text-[13px] text-[var(--md-text)]">
+        <div><p>{t(bookingPage ? "Bookings could not be refreshed." : "Bookings could not be loaded.")}</p><p>{bookingPage ? t("Showing the last loaded results. Try again to get the latest changes.") : bookingsError}</p></div>
+        <Button variant="outline" size="sm" onClick={refresh}>{t("Try again")}</Button>
+      </div> : null}
       {viewMode === "Table" ? (
         <DataTable
           ariaLabel={t("Bookings")}
           columnsButtonLabel={t("Manage booking columns")}
           columns={columns}
-          rows={bookingsLoading ? [] : tableRows}
+          rows={tableRows}
           getRowKey={(booking) => booking.id}
           storageKey={bookingTableStorageKey}
           exportConfig={{ fileName: "multideck-bookings", register: {
@@ -564,6 +556,9 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
             </div>
           )}
           toolbarOptions={(
+            <>
+              <RegisterRevalidatingMark active={refreshing} />
+              <RegisterRefreshButton pending={bookingsLoading} onRefresh={() => { if (!bookingsLoading) refresh() }} />
               <Button
                 type="button"
                 variant="ghost"
@@ -575,8 +570,9 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
                 {serverSort?.id === "customerCargo" && serverSort.direction === "desc" ? <ArrowUpAZ className="size-3.5" strokeWidth={1.45} /> : <ArrowDownAZ className="size-3.5" strokeWidth={1.45} />}
                 <span aria-hidden="true"><span className="hidden group-data-[mobile=true]/table-controls:inline">{t("Customer name")}{": "}</span>{serverSort?.id === "customerCargo" && serverSort.direction === "desc" ? "Z–A" : "A–Z"}</span>
               </Button>
+            </>
           )}
-          emptyState={bookingsLoading ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading bookings…" /></div> : (
+          emptyState={initialLoading ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading bookings…" /></div> : bookingsError && !bookingPage ? <div className="grid min-h-[180px] place-items-center text-[13px] text-[var(--md-text)]">{t("Bookings could not be loaded. Use Try again above to reload them.")}</div> : (
             <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
               <EmptyStateIllustration variant="search" />
               <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(scope === "Mine" ? "No bookings assigned to you" : "No bookings match this search")}</p>
@@ -594,19 +590,11 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
           <div className="flex min-w-0 items-center">
             <RegisterViewSwitch options={bookingOwnershipScopes} value={scope} onChange={setScope} counts={{ [scope]: tableTotal } as Partial<Record<BookingScope, number>>} ariaLabel="Booking ownership filter" compact />
           </div>
-          <BookingBoardPreview
+          {bookingsLoading && !bookingPage ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label="Loading bookings…" /></div> : bookingsError && !bookingPage ? null : <BookingBoardPreview
             rows={visibleBookings}
             onOpenBooking={openBooking}
-            onMoveBooking={(_bookingId, _status, orderedRows) => {
-              const orderedIndex = new Map(orderedRows.map((booking, index) => [booking.id, index]))
-              setBoardRecords((current) => [...current].sort((first, second) => {
-                const firstIndex = orderedIndex.get(first.id)
-                const secondIndex = orderedIndex.get(second.id)
-                if (firstIndex === undefined || secondIndex === undefined) return 0
-                return firstIndex - secondIndex
-              }))
-            }}
-          />
+            onMoveBooking={(_bookingId, _status, orderedRows) => setBoardOrder(orderedRows.map(booking => booking.id))}
+          />}
         </div>
       ) : null}
 
@@ -616,7 +604,8 @@ export function BookingsPage({ navigate, currentUser }: { navigate: (path: strin
         totalItems={totalBookings}
         pageSize={rowsPerPage}
         pageSizeOptions={rowsPerPageOptions}
-        loading={bookingsLoading}
+        loading={initialLoading}
+        error={Boolean(bookingsError) && !bookingPage}
         itemCount={tableRows.length}
         itemLabel="bookings"
         onPageChange={setPage}

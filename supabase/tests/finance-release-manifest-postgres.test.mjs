@@ -94,7 +94,7 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
     ]
     const laterMigrations = readdirSync(new URL('migrations/', root))
       .filter(name => name >= '20260925070431' && name.endsWith('.sql')
-        && !/_(?:uk_vat|hmrc|company_event|gpt_6_luna)/.test(name))
+        && !/_(?:uk_vat|hmrc|company_event|gpt_6_luna|remove_google_group_mailbox)/.test(name))
       .sort()
     assert.deepEqual(migrations, laterMigrations,
       'Review every new post-snapshot migration for this release and update its ordered manifest.')

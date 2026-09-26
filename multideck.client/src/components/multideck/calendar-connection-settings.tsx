@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react"
-import { CalendarDays, LoaderCircle, Plug, RefreshCw, X } from "@/components/icons/hugeicons"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { CalendarDays, LoaderCircle, RefreshCw, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { SettingsIntegrationRow, SettingsPanel } from "@/components/multideck/settings-components"
+import { SettingsIntegrationCard } from "@/components/multideck/settings-components"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { MeetingColourPicker } from "@/components/multideck/meeting-colour-picker"
 import googleMeetLogo from "@/assets/calendar/google-meet.svg"
 import microsoftTeamsLogo from "@/assets/calendar/microsoft-teams.svg"
@@ -15,15 +16,14 @@ import {
   type CalendarConnection,
   type MeetingColour,
 } from "@/lib/calendar-api"
-import { cn } from "@/lib/utils"
 import { useLanguage } from "@/i18n/language-provider"
 
 type ConnectionProvider = CalendarConnection["provider"]
 
 const providers: Array<{ provider: ConnectionProvider; title: string; description: string }> = [
-  { provider: "google", title: "Google Calendar + Meet", description: "Availability, invitations and Meet links." },
-  { provider: "microsoft", title: "Microsoft Calendar + Teams", description: "Microsoft 365 availability, invitations and Teams links." },
-  { provider: "zoom", title: "Zoom", description: "Meeting links for your connected calendars." },
+  { provider: "google", title: "Google Calendar + Meet", description: "See real availability, send invitations and add Meet links without leaving Multideck." },
+  { provider: "microsoft", title: "Microsoft Calendar + Teams", description: "Check Microsoft 365 availability, send invitations and include Teams links in bookings." },
+  { provider: "zoom", title: "Zoom", description: "Create Zoom links for meetings booked against your connected calendars." },
 ]
 
 const providerLogos: Record<ConnectionProvider, string> = { google: googleMeetLogo, microsoft: microsoftTeamsLogo, zoom: zoomLogo }
@@ -59,6 +59,12 @@ export function CalendarConnectionSettings({ navigate }: { navigate: (path: stri
   const [busyProvider, setBusyProvider] = useState<ConnectionProvider | null>(null)
   const [savingColour, setSavingColour] = useState<"google" | "microsoft" | null>(null)
   const [canConnect, setCanConnect] = useState(false)
+  const [detailsProvider, setDetailsProvider] = useState<ConnectionProvider | null>(null)
+  const [settingsProvider, setSettingsProvider] = useState<ConnectionProvider | null>(null)
+  const [disconnectCandidate, setDisconnectCandidate] = useState<ConnectionProvider | null>(null)
+  const dialogTriggerRef = useRef<HTMLElement | null>(null)
+  const rememberDialogTrigger = () => { dialogTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null }
+  const restoreDialogFocus = (event: Event) => { event.preventDefault(); dialogTriggerRef.current?.focus() }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -127,6 +133,8 @@ export function CalendarConnectionSettings({ navigate }: { navigate: (path: stri
     try {
       await disconnectCalendarConnection(provider)
       await load()
+      setSettingsProvider(null)
+      setDisconnectCandidate(null)
       toast.success(`${provider === "microsoft" ? "Microsoft Calendar" : provider === "google" ? "Google Calendar" : "Zoom"} disconnected`)
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : "The provider could not be disconnected.")
@@ -135,81 +143,91 @@ export function CalendarConnectionSettings({ navigate }: { navigate: (path: stri
     }
   }
 
+  const detailDefinition = providers.find((item) => item.provider === detailsProvider)
+  const detailConnection = connections.find((item) => item.provider === detailsProvider)
+  const settingsDefinition = providers.find((item) => item.provider === settingsProvider)
+  const settingsConnection = connections.find((item) => item.provider === settingsProvider)
+
   return (
-    <SettingsPanel
-      title="Calendar and meetings"
-      action={(
-        <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)]" onClick={() => navigate("/calendar")}>
-          <CalendarDays className="size-3.5" />
-          Open Calendar
+    <section aria-labelledby="calendar-integrations-heading">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 id="calendar-integrations-heading" className="text-[16px] font-medium tracking-[-0.01em] text-[var(--md-ink)]">Calendar and meetings</h2>
+          <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">Availability, invitations and meeting links.</p>
+        </div>
+        <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)]" onClick={() => navigate("/calendar")}>
+          <CalendarDays className="size-3.5" aria-hidden="true" /> Open Calendar
         </Button>
-      )}
-    >
+      </div>
       {error ? (
-        <div className="flex items-center justify-between gap-3 px-5 py-4" role="alert">
-          <p className="text-[12px] text-[var(--md-red)]">{error}</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]" role="alert">
+          <p className="text-[13px] text-[var(--md-red)]">{error}</p>
           <Button type="button" variant="ghost" size="sm" onClick={() => void load()}><RefreshCw className="size-3.5" />Try again</Button>
         </div>
       ) : loading ? (
-        <div className="flex min-h-20 items-center gap-2 px-5 py-4 text-[12px] text-[var(--md-subtle)]" role="status"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />Checking calendar connections…</div>
-      ) : providers.map(({ provider, title, description }) => {
-        const connection = connections.find((candidate) => candidate.provider === provider)
-        const connected = Boolean(connection && connection.status !== "disconnected")
-        const needsAttention = connection?.status === "attention"
-        const status = statusLabel(connection)
-        const detail = connection?.error || (connected && connection?.email ? connection.email : description)
-        const actionLabel = connected && !needsAttention ? "Disconnect" : needsAttention ? "Reconnect" : "Connect"
-        const busyLabel = connected && !needsAttention ? "Disconnecting" : needsAttention ? "Reconnecting" : "Connecting"
-        return (
-          <SettingsIntegrationRow
-            key={provider}
-            logoSrc={providerLogos[provider]}
-            title={title}
-            description={detail}
-            status={status}
-            statusTone={connection?.status === "connected" ? "connected" : needsAttention ? "review" : connection?.status === "syncing" ? "workspace" : "ready"}
-            action={(
-              <div className="flex flex-wrap items-center justify-end gap-3">
-                {connected && provider !== "zoom" ? (
-                  <MeetingColourPicker
-                    label={`${title} ${colourLabel}`}
-                    value={connection?.colour ?? (provider === "google" ? "blue" : "violet")}
-                    onChange={(colour) => void changeColour(provider, colour)}
-                    disabled={savingColour !== null || busyProvider !== null || !canConnect}
-                    compact
-                  />
-                ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  aria-label={`${actionLabel} ${title}`}
-                  disabled={busyProvider !== null || savingColour !== null || !canConnect}
-                  className={cn(
-                    "h-8 w-fit rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a18)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:active:scale-100",
-                    connected && !needsAttention
-                      ? "bg-white/48 text-[var(--md-red)] hover:bg-[rgba(194,63,63,0.08)] hover:text-[var(--md-red)]"
-                      : needsAttention
-                        ? "bg-[rgba(221,138,43,0.1)] text-[var(--md-amber)] hover:bg-[rgba(221,138,43,0.16)] hover:text-[var(--md-amber)]"
-                        : "bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-deep)] hover:text-[var(--md-accent-ink)]",
-                  )}
-                  onClick={() => void (connected && !needsAttention ? disconnect(provider) : connect(provider))}
-                >
-                  {busyProvider === provider ? (
-                    <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                  ) : connected && !needsAttention ? (
-                    <X className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-                  ) : needsAttention ? (
-                    <RefreshCw className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-                  ) : (
-                    <Plug className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-                  )}
-                  {busyProvider === provider ? busyLabel : actionLabel}
-                </Button>
-              </div>
-            )}
-          />
-        )
-      })}
-    </SettingsPanel>
+        <div className="flex min-h-44 items-center gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 text-[13px] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]" role="status"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />Checking calendar connections…</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {providers.map(({ provider, title, description }) => {
+            const connection = connections.find((candidate) => candidate.provider === provider)
+            const connected = Boolean(connection && connection.status !== "disconnected")
+            const active = connection?.status === "connected" || connection?.status === "syncing"
+            const needsAttention = connection?.status === "attention"
+            return <SettingsIntegrationCard
+              key={provider}
+              logoSrc={providerLogos[provider]}
+              title={title}
+              description={description}
+              status={statusLabel(connection)}
+              statusTone={connection?.status === "connected" ? "connected" : needsAttention ? "review" : connection?.status === "syncing" ? "workspace" : "ready"}
+              onDetails={() => { rememberDialogTrigger(); setDetailsProvider(provider) }}
+              onSettings={connected ? () => { rememberDialogTrigger(); setSettingsProvider(provider) } : undefined}
+              active={active}
+              toggleDisabled={!canConnect || busyProvider !== null || savingColour !== null}
+              onActiveChange={(nextActive) => {
+                if (nextActive) void connect(provider)
+                else { rememberDialogTrigger(); setDisconnectCandidate(provider) }
+              }}
+            />
+          })}
+        </div>
+      )}
+      <Dialog open={detailsProvider !== null} onOpenChange={(open) => !open && setDetailsProvider(null)}>
+        <DialogContent className="sm:max-w-[480px]" onCloseAutoFocus={restoreDialogFocus}>
+          <DialogHeader className="pe-8 text-start"><DialogTitle>{detailDefinition?.title}</DialogTitle><DialogDescription>{detailDefinition?.description}</DialogDescription></DialogHeader>
+          <div className="grid gap-3 text-[13px] leading-5">
+            <p><span className="text-[var(--md-subtle)]">Status · </span><span className="font-medium text-[var(--md-ink)]">{statusLabel(detailConnection)}</span></p>
+            {detailConnection?.email ? <p><span className="text-[var(--md-subtle)]">Connected account · </span><bdi dir="ltr" data-i18n-skip className="break-all text-[var(--md-ink)]">{detailConnection.email}</bdi></p> : null}
+            {detailConnection?.error ? <p role="alert" className="text-[var(--md-red)]">{detailConnection.error}</p> : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={settingsProvider !== null} onOpenChange={(open) => !open && !busyProvider && !savingColour && setSettingsProvider(null)}>
+        <DialogContent className="sm:max-w-[480px]" onCloseAutoFocus={restoreDialogFocus}>
+          <DialogHeader className="pe-8 text-start"><DialogTitle>{settingsDefinition?.title} settings</DialogTitle><DialogDescription>Manage this connection and how it appears in Calendar.</DialogDescription></DialogHeader>
+          {settingsProvider && settingsConnection ? <div className="grid gap-5">
+            {settingsProvider !== "zoom" ? <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-[13px] font-medium text-[var(--md-ink)]">Calendar {colourLabel}</p><MeetingColourPicker label={`${settingsDefinition?.title} ${colourLabel}`} value={settingsConnection.colour} onChange={(colour) => void changeColour(settingsProvider, colour)} disabled={savingColour !== null || busyProvider !== null || !canConnect} compact /></div> : null}
+            <div className="border-t border-[var(--md-hairline)] pt-4">
+              <Button type="button" variant="ghost" disabled={busyProvider !== null || savingColour !== null || !canConnect} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 text-[12px] font-medium text-[var(--md-red)] shadow-[var(--md-shadow-line)]" onClick={() => { if (settingsConnection.status === "attention") void connect(settingsProvider); else { setSettingsProvider(null); setDisconnectCandidate(settingsProvider) } }}>
+                {busyProvider === settingsProvider ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : settingsConnection.status === "attention" ? <RefreshCw className="size-3.5" aria-hidden="true" /> : <X className="size-3.5" aria-hidden="true" />}
+                {settingsConnection.status === "attention" ? "Reconnect" : "Disconnect"}
+              </Button>
+            </div>
+          </div> : null}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={disconnectCandidate !== null} onOpenChange={(open) => !open && busyProvider === null && setDisconnectCandidate(null)}>
+        <DialogContent className="sm:max-w-[440px]" onCloseAutoFocus={restoreDialogFocus}>
+          <DialogHeader className="pe-8 text-start">
+            <DialogTitle>{disconnectCandidate ? `Disconnect ${providers.find((item) => item.provider === disconnectCandidate)?.title}?` : ""}</DialogTitle>
+            <DialogDescription>Multideck will stop using this connection for availability and meeting links. Your calendar and meetings stay with the provider.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={busyProvider !== null} onClick={() => setDisconnectCandidate(null)}>Cancel</Button>
+            <Button type="button" disabled={!disconnectCandidate || busyProvider !== null} className="bg-[var(--md-red)] text-white" onClick={() => disconnectCandidate && void disconnect(disconnectCandidate)}>{busyProvider ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}Disconnect</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
   )
 }

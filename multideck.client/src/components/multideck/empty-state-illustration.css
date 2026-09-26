@@ -23,6 +23,12 @@
 .md-empty-art__draw { animation: md-empty-draw 7s var(--empty-ease) infinite; }
 .md-empty-art__breathe { animation: md-empty-breathe 7s ease-in-out infinite; }
 .md-empty-art__bar { transform-origin: 114px 85px; animation: md-empty-bar 7s var(--empty-ease) infinite; }
+/* The settings scene runs in three 2.4s beats: step, switch on, switch off. */
+.md-empty-art__step { animation: md-empty-step 7.2s var(--empty-ease) infinite; }
+.md-empty-art__switch { opacity: 0; animation: md-empty-switch 7.2s var(--empty-ease) infinite; }
+.md-empty-art__knob { animation: md-empty-knob 7.2s var(--empty-ease) infinite; }
+.md-empty-art__beat-2 { animation-delay: 2.4s; }
+.md-empty-art__beat-3 { animation-delay: 4.8s; }
 
 /* Each illustration moves briefly, then rests. No player UI or progress track. */
 @keyframes md-empty-float {
@@ -46,6 +52,22 @@
 @keyframes md-empty-bar {
   0%, 12%, 78%, 100% { transform: scaleY(0.85); }
   34%, 55% { transform: scaleY(1); }
+}
+@keyframes md-empty-step {
+  0%, 28% { transform: translateY(0); }
+  34%, 61% { transform: translateY(18px); }
+  67%, 94% { transform: translateY(36px); }
+  100% { transform: translateY(0); }
+}
+@keyframes md-empty-switch {
+  0%, 6% { opacity: 0; }
+  12%, 24% { opacity: 1; }
+  30%, 100% { opacity: 0; }
+}
+@keyframes md-empty-knob {
+  0%, 6% { transform: translateX(0); }
+  12%, 24% { transform: translateX(8px); }
+  30%, 100% { transform: translateX(0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .md-empty-art * { animation: none; }

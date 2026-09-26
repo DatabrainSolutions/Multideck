@@ -1208,6 +1208,64 @@ button {
   will-change: transform, opacity, filter;
 }
 
+/* Keep the rail and its content on one rhythm while the navigation reflows. */
+.md-app-sidebar {
+  transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1), padding-inline 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.md-app-sidebar[data-sidebar-content-changing="true"] {
+  overflow: clip;
+}
+
+.md-app-sidebar [data-sidebar-transition-content] {
+  transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.md-app-sidebar[data-sidebar-content-changing="true"] [data-sidebar-transition-content] {
+  opacity: 0;
+  transition-duration: 90ms;
+}
+
+.md-app-sidebar [data-sidebar-cascade-item] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity 120ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--md-sidebar-cascade-delay, 0ms);
+}
+
+.md-app-sidebar[data-sidebar-cascade-ready="false"] [data-sidebar-cascade-item] {
+  opacity: 0;
+  transform: translate3d(0, -8px, 0);
+  transition-delay: 0ms;
+}
+
+.md-app-sidebar[data-sidebar-cascade-ready="false"]:not([data-sidebar-collapsed="true"]) [data-sidebar-cascade-item] {
+  transform: translate3d(-8px, 8px, 0);
+}
+
+.md-app-sidebar[data-sidebar-instant="true"],
+.md-app-sidebar[data-sidebar-instant="true"] [data-sidebar-transition-content],
+.md-app-sidebar[data-sidebar-instant="true"] [data-sidebar-cascade-item] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-app-sidebar {
+    transition: none;
+  }
+
+  .md-app-sidebar [data-sidebar-transition-content] {
+    transition: none;
+  }
+
+  .md-app-sidebar [data-sidebar-cascade-item] {
+    transform: none !important;
+    transition: none;
+  }
+}
+
 /* Ramps in quickly, overshoots by a hair, then eases into rest so the menu reads as alive. */
 .md-sidebar-menu[data-state="open"] {
   animation: md-sidebar-menu-in 280ms cubic-bezier(0.19, 1, 0.22, 1) both;
@@ -2394,6 +2452,13 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+
+  /* Radix places visually hidden native inputs and selects beside controls.
+     Anchor them to their immediate wrapper so they cannot extend the document
+     beyond the app's own scroll region on long pages. */
+  :where(*:has(> :is(input, select)[aria-hidden="true"][tabindex="-1"])) {
+    position: relative;
   }
 
   html {

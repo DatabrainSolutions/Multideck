@@ -14,7 +14,7 @@ import gmailLogo from "@/assets/integrations/gmail.svg"
 import outlookLogo from "@/assets/integrations/outlook.png"
 import { bookings, customers } from "@/data/operational-data"
 import { quoteRegisterRecords } from "@/data/quote-register-data"
-import { sidebarAreas, sidebarPrimary, sidebarSecondary, type NavItem } from "@/data/navigation-data"
+import { adminHubs, sidebarAreas, sidebarPrimary, sidebarSecondary, type NavItem } from "@/data/navigation-data"
 import type { ApiCustomer } from "@/lib/customer-api"
 import type { CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import type { ApiDeal } from "@/lib/deal-api"
@@ -55,6 +55,10 @@ function pageMention(item: NavItem, area?: string): DexterMentionItem | null {
 }
 
 const pageMentions = uniqueById([
+  // Admin hub links come first so a page that also has its own sidebar entry
+  // keeps that entry's name and area.
+  ...adminHubs.flatMap((hub) => hub.blocks.flatMap((block) => block.links
+    .map((link) => pageMention({ label: link.label, icon: hub.icon, route: link.route }, `Admin · ${hub.label}`)))),
   ...sidebarPrimary.map((item) => pageMention(item)),
   ...sidebarSecondary.map((item) => pageMention(item)),
   ...sidebarAreas.flatMap((area) =>

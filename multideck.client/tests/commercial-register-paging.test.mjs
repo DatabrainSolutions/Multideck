@@ -23,22 +23,19 @@ test("the client requests only bounded, authenticated Bookings and Quotes pages"
   assert.equal((`${applicationApi}\n${quoteApi}`.match(/filterQueryIsEmpty\(input\.filterQuery\)/g) ?? []).length, 2)
 })
 
-test("register requests use user-scoped dedupe, a short cache, cancellation, and bounded cache growth", () => {
-  assert.match(applicationApi, /REGISTER_CACHE_TTL_MS = 15_000/)
-  assert.match(applicationApi, /REGISTER_CACHE_MAX_ENTRIES = 64/)
-  assert.match(applicationApi, /consumers: Set<symbol>/)
-  assert.match(applicationApi, /activeEntry\.controller\?\.abort\(\)/)
-  assert.match(applicationApi, /queueMicrotask/)
-  assert.match(applicationApi, /const key = `\$\{supabaseFunctionsUrl\}:\$\{scope\}\\u0000\$\{resource\}`/)
-  assert.match(applicationApi, /authenticatedAccessChangedEvent/)
+test("register transport delegates to the shared cache and mutations invalidate it", () => {
+  assert.match(applicationApi, /readCachedRegisterPage = registerReadCache.read/)
   assert.match(applicationApi, /invalidateRegisterPages\("bookings:"\)/)
+  const cache = read("multideck.client/src/lib/register-read-cache.ts")
+  assert.match(cache, /ttlMs = 15_000/)
+  assert.match(cache, /maxEntries = 64/)
+  assert.match(read("multideck.client/src/lib/supabase.ts"), /registerReadCache.setScope/)
 })
 
 test("table views debounce search, cancel stale reads, and delegate filtering, sorting, and paging to the server", () => {
   for (const page of [bookingsPage, quotesPage]) {
     assert.match(page, /setTimeout\(\(\) => setDebouncedQuickSearch\(quickSearch\), 250\)/)
-    assert.match(page, /const controller = new AbortController\(\)/)
-    assert.match(page, /return \(\) => controller\.abort\(\)/)
+    assert.match(page, /useRegisterPage\(/)
     assert.match(page, /serverSorting=\{\{ value: serverSort, onChange: setServerSort \}\}/)
   }
   assert.match(bookingsPage, /listLiveBookingsPage\(\{/)
@@ -51,8 +48,8 @@ test("table views debounce search, cancel stale reads, and delegate filtering, s
 
 test("Booking Board shares the bounded register read and never downloads the full register", () => {
   assert.doesNotMatch(bookingsPage, /\blistLiveBookings\b/)
-  assert.match(bookingsPage, /if \(viewMode === "Table"\) setTableRows\(result\.rows\)/)
-  assert.match(bookingsPage, /else setBoardRecords\(result\.rows\)/)
+  assert.match(bookingsPage, /tableRows = bookingPage\?\.rows/)
+  assert.match(bookingsPage, /bookingPage\?\.rows \?\? \[\]/)
   assert.match(bookingsPage, /const totalBookings = tableTotal/)
 })
 
@@ -69,7 +66,7 @@ test("server totals power metrics, pagination, and asynchronous advanced-filter 
 
 test("the Quotes register error state avoids repeated copy and offers a real retry", () => {
   assert.match(quotesPage, /isRepeatedQuoteLoadError\(quotesError, quotesErrorTitle\)/)
-  assert.match(quotesPage, /onClick=\{\(\) => setQuoteRevision\(\(revision\) => revision \+ 1\)\}/)
+  assert.match(quotesPage, /onClick=\{refresh\}/)
   assert.match(quotesPage, /\{t\("Try again"\)\}/)
   assert.doesNotMatch(quotesPage, /\{t\("Quotes could not be loaded\."\)\} <span/)
 })

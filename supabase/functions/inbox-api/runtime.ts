@@ -2310,6 +2310,21 @@ export async function addGroupMailbox(admin: Db, actor: Actor, connectionId: str
   return dto
 }
 
+export async function removeGroupMailbox(admin: Db, actor: Actor, mailboxId: string) {
+  await requirePermission(admin, actor, "Email.ManageShared")
+  const { mailbox, connection } = await requireMailbox(admin, actor, mailboxId, "manage")
+  if (mailbox.CommMailbox_TypeCode !== "group" || publicProvider(connection.CommConn_ProviderTypeCode) !== "gmail" || connection.CommConn_UserID !== actor.userId) {
+    throw new InboxHttpError(404, "This Google Group inbox was not found.", "group_mailbox_not_found")
+  }
+
+  const removed = await result<boolean>(admin.rpc("comm_remove_group_mailbox", {
+    p_mailbox_id: mailboxId,
+    p_connection_id: connection.CommConn_ID,
+    p_user_id: actor.userId,
+  }), "The Google Group inbox could not be removed. Try again.")
+  if (!removed) throw new InboxHttpError(404, "This Google Group inbox was not found.", "group_mailbox_not_found")
+}
+
 function occurred(row: Row) {
   return row.CommMessage_ReceivedAt ?? row.CommMessage_SentAt ?? row.CommMessage_MessageDate ?? row.CommMessage_CreatedAt
 }

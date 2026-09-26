@@ -2796,12 +2796,12 @@ export function DexterSuggestionGrid({
 }
 
 export const defaultDexterSpecialists: DexterSpecialist[] = [
-  { id: "auto", name: "Auto", label: "Default", description: "Dexter reads the request and routes it to the right specialist.", icon: AiBrain },
-  { id: "sales", name: "Sales", description: "Rates, quotes, margins, win-back drafts", icon: PackageCheck },
-  { id: "customs", name: "Customs", description: "HS codes, holds, licences, document checks", icon: ShieldCheck },
-  { id: "ops", name: "Ops & exceptions", description: "Delays, reroutes, terminals, carrier escalations", icon: Zap },
-  { id: "customer", name: "Customer comms", description: "Updates and replies, in each customer's tone", icon: MessageCircle },
-  { id: "analytics", name: "Analytics & reporting", description: "Trends, carrier scorecards, spend deep-dives", icon: BarChart3 },
+  { id: "auto", name: "Auto", label: "Default", description: "Dexter chooses an approach for your request.", icon: AiBrain },
+  { id: "sales", name: "Sales", description: "Check quote evidence, pricing and next actions", icon: PackageCheck },
+  { id: "customs", name: "Customs", description: "Review declaration evidence and filing readiness", icon: ShieldCheck },
+  { id: "ops", name: "Ops & exceptions", description: "Prioritise verified risks, cut-offs and handovers", icon: Zap },
+  { id: "customer", name: "Customer comms", description: "Draft updates from confirmed shipment facts", icon: MessageCircle },
+  { id: "analytics", name: "Analytics & reporting", description: "Compare defined measures and source coverage", icon: BarChart3 },
 ]
 
 export const defaultDexterAttachments: DexterAttachment[] = [

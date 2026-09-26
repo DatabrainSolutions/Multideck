@@ -1,6 +1,9 @@
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
+import { preloadRoute } from "@/lib/route-pages"
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, Ticket, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, PencilEdit01, Plus, Pin, Search, Send, Settings, Star, Tags, Ticket, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { LayoutLeftIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
@@ -20,7 +23,9 @@ import { isTrainingWorkspace } from "@/lib/workspace-environment"
 import { authSupabase, supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
-import { calendarNavItem, customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, todoNavItem, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
+import { adminDockHubIdFor } from "@/lib/admin-explorer-state"
+import { useSidebarDropdown } from "@/lib/sidebar-dropdown-state"
+import { adminEmailSignaturesDestination, calendarNavItem, customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, todoNavItem, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
 import { deleteDexterConversation, getDexterUsage, listDexterConversationsPage, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
@@ -63,6 +68,8 @@ const sidebarPaneTransition = {
   ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
 }
 
+const sidebarCascadeStepMs = 18
+
 type SearchableDexterConversation = DexterConversationSummary & {
   matchSnippet?: string
 }
@@ -82,7 +89,7 @@ const navReveal = {
     transition: {
       duration: 0.18,
       ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
-      staggerChildren: 0.018,
+      staggerChildren: sidebarCascadeStepMs / 1000,
       delayChildren: 0.01,
     },
   },
@@ -133,7 +140,7 @@ function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
             transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
             className="relative origin-[50%_15%]"
           >
-            <Bell className="size-3.5" strokeWidth={1.3} />
+            <Bell className="size-4" strokeWidth={1.3} />
           </motion.span>
           <AnimatePresence initial={false}>
             {unreadCount > 0 ? <motion.span
@@ -246,6 +253,11 @@ export function SidebarNavItem({
     "bg-transparent text-[var(--md-text)]"
   const trailingSlot = trailing ?? (affordance ? <SidebarNavArrow affordance={affordance} /> : null)
 
+  const handleIntent = () => {
+    if (isDisabled) return
+    if (item.route && expanded === undefined) preloadRoute(item.route)
+    onIntent?.()
+  }
   const hideLabel = collapsed || iconOnly
 
   const button = (
@@ -276,8 +288,9 @@ export function SidebarNavItem({
         transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
       }}
       disabled={isDisabled}
-      onPointerEnter={onIntent}
-      onFocus={onIntent}
+      onPointerEnter={handleIntent}
+      onPointerDown={handleIntent}
+      onFocus={handleIntent}
       onClick={onClick}
     >
       {isDexterItem ? (
@@ -389,8 +402,11 @@ function SidebarSection({
   )
 }
 
-function SidebarSectionItem({ children, layout = false }: { children: ReactNode; layout?: boolean }) {
+function SidebarSectionItem({ children, layout = false, cascadeIndex }: { children: ReactNode; layout?: boolean; cascadeIndex?: number }) {
   const shouldReduceMotion = useReducedMotion()
+  const cascadeStyle = cascadeIndex === undefined
+    ? undefined
+    : { "--md-sidebar-cascade-delay": `${Math.min(cascadeIndex, 10) * sidebarCascadeStepMs}ms` } as CSSProperties
 
   return (
     <motion.div
@@ -398,7 +414,7 @@ function SidebarSectionItem({ children, layout = false }: { children: ReactNode;
       layout={layout && !shouldReduceMotion ? "position" : false}
       transition={{ layout: sidebarPinTransition }}
     >
-      {children}
+      {cascadeIndex === undefined ? children : <div data-sidebar-cascade-item style={cascadeStyle}>{children}</div>}
     </motion.div>
   )
 }
@@ -485,6 +501,7 @@ function CustomisableSidebarSection({
   favouriteIdForItem,
   onToggleFavourite,
   className,
+  cascadeStart = 0,
 }: {
   scopeId: string
   baseIds: string[]
@@ -500,6 +517,7 @@ function CustomisableSidebarSection({
   favouriteIdForItem?: (id: string) => string | null
   onToggleFavourite?: (id: string) => void
   className?: string
+  cascadeStart?: number
 }) {
   const { t } = useLanguage()
   const { scope, save, togglePin } = useSidebarLayoutScope(scopeId)
@@ -546,7 +564,7 @@ function CustomisableSidebarSection({
     const favourite = Boolean(favouriteId && favouriteIds?.has(favouriteId))
 
     rows.push(
-      <SidebarSectionItem key={id} layout>
+      <SidebarSectionItem key={id} layout cascadeIndex={cascadeStart + index}>
         <SidebarItemMenu
           pinned={pinned}
           onTogglePin={() => togglePin(id)}
@@ -587,13 +605,12 @@ function CustomisableSidebarSection({
   return <SidebarSection className={className}>{rows}</SidebarSection>
 }
 
-function routePatternMatches(item: NavItem, route: string) {
+function routePatternMatches(item: NavItem | SidebarDestination, route: string) {
   if (!item.route) return false
+  if ("owns" in item && item.owns?.some((owned) => route === owned || route.startsWith(`${owned}/`))) return true
   if (item.route === "/") return route === "/"
+  if (item.route === "/admin") return route === "/admin"
   if (item.route === "/calendar/meetings") return route === "/calendar/meetings" || route === "/calendar/booking-links"
-  if (item.route === "/finance/administration") {
-    return /^\/finance\/(administration|systems|currencies|ledger|tax|documents|mappings|compliance|controls)(\/|$)/.test(route)
-  }
   if (item.route === "/customs/standalone/export") return /^\/customs\/standalone\/(export|import)(\/|$)/.test(route)
   if (item.route === "/customs/job-related/export") return /^\/customs\/job-related\/(export|import)(\/|$)/.test(route)
   if (item.route === "/bookings") {
@@ -609,6 +626,10 @@ const sidebarRouteItems = sidebarAreas.flatMap((area) =>
 )
 
 function routeMatches(item: NavItem, route: string) {
+  // While the Admin second sidebar is out, its area is the only match, so a
+  // longer link elsewhere in Admin cannot take the highlight from it.
+  const dockedId = adminDockHubIdFor(route)
+  if (dockedId) return "id" in item && item.id === `admin-${dockedId}`
   if (!routePatternMatches(item, route) || !item.route) return false
   const itemRoute = item.route
 
@@ -641,8 +662,14 @@ function activeDestinationIds(area: SidebarArea | undefined, route: string) {
   return area.destinations.filter((destination) => destination.children && destinationMatches(destination, route)).map((destination) => destination.id)
 }
 
-function nestedDestinationId(parentId: string, item: NavItem) {
-  return `${parentId}::${item.route ?? item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+function nestedDestinationId(parentId: string, item: NavItem, siblings: NavItem[]) {
+  const labelKey = item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  const baseId = `${parentId}::${item.route ?? labelKey}`
+  // Some Admin links share a page but lead to distinct settings. Keep the
+  // first link's saved pin ID and give later rows their own stable identity.
+  return item.route && siblings.findIndex((sibling) => sibling.route === item.route) < siblings.indexOf(item)
+    ? `${baseId}::${labelKey}`
+    : baseId
 }
 
 function inboxFolderRows(folders: MailboxFolder[]) {
@@ -766,7 +793,7 @@ function InboxContextSidebar({
       transition={sidebarPaneTransition}
     >
       <SidebarSection>
-        <SidebarSectionItem>
+        <SidebarSectionItem cascadeIndex={4}>
           <SidebarNavItem
             item={{ label: "Back", icon: ArrowLeft }}
             onClick={() => {
@@ -827,9 +854,9 @@ function InboxContextSidebar({
       </div>
 
       <SidebarSection className="mt-2">
-        {items.map((item) => (
+        {items.map((item, index) => (
           <Fragment key={item.view}>
-            <SidebarSectionItem>
+            <SidebarSectionItem cascadeIndex={5 + index}>
               <SidebarNavItem
                 item={{ label: item.label, icon: item.icon, value: item.value }}
                 isActive={item.view === view && !folderId}
@@ -1005,7 +1032,7 @@ export function AppSidebar({
   navigate,
   className,
   currentUser,
-  collapsed = false,
+  collapsed: requestedCollapsed = false,
   onCollapsedChange,
   onRequestClose,
 }: {
@@ -1021,6 +1048,35 @@ export function AppSidebar({
   const aiAgentName = useAiAgentName()
   const inboxWorkspace = useOptionalInboxWorkspace()
   const shouldReduceMotion = useReducedMotion()
+  // Fade the outgoing content before labels and shortcuts reflow into the rail.
+  // A second click cancels the pending switch and reverses from the current width.
+  const [collapsed, setPresentedCollapsed] = useState(requestedCollapsed)
+  const presentedCollapsedRef = useRef(requestedCollapsed)
+  const [cascadeReady, setCascadeReady] = useState(true)
+  const [instantCollapse, setInstantCollapse] = useState(false)
+  useEffect(() => {
+    if (shouldReduceMotion) {
+      presentedCollapsedRef.current = requestedCollapsed
+      setPresentedCollapsed(requestedCollapsed)
+      setCascadeReady(true)
+      return
+    }
+    if (requestedCollapsed === presentedCollapsedRef.current) {
+      setCascadeReady(true)
+      return
+    }
+    setCascadeReady(false)
+    let frame = 0
+    const timer = window.setTimeout(() => {
+      presentedCollapsedRef.current = requestedCollapsed
+      setPresentedCollapsed(requestedCollapsed)
+      frame = window.requestAnimationFrame(() => setCascadeReady(true))
+    }, 100)
+    return () => {
+      window.clearTimeout(timer)
+      window.cancelAnimationFrame(frame)
+    }
+  }, [requestedCollapsed, shouldReduceMotion])
   const isCustomer = currentUser?.actorType === "customer"
   const accentPreferenceId = useAccentPresetId()
   const companyAppearance = useCompanyAppearance(currentUser?.id)
@@ -1041,7 +1097,7 @@ export function AppSidebar({
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
       return sidebarAreas.filter((area) => area.id !== "administration" || canOpenAdmin || canManageSignatures).map((area) => {
-        if (area.id === "administration" && !canOpenAdmin) return { ...area, destinations: area.destinations.filter(destination => destination.id === "admin-email-signatures") }
+        if (area.id === "administration" && !canOpenAdmin) return { ...area, destinations: [adminEmailSignaturesDestination] }
         if (area.id === "documents-service") {
           return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
         }
@@ -1075,9 +1131,7 @@ export function AppSidebar({
         : findAreaForRoute(route, availableAreas)
   const [activeAreaId, setActiveAreaId] = useState<string | null>(initialArea?.id ?? null)
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>(readSettingsSectionFromUrl)
-  const [expandedDestinationIds, setExpandedDestinationIds] = useState<Set<string>>(
-    () => new Set(activeDestinationIds(initialArea, route)),
-  )
+  const [expandedDestinationId, setExpandedDestinationId] = useSidebarDropdown("main")
   const activeArea = availableAreas.find((area) => area.id === activeAreaId)
   const ActiveAreaIcon = activeArea?.icon
   const accountName = currentUser?.name ?? currentUser?.email ?? t("Signed in")
@@ -1187,7 +1241,7 @@ export function AppSidebar({
       new Map(
         (activeArea?.destinations ?? []).flatMap((destination) =>
           (destination.children ?? []).map((item) => [
-            nestedDestinationId(destination.id, item),
+            nestedDestinationId(destination.id, item, destination.children ?? []),
             { parentId: destination.id, item },
           ] as const),
         ),
@@ -1275,14 +1329,8 @@ export function AppSidebar({
           ? undefined
           : findAreaForRoute(route, availableAreas)
     setActiveAreaId(routeArea?.id ?? null)
-    setExpandedDestinationIds((current) => {
-      const requiredIds = activeDestinationIds(routeArea, route)
-      if (requiredIds.every((id) => current.has(id))) return current
-
-      const next = new Set(current)
-      requiredIds.forEach((id) => next.add(id))
-      return next
-    })
+    const routeDestinationId = activeDestinationIds(routeArea, route)[0]
+    if (routeDestinationId) setExpandedDestinationId(routeDestinationId)
   }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers, canShowDocumentBuilder]) // availableAreas is intentionally derived from the account type, environment and permissions.
 
   useEffect(() => {
@@ -1312,7 +1360,7 @@ export function AppSidebar({
 
   function openArea(area: SidebarArea) {
     setActiveAreaId(area.id)
-    setExpandedDestinationIds(new Set(activeDestinationIds(area, route)))
+    setExpandedDestinationId(activeDestinationIds(area, route)[0] ?? null)
   }
 
   function toggleSidebarFavourite(id: string) {
@@ -1332,7 +1380,7 @@ export function AppSidebar({
     if (!area) return
     openArea(area)
     if (favourite.destinationId) {
-      setExpandedDestinationIds((current) => new Set(current).add(favourite.destinationId!))
+      setExpandedDestinationId(favourite.destinationId)
     }
   }
 
@@ -1343,12 +1391,7 @@ export function AppSidebar({
   }
 
   function toggleDestination(destinationId: string) {
-    setExpandedDestinationIds((current) => {
-      const next = new Set(current)
-      if (next.has(destinationId)) next.delete(destinationId)
-      else next.add(destinationId)
-      return next
-    })
+    setExpandedDestinationId((current) => current === destinationId ? null : destinationId)
   }
 
   function openSettingsSection(sectionId: SettingsSectionId) {
@@ -1411,11 +1454,10 @@ export function AppSidebar({
   }
 
   const homeSidebarItem = (
-    <SidebarSectionItem>
+    <SidebarSectionItem cascadeIndex={0}>
       <SidebarNavItem
         item={homeNavItem}
         isActive={route === "/"}
-        onIntent={() => { if (typeof window !== "undefined") void import("@/pages/home-page") }}
         onClick={() => navigate("/")}
         collapsed={collapsed}
         iconOnly
@@ -1424,13 +1466,12 @@ export function AppSidebar({
   )
 
   const inboxSidebarItem = (
-    <SidebarSectionItem>
+    <SidebarSectionItem cascadeIndex={1}>
       <SidebarNavItem
         item={inboxNavItem}
         isActive={route === "/inbox"}
         onIntent={() => {
           void inboxWorkspace?.prepareAccounts()
-          if (typeof window !== "undefined") void import("@/pages/inbox-page")
         }}
         onClick={() => navigate("/inbox")}
         collapsed={collapsed}
@@ -1440,11 +1481,10 @@ export function AppSidebar({
   )
 
   const todoSidebarItem = (
-    <SidebarSectionItem>
+    <SidebarSectionItem cascadeIndex={2}>
       <SidebarNavItem
         item={todoNavItem}
         isActive={route === "/to-do"}
-        onIntent={() => { if (typeof window !== "undefined") void import("@/pages/to-do-page") }}
         onClick={() => navigate("/to-do")}
         collapsed={collapsed}
         iconOnly
@@ -1453,11 +1493,10 @@ export function AppSidebar({
   )
 
   const calendarSidebarItem = (
-    <SidebarSectionItem>
+    <SidebarSectionItem cascadeIndex={3}>
       <SidebarNavItem
         item={calendarNavItem}
         isActive={route === "/calendar"}
-        onIntent={() => { if (typeof window !== "undefined") void import("@/pages/calendar-page") }}
         onClick={() => navigate("/calendar")}
         collapsed={collapsed}
         iconOnly
@@ -1465,12 +1504,12 @@ export function AppSidebar({
     </SidebarSectionItem>
   )
 
-  const favouriteSidebarItems = favouriteIds.map((id) => {
+  const favouriteSidebarItems = favouriteIds.map((id, index) => {
     const favourite = favouriteCandidates.get(id)
     if (!favourite) return null
 
     return (
-      <SidebarSectionItem key={id} layout>
+      <SidebarSectionItem key={id} layout cascadeIndex={4 + index}>
         <SidebarItemMenu favourite onToggleFavourite={() => toggleSidebarFavourite(id)}>
           <SidebarNavItem
             item={favourite.item}
@@ -1485,7 +1524,7 @@ export function AppSidebar({
   })
 
   const dexterSidebarItem = (
-    <SidebarSectionItem>
+    <SidebarSectionItem cascadeIndex={4 + favouriteIds.length}>
       <SidebarNavItem
         item={{ label: `Agent ${aiAgentName}`, icon: AiBrain, route: "/agent-dexter" }}
         isActive={route === "/agent-dexter"}
@@ -1498,18 +1537,22 @@ export function AppSidebar({
 
   return (
     <aside
-      data-sidebar-collapsed={collapsed ? "true" : undefined}
+      data-sidebar-collapsed={requestedCollapsed ? "true" : undefined}
+      data-sidebar-content-changing={requestedCollapsed !== collapsed ? "true" : undefined}
+      data-sidebar-cascade-ready={requestedCollapsed === collapsed && cascadeReady ? "true" : "false"}
+      data-sidebar-instant={instantCollapse ? "true" : undefined}
       data-sidebar-mode={isInboxRoute ? "inbox" : isAgentRoute ? "dexter" : isSettingsRoute ? "settings" : activeArea?.id ?? "areas"}
       className={cn(
-        "relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        collapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
+        "md-app-sidebar relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)]",
+        requestedCollapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
         className,
       )}
     >
-      <div className={cn("relative z-10 flex h-10 items-center gap-1", collapsed ? "justify-center px-0" : "px-1")}>
+      <div className={cn("relative z-10 flex h-10 items-center gap-1", collapsed ? "justify-center px-0" : "px-1", onCollapsedChange && "pe-10")}>
         {collapsed ? null : (
           activeCompanyBrand ? (
             <span
+              data-sidebar-transition-content
               className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
               aria-label={`${activeCompanyBrand.displayName}, with Multideck`}
               title={`${activeCompanyBrand.displayName} × Multideck`}
@@ -1535,11 +1578,12 @@ export function AppSidebar({
             <img
               src={multideckFullLogo}
               alt="Multideck"
+              data-sidebar-transition-content
               className="me-auto h-[34px] min-w-0 max-w-[112px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
             />
           )
         )}
-        {!collapsed ? <NotificationBell onNavigate={onRequestClose} /> : null}
+        {!collapsed ? <span data-sidebar-transition-content className="shrink-0 self-start"><NotificationBell onNavigate={onRequestClose} /></span> : null}
         {!collapsed && onRequestClose ? (
           <Button
             type="button"
@@ -1558,19 +1602,28 @@ export function AppSidebar({
             type="button"
             variant="ghost"
             size="icon"
-            aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
-            title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
-            className={cn(
-              "size-9 shrink-0 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
-            )}
-            onClick={() => onCollapsedChange(!collapsed)}
+            aria-label={t(requestedCollapsed ? "Expand sidebar" : "Collapse sidebar")}
+            title={t(requestedCollapsed ? "Expand sidebar" : "Collapse sidebar")}
+            className={cn("absolute top-0 size-9 shrink-0 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]", collapsed ? "end-0.5" : "end-0")}
+            onPointerDown={() => setInstantCollapse(false)}
+            onClick={(event) => {
+              const nextCollapsed = !requestedCollapsed
+              if (event.detail === 0) {
+                setInstantCollapse(true)
+                presentedCollapsedRef.current = nextCollapsed
+                setPresentedCollapsed(nextCollapsed)
+                setCascadeReady(true)
+                window.requestAnimationFrame(() => window.requestAnimationFrame(() => setInstantCollapse(false)))
+              }
+              onCollapsedChange(nextCollapsed)
+            }}
           >
-            <MorphingIcon from={PanelLeftClose} to={PanelLeftOpen} active={collapsed} className="size-3.5" strokeWidth={1.3} />
+            <HugeiconsIcon icon={LayoutLeftIcon} size={16} strokeWidth={1.3} aria-hidden="true" />
           </Button>
         ) : null}
       </div>
 
-      {collapsed ? <div className="relative z-10 mt-2 flex justify-center"><NotificationBell /></div> : null}
+      {collapsed ? <div data-sidebar-transition-content className="relative z-10 mt-2 flex justify-center"><NotificationBell /></div> : null}
 
       {isTrainingWorkspace ? (
         <div className="relative z-10 mt-3 flex justify-center" role="status" aria-label="Training workspace">
@@ -1582,13 +1635,14 @@ export function AppSidebar({
         <nav
           aria-label={t("Pinned shortcuts")}
           data-sidebar-shortcuts
+          data-sidebar-transition-content
           className={cn("relative z-10 mt-[var(--md-page-stack-gap)] grid shrink-0 gap-1 pb-4", collapsed ? "grid-cols-1" : "grid-cols-4")}
         >
           {homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{calendarSidebarItem}
         </nav>
       ) : null}
 
-      <div className={cn("relative z-10 min-h-0 flex-1", isCustomer && "mt-[var(--md-page-stack-gap)]")}>
+      <div data-sidebar-transition-content className={cn("relative z-10 min-h-0 flex-1", isCustomer && "mt-[var(--md-page-stack-gap)]")}>
         <div
           ref={sidebarScrollRef}
           className="md-sidebar-scroll-region h-full overflow-y-auto overflow-x-hidden"
@@ -1615,7 +1669,7 @@ export function AppSidebar({
               transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
               <SidebarSection>
-                <SidebarSectionItem>
+                <SidebarSectionItem cascadeIndex={4}>
                   <SidebarNavItem
                     item={{ label: "Back", icon: ArrowLeft }}
                     onClick={() => {
@@ -1626,7 +1680,7 @@ export function AppSidebar({
                     collapsed={collapsed}
                   />
                 </SidebarSectionItem>
-                <SidebarSectionItem>
+                <SidebarSectionItem cascadeIndex={5}>
                   <button
                     type="button"
                     className={cn(
@@ -1894,14 +1948,17 @@ export function AppSidebar({
               </div>
 
               <nav aria-label={t("Settings")} className="mt-3 flex flex-col gap-[var(--md-page-stack-gap)]">
-                {settingsNavigationGroups.map((group) => (
+                {settingsNavigationGroups.map((group, groupIndex) => (
                   <div key={group.label}>
                     <p className={cn("mb-1.5 px-2 text-[11px] font-medium text-[var(--md-subtle)]", collapsed && "sr-only")}>
                       {t(group.label)}
                     </p>
                     <SidebarSection>
-                      {group.items.map((item) => (
-                        <SidebarSectionItem key={item.id}>
+                      {group.items.map((item, itemIndex) => (
+                        <SidebarSectionItem
+                          key={item.id}
+                          cascadeIndex={5 + settingsNavigationGroups.slice(0, groupIndex).reduce((count, previous) => count + previous.items.length, 0) + itemIndex}
+                        >
                           <SidebarNavItem
                             item={{ label: item.id === "dexter" ? aiAgentName : item.label, icon: item.icon }}
                             isActive={activeSettingsSection === item.id}
@@ -1950,6 +2007,7 @@ export function AppSidebar({
 
               <CustomisableSidebarSection
                 className="mt-2.5"
+                cascadeStart={isCustomer ? 0 : 5 + favouriteIds.length}
                 scopeId={activeArea.id}
                 baseIds={destinationBaseIds}
                 promotedIds={promotedDestinationIds}
@@ -1987,7 +2045,7 @@ export function AppSidebar({
                   if (!destination) return null
 
                   const hasChildren = Boolean(destination.children?.length)
-                  const isExpanded = expandedDestinationIds.has(destination.id)
+                  const isExpanded = expandedDestinationId === destination.id
                   const destinationActive = destinationMatches(destination, route)
 
                   return (
@@ -2007,28 +2065,19 @@ export function AppSidebar({
                         {hasChildren && isExpanded ? (
                           <motion.div
                             className="mt-1 overflow-hidden"
-                            initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
-                            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                            initial={shouldReduceMotion ? false : { height: 0 }}
+                            animate={{ height: "auto" }}
+                            exit={shouldReduceMotion ? undefined : { height: 0 }}
+                            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
                           >
                             <div className="md-sidebar-expanded-options flex flex-col gap-1 rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-1 dark:bg-[var(--md-surface-soft)]">
-                              <AnimatePresence initial={false}>
-                                {destination.children?.map((child) => {
-                                  const childId = nestedDestinationId(destination.id, child)
+                              {destination.children?.map((child) => {
+                                  const childId = nestedDestinationId(destination.id, child, destination.children ?? [])
                                   const favouriteId = sidebarFavouriteId(activeArea.id, destination.id, child.route ?? child.label)
                                   if (activeAreaPinnedIds.has(childId)) return null
 
                                   return (
-                                    <motion.div
-                                      key={childId}
-                                      layout={shouldReduceMotion ? false : "position"}
-                                      initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
-                                      animate={{ height: "auto", opacity: 1 }}
-                                      exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
-                                      transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
-                                      className="overflow-hidden"
-                                    >
+                                    <div key={childId} className="overflow-hidden">
                                       <SidebarItemMenu
                                         onTogglePin={() => toggleActiveAreaPin(childId)}
                                         favourite={favouriteIdSet.has(favouriteId)}
@@ -2043,10 +2092,9 @@ export function AppSidebar({
                                           nested
                                         />
                                       </SidebarItemMenu>
-                                    </motion.div>
+                                    </div>
                                   )
                                 })}
-                              </AnimatePresence>
                             </div>
                           </motion.div>
                         ) : null}
@@ -2071,6 +2119,7 @@ export function AppSidebar({
 
               <CustomisableSidebarSection
                 className="mt-[var(--md-gap-sm)]"
+                cascadeStart={isCustomer ? 0 : 5 + favouriteIds.length}
                 scopeId={areasScopeId}
                 baseIds={areaBaseIds}
                 arrangeItems={areaArrangeItems}
@@ -2116,7 +2165,7 @@ export function AppSidebar({
         />
       </div>
 
-      <div className="relative z-10 mt-[var(--md-page-stack-gap)] shrink-0">
+      <div data-sidebar-transition-content className="relative z-10 mt-[var(--md-page-stack-gap)] shrink-0">
         {supportTicketFeatureEnabled ? <><Separator className="sidebar-support-divider mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
         <button
           type="button"

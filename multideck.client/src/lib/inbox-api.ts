@@ -404,6 +404,13 @@ export async function addGmailGroupMailbox(connectionId: string, address: string
   })
 }
 
+export async function removeGmailGroupMailbox(mailboxId: string): Promise<void> {
+  await inboxRequest(`/mailboxes/${encodeURIComponent(mailboxId)}/group`, {
+    method: "DELETE",
+    normalize: () => undefined,
+  })
+}
+
 export async function disconnectInboxConnection(connectionId: string): Promise<void> {
   await inboxRequest(`/connections/${encodeURIComponent(connectionId)}`, {
     method: "DELETE",

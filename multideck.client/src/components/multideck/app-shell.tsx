@@ -3,11 +3,13 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowRight, CheckCircle2, Menu, PencilEdit01, TriangleAlert, X, XCircle } from "@/components/icons/hugeicons"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { useSidebarCollapsed } from "@/lib/sidebar-preferences"
+import { SidebarDropdownProvider } from "@/lib/sidebar-dropdown-state"
 import { useLanguage } from "@/i18n/language-provider"
 import { Button } from "@/components/ui/button"
 import { moveTabToAdjacentField } from "@/components/ui/field-tab-navigation"
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { AppSidebar } from "./app-sidebar"
+import { AdminSectionsDockHost } from "./admin-sections-dock"
 import { SupportTicketDialog } from "./support-ticket-dialog"
 import { TopBar } from "./top-bar"
 import { MeetingDialogHost } from "./meeting-dialog"
@@ -279,6 +281,7 @@ export function AppShell({
           onCollapsedChange={setSidebarCollapsed}
           className="hidden h-full min-h-0 lg:flex"
         />
+        {currentUser?.actorType === "internal" ? <AdminSectionsDockHost route={route} navigate={navigate} /> : null}
         {isFullHeightRoute || isSignatureRoute ? (
           <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
             <SheetTrigger asChild>
@@ -337,7 +340,7 @@ export function AppShell({
   // intent can prepare account metadata; thread rows load only on Inbox.
   return (
     <InboxWorkspaceProvider cacheScope={currentUser?.id ?? null} active={isInboxRoute}>
-      {shell}
+      <SidebarDropdownProvider>{shell}</SidebarDropdownProvider>
     </InboxWorkspaceProvider>
   )
 }

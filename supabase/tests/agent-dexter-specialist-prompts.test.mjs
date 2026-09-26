@@ -30,8 +30,8 @@ test("each Dexter role has a distinct freight-specialist operating brief", () =>
 test("specialists have domain-specific evidence and refusal rules", () => {
   assert.match(edgeFunction, /Never invent rates, surcharges, capacity/)
   assert.match(edgeFunction, /Never infer clearance, admissibility, duty/)
-  assert.match(edgeFunction, /Rank exceptions by urgency, operational consequence and customer impact/)
-  assert.match(edgeFunction, /Never claim a message was sent unless a connected action confirms it/)
+  assert.match(edgeFunction, /Rank exceptions by the next irreversible deadline, operational consequence and customer impact/)
+  assert.match(edgeFunction, /never claim delivery without a successful connected action/)
   assert.match(edgeFunction, /Never present correlation as causation/)
 })
 

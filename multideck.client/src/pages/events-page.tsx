@@ -42,7 +42,7 @@ function TicketCard({ event, priority, saving, imageFrameStatus, onRetryImage, o
   return (
     <EventTicket
       title={event.title} startsAt={event.startsAt} endsAt={event.endsAt} timezone={event.timezone} location={event.location}
-      imageUrl={imageUrl} imagePriority={priority} imageFrameStatus={imageFrameStatus} onRetryImage={onRetryImage} goingCount={event.goingCount} closedLabel={closedLabel(event, t)} muted={event.status !== "draft" && isEventOver(event)}
+      imageUrl={imageUrl} imagePriority={priority} imageFrameStatus={imageFrameStatus} onRetryImage={onRetryImage} goingCount={event.goingCount} closedLabel={closedLabel(event, t)} cancelled={event.status === "cancelled"} muted={event.status !== "draft" && isEventOver(event)}
       rsvp={saving ? "saving" : event.myRsvp?.status ?? "none"}
       onOpen={onOpen} onRsvp={onRsvp}
     />
@@ -57,8 +57,6 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [cardError, setCardError] = useState<{ id: string; status: RsvpStatus; text: string } | null>(null)
   const [imageErrors, setImageErrors] = useState<Record<string, string>>({})
-  const [recentImageIds, setRecentImageIds] = useState<Set<string>>(new Set())
-  const previousImageStates = useRef(new Map<string, string>())
   const [editing, setEditing] = useState<CompanyEvent | "new" | null>(null)
   const [revealForm, setRevealForm] = useState(false)
   const [view, setView] = useState<"upcoming" | "past">("upcoming")
@@ -79,18 +77,6 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
     const timer = window.setInterval(() => void load(), 2500)
     return () => window.clearInterval(timer)
   }, [events, load])
-  useEffect(() => {
-    if (!events) return
-    for (const event of events) {
-      const before = previousImageStates.current.get(event.id)
-      if ((before === "queued" || before === "generating") && event.imageGenerationStatus === "complete") {
-        setRecentImageIds((current) => new Set(current).add(event.id))
-        window.setTimeout(() => setRecentImageIds((current) => { const next = new Set(current); next.delete(event.id); return next }), 6000)
-      }
-      previousImageStates.current.set(event.id, event.imageGenerationStatus)
-    }
-  }, [events])
-
   const replace = useCallback((next: CompanyEvent) => {
     setEvents((current) => current ? (current.some((item) => item.id === next.id) ? current.map((item) => item.id === next.id ? next : item) : [...current, next]) : [next])
   }, [])
@@ -103,12 +89,11 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
   }, [load])
 
   const imageFrameStatus = (event: CompanyEvent): RefineFrameStatus | null => {
-    if (event.imagePath && !recentImageIds.has(event.id)) return null
+    if (event.imagePath) return null
     if (imageErrors[event.id] || event.imageGenerationStatus === "failed") return "error"
     if ((event.imageGenerationStatus === "queued" || event.imageGenerationStatus === "generating") && event.imageGenerationStartedAt
       && Date.now() - Date.parse(event.imageGenerationStartedAt) > 130_000) return "error"
     if (event.imageGenerationStatus === "queued" || event.imageGenerationStatus === "generating") return event.imageGenerationStatus
-    if (recentImageIds.has(event.id)) return "complete"
     return null
   }
 
@@ -126,10 +111,14 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
   const groups = useMemo(() => {
     const list = events ?? []
     const now = Date.now()
+    const cancelledLast = (items: CompanyEvent[]) => [
+      ...items.filter((event) => event.status !== "cancelled"),
+      ...items.filter((event) => event.status === "cancelled"),
+    ]
     return {
-      upcoming: list.filter((event) => event.status !== "draft" && !isEventOver(event, now)),
+      upcoming: cancelledLast(list.filter((event) => event.status !== "draft" && !isEventOver(event, now))),
       drafts: list.filter((event) => event.status === "draft"),
-      past: list.filter((event) => event.status !== "draft" && isEventOver(event, now)).reverse(),
+      past: cancelledLast(list.filter((event) => event.status !== "draft" && isEventOver(event, now)).reverse()),
     }
   }, [events])
 
@@ -203,7 +192,9 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
         </>
       )}
       <EventDetailDialog
+        key={selectedId ?? "closed"}
         eventId={selectedId}
+        initialEvent={events?.find((event) => event.id === selectedId) ?? null}
         initialRevealForm={revealForm}
         onClose={() => navigate("/events")}
         onChanged={replace}
@@ -239,8 +230,9 @@ function DetailReveal({ index, className, children, ...rest }: { index: number; 
   )
 }
 
-function EventDetailDialog({ eventId, initialRevealForm, onClose, onChanged, onEdit, onRemoved }: {
+function EventDetailDialog({ eventId, initialEvent, initialRevealForm, onClose, onChanged, onEdit, onRemoved }: {
   eventId: string | null
+  initialEvent: CompanyEvent | null
   initialRevealForm: boolean
   onClose: () => void
   onChanged: (event: CompanyEvent) => void
@@ -248,10 +240,10 @@ function EventDetailDialog({ eventId, initialRevealForm, onClose, onChanged, onE
   onRemoved: (id: string) => void
 }) {
   const { language, t } = useLanguage()
-  const [event, setEvent] = useState<CompanyEvent | null>(null)
+  const [event, setEvent] = useState<CompanyEvent | null>(initialEvent)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(false)
-  const [answers, setAnswers] = useState<RsvpAnswers>({})
+  const [answers, setAnswers] = useState<RsvpAnswers>(initialEvent?.myRsvp?.answers ?? {})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<RsvpStatus | "publish" | "cancel" | "delete" | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -267,7 +259,6 @@ function EventDetailDialog({ eventId, initialRevealForm, onClose, onChanged, onE
   const [detailsHeight, setDetailsHeight] = useState(0)
   const detailsRef = useRef<HTMLDivElement>(null)
   const wide = useMediaQuery("(min-width: 1180px)")
-  const [imageReady, setImageReady] = useState(false)
   const [imageRetryError, setImageRetryError] = useState<string | null>(null)
   const reduce = useReducedMotion()
   const requestId = useRef<string | null>(null)
@@ -298,11 +289,11 @@ function EventDetailDialog({ eventId, initialRevealForm, onClose, onChanged, onE
       const reveal = initialRevealForm && next.form.length > 0 && next.status === "published" && !isEventOver(next)
       setFormOpen(reveal)
       if (reveal && !window.matchMedia("(min-width: 1180px)").matches) setView("form")
-    } catch (error) { setLoadError(message(error)) }
+    } catch (error) { setEvent(null); setLoadError(message(error)) }
   }, [initialRevealForm])
 
   useEffect(() => {
-    setEvent(null); setActionError(null); setSaved(null); setFieldErrors({}); setDetailsOpen(false); setViewing(null); setView("details"); setImageReady(false); requestId.current = null
+    setActionError(null); setSaved(null); setFieldErrors({}); setDetailsOpen(false); setViewing(null); setView("details"); requestId.current = null
     if (eventId) void load(eventId)
   }, [eventId, load])
   useEffect(() => {
@@ -445,9 +436,7 @@ function EventDetailDialog({ eventId, initialRevealForm, onClose, onChanged, onE
                         {event.imageGenerationStatus === "queued" || event.imageGenerationStatus === "generating" || event.imageGenerationStatus === "failed" ? (
                           <RefineFrame status={imageRetryError || event.imageGenerationStatus === "failed" || (event.imageGenerationStartedAt && Date.now() - Date.parse(event.imageGenerationStartedAt) > 130_000) ? "error" : event.imageGenerationStatus} src={null} aspectRatio="3 / 1" onRetry={event.canManage ? () => void retryImage() : undefined} />
                         ) : imageUrl ? (
-                          <motion.img src={imageUrl} alt="" className="absolute inset-0 size-full object-cover"
-                            initial={reduce ? false : { opacity: 0, scale: 1.04 }} animate={imageReady ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 1.04 }}
-                            transition={reduce ? { duration: 0 } : { duration: 0.6, ease: mdEase }} onLoad={() => setImageReady(true)} />
+                          <img src={imageUrl} alt="" className={cn("absolute inset-0 size-full object-cover", event.status === "cancelled" && "grayscale opacity-70")} fetchPriority="high" />
                         ) : <Ticket className="size-8 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />}
                       </div>
                       {imageRetryError ? <InlineNotice tone="error" action={<Button size="sm" variant="outline" onClick={() => void retryImage()}>{t("Try again")}</Button>}>{imageRetryError}</InlineNotice> : null}

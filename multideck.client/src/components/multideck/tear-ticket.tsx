@@ -704,7 +704,7 @@ const TearTicket: React.FC<TearTicketProps> = ({
               {image ? (
                 <div className="absolute overflow-hidden [top:var(--tt-inset)] [left:var(--tt-inset)] [width:calc(var(--tt-body-w)_-_var(--tt-inset)*2)] [height:calc(var(--tt-body-h)*var(--tt-span)_-_var(--tt-inset)*2)] [border-radius:var(--tt-art-radius)]">
                   <motion.img
-                    className="absolute max-w-none object-cover [top:calc(var(--tt-parallax)*-1)] [left:calc(var(--tt-parallax)*-1)] [width:calc(100%_+_var(--tt-parallax)*2)] [height:calc(100%_+_var(--tt-parallax)*2)] [-webkit-user-drag:none] [transition:filter_700ms_ease]"
+                    className="tear-ticket__image absolute max-w-none object-cover [top:calc(var(--tt-parallax)*-1)] [left:calc(var(--tt-parallax)*-1)] [width:calc(100%_+_var(--tt-parallax)*2)] [height:calc(100%_+_var(--tt-parallax)*2)] [-webkit-user-drag:none]"
                     src={image}
                     alt={imageAlt}
                     loading={imageLoading}

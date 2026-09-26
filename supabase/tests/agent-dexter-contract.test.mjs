@@ -161,7 +161,7 @@ test("Dexter action tools stay OpenAI strict-schema compatible", () => {
 })
 
 test("Dexter redirects off-topic requests without narrowing useful freight work", () => {
-  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-09-01-finance-support"/)
+  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-09-26-specialist-reliability"/)
   assert.match(edgeFunction, /# Scope boundary/)
   assert.match(edgeFunction, /Dexter is for freight forwarding and the work required to operate a freight-forwarding business/)
   assert.match(edgeFunction, /Examples include sports fixtures, recipes and cooking, entertainment, celebrity news, general trivia/)
@@ -813,8 +813,8 @@ test("each Dexter role has a distinct freight-specialist operating brief", () =>
   assert.match(edgeFunction, /# Active specialist/)
   assert.match(edgeFunction, /Never invent rates, surcharges, capacity/)
   assert.match(edgeFunction, /Never infer clearance, admissibility, duty/)
-  assert.match(edgeFunction, /Rank exceptions by urgency, operational consequence and customer impact/)
-  assert.match(edgeFunction, /Never claim a message was sent unless a connected action confirms it/)
+  assert.match(edgeFunction, /Rank exceptions by the next irreversible deadline, operational consequence and customer impact/)
+  assert.match(edgeFunction, /never claim delivery without a successful connected action/)
   assert.match(edgeFunction, /Never present correlation as causation/)
 })
 

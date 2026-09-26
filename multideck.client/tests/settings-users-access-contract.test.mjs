@@ -10,7 +10,7 @@ const adminPageSource = await readFile(new URL("../src/pages/admin-page.tsx", im
 test("permissions are merged into the tenant-admin Users surface", () => {
   assert.doesNotMatch(navigationSource, /\{ id: "users"/u)
   assert.doesNotMatch(navigationSource, /\{ id: "permissions"/u)
-  assert.match(sidebarNavigationSource, /label: "Admin"[\s\S]*?label: "Users"[\s\S]*?route: "\/admin\/users"/u)
+  assert.match(sidebarNavigationSource, /id: "settings",[\s\S]*?title: "User management"[\s\S]*?label: "Users", route: "\/admin\/users"/u)
   assert.match(adminPageSource, /<AdminUsersContent \/>/u)
   assert.match(settingsSource, /permissions: "\/admin\/users",\s+users: "\/admin\/users"/u)
   assert.match(settingsSource, /navigate\(adminRoutes\[section\]\)/u)

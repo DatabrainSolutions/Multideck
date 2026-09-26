@@ -26,6 +26,7 @@ import {
   listMailboxes,
   listThreads,
   providers,
+  removeGroupMailbox,
   requireActor,
   runtimeClients,
   saveDraft,
@@ -108,6 +109,10 @@ Deno.serve(async (request) => {
     }
     if (method === "GET" && path.length === 1 && path[0] === "mailboxes") {
       return jsonResponse(request, allowedOrigins, await listMailboxes(clients.admin, actor))
+    }
+    if (method === "DELETE" && path.length === 3 && path[0] === "mailboxes" && path[2] === "group") {
+      await removeGroupMailbox(clients.admin, actor, path[1])
+      return jsonResponse(request, allowedOrigins, null, 204)
     }
     if (method === "GET" && path.length === 1 && path[0] === "ai-context-sources") {
       return jsonResponse(request, allowedOrigins, await aiContextSources(clients.admin, actor))

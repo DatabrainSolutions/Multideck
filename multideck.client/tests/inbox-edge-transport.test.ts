@@ -100,7 +100,11 @@ test("Google Group inboxes are configured through the Edge transport and open as
   assert.match(settingsPageSource, /void syncMailbox\(mailbox\.id\)\.catch/)
   assert.doesNotMatch(settingsPageSource, /await syncMailbox\(mailbox\.id\)/)
   assert.match(settingsPageSource, /provider=gmail&view=shared&mailbox=/)
+  assert.match(settingsPageSource, /selectMailbox\(mailbox\)[\s\S]*navigate\(`\/inbox\?provider=gmail&view=shared&mailbox=/)
   assert.match(settingsPageSource, /read-only as the group address/)
+  assert.match(source, /mailboxes\/\$\{encodeURIComponent\(mailboxId\)\}\/group/)
+  assert.match(settingsPageSource, /removeGmailGroupMailbox\(mailbox\.id\)/)
+  assert.match(settingsPageSource, /Connected Google Group inboxes/)
 })
 
 test("new shared and group mailboxes do not lock Settings during their first multi-page import", () => {
