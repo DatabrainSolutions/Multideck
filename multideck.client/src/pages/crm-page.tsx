@@ -1,4 +1,5 @@
 import { AddressSearch } from "@/components/multideck/address-search"
+import { addressFieldLabel } from "@/lib/country-address-format"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
@@ -1106,28 +1107,21 @@ function FollowUpRecordDialog({
           {kind === "lead" ? (
             <div className="grid gap-3 border-t border-[var(--md-line)] pt-4">
               <span className="text-[12px] font-medium text-[var(--md-text)]">{t("Address")}</span>
-              <AddressSearch onSelect={address => { setAddressLine1(address.line1); setAddressLine2(address.line2); setTownCity(address.townCity); setCountyState(address.countyState); setPostZipCode(address.postZipCode); setCountryCode(address.countryCode) }} />
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
-                  {t("Address line 1")}
-                  <Input value={addressLine1} onChange={(event) => setAddressLine1(event.target.value)} className="h-10" dir="auto" />
-                </label>
+                <AddressSearch field="line1" label={addressFieldLabel(countryCode, "line1")} value={addressLine1} onChange={setAddressLine1} onSelect={address => { setAddressLine1(address.line1); setAddressLine2(address.line2); setTownCity(address.townCity); setCountyState(address.countyState); setPostZipCode(address.postZipCode); setCountryCode(address.countryCode) }} inputClassName="h-10" />
                 <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
                   {t("Address line 2")}
                   <Input value={addressLine2} onChange={(event) => setAddressLine2(event.target.value)} className="h-10" dir="auto" />
                 </label>
                 <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
-                  {t("Town or city")}
+                  {t(addressFieldLabel(countryCode, "townCity"))}
                   <Input value={townCity} onChange={(event) => setTownCity(event.target.value)} className="h-10" dir="auto" />
                 </label>
                 <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
-                  {t("County / State")}
+                  {t(addressFieldLabel(countryCode, "countyState"))}
                   <Input value={countyState} onChange={(event) => setCountyState(event.target.value)} className="h-10" dir="auto" />
                 </label>
-                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
-                  {t("Postcode")}
-                  <Input value={postZipCode} onChange={(event) => setPostZipCode(event.target.value)} className="h-10" dir="ltr" />
-                </label>
+                <AddressSearch field="postZipCode" label={addressFieldLabel(countryCode, "postZipCode")} value={postZipCode} onChange={setPostZipCode} onSelect={address => { setAddressLine1(address.line1); setAddressLine2(address.line2); setTownCity(address.townCity); setCountyState(address.countyState); setPostZipCode(address.postZipCode); setCountryCode(address.countryCode) }} inputClassName="h-10" />
                 <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
                   {t("Country code")}
                   <Input

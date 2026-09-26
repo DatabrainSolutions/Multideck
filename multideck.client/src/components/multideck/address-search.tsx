@@ -1,25 +1,40 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { Button } from "@/components/ui/button"
 import type { SuggestedAddress } from "@/lib/location-search"
 
-/** Search once for a structured address; keep every populated field editable. */
-export function AddressSearch({ onSelect, disabled = false, label = "Find an address", confirm = false }: {
+/** Suggestions live in the real address field; typing remains a manual override. */
+export function AddressSearch({ value, onChange, onSelect, disabled = false, label = "Address line 1", confirm = false, onSaveText, field = "line1", hideLabel = false, required = false, id, error, inputClassName }: {
+  value: string
+  onChange?: (value: string) => void
   onSelect: (address: SuggestedAddress) => void | Promise<void>
   disabled?: boolean
   label?: string
   confirm?: boolean
+  onSaveText?: (value: string) => Promise<void>
+  field?: "line1" | "postZipCode"
+  hideLabel?: boolean
+  required?: boolean
+  id?: string
+  error?: string
+  inputClassName?: string
 }) {
-  const [query, setQuery] = useState("")
+  const [draft, setDraft] = useState(value)
   const [pending, setPending] = useState<SuggestedAddress | null>(null)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState("")
-  const select = (address: SuggestedAddress) => { setError(""); if (confirm) setPending(address); else void onSelect(address) }
-  return <div className="grid gap-2"><LocationAutocomplete label={label} value={query} onChange={value => { setQuery(value); setPending(null) }} disabled={disabled || saving}
-    hint="Search by place, address or postcode, or fill in the fields below. Review the details before saving."
-    onUseText={line1 => select({ line1, line2: "", townCity: "", countyState: "", postZipCode: "", countryCode: "" })}
-    onSelect={suggestion => { setQuery(suggestion.value); if (suggestion.address) select(suggestion.address) }} />
-    {pending ? <div className="grid gap-2"><p className="text-[12px] text-[var(--md-text)]">{[pending.line1, pending.townCity, pending.countyState, pending.postZipCode, pending.countryCode].filter(Boolean).join(", ")}</p><div className="flex gap-2"><Button type="button" disabled={disabled || saving} onClick={async () => { setSaving(true); setError(""); try { await onSelect(pending); setPending(null); setQuery("") } catch (cause) { setError(cause instanceof Error ? cause.message : "Address could not be saved.") } finally { setSaving(false) } }}>{saving ? "Saving…" : "Use this address"}</Button><Button type="button" variant="ghost" disabled={saving} onClick={() => { setPending(null); setQuery("") }}>Cancel</Button></div></div> : null}
-    {error ? <p role="alert" className="text-[12px] text-[var(--md-red)]">{error}</p> : null}
+  const [saveError, setSaveError] = useState("")
+  useEffect(() => { setDraft(value); setPending(null) }, [value])
+  const edited = confirm && (pending || draft !== value)
+  return <div className="grid min-w-0 gap-2"><LocationAutocomplete id={id} label={label} hideLabel={hideLabel} required={required} error={error} inputClassName={inputClassName}
+    value={confirm ? draft : value} onChange={text => { setDraft(text); setPending(null); setSaveError(""); if (!confirm) onChange?.(text) }} disabled={disabled || saving}
+    hint="" placeholder={field === "line1" ? "Start typing an address or place" : label}
+    onSelect={suggestion => {
+      if (!suggestion.address) return
+      setSaveError("")
+      if (confirm) { setDraft(suggestion.address[field]); setPending(suggestion.address) }
+      else void onSelect(suggestion.address)
+    }} />
+    {edited ? <div className="grid gap-2">{pending ? <p className="text-[11px] text-[var(--md-subtle)]">{[pending.line1, pending.townCity, pending.countyState, pending.postZipCode, pending.countryCode].filter(Boolean).join(", ")}</p> : null}<div className="flex gap-2"><Button type="button" size="sm" disabled={disabled || saving} onClick={async () => { setSaving(true); setSaveError(""); try { if (pending) await onSelect(pending); else await onSaveText?.(draft); setPending(null) } catch (cause) { setSaveError(cause instanceof Error ? cause.message : "Address could not be saved.") } finally { setSaving(false) } }}>{saving ? "Saving…" : "Save address"}</Button><Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => { setPending(null); setDraft(value); setSaveError("") }}>Cancel</Button></div></div> : null}
+    {saveError ? <p role="alert" className="text-[12px] text-[var(--md-red)]">{saveError}</p> : null}
   </div>
 }

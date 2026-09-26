@@ -9,7 +9,7 @@ import { searchLocations, type LocationSuggestion } from "@/lib/location-search"
 import { cn } from "@/lib/utils"
 
 /** An editable location, with optional public place suggestions. Selection is never required. */
-export function LocationAutocomplete({ value, onChange, onSelect, onUseText, error, autoFocus = false, search = searchLocations, label = "Location", hideLabel = false, hint = "Search anywhere, or enter your own location.", id: suppliedId, disabled = false, required = false, multiline = false, maxLength = 500, inputClassName, onBlur, savedSuggestions = [] }: {
+export function LocationAutocomplete({ value, onChange, onSelect, onUseText, error, autoFocus = false, search = searchLocations, label = "Location", hideLabel = false, hint = "Search anywhere, or enter your own location.", placeholder = "Place, address or postcode", id: suppliedId, disabled = false, required = false, multiline = false, maxLength = 500, inputClassName, onBlur, savedSuggestions = [] }: {
   value: string
   onChange: (value: string) => void
   onSelect?: (suggestion: LocationSuggestion) => void
@@ -17,6 +17,7 @@ export function LocationAutocomplete({ value, onChange, onSelect, onUseText, err
   label?: string
   hideLabel?: boolean
   hint?: string
+  placeholder?: string
   id?: string
   disabled?: boolean
   required?: boolean
@@ -64,7 +65,7 @@ export function LocationAutocomplete({ value, onChange, onSelect, onUseText, err
         setItems(results)
       }).catch(() => { if (!controller.signal.aborted) setFailed(true) })
         .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    }, 400)
+    }, 180)
     return () => { controller.abort(); window.clearTimeout(timer) }
   }, [query, value, visible, canSearch, search, retry])
 
@@ -89,7 +90,7 @@ export function LocationAutocomplete({ value, onChange, onSelect, onUseText, err
         <div className="relative">
           <MapPin className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.6} aria-hidden="true" />
           <Control ref={(node: HTMLInputElement | HTMLTextAreaElement | null) => { input.current = node }} id={id} autoFocus={autoFocus} value={value} maxLength={maxLength} autoComplete="off" spellCheck={false} disabled={disabled} required={required}
-            className={cn(inputClassName, "ps-9")} placeholder={t("Place, address or postcode")}
+            className={cn(inputClassName, "ps-9")} placeholder={t(placeholder)}
             role="combobox" aria-autocomplete="list" aria-expanded={visible} aria-controls={visible ? `${id}-list` : undefined}
             aria-activedescendant={visible && active >= 0 ? `${id}-option-${active}` : undefined}
             aria-invalid={Boolean(error)} aria-describedby={[hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(" ") || undefined}
@@ -112,7 +113,7 @@ export function LocationAutocomplete({ value, onChange, onSelect, onUseText, err
             }} />
         </div>
       </PopoverAnchor>
-      <PopoverContent align="start" sideOffset={5} className="w-[var(--radix-popover-trigger-width)] min-w-0 gap-0 p-1"
+      <PopoverContent align="start" sideOffset={5} className="w-[max(320px,var(--radix-popover-trigger-width))] max-w-[calc(100vw-24px)] min-w-0 gap-0 p-1"
         onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => event.preventDefault()}
         onInteractOutside={event => { if (event.target === input.current) event.preventDefault() }}
         onEscapeKeyDown={event => { event.preventDefault(); setOpen(false) }}>

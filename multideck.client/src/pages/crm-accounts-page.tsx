@@ -1,4 +1,5 @@
 import { AddressSearch } from "@/components/multideck/address-search"
+import { addressFieldLabel } from "@/lib/country-address-format"
 import { getAccountingIdentityReview, confirmAccountingIdentityReview, type AccountingIdentityReview, getAccountingPartyHealth, recheckAccountingParties, saveAccountingPartySettings, type AccountingPartyHealth, type AccountingPartySettings } from "@/lib/finance-subledger-api"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
@@ -645,9 +646,8 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         {createSection === "address" ? (
           <div className="grid gap-4">
             {requiresAccountingAddress ? <p className="text-[13px] text-[var(--md-text)]">{t("Customers and suppliers need an accounting address. Enter address line 1, town/city and country. This address will be used for accounting until another is selected.")}</p> : null}
-            <AddressSearch onSelect={address => setDraft(current => ({ ...current, addressLine1: address.line1, townCity: address.townCity, postZipCode: address.postZipCode, countryCode: address.countryCode }))} />
-            <Field label={t("Address line 1")} required={requiresAccountingAddress} value={draft.addressLine1 ?? ""} onChange={(value) => update("addressLine1", value || null)} />
-            <div className="grid gap-4 sm:grid-cols-3"><Field label={t("Town or city")} required={requiresAccountingAddress} value={draft.townCity ?? ""} onChange={(value) => update("townCity", value || null)} /><Field label={t("Postcode")} value={draft.postZipCode ?? ""} onChange={(value) => update("postZipCode", value || null)} /><Field label={t("Country code")} required={requiresAccountingAddress} value={draft.countryCode ?? ""} onChange={(value) => update("countryCode", value.toUpperCase() || null)} hint={t("Two-letter ISO code, e.g. GB")} error={draft.countryCode && !countryCodeIsValid ? t("Enter a two-letter ISO country code, such as GB.") : undefined} maxLength={2} dir="ltr" /></div>
+            <AddressSearch label={addressFieldLabel(draft.countryCode, "line1")} required={requiresAccountingAddress} value={draft.addressLine1 ?? ""} onChange={value => update("addressLine1", value || null)} onSelect={address => setDraft(current => ({ ...current, addressLine1: address.line1, townCity: address.townCity, postZipCode: address.postZipCode, countryCode: address.countryCode }))} />
+            <div className="grid gap-4 sm:grid-cols-3"><Field label={t(addressFieldLabel(draft.countryCode, "townCity"))} required={requiresAccountingAddress} value={draft.townCity ?? ""} onChange={(value) => update("townCity", value || null)} /><AddressSearch field="postZipCode" label={addressFieldLabel(draft.countryCode, "postZipCode")} value={draft.postZipCode ?? ""} onChange={value => update("postZipCode", value || null)} onSelect={address => setDraft(current => ({ ...current, addressLine1: address.line1, townCity: address.townCity, postZipCode: address.postZipCode, countryCode: address.countryCode }))} /><Field label={t("Country code")} required={requiresAccountingAddress} value={draft.countryCode ?? ""} onChange={(value) => update("countryCode", value.toUpperCase() || null)} hint={t("Two-letter ISO code, e.g. GB")} error={draft.countryCode && !countryCodeIsValid ? t("Enter a two-letter ISO country code, such as GB.") : undefined} maxLength={2} dir="ltr" /></div>
           </div>
         ) : null}
         {createSection === "contact" ? (

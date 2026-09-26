@@ -1,4 +1,5 @@
 import { AddressSearch } from "@/components/multideck/address-search"
+import { addressFieldLabel } from "@/lib/country-address-format"
 import { WarehousePricingWorkspace } from "@/components/multideck/warehouse-pricing-workspace"
 import { mileageRequest, type MileageVisit } from "@/lib/mileage-api"
 import { ContactEmailAction } from "@/components/multideck/contact-email-action"
@@ -535,17 +536,16 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
               </Zone>
 
               <Zone title={t("Main contact & address")}>
-                <div className="mb-3 max-w-2xl"><AddressSearch key={currentAccount.id} confirm onSelect={selected => patch(current => ({ address: { ...current.address, ...selected } }))} /></div>
                 <InlineFieldGroup compact>
                   <div className="grid items-start gap-x-6 gap-y-1 lg:grid-cols-2 xl:grid-cols-3">
                     <InlineField label="Company email" kind="email" value={address?.mainEmail ?? ""} onSave={value => saveAddressField("mainEmail", value)} />
                     <InlineField label="Phone" kind="tel" width="medium" value={address?.mainPhone ?? ""} onSave={value => saveAddressField("mainPhone", value)} />
                     <InlineField label="Country" width="short" value={address?.countryCode ?? ""} placeholder="GB" onSave={value => saveAddressField("countryCode", value)} />
-                    <InlineField label="Street address" value={address?.line1 ?? ""} onSave={value => saveAddressField("line1", value)} />
+                    <AddressSearch key={currentAccount.id} confirm label={addressFieldLabel(address?.countryCode, "line1")} value={address?.line1 ?? ""} onSaveText={value => saveAddressField("line1", value)} onSelect={selected => patch(current => ({ address: { ...current.address, ...selected } }))} />
                     <InlineField label="Address line 2" value={address?.line2 ?? ""} onSave={value => saveAddressField("line2", value)} />
-                    <InlineField label="Town or city" value={address?.townCity ?? ""} onSave={value => saveAddressField("townCity", value)} />
-                    <InlineField label="County / state" value={address?.countyState ?? ""} onSave={value => saveAddressField("countyState", value)} />
-                    <InlineField label="Postcode" width="short" value={address?.postZipCode ?? ""} onSave={value => saveAddressField("postZipCode", value)} />
+                    <InlineField label={addressFieldLabel(address?.countryCode, "townCity")} value={address?.townCity ?? ""} onSave={value => saveAddressField("townCity", value)} />
+                    <InlineField label={addressFieldLabel(address?.countryCode, "countyState")} value={address?.countyState ?? ""} onSave={value => saveAddressField("countyState", value)} />
+                    <AddressSearch confirm field="postZipCode" label={addressFieldLabel(address?.countryCode, "postZipCode")} value={address?.postZipCode ?? ""} onSaveText={value => saveAddressField("postZipCode", value)} onSelect={selected => patch(current => ({ address: { ...current.address, ...selected } }))} />
                   </div>
                 </InlineFieldGroup>
               </Zone>
