@@ -1,3 +1,5 @@
+import { AddressSearch } from "@/components/multideck/address-search"
+import { addressFieldLabel } from "@/lib/country-address-format"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
@@ -196,12 +198,12 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
               </select>
               {customerReferenceState === "error" ? <span role="alert" className="flex flex-wrap items-center justify-between gap-2 text-[12px] font-normal text-[var(--md-red)]">{t("Organisation types could not be loaded. Try again before creating this account.")}<Button type="button" variant="outline" className="h-8" onClick={() => setCustomerReferenceReloadToken((value) => value + 1)}>{t("Try again")}</Button></span> : null}
             </label>
-            <CustomerInput label={t("Address line 1")} value={newCustomer.addressLine1 ?? ""} onChange={(value) => updateNewCustomer("addressLine1", value || null)} />
+            <AddressSearch inputClassName="h-10 rounded-[var(--md-radius-md)] bg-white/65" label={addressFieldLabel(newCustomer.countryCode, "line1")} value={newCustomer.addressLine1 ?? ""} onChange={value => updateNewCustomer("addressLine1", value || null)} onSelect={address => setNewCustomer(current => ({ ...current, addressLine1: address.line1, townCity: address.townCity, postZipCode: address.postZipCode, countryCode: address.countryCode }))} />
             <div className="grid gap-4 sm:grid-cols-2">
-              <CustomerInput label={t("Town or city")} value={newCustomer.townCity ?? ""} onChange={(value) => updateNewCustomer("townCity", value || null)} />
+              <CustomerInput label={t(addressFieldLabel(newCustomer.countryCode, "townCity"))} value={newCustomer.townCity ?? ""} onChange={(value) => updateNewCustomer("townCity", value || null)} />
               <CustomerInput label={t("Country code")} hint={t("Two-letter ISO code, e.g. GB")} value={newCustomer.countryCode ?? ""} onChange={(value) => updateNewCustomer("countryCode", value || null)} />
             </div>
-            <CustomerInput label={t("Postcode")} value={newCustomer.postZipCode ?? ""} onChange={(value) => updateNewCustomer("postZipCode", value || null)} />
+            <AddressSearch inputClassName="h-10 rounded-[var(--md-radius-md)] bg-white/65" field="postZipCode" label={addressFieldLabel(newCustomer.countryCode, "postZipCode")} value={newCustomer.postZipCode ?? ""} onChange={value => updateNewCustomer("postZipCode", value || null)} onSelect={address => setNewCustomer(current => ({ ...current, addressLine1: address.line1, townCity: address.townCity, postZipCode: address.postZipCode, countryCode: address.countryCode }))} />
             <div className="grid gap-4 sm:grid-cols-2">
               <CustomerInput label={t("Contact first name")} value={newCustomer.contactFirstName ?? ""} onChange={(value) => updateNewCustomer("contactFirstName", value || null)} />
               <CustomerInput label={t("Contact last name")} value={newCustomer.contactLastName ?? ""} onChange={(value) => updateNewCustomer("contactLastName", value || null)} />

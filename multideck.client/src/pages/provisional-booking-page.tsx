@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { useMemo, useState, type ReactNode } from "react"
 import {
   CalendarDays,
@@ -266,7 +267,7 @@ function PartyPanel({
       <div className="grid gap-1">
         <LookupField label="Code" value={values[codeKey]} onChange={(value) => setValue(codeKey, value)} disabled={!editable} />
         <Field label="Name" value={values[nameKey]} onChange={(value) => setValue(nameKey, value)} disabled={!editable} />
-        <Field label="Address" value={values[addressKey]} onChange={(value) => setValue(addressKey, value)} disabled={!editable} />
+        <LocationAutocomplete label="Address" value={values[addressKey]} onChange={value => setValue(addressKey, value)} disabled={!editable} hint="" />
       </div>
     </Panel>
   )

@@ -1913,6 +1913,13 @@ function NotificationsTab() {
             />
             <NotificationPreferenceRow
               disabled={isLoading || Boolean(loadError)}
+              title={t("Event invitations")}
+              description={t("When you're invited to a company event. In-app alerts stay on.")}
+              checked={preferences.company_event_invitation}
+              onCheckedChange={(checked) => setEmailPreference("company_event_invitation", checked)}
+            />
+            <NotificationPreferenceRow
+              disabled={isLoading || Boolean(loadError)}
               title="Customs holds"
               description="Includes missing required licences."
               checked={preferences.customs_hold}

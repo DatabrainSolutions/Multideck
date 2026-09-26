@@ -172,6 +172,8 @@ const ACTION_INTENTS: Record<string, RegExp> = {
   update_todo_task: /\b(update|edit|change|amend|reschedule|move|rename|set)\b.{0,80}\b(to[- ]?do|todo|task|action item)\b/,
   complete_todo_task: /\b(complete|finish|done|reopen|tick off|mark)\b.{0,80}\b(to[- ]?do|todo|task|action item)\b/,
   delete_todo_task: /\b(delete|remove)\b.{0,80}\b(to[- ]?do|todo|task|action item)\b/,
+  rsvp_company_event: /\b(rsvp|attend|attending|going|maybe|might go|tentative|join|sign me up|count me in|not going|can't make|cannot make|decline)\b.{0,80}\b(event|party|social|lunch|dinner|drinks|away day|meetup|quiz)\b|\b(event|party|social)\b.{0,80}\b(rsvp|going|attend)\b/,
+  create_company_event_draft: /\b(create|add|draft|plan|organise|organize|set up|new)\b.{0,80}\b(company event|team event|social|party|away day|meetup|event)\b/,
   attach_email_document_to_customer: /\b(attach|save|add|file)\b.{0,80}\b(document|file|attachment)\b.{0,80}\b(customer|account)\b/,
 }
 

@@ -7,7 +7,11 @@ import {spawnSync} from 'node:child_process'
 const bin=process.env.PG_TEST_BIN||'/opt/homebrew/opt/postgresql@17/bin'
 const available=spawnSync(join(bin,'initdb'),['--version']).status===0
 const migration=readFileSync(new URL('../migrations/20260909212608_dexter_astra_usage_metering.sql',import.meta.url),'utf8')
-test('Astra reservations cover cache writes; exact settlement accounts for cache hits, long context, scope and replay',{skip:!available},()=>{
+const lunaMigration=readFileSync(new URL('../migrations/20260926120000_gpt_6_luna.sql',import.meta.url),'utf8')
+const allowance=readFileSync(new URL('../migrations/20260808233000_dexter_usage_allowance_and_overage.sql',import.meta.url),'utf8')
+const messagePatch=readFileSync(new URL('../migrations/20260909220804_dexter_astra_message_estimate.sql',import.meta.url),'utf8')
+const definition=(name)=>allowance.slice(allowance.indexOf('create or replace function public.'+name+'(')).split('$$;')[0]+'$$;'
+test('Astra and Luna reservations cover cache writes; exact settlement accounts for cache hits, long context, scope and replay',{skip:!available},()=>{
  const dir=mkdtempSync(join(tmpdir(),'dexter-astra-usage-'));const data=join(dir,'data');let started=false
  const run=(cmd,args,input)=>{const r=spawnSync(join(bin,cmd),args,{input,encoding:'utf8',timeout:30000});assert.equal(r.status,0,`${r.stderr}\n${r.stdout}`)}
  try{
@@ -24,6 +28,11 @@ test('Astra reservations cover cache writes; exact settlement accounts for cache
      cost:=public._multideck_dexter_estimated_usage_gbp(case when lower(v_row."AIDexterEgress_Model") like '%terra%' then 'worker' else 'fast' end,p_input_units,p_output_units);
      update public."AI_DexterModelEgressAudit" set "AIDexterEgress_Outcome"=p_outcome,"AIDexterEgress_ActualCostGBP"=cost where "AIDexterEgress_ID"=p_reservation_id;end$$;
    ${migration}
+   ${definition('_multideck_dexter_record_message_cost')}
+   ${messagePatch}
+   ${definition('multideck_dexter_get_usage')}
+   create table public."Comm_ThreadSummaries"("CommThreadSummary_ModelCode" text default 'gpt-5.6-luna');
+   ${lunaMigration}
    do $$declare id uuid:=gen_random_uuid();c uuid:=gen_random_uuid();u uuid:=gen_random_uuid();usage jsonb;begin
     if public._multideck_dexter_astra_usage_gbp(100000,10000,0,0)<>1.2 then raise exception 'Uncached rate wrong';end if;
     if public._multideck_dexter_astra_usage_gbp(100000,10000,100000,0)<>0.48 then raise exception 'Cache read rate wrong';end if;
@@ -42,6 +51,18 @@ test('Astra reservations cover cache writes; exact settlement accounts for cache
     if (select "AIDexterEgress_ActualCostGBP" from public."AI_DexterModelEgressAudit")<>0.48 then raise exception 'Actual settlement lost cache rate';end if;
     perform public.multideck_dexter_settle_responses_egress(id,c,u,'failed','response','{}',null);
     if (select "AIDexterEgress_ActualCostGBP" from public."AI_DexterModelEgressAudit")<>0.48 then raise exception 'Replay repriced usage';end if;
+    if public._multideck_dexter_luna_usage_gbp(100000,10000,0,0)<>0.012 then raise exception 'Luna uncached rate wrong';end if;
+    if public._multideck_dexter_luna_usage_gbp(100000,10000,100000,0)<>0.0048 then raise exception 'Luna cache read rate wrong';end if;
+    if public._multideck_dexter_luna_usage_gbp(300000,10000,100000,100000)<>0.0436 then raise exception 'Luna long context rate wrong';end if;
+    if public._multideck_dexter_estimated_usage_gbp('gpt-6-luna',100000,10000)<>0.014 then raise exception 'Luna reservation rate wrong';end if;
+    if public._multideck_dexter_estimated_usage_gbp('gpt-5.6-luna',100000,10000)<>0.128 then raise exception 'Historical Luna repriced';end if;
+    update public."AI_DexterModelEgressAudit" set "AIDexterEgress_Outcome"='attempted',"AIDexterEgress_Model"='gpt-6-luna';
+    perform public.multideck_dexter_settle_responses_egress(id,c,u,'succeeded','luna-response',usage,null);
+    if (select "AIDexterEgress_ActualCostGBP" from public."AI_DexterModelEgressAudit")<>0.0048 then raise exception 'Luna settlement lost cache rate';end if;
+    perform public.multideck_dexter_settle_responses_egress(id,c,u,'failed','luna-response','{}',null);
+    if (select "AIDexterEgress_ActualCostGBP" from public."AI_DexterModelEgressAudit")<>0.0048 then raise exception 'Luna replay repriced usage';end if;
+    insert into public."Comm_ThreadSummaries" default values;
+    if (select "CommThreadSummary_ModelCode" from public."Comm_ThreadSummaries")<>'gpt-6-luna' then raise exception 'Summary model default wrong';end if;
     if has_function_privilege('authenticated','public.multideck_dexter_settle_responses_egress(uuid,uuid,uuid,text,text,jsonb,text)','execute') then raise exception 'Settlement exposed to browser';end if;
    end $$;
   `)

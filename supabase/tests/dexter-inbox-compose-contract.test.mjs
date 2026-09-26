@@ -11,7 +11,7 @@ const composer = read("../../multideck.client/src/components/multideck/mail-comp
 const inbox = read("../../multideck.client/src/pages/inbox-page.tsx")
 
 test("Inbox Dexter drafting uses Luna low reasoning and an optional bounded writing profile", () => {
-  assert.match(edge, /DEXTER_FAST_MODEL[\s\S]*gpt-5\.6-luna/)
+  assert.match(edge, /DEXTER_FAST_MODEL[\s\S]*gpt-6-luna/)
   assert.match(edge, /reasoning:\s*\{ effort: "low" \}/)
   assert.match(edge, /multideck_dexter_get_writing_profile/)
   assert.match(edge, /profileData\.enabled === true && profileData\.status === "ready"/)

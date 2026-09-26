@@ -1,3 +1,9 @@
+import { EventAttendeeStrip, EventAudiencePicker, EventGuestList, EventTicket, EventsEmptyState, RsvpChoice, RsvpFormBuilder, RsvpFormFields } from "@/components/multideck/company-event-components"
+import { RefineFrame } from "@/components/multideck/refine-frame"
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
+import { AddressSearch } from "@/components/multideck/address-search"
+import { addressFieldsForCountry } from "@/lib/country-address-format"
+import { validateRsvpAnswers, type EventAttendee, type EventAudience, type EventsDirectory, type RsvpAnswers, type RsvpField, type RsvpStatus } from "@/lib/company-events-api"
 import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"
 import dexterActivityTrailSource from "@/components/multideck/dexter-activity-trail.tsx?raw"
 import type { DexterActivity } from "../../../shared/dexter-activity"
@@ -10,6 +16,8 @@ import { BellToggle } from "@/components/multideck/bell-toggle"
 import { SpringCheck } from "@/components/multideck/spring-check"
 import { CodeSlots } from "@/components/multideck/code-slots"
 import { InlineNotice } from "@/components/multideck/inline-notice"
+import { NotificationCenter } from "@/components/multideck/notification-center"
+import type { WorkspaceNotification } from "@/lib/notification-api"
 import { SuggestedUpdateIllustration } from "@/components/multideck/suggested-update-illustration"
 import { SignatureBuilder } from "@/components/multideck/signature-builder"
 import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck/dexter-voice-controls"
@@ -320,6 +328,16 @@ import { TicketAttachmentsPreview } from "@/components/multideck/ticket-attachme
 import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
 
+function LocationAutocompletePreview() {
+  const [location, setLocation] = useState("")
+  return <div className="mx-auto w-full max-w-[440px]"><LocationAutocomplete value={location} onChange={setLocation} /></div>
+}
+
+function AddressSearchPreview() {
+  const [address, setAddress] = useState({ line1: "", line2: "", townCity: "", countyState: "", postZipCode: "", countryCode: "" })
+  return <div className="mx-auto grid w-full max-w-[520px] grid-cols-2 gap-3">{addressFieldsForCountry(address.countryCode).map(field => field.key === "line1" || field.key === "postZipCode" ? <div key={field.key} className={field.key === "line1" ? "col-span-2" : ""}><AddressSearch field={field.key} label={field.label} value={address[field.key]} onChange={value => setAddress(current => ({ ...current, [field.key]: value }))} onSelect={setAddress} /></div> : <label key={field.key} className="grid gap-1 text-[12px]">{field.label}<Input value={address[field.key]} onChange={event => setAddress(current => ({ ...current, [field.key]: event.target.value }))} /></label>)}<label className="grid gap-1 text-[12px]">Country code<Input value={address.countryCode} onChange={event => setAddress(current => ({ ...current, countryCode: event.target.value.toUpperCase() }))} /></label></div>
+}
+
 function DexterActivityPreview({ completed = false }: { completed?: boolean }) {
   const [open, setOpen] = useState(true)
   const [step, setStep] = useState(completed ? 4 : 1)
@@ -413,7 +431,17 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Feedback",
     helper: "Status and notifications",
-    ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast"],
+    ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast", "notification-center"],
+  },
+  {
+    label: "Events",
+    helper: "Company events and RSVPs",
+    ids: ["event-ticket", "refine-frame", "rsvp-choice", "event-audience-picker", "event-attendee-strip", "event-guest-list", "rsvp-form-builder", "rsvp-form-fields", "events-empty-state"],
+  },
+  {
+    label: "Addresses",
+    helper: "Worldwide address entry",
+    ids: ["location-autocomplete", "address-search"],
   },
   {
     label: "Warehouse",
@@ -436,6 +464,58 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
     ids: ["iphone-device-frame", "card-miniature", "contact-card-style-picker", "contact-card-layout-picker", "contact-card-qr-style-picker", "contact-card-social-links-editor", "automation-run-history"],
   },
 ]
+
+const galleryRsvpForm: RsvpField[] = [
+  { id: "meal", type: "single_choice", label: "Main course", required: true, options: [{ id: "fish", label: "Fish" }, { id: "veg", label: "Vegetarian" }] },
+  { id: "guest", type: "yes_no", label: "Bringing a guest?", required: false },
+  { id: "notes", type: "long_text", label: "Dietary requirements", required: false },
+]
+
+const galleryAttendees: EventAttendee[] = [
+  { userId: "a", name: "Priya Shah", status: "going", photoPath: null }, { userId: "b", name: "Tom Hughes", status: "going", photoPath: null },
+  { userId: "c", name: "Ana Costa", status: "going", photoPath: null }, { userId: "d", name: "Ben Okafor", status: "going", photoPath: null },
+  { userId: "g", name: "Mia Laurent", status: "going", photoPath: null }, { userId: "h", name: "Kofi Mensah", status: "going", photoPath: null },
+  { userId: "i", name: "Hana Sato", status: "going", photoPath: null }, { userId: "j", name: "Oliver Grant", status: "going", photoPath: null },
+  { userId: "k", name: "Zara Ali", status: "going", photoPath: null }, { userId: "e", name: "Lena Novak", status: "maybe", photoPath: null },
+  { userId: "f", name: "Sam Reid", status: "not_going", photoPath: null },
+]
+
+const galleryDirectory: EventsDirectory = {
+  departments: [{ id: "d1", name: "Operations", memberCount: 5 }, { id: "d2", name: "Warehouse", memberCount: 4 }, { id: "d3", name: "Finance", memberCount: 2 }],
+  people: galleryAttendees.map((person, index) => ({ userId: person.userId, name: person.name, jobTitle: ["Operations lead", "Customs specialist", "Warehouse supervisor", "Finance analyst"][index % 4], photoPath: null, departmentIds: [index < 5 ? "d1" : index < 9 ? "d2" : "d3"] })),
+}
+
+function GalleryAudiencePicker() {
+  const [value, setValue] = useState<{ audience: EventAudience; invitees: string[] }>({ audience: "everyone", invitees: [] })
+  return <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><EventAudiencePicker audience={value.audience} invitees={value.invitees} directory={galleryDirectory} onChange={setValue} /></div>
+}
+
+function GalleryGuestList() {
+  const [status, setStatus] = useState<RsvpStatus | "invited">("invited")
+  const invitedPeople = [...galleryAttendees, { userId: "pending", name: "Alex Morgan", photoPath: null }]
+  return <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><EventGuestList attendees={galleryAttendees} invitedCount={invitedPeople.length} invitedPeople={invitedPeople} status={status} onStatusChange={setStatus} listHeight={240} /></div>
+}
+
+function GalleryRsvpChoice() {
+  const [value, setValue] = useState<RsvpStatus | null>(null)
+  return <div className="grid justify-items-center gap-3"><RsvpChoice value={value} onChange={setValue} /><RsvpChoice value="maybe" pending="going" disabled onChange={() => undefined} /></div>
+}
+
+function GalleryRsvpBuilder() {
+  const [fields, setFields] = useState<RsvpField[]>(galleryRsvpForm)
+  return <div className="w-full max-w-[560px]"><RsvpFormBuilder fields={fields} onChange={setFields} answeredIds={["meal"]} /></div>
+}
+
+function GalleryRsvpFields() {
+  const [answers, setAnswers] = useState<RsvpAnswers>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  return (
+    <form className="grid w-full max-w-[520px] gap-4" noValidate onSubmit={(event) => { event.preventDefault(); setErrors(validateRsvpAnswers(galleryRsvpForm, answers)) }}>
+      <RsvpFormFields form={galleryRsvpForm} answers={answers} errors={errors} onChange={setAnswers} />
+      <Button type="submit" className="justify-self-end">Confirm RSVP</Button>
+    </form>
+  )
+}
 
 const previewHomeSuggestions: HomePromptSuggestion[] = [
   { id: "triage", title: "Work through what is due before cutoff", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
@@ -1147,7 +1227,7 @@ const previewInboxSummary: ThreadSummaryState = {
   text: "Marlow Apparel is waiting on the dual-use licence reference for MD-22455 before the broker will release the declaration. Claire has asked twice and flagged that the Felixstowe free-time window closes on 2 August.",
   keyPoints: [],
   sourceMessageIds: ["msg-1", "msg-2"],
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   updatedAt: "2026-07-31T09:37:00Z",
   error: null,
 }
@@ -1787,6 +1867,60 @@ export function BookingRouteMilestonesPreview() {
           events: [{ id: crypto.randomUUID(), type: "route_milestone_recorded", summary: `${item.name} recorded`, actor: "Preview operator", occurredAt: now, metadata: { milestoneId: item.id, reason: payload.reason, before: original ?? {}, after: item } }, ...workspace.events] }
       }} />
   </div>
+}
+
+function previewNotification(id: string, minutesAgo: number, fields: Partial<WorkspaceNotification> & Pick<WorkspaceNotification, "title">): WorkspaceNotification {
+  return { id, body: "", priority: "normal", status: "unread", targetTable: null, targetId: null, metadata: {}, createdAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(), ...fields }
+}
+
+function previewNotifications(): WorkspaceNotification[] {
+  return [
+    previewNotification("n1", 4, { title: "Q-24018 customer response", body: "The customer accepted this quote. Its booking is ready.", targetTable: "CusQuote_Header", priority: "high", metadata: { event_type: "quote_response", decision: "accepted", eyebrow: "Customer quote response", action_label: "Open quote", action_url: "/quotes/Q-24018" } }),
+    previewNotification("n2", 38, { title: "Booking sent to Customs", body: "Sam Taylor sent booking MD-22481", targetTable: "Customs_Declarations", metadata: { event_type: "customs_handoff", eyebrow: "Customs handoff", action_label: "Open declaration", action_url: "/customs" } }),
+    previewNotification("n3", 95, { title: "Your task is ready to review", body: "# Kestrel air and ocean review\n\nThe overdue follow-up has been prepared for your approval. No workspace change has been made yet.", targetTable: "AI_DexterTaskAssignments", metadata: { action_url: "/agent-dexter" } }),
+    previewNotification("n4", 60 * 20, { title: "You were tagged in a note", body: "Alex Morgan tagged you on MD-22479: Can you confirm the revised cut-off with the haulier before 3pm?", status: "read", metadata: { event_type: "lifecycle_note_mention", eyebrow: "Operational note", action_label: "Open note", action_url: "/bookings" } }),
+    previewNotification("n5", 60 * 30, { title: "Mileage claim needs approval", body: "Jamie Patel · 23 Sep 2026 · GBP 42.60", targetTable: "mileage_trips", metadata: { event_type: "mileage_pending", action_label: "View trip", action_url: "/crm/trips" } }),
+    previewNotification("n6", 60 * 60 * 3, { title: "Inbox document needs a match", body: "Review Commercial invoice 4471.pdf in Suggested updates. Multideck could not find a booking with the reference on this invoice, so it is waiting for you to choose one.", targetTable: "AI_InboxSuggestedUpdates", status: "read" }),
+    previewNotification("n7", 60 * 24 * 12, { title: "You're invited: Winter team dinner", body: "Open Events to see the details and RSVP.", targetTable: "company_events", status: "read", metadata: { event_type: "company_event_invitation", eyebrow: "Company event", action_label: "View event", action_url: "/events" } }),
+  ]
+}
+
+function NotificationCenterPreview() {
+  const [scenario, setScenario] = useState<"Live" | "Loading" | "Error" | "Empty">("Live")
+  const [items, setItems] = useState(previewNotifications)
+  const [version, setVersion] = useState(0)
+  const unreadCount = items.filter((item) => item.status === "unread").length
+  const shown = scenario === "Live" ? items : []
+  return (
+    <div className="grid w-full justify-items-center gap-4">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <SegmentedControl ariaLabel="Preview state" options={["Live", "Loading", "Error", "Empty"] as const} value={scenario} onChange={(value) => { setScenario(value); setVersion((current) => current + 1) }} />
+        <Button type="button" variant="ghost" onClick={() => { setItems(previewNotifications()); setScenario("Live"); setVersion((current) => current + 1) }}>Reset</Button>
+      </div>
+      <div className="flex h-[600px] w-[400px] max-w-full flex-col overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
+        <NotificationCenter
+          key={version}
+          className="min-h-0 flex-1"
+          notifications={shown}
+          unreadCount={scenario === "Live" ? unreadCount : 0}
+          loaded={scenario !== "Loading"}
+          loading={scenario === "Loading"}
+          error={scenario === "Error" ? "Notifications could not be refreshed. Please try again." : null}
+          pending={false}
+          hasMore={false}
+          destinationFor={(notification) => typeof notification.metadata.action_url === "string" ? notification.metadata.action_url : null}
+          onOpen={(notification) => toast.info(`Preview opens ${notification.title}`)}
+          onToggleRead={(id, status) => setItems((current) => current.map((item) => item.id === id ? { ...item, status } : item))}
+          onDismiss={(id) => setItems((current) => current.filter((item) => item.id !== id))}
+          onMarkAllRead={() => setItems((current) => current.map((item) => ({ ...item, status: "read" })))}
+          onClearAll={() => setItems([])}
+          onLoadMore={() => undefined}
+          onRetry={() => setScenario("Live")}
+          onOpenSettings={() => toast.info("Preview opens notification settings")}
+        />
+      </div>
+    </div>
+  )
 }
 
 function CargoAllocationEditorPreview() {
@@ -2454,6 +2588,34 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "event-ticket" ? (
+        <div className="mx-auto grid w-full gap-5 md:w-1/2 md:min-w-[360px]">
+          <EventTicket title="Launching soon" startsAt="2099-06-20T16:30:00Z" endsAt={null} timezone="Europe/London" location="London office" imageUrl={null} imageFrameStatus="generating" onRetryImage={() => undefined} rsvp="none" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Summer social" startsAt="2099-07-03T17:30:00Z" endsAt="2099-07-03T21:00:00Z" timezone="Europe/London" location="Roof terrace, London office" imageUrl={null} goingCount={14} rsvp="none" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Quiz night" startsAt="2099-08-14T18:00:00Z" endsAt={null} timezone="Europe/London" location="Canteen" imageUrl={null} goingCount={9} rsvp="going" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Warehouse barbecue" startsAt="2099-09-02T11:00:00Z" endsAt={null} timezone="Europe/London" location="Felixstowe yard" imageUrl={null} rsvp="maybe" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Christmas lunch" startsAt="2099-12-18T12:00:00Z" endsAt={null} timezone="Europe/London" location="The Anchor" imageUrl={null} rsvp="none" closedLabel="Cancelled" onOpen={() => undefined} />
+        </div>
+      ) : null}
+
+      {id === "refine-frame" ? <div className="mx-auto aspect-[21/9] w-full max-w-[560px] overflow-hidden rounded-[var(--md-radius-lg)]"><RefineFrame status="generating" src={null} /></div> : null}
+      {id === "location-autocomplete" ? <LocationAutocompletePreview /> : null}
+      {id === "address-search" ? <AddressSearchPreview /> : null}
+
+      {id === "rsvp-choice" ? <GalleryRsvpChoice /> : null}
+      {id === "event-attendee-strip" ? (
+        <div className="grid w-full max-w-[340px] gap-3"><EventAttendeeStrip attendees={galleryAttendees} invitedCount={24} onOpen={() => undefined} /><EventAttendeeStrip attendees={[]} /></div>
+      ) : null}
+      {id === "event-guest-list" ? <GalleryGuestList /> : null}
+      {id === "event-audience-picker" ? <GalleryAudiencePicker /> : null}
+      {id === "rsvp-form-builder" ? <GalleryRsvpBuilder /> : null}
+      {id === "rsvp-form-fields" ? <GalleryRsvpFields /> : null}
+      {id === "events-empty-state" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+          <EventsEmptyState canCreate onCreate={() => undefined} title="No events yet" message="Create an event and publish it when it is ready for everyone." />
+        </div>
+      ) : null}
+
       {id === "todo-priority-pill" ? (
         <div className="flex w-full max-w-[520px] flex-wrap items-center justify-center gap-2 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <TodoPriorityPill priority="low" /><TodoPriorityPill priority="medium" /><TodoPriorityPill priority="high" /><TodoPriorityPill priority="urgent" />
@@ -2678,6 +2840,7 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "notification-center" ? <NotificationCenterPreview /> : null}
       {id === "toast" ? (
         <div className="relative flex min-h-[300px] w-full max-w-[760px] items-start justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button

@@ -149,7 +149,7 @@ Deno.serve(async (request) => {
     const styleGuidance = profileEnabled ? cleanString(profileData.profileText, 2_400) : ""
     const apiKey = Deno.env.get("OPEN_API_KEY")?.trim() || Deno.env.get("OPENAI_API_KEY")?.trim() || ""
     if (!apiKey) throw new Error("composer_not_configured")
-    const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-5.6-luna"
+    const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-6-luna"
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 45_000)
 

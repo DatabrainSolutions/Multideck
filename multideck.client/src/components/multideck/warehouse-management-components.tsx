@@ -1,3 +1,5 @@
+import { AddressSearch } from "@/components/multideck/address-search"
+import { addressFieldLabel } from "@/lib/country-address-format"
 import { SpreadsheetImportReview } from "./spreadsheet-import-review"
 import { InlineNotice } from "./inline-notice"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
@@ -487,25 +489,25 @@ function FacilityDialog({
 
       {section === "address" ? (
         <div className="grid content-start gap-4">
-          <WarehouseFormField label="Address line 1" htmlFor="facility-address1" error={firstFieldError(errors, "Address1")}>
-            <Input id="facility-address1" value={form.address1} onChange={(event) => update("address1", event.target.value)} className={fieldControlClass} />
+          <WarehouseFormField label={addressFieldLabel(form.countryCode, "line1")} htmlFor="facility-address1" error={firstFieldError(errors, "Address1")}>
+            <AddressSearch id="facility-address1" field="line1" label={addressFieldLabel(form.countryCode, "line1")} hideLabel value={form.address1} onChange={value => update("address1", value)} onSelect={address => setForm(current => ({ ...current, address1: address.line1, address2: address.line2, townCity: address.townCity, countyState: address.countyState, postZipCode: address.postZipCode, countryCode: address.countryCode }))} inputClassName={fieldControlClass} />
           </WarehouseFormField>
           <WarehouseFormField label="Address line 2" htmlFor="facility-address2" error={firstFieldError(errors, "Address2")}>
             <Input id="facility-address2" value={form.address2} onChange={(event) => update("address2", event.target.value)} className={fieldControlClass} />
           </WarehouseFormField>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <WarehouseFormField label="Town / City" htmlFor="facility-town" error={firstFieldError(errors, "TownCity")}>
+            <WarehouseFormField label={addressFieldLabel(form.countryCode, "townCity")} htmlFor="facility-town" error={firstFieldError(errors, "TownCity")}>
               <Input id="facility-town" value={form.townCity} onChange={(event) => update("townCity", event.target.value)} className={fieldControlClass} />
             </WarehouseFormField>
-            <WarehouseFormField label="County / State" htmlFor="facility-county" error={firstFieldError(errors, "CountyState")}>
+            <WarehouseFormField label={addressFieldLabel(form.countryCode, "countyState")} htmlFor="facility-county" error={firstFieldError(errors, "CountyState")}>
               <Input id="facility-county" value={form.countyState} onChange={(event) => update("countyState", event.target.value)} className={fieldControlClass} />
             </WarehouseFormField>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <WarehouseFormField label="Post / Zip code" htmlFor="facility-zip" error={firstFieldError(errors, "PostZipCode")}>
-              <Input id="facility-zip" dir="ltr" value={form.postZipCode} onChange={(event) => update("postZipCode", event.target.value)} className={fieldControlClass} />
+            <WarehouseFormField label={addressFieldLabel(form.countryCode, "postZipCode")} htmlFor="facility-zip" error={firstFieldError(errors, "PostZipCode")}>
+              <AddressSearch id="facility-zip" field="postZipCode" label={addressFieldLabel(form.countryCode, "postZipCode")} hideLabel value={form.postZipCode} onChange={value => update("postZipCode", value)} onSelect={address => setForm(current => ({ ...current, address1: address.line1, address2: address.line2, townCity: address.townCity, countyState: address.countyState, postZipCode: address.postZipCode, countryCode: address.countryCode }))} inputClassName={fieldControlClass} />
             </WarehouseFormField>
             <WarehouseFormField label="Country code" htmlFor="facility-country" hint="2-letter ISO." error={firstFieldError(errors, "CountryCode")}>
               <Input id="facility-country" dir="ltr" value={form.countryCode} onChange={(event) => update("countryCode", event.target.value)} className={fieldControlClass} placeholder="GB" maxLength={2} />

@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { useEffect, useRef, useState, type ComponentType } from "react"
 import { Bell, CalendarDays, Check, ChevronDown, Clock3, MapPin, Palette, Phone, TextQuote, TriangleAlert, Users, Video } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -241,7 +242,7 @@ export function MeetingDialogHost({ navigate }: { navigate: (path: string) => vo
             </Row>
             {needsLocation ? (
               <Row icon={draft.provider === "phone" ? Phone : MapPin} label={draft.provider === "phone" ? "Phone number" : "Location"}>
-                <Input value={draft.location ?? ""} inputMode={draft.provider === "phone" ? "tel" : undefined} aria-label={draft.provider === "phone" ? "Phone number" : "Location"} placeholder={draft.provider === "phone" ? "Number attendees should call" : "Address or meeting room"} onChange={(event) => update({ location: event.target.value })} className="h-9 rounded-[var(--md-radius-lg)] text-[13px]" />
+                {draft.provider === "phone" ? <Input value={draft.location ?? ""} inputMode="tel" aria-label="Phone number" placeholder="Number attendees should call" onChange={event => update({ location: event.target.value })} /> : <LocationAutocomplete hideLabel hint="" value={draft.location ?? ""} onChange={location => update({ location })} disabled={saving} />}
               </Row>
             ) : null}
             <Row icon={Users} label="Attendees" align="start">

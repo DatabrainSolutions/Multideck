@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import {
@@ -1630,7 +1631,7 @@ function PartyRow({
           </DialogHeader>
           <div className="grid gap-3">
             <TextField label="Address name" value={draftAddressName} onChange={setDraftAddressName} placeholder="Regional office, warehouse, division..." />
-            <TextAreaField label="Address details" value={draftAddressDetails} onChange={setDraftAddressDetails} placeholder="Address lines, city, country, loading point notes..." />
+            <LocationAutocomplete label="Address details" value={draftAddressDetails} onChange={setDraftAddressDetails} multiline />
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setAddressDialogOpen(false)}>

@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { CalendarDays, CirclePause as Pause, CirclePlay as Play, Copy, Eye, Link2 as Link, MoreHorizontal, Plus, Trash2, TriangleAlert } from "@/components/icons/hugeicons"
@@ -173,7 +174,7 @@ function BookingLinkEditor({ open, value, connections, restoreFocusTo, navigate,
         <div className="py-4 shadow-[var(--md-stroke-top)]">
           <p className="text-[12px] font-medium text-[var(--md-ink)]">Meeting provider</p><p className="mt-1 text-[11px] leading-5 text-[var(--md-subtle)]">The visitor sees one native booking flow. The provider only supplies the join details.</p>
           <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3">{providers.map((next) => <button key={next} type="button" aria-pressed={provider === next} aria-label={`${meetingProviderLabels[next]}${connected(next) ? "" : ", not connected"}`} onClick={() => connected(next) ? setProvider(next) : setError(`${meetingProviderLabels[next]} is not connected. Open Settings → Integrations first.`)} className={cn("flex min-h-10 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-start text-[11px] text-[var(--md-text)] transition-colors hover:bg-[var(--md-hover)]", provider === next && "bg-[var(--md-accent-a10)] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_var(--md-accent-a28)] hover:bg-[var(--md-accent-a10)]", !connected(next) && "opacity-55")}><MeetingProviderMark provider={next} /><span className="truncate">{meetingProviderLabels[next]}</span></button>)}</div>
-          {(provider === "phone" || provider === "in_person") ? <label className={cn(fieldLabel, "mt-3")}>{provider === "phone" ? "Phone number" : "Location"}<Input value={location} onChange={(event) => setLocation(event.target.value)} className="h-10 rounded-[var(--md-radius-lg)]" /></label> : null}
+          {provider === "phone" ? <label className={cn(fieldLabel, "mt-3")}>Phone number<Input value={location} onChange={event => setLocation(event.target.value)} className="h-10 rounded-[var(--md-radius-lg)]" /></label> : provider === "in_person" ? <div className="mt-3"><LocationAutocomplete value={location} onChange={setLocation} /></div> : null}
         </div>
       </div> : null}
       {section === "Form" ? <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">

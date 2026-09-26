@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import {
   useEffect,
   useId,
@@ -218,6 +219,7 @@ const MAX_RENDERED_COMBOBOX_OPTIONS = 100
  * directory below it. Typing always remains a valid manual value.
  */
 export function CompactCombobox({
+  placeSearch = false,
   label,
   value,
   options,
@@ -245,6 +247,7 @@ export function CompactCombobox({
   label: string
   value: string
   options: readonly CompactComboboxOption[]
+  placeSearch?: boolean
   recommendedOptions?: readonly CompactComboboxOption[]
   recommendedOptionLimit?: number
   onValueChange: (value: string) => void
@@ -347,6 +350,8 @@ export function CompactCombobox({
       setOpen(false)
     }
   }
+
+  if (placeSearch) return <CompactFieldShell label={label} htmlFor={inputId} width={width} className={className} required={required} invalid={invalid}><LocationAutocomplete id={inputId} label={label} hideLabel hint="" value={value} onChange={onValueChange} disabled={disabled} required={required} inputClassName="h-8 text-[12px]" savedSuggestions={options.map(option => ({ id: option.id ?? option.value, value: option.value, label: option.label, detail: option.description ?? "" }))} onSelect={suggestion => { onValueChange(suggestion.value); const saved = options.find(option => (option.id ?? option.value) === suggestion.id); if (saved) onOptionSelect?.(saved) }} /></CompactFieldShell>
 
   return (
     <CompactFieldShell label={label} htmlFor={inputId} required={required} invalid={invalid} width={width} className={className}>
@@ -1169,7 +1174,7 @@ export function CargoWiseField({
     )}>
       <label htmlFor={inputId} className={cn("min-w-0 whitespace-normal break-words text-[11px] font-medium leading-[1.15] text-[var(--md-text)]", compactLabel === "content" ? "text-start" : "text-end")}>{t(label)}</label>
       <div className={cn("grid min-w-0", action && "grid-cols-[minmax(0,1fr)_auto] gap-0.5")}>
-        {editable ? <input
+        {editable && label === "Address" ? <LocationAutocomplete id={inputId} label={label} hideLabel hint="" value={value} onChange={next => onChange?.(next)} inputClassName="h-8 text-[12px]" /> : editable ? <input
           id={inputId}
           data-i18n-skip
           dir="auto"

@@ -13,8 +13,12 @@ export function completeCountryOptions(source: CountryOption[], locale = "en-GB"
 export type AddressFieldKey = "line1" | "line2" | "townCity" | "countyState" | "postZipCode"
 export type AddressFieldFormat = { key: AddressFieldKey; label: string; dir?: "ltr" }
 
+export function addressFieldLabel(countryCode: string | null | undefined, key: AddressFieldKey) {
+  return addressFieldsForCountry(countryCode).find(field => field.key === key)!.label
+}
+
 export function addressFieldsForCountry(countryCode: string | null | undefined): AddressFieldFormat[] {
-  const code = countryCode?.toUpperCase() ?? ""
+  const code = countryCode?.trim().toUpperCase() ?? ""
   if (code === "US") return [
     { key: "line1", label: "Address line 1" },
     { key: "line2", label: "Address line 2" },

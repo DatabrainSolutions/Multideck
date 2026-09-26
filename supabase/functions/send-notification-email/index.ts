@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import { normaliseLocale, renderBrandedEmail } from "../_shared/email-template.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
 import { readConfiguredTenantBrand } from "../_shared/tenant-branding.ts"
+import { isUuid, prepareCompanyEventInvitation, type EmailAttachment } from "./company-event-invitation.ts"
 
 type NotificationRow = {
   CommNotif_ID: string
@@ -34,7 +35,7 @@ function secretsMatch(left: string | null, right: string | null) {
   return difference === 0
 }
 
-async function sendWithResend(to: string, subject: string, html: string, text: string, idempotencyKey?: string) {
+async function sendWithResend(to: string, subject: string, html: string, text: string, idempotencyKey?: string, attachments: EmailAttachment[] = []) {
   const apiKey = Deno.env.get("RESEND_API_KEY")
   if (!apiKey) throw new Error("RESEND_API_KEY is not configured")
 
@@ -53,6 +54,7 @@ async function sendWithResend(to: string, subject: string, html: string, text: s
       subject,
       html,
       text,
+      ...(attachments.length ? { attachments } : {}),
     }),
   })
 
@@ -76,7 +78,7 @@ Deno.serve(async (request) => {
       auth: { persistSession: false },
     })
     const adminClient = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
-    const requestBody = await request.json() as { action?: string; notificationId?: string; locale?: string }
+    const requestBody = await request.json() as { action?: string; notificationId?: string; eventId?: string; requestId?: string; locale?: string; branding?: string }
     const bearerToken = authorization.replace(/^Bearer\s+/i, "")
     const isServiceRequest = bearerToken === serviceRoleKey
     const { data: expectedWebhookSecret } = await adminClient.rpc("Comm_GetNotificationWebhookSecret")
@@ -127,6 +129,45 @@ Deno.serve(async (request) => {
       return json({ delivered: true, id: delivery.id ?? null })
     }
 
+    // Renders an event's invitation to the signed-in colleague's own mailbox
+    // only, labelled Test. It never reads a recipient from the request, never
+    // creates notifications and never reaches the event's guest list.
+    if (requestBody.action === "event_invitation_test") {
+      if (!authData.user || !currentWorkspaceUser?.User_Email) return json({ error: "A user session is required for test emails" }, 403)
+      if (!isUuid(requestBody.eventId)) return json({ error: "Choose an event" }, 400)
+      if (requestBody.requestId !== undefined && !isUuid(requestBody.requestId)) return json({ error: "The request reference is not valid" }, 400)
+      const invitation = await prepareCompanyEventInvitation({
+        admin: adminClient,
+        eventId: requestBody.eventId,
+        userId: currentWorkspaceUser.User_ID,
+        purpose: "test",
+        appUrl: Deno.env.get("APP_URL"),
+        tenantHost: Deno.env.get("MULTIDECK_TENANT_HOST"),
+        locale: requestBody.locale,
+        testBranding: requestBody.branding === "multideck" ? "multideck" : undefined,
+      })
+      if ("skipped" in invitation) return json({ error: "This event is not available" }, 404)
+      const delivery = await sendWithResend(
+        currentWorkspaceUser.User_Email,
+        invitation.message.subject,
+        invitation.message.html,
+        invitation.message.text,
+        // A retried request is one email: the caller's requestId when given,
+        // otherwise repeated clicks within the same minute.
+        `event-invitation-test/${invitation.context.id}/${currentWorkspaceUser.User_ID}/${requestBody.requestId?.toLowerCase() ?? `${invitation.context.editVersion}-${Math.floor(Date.now() / 60_000)}`}`,
+        invitation.message.attachments,
+      )
+      const { error: auditError } = await adminClient.from("company_event_audit").insert({
+        company_id: invitation.context.companyId,
+        event_id: invitation.context.id,
+        actor_id: currentWorkspaceUser.User_ID,
+        kind: "invitation_test_emailed",
+        details: { recipient: "self", requestId: requestBody.requestId ?? null, resendId: delivery.id ?? null, editVersion: invitation.context.editVersion, cover: invitation.message.receipt.cover },
+      })
+      if (auditError) throw new Error("The test invitation email could not be recorded")
+      return json({ delivered: true, id: delivery.id ?? null })
+    }
+
     if (requestBody.action !== "dispatch" || !requestBody.notificationId) {
       return json({ error: "Unsupported notification request" }, 400)
     }
@@ -149,6 +190,9 @@ Deno.serve(async (request) => {
     if (recipientError || !recipient?.User_Email) return json({ error: "Notification recipient not found" }, 404)
 
     const metadata = notification.CommNotif_MetadataJSON ?? {}
+    if (metadata.in_app_only === true) {
+      return json({ delivered: false, skipped: "in_app_only" })
+    }
     const previousDelivery = metadata.email_delivery as { resend_id?: string } | undefined
     if (previousDelivery?.resend_id) return json({ delivered: true, id: previousDelivery.resend_id, skipped: "already_accepted" })
     const eventType = String(metadata.event_type ?? (metadata.suggestion_id ? "document_parse" : "product_updates"))
@@ -169,36 +213,59 @@ Deno.serve(async (request) => {
       ((eventType === "dexter_watch" || eventType === "document_parse") && preference?.CommNotifPref_IsEnabled !== true)
     ) return json({ delivered: false, skipped: "preference_disabled" })
 
-    const configuredAppUrl = Deno.env.get("APP_URL")
-    if (!configuredAppUrl) throw new Error("Notification application URL is not configured")
-    const appOrigin = new URL(configuredAppUrl).origin
-    const suggestionId = metadata.suggestion_id ?? (notification.CommNotif_TargetTable === "AI_InboxSuggestedUpdates" ? notification.CommNotif_TargetID : null)
-    const recordPath = suggestionId ? `/inbox?view=suggested&suggestion=${encodeURIComponent(String(suggestionId))}`
-      : notification.CommNotif_TargetTable === "CRM_Leads" && notification.CommNotif_TargetID ? `/crm/leads/${encodeURIComponent(notification.CommNotif_TargetID)}` : "/app"
-    let actionUrl = `${appOrigin}${recordPath}`
-    try {
-      const candidate = new URL(String(metadata.action_url ?? metadata.url ?? recordPath), appOrigin)
-      if (candidate.origin === appOrigin && !candidate.username && !candidate.password) actionUrl = candidate.toString()
-    } catch { /* Keep the source record fallback. */ }
-    const brand = await readConfiguredTenantBrand(adminClient, recipient.Company_ID)
-    const rendered = renderBrandedEmail({
-      subject: notification.CommNotif_Title,
-      preview: notification.CommNotif_Body,
-      title: notification.CommNotif_Title,
-      body: [notification.CommNotif_Body],
-      buttonLabel: metadata.action_label ? String(metadata.action_label) : "Open in Multideck",
-      buttonUrl: actionUrl,
-      eyebrow: metadata.eyebrow ? String(metadata.eyebrow) : "Workspace update",
-      footer: "You can change operational email preferences in Multideck settings.",
-      locale,
-      brand,
-    })
+    let message: { subject: string; html: string; text: string; attachments?: EmailAttachment[] }
+    let receiptDetails: Record<string, unknown> = {}
+    if (eventType === "company_event_invitation") {
+      // The invitation is re-checked at send time: a colleague removed from the
+      // guest list, a cancelled or finished event, or Events switched off since
+      // publishing means no email.
+      const invitation = notification.CommNotif_TargetTable === "company_events" && notification.CommNotif_TargetID
+        ? await prepareCompanyEventInvitation({
+          admin: adminClient,
+          eventId: notification.CommNotif_TargetID,
+          userId: recipient.User_ID,
+          purpose: "invitation",
+          appUrl: Deno.env.get("APP_URL"),
+          tenantHost: Deno.env.get("MULTIDECK_TENANT_HOST"),
+        })
+        : { skipped: "event_unavailable" as const }
+      if ("skipped" in invitation) return json({ delivered: false, skipped: invitation.skipped })
+      message = invitation.message
+      receiptDetails = invitation.message.receipt
+    } else {
+      const configuredAppUrl = Deno.env.get("APP_URL")
+      if (!configuredAppUrl) throw new Error("Notification application URL is not configured")
+      const appOrigin = new URL(configuredAppUrl).origin
+      const suggestionId = metadata.suggestion_id ?? (notification.CommNotif_TargetTable === "AI_InboxSuggestedUpdates" ? notification.CommNotif_TargetID : null)
+      const recordPath = suggestionId ? `/inbox?view=suggested&suggestion=${encodeURIComponent(String(suggestionId))}`
+        : notification.CommNotif_TargetTable === "CRM_Leads" && notification.CommNotif_TargetID ? `/crm/leads/${encodeURIComponent(notification.CommNotif_TargetID)}` : "/app"
+      let actionUrl = `${appOrigin}${recordPath}`
+      try {
+        const candidate = new URL(String(metadata.action_url ?? metadata.url ?? recordPath), appOrigin)
+        if (candidate.origin === appOrigin && !candidate.username && !candidate.password) actionUrl = candidate.toString()
+      } catch { /* Keep the source record fallback. */ }
+      const brand = await readConfiguredTenantBrand(adminClient, recipient.Company_ID)
+      const rendered = renderBrandedEmail({
+        subject: notification.CommNotif_Title,
+        preview: notification.CommNotif_Body,
+        title: notification.CommNotif_Title,
+        body: [notification.CommNotif_Body],
+        buttonLabel: metadata.action_label ? String(metadata.action_label) : "Open in Multideck",
+        buttonUrl: actionUrl,
+        eyebrow: metadata.eyebrow ? String(metadata.eyebrow) : "Workspace update",
+        footer: "You can change operational email preferences in Multideck settings.",
+        locale,
+        brand,
+      })
+      message = { subject: notification.CommNotif_Title, html: rendered.html, text: rendered.text }
+    }
     const delivery = await sendWithResend(
       recipient.User_Email,
-      notification.CommNotif_Title,
-      rendered.html,
-      rendered.text,
+      message.subject,
+      message.html,
+      message.text,
       `notification/${notification.CommNotif_ID}`,
+      message.attachments,
     )
 
     const { error: receiptError } = await adminClient
@@ -209,6 +276,7 @@ Deno.serve(async (request) => {
           email_delivery: {
             accepted_at: new Date().toISOString(),
             resend_id: delivery.id ?? null,
+            ...receiptDetails,
           },
         },
       })

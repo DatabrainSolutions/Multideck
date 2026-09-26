@@ -51,7 +51,7 @@ test("workspace reads cached intelligence while deterministic refresh remains se
   assert.match(workflowCore, /"intelligence"/)
   assert.match(workspaceReader, /readQuoteIntelligence/)
   assert.match(workflow, /action === "intelligence"/)
-  assert.doesNotMatch(workspaceReader, /gpt-5\.6-luna|governedModelFetch/)
+  assert.doesNotMatch(workspaceReader, /gpt-6-luna|governedModelFetch/)
   assert.match(clientApi, /subscribeQuoteIntelligence/)
   assert.match(clientApi, /postgres_changes/)
   assert.doesNotMatch(clientApi, /setInterval|poll/i)
@@ -60,7 +60,7 @@ test("workspace reads cached intelligence while deterministic refresh remains se
 })
 
 test("Luna is batched, governed, fingerprint-bound and limited to one eligible daily refinement", () => {
-  assert.match(worker, /gpt-5\.6-luna/)
+  assert.match(worker, /gpt-6-luna/)
   assert.match(worker, /reasoning: \{ effort: "medium" \}/)
   assert.match(worker, /type: "json_schema"/)
   assert.match(worker, /strict: true/)

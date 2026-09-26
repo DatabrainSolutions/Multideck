@@ -408,8 +408,8 @@ test("Dexter sends only the current response version into the next model turn", 
 test("the Edge Function keeps secrets server-side and uses the requested model lanes", () => {
   assert.match(edgeFunction, /Deno\.env\.get\("OPEN_API_KEY"\)/)
   assert.doesNotMatch(edgeFunction, /sk-proj-/)
-  assert.match(edgeFunction, /fast: \{ model: "gpt-5\.6-luna", effort: "medium" \}/)
-  assert.match(edgeFunction, /smart: ASTRA_RESPONSES_ENABLED \? \{ model: "gpt-6-astra", effort: "medium" \} : \{ model: "gpt-5\.6-luna", effort: "high" \}/)
+  assert.match(edgeFunction, /fast: \{ model: "gpt-6-luna", effort: "medium" \}/)
+  assert.match(edgeFunction, /smart: ASTRA_RESPONSES_ENABLED \? \{ model: "gpt-6-astra", effort: "medium" \} : \{ model: "gpt-6-luna", effort: "high" \}/)
   assert.match(edgeFunction, /worker: ASTRA_RESPONSES_ENABLED \? \{ model: "gpt-6-astra", effort: "high" \} : \{ model: "gpt-5\.6-terra", effort: "medium" \}/)
   assert.match(edgeFunction, /store: false/)
   assert.match(edgeFunction, /userClient\.auth\.getUser\(\)/)

@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type RefObject } from "react"
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react"
 import { ArrowLeft, Briefcase, Building2, CalendarDays, Check, Clock3, Copy, ExternalLink, MapPin, Palette, Pen01, Phone, TextQuote, Trash2, TriangleAlert, Users, Video, X } from "@/components/icons/hugeicons"
@@ -285,7 +286,7 @@ function MeetingDetailsCard({ event, onClose, onChanged, navigate, mobile = fals
             <MeetingColourPicker value={colour} onChange={setColour} disabled={saving} compact />
           </DetailRow>
           <DetailRow icon={TextQuote}><Textarea aria-label="Agenda" placeholder="Add an agenda" value={details.agenda} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, agenda: e.target.value }))} /></DetailRow>
-          <DetailRow icon={MapPin}><Input aria-label="Location" placeholder="Add a location" value={details.location} disabled={saving} onChange={(e) => setDetails((value) => ({ ...value, location: e.target.value }))} /></DetailRow>
+          <DetailRow icon={MapPin}><LocationAutocomplete hideLabel hint="" value={details.location} disabled={saving} onChange={location => setDetails(value => ({ ...value, location }))} /></DetailRow>
           </>
         ) : null}
 
