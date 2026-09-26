@@ -1,3 +1,4 @@
+import { AddressSearch } from "@/components/multideck/address-search"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
@@ -1105,6 +1106,7 @@ function FollowUpRecordDialog({
           {kind === "lead" ? (
             <div className="grid gap-3 border-t border-[var(--md-line)] pt-4">
               <span className="text-[12px] font-medium text-[var(--md-text)]">{t("Address")}</span>
+              <AddressSearch onSelect={address => { setAddressLine1(address.line1); setAddressLine2(address.line2); setTownCity(address.townCity); setCountyState(address.countyState); setPostZipCode(address.postZipCode); setCountryCode(address.countryCode) }} />
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
                   {t("Address line 1")}

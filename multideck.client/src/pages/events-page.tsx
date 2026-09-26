@@ -814,7 +814,7 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
               <TimeZoneSelect variant="field" value={draft.timezone} onChange={(timezone) => update({ timezone })} />
             </StepField>
             <StepField index={2}>
-              <LocationAutocomplete autoFocus value={draft.location} error={errors.location}
+              <LocationAutocomplete autoFocus maxLength={240} value={draft.location} error={errors.location}
                 onChange={location => { update({ location }); if (errors.location) setErrors(current => ({ ...current, location: "" })) }} />
             </StepField>
           </>

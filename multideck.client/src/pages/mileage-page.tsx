@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { MileageRouteMap } from '@/components/multideck/mileage-route-map'
 import { InlineNotice } from '@/components/multideck/inline-notice'
@@ -264,8 +265,8 @@ function MileageForm({ context, navigate, trip, onCancel }: { context: MileageCo
       {step === 'journey' && <div className="mileage-form-main"><fieldset disabled={!!busy || reviewing} className="mileage-fieldset"><legend>Journey</legend>
         <Field id="trip-date" label="Trip date"><Input id="trip-date" type="date" required max={today()} min="2020-04-06" value={draft.trip_date} onChange={e => patch({ trip_date: e.target.value })} /></Field>
         <div className="mileage-fields">
-        <Field id="trip-origin" label="From"><Input id="trip-origin" placeholder="Address or postcode" required maxLength={500} value={draft.origin} onChange={e => patch({ origin: e.target.value }, true)} /></Field>
-        <Field id="trip-destination" label="To"><Input id="trip-destination" placeholder="Address or postcode" required maxLength={500} value={draft.destination} onChange={e => patch({ destination: e.target.value }, true)} /></Field>
+        <LocationAutocomplete id="trip-origin" label="From" required hint="" value={draft.origin} onChange={origin => patch({ origin }, true)} />
+        <LocationAutocomplete id="trip-destination" label="To" required hint="" value={draft.destination} onChange={destination => patch({ destination }, true)} />
       </div>
       {draft.waypoints.map((stop, index) => <Field key={index} id={`trip-stop-${index}`} label={`Stop ${index + 1}`}><div className="flex gap-2"><Input id={`trip-stop-${index}`} required maxLength={500} value={stop} onChange={e => patch({ waypoints: draft.waypoints.map((value, i) => i === index ? e.target.value : value) }, true)} /><Button type="button" variant="ghost" aria-label={`Remove stop ${index + 1}`} onClick={() => patch({ waypoints: draft.waypoints.filter((_, i) => i !== index) }, true)}><X /></Button></div></Field>)}
       {draft.round_trip && <Field id="trip-return" label="Final stop · return to start"><Input id="trip-return" value={draft.origin} placeholder="Enter the starting address" readOnly /></Field>}

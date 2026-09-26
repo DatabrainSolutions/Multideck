@@ -638,3 +638,6 @@ verify_jwt = false
 # Validates Auth, active internal actor, Events.Manage and enabled company Events.
 [functions.event-location-search]
 verify_jwt = false
+
+[functions.address-search]
+verify_jwt = false

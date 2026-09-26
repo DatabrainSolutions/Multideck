@@ -1,3 +1,4 @@
+import { AddressSearch } from "@/components/multideck/address-search"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
@@ -196,6 +197,7 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
               </select>
               {customerReferenceState === "error" ? <span role="alert" className="flex flex-wrap items-center justify-between gap-2 text-[12px] font-normal text-[var(--md-red)]">{t("Organisation types could not be loaded. Try again before creating this account.")}<Button type="button" variant="outline" className="h-8" onClick={() => setCustomerReferenceReloadToken((value) => value + 1)}>{t("Try again")}</Button></span> : null}
             </label>
+            <AddressSearch onSelect={address => setNewCustomer(current => ({ ...current, addressLine1: address.line1, townCity: address.townCity, postZipCode: address.postZipCode, countryCode: address.countryCode }))} />
             <CustomerInput label={t("Address line 1")} value={newCustomer.addressLine1 ?? ""} onChange={(value) => updateNewCustomer("addressLine1", value || null)} />
             <div className="grid gap-4 sm:grid-cols-2">
               <CustomerInput label={t("Town or city")} value={newCustomer.townCity ?? ""} onChange={(value) => updateNewCustomer("townCity", value || null)} />

@@ -14,6 +14,7 @@ import companyEventComponentsStyles from "@/components/multideck/company-event-c
 import tearTicketSource from "@/components/multideck/tear-ticket.tsx?raw"
 import refineFrameSource from "@/components/multideck/refine-frame.tsx?raw"
 import locationAutocompleteSource from "@/components/multideck/location-autocomplete.tsx?raw"
+import addressSearchSource from "@/components/multideck/address-search.tsx?raw"
 import refineFrameStyles from "@/components/multideck/refine-frame.css?raw"
 import codeSlotsSource from "@/components/multideck/code-slots.tsx?raw"
 import codeSlotsCss from "@/components/multideck/code-slots.css?raw"
@@ -516,12 +517,22 @@ export const galleryComponents = [
   {
     id: "location-autocomplete",
     name: "Location Autocomplete",
-    category: "Events",
+    category: "Forms",
     description: "A free-text location with worldwide place, address and postcode suggestions as you type.",
-    details: "The place name leads, with its address beneath. Choose a suggestion to fill the field, or keep any typed location. Debounced queries, cancellation and session caching prevent stale suggestions. Arrow keys, Enter, Escape and Tab keep focus in the form. Search failure never blocks event creation.",
-    foundOn: [{ label: "Events · new event", route: "/events" }, { label: "Components", route: "/components?component=location-autocomplete" }],
+    details: "The centred place icon sits beside a name and address, with rounded hover rows. Choose a worldwide suggestion or retain free text. Saved address choices keep their record links. Supports multiline addresses, disabled fields, keyboard selection, debouncing and cancellation. Failure never blocks manual entry.",
+    foundOn: [{ label: "Events", route: "/events" }, { label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Trips & mileage", route: "/crm/trips" }, { label: "Calendar", route: "/calendar" }, { label: "Booking links", route: "/calendar/booking-links" }, { label: "Signature team", route: "/admin/email-signatures/team" }],
     componentCode: locationAutocompleteSource,
     usageCode: `<LocationAutocomplete value={location} onChange={setLocation} error={errors.location} />`,
+  },
+  {
+    id: "address-search",
+    name: "Address Search",
+    category: "Forms",
+    description: "Find an address worldwide and populate an editable structured address form.",
+    details: "Search by venue, street or postcode without choosing a country first. Only provider-returned street, city, region, postcode and ISO country are populated; missing details stay blank for review. Existing record identity, contacts, opening hours and save permissions remain unchanged. Use confirm for inline-save records.",
+    foundOn: [{ label: "Companies, customers and suppliers", route: "/crm/accounts" }, { label: "CRM lead creation", route: "/crm" }, { label: "Warehouse facilities", route: "/warehouse/facilities" }, { label: "Customs declarations", route: "/customs/declarations" }],
+    componentCode: addressSearchSource,
+    usageCode: `<AddressSearch onSelect={address => setDraft(current => ({ ...current, ...address }))} />`,
   },
   {
     id: "rsvp-choice",

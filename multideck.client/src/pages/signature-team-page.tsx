@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -6,7 +7,6 @@ import {
 } from "@/components/multideck/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useLanguage } from "@/i18n/language-provider";
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader";
 import { inboxRequest } from "@/lib/inbox-api";
@@ -67,7 +67,6 @@ function DetailCell(
     if (!dirty.current) setDraft(value);
   }, [value]);
   const overridden = Object.hasOwn(person.overrides, field);
-  const FieldInput = field === "address" ? Textarea : Input;
   async function save(next: string | null) {
     setBusy(true);
     setError("");
@@ -86,12 +85,13 @@ function DetailCell(
       className="min-w-[150px] py-2"
       onClick={(e) => e.stopPropagation()}
     >
-      <FieldInput
+      {field === "address" ? <LocationAutocomplete label={`Office address for ${person.profileValues.name}`} hideLabel hint="" multiline value={draft} disabled={busy} onChange={value => { dirty.current = true; setDraft(value) }} onBlur={() => { if (draft !== value) void save(draft) }} inputClassName="min-h-24 text-[12px]" /> : (
+      <Input
         aria-label={`${fields[field]} for ${person.profileValues.name}`}
         value={draft}
         maxLength={500}
         disabled={busy}
-        className={field === "address" ? "min-h-24 whitespace-pre-wrap text-[12px]" : "h-8 text-[12px]"}
+        className="h-8 text-[12px]"
         onChange={(e) => {
           dirty.current = true;
           setDraft(e.target.value);
@@ -104,7 +104,7 @@ function DetailCell(
           if (draft !== value) void save(draft);
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && field !== "address") e.currentTarget.blur();
+          if (e.key === "Enter") e.currentTarget.blur();
           if (e.key === "Escape") {
             cancelBlur.current = true;
             dirty.current = false;
@@ -113,7 +113,7 @@ function DetailCell(
             e.currentTarget.blur();
           }
         }}
-      />
+      />)}
       <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-[var(--md-subtle)]">
         <span>
           {busy ? "Saving…" : overridden ? "Admin override" : "From profile"}
@@ -323,7 +323,11 @@ export function SignatureTeamPage(
       {workspace ? <section className="space-y-4 rounded-xl bg-[var(--md-surface)] p-5 shadow-[var(--md-premium-stroke)]" aria-label="Company details">
         <div><h2 className="text-[15px] font-medium">Company details</h2><p className="mt-1 text-[12px] text-[var(--md-subtle)]">Shared details for the Company details signature block. Empty fields are hidden.</p></div>
         <div className="grid gap-4 sm:grid-cols-2">
-          {Object.entries({name:"Company name",website:"Company website",phone:"Company phone",email:"Company email",address:"Company address"}).map(([field,label])=>{const CompanyInput=field === "address" ? Textarea : Input; return <label key={field} className="grid gap-2 text-[12px]">{label}<CompanyInput value={(companyDraft ?? workspace.policy.company_details)?.[field] ?? (field === "website" ? workspace.policy.website : field === "name" ? workspace.people[0]?.company : "") ?? ""} onChange={event=>{setCompanySaved(false);setCompanyDraft(draft=>({...Object.fromEntries(["name","website","phone","email","address"].map(key=>[key,workspace.policy.company_details?.[key] ?? (key === "website" ? workspace.policy.website : key === "name" ? workspace.people[0]?.company : "") ?? ""])),...draft,[field]:event.target.value}));}} /></label>})}
+          {Object.entries({name:"Company name",website:"Company website",phone:"Company phone",email:"Company email",address:"Company address"}).map(([field,label]) => {
+            const value = (companyDraft ?? workspace.policy.company_details)?.[field] ?? (field === "website" ? workspace.policy.website : field === "name" ? workspace.people[0]?.company : "") ?? "";
+            const change = (value: string) => { setCompanySaved(false); setCompanyDraft(draft => ({ ...Object.fromEntries(["name","website","phone","email","address"].map(key => [key, workspace.policy.company_details?.[key] ?? (key === "website" ? workspace.policy.website : key === "name" ? workspace.people[0]?.company : "") ?? ""])), ...draft, [field]: value })); };
+            return field === "address" ? <LocationAutocomplete key={field} label={label} multiline value={value} onChange={change} disabled={companyBusy} /> : <label key={field} className="grid gap-2 text-[12px]">{label}<Input value={value} onChange={event => change(event.target.value)} /></label>;
+          })}
         </div>
         <div className="flex items-center gap-3"><Button disabled={!companyDraft || companyBusy} onClick={async()=>{setCompanyBusy(true);setError("");try{await request("/signatures/company",{method:"PATCH",body:JSON.stringify({...companyDraft,expectedRevision:workspace.policy.revision})});await load();setCompanyDraft(null);setCompanySaved(true);}catch(e){setError((e as Error).message);}finally{setCompanyBusy(false);}}}>{companyBusy ? "Saving…" : "Save company details"}</Button>{companySaved ? <span role="status" className="text-[12px] text-[var(--md-subtle)]">Company details saved</span> : null}</div>
       </section> : null}

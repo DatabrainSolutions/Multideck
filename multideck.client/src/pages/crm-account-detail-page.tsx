@@ -1,3 +1,4 @@
+import { AddressSearch } from "@/components/multideck/address-search"
 import { WarehousePricingWorkspace } from "@/components/multideck/warehouse-pricing-workspace"
 import { mileageRequest, type MileageVisit } from "@/lib/mileage-api"
 import { ContactEmailAction } from "@/components/multideck/contact-email-action"
@@ -534,6 +535,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
               </Zone>
 
               <Zone title={t("Main contact & address")}>
+                <div className="mb-3 max-w-2xl"><AddressSearch key={currentAccount.id} confirm onSelect={selected => patch(current => ({ address: { ...current.address, ...selected } }))} /></div>
                 <InlineFieldGroup compact>
                   <div className="grid items-start gap-x-6 gap-y-1 lg:grid-cols-2 xl:grid-cols-3">
                     <InlineField label="Company email" kind="email" value={address?.mainEmail ?? ""} onSave={value => saveAddressField("mainEmail", value)} />

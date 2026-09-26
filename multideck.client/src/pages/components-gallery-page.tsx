@@ -1,6 +1,8 @@
 import { EventAttendeeStrip, EventAudiencePicker, EventGuestList, EventTicket, EventsEmptyState, RsvpChoice, RsvpFormBuilder, RsvpFormFields } from "@/components/multideck/company-event-components"
 import { RefineFrame } from "@/components/multideck/refine-frame"
 import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
+import { AddressSearch } from "@/components/multideck/address-search"
+import { addressFieldsForCountry } from "@/lib/country-address-format"
 import { validateRsvpAnswers, type EventAttendee, type EventAudience, type EventsDirectory, type RsvpAnswers, type RsvpField, type RsvpStatus } from "@/lib/company-events-api"
 import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"
 import dexterActivityTrailSource from "@/components/multideck/dexter-activity-trail.tsx?raw"
@@ -329,6 +331,11 @@ function LocationAutocompletePreview() {
   return <div className="mx-auto w-full max-w-[440px]"><LocationAutocomplete value={location} onChange={setLocation} /></div>
 }
 
+function AddressSearchPreview() {
+  const [address, setAddress] = useState({ line1: "", line2: "", townCity: "", countyState: "", postZipCode: "", countryCode: "" })
+  return <div className="mx-auto grid w-full max-w-[520px] gap-4"><AddressSearch onSelect={setAddress} /><div className="grid grid-cols-2 gap-3">{addressFieldsForCountry(address.countryCode).map(field => <label key={field.key} className="grid gap-1 text-[12px]">{field.label}<Input value={address[field.key]} onChange={event => setAddress(current => ({ ...current, [field.key]: event.target.value }))} /></label>)}<label className="grid gap-1 text-[12px]">Country code<Input value={address.countryCode} onChange={event => setAddress(current => ({ ...current, countryCode: event.target.value }))} /></label></div></div>
+}
+
 function DexterActivityPreview({ completed = false }: { completed?: boolean }) {
   const [open, setOpen] = useState(true)
   const [step, setStep] = useState(completed ? 4 : 1)
@@ -427,7 +434,12 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Events",
     helper: "Company events and RSVPs",
-    ids: ["event-ticket", "refine-frame", "location-autocomplete", "rsvp-choice", "event-audience-picker", "event-attendee-strip", "event-guest-list", "rsvp-form-builder", "rsvp-form-fields", "events-empty-state"],
+    ids: ["event-ticket", "refine-frame", "rsvp-choice", "event-audience-picker", "event-attendee-strip", "event-guest-list", "rsvp-form-builder", "rsvp-form-fields", "events-empty-state"],
+  },
+  {
+    label: "Addresses",
+    helper: "Worldwide address entry",
+    ids: ["location-autocomplete", "address-search"],
   },
   {
     label: "Warehouse",
@@ -2532,6 +2544,7 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "refine-frame" ? <div className="mx-auto aspect-[21/9] w-full max-w-[560px] overflow-hidden rounded-[var(--md-radius-lg)]"><RefineFrame status="generating" src={null} /></div> : null}
       {id === "location-autocomplete" ? <LocationAutocompletePreview /> : null}
+      {id === "address-search" ? <AddressSearchPreview /> : null}
 
       {id === "rsvp-choice" ? <GalleryRsvpChoice /> : null}
       {id === "event-attendee-strip" ? (

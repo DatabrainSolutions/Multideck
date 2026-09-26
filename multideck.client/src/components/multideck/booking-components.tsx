@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { bookingLifecycle, bookingLifecycleLabel, type BookingLifecycle } from "@/lib/booking-lifecycle"
 import { bookingDraftConflicts, rebaseBookingDraft } from "@/lib/booking-draft"
@@ -2180,6 +2181,8 @@ function BookingCargoWiseField({
               {normalizedOptions.map((option) => <SelectItem key={option.id ?? option.value} value={option.value}>{t(option.label)}</SelectItem>)}
             </SelectContent>
           </Select>
+        ) : label === "Address" ? (
+          <LocationAutocomplete id={fieldId} label={label} hideLabel hint="" value={value} onChange={onChange} disabled={!editable} error={error} inputClassName="h-8 text-[12px]" />
         ) : (
           <AutoPopulatedInput
             autoPopulated={autoPopulated}
@@ -3732,6 +3735,7 @@ function BookingCustomsSourceEditor({
   const [uploading, setUploading] = useState<"commercial_invoice" | "packing_list" | null>(null)
 
   function field(key: keyof typeof form, label: string, options?: string[]) {
+    if (key === "exporterAddress" || key === "importerAddress") return <LocationAutocomplete label={label} hint="" value={form[key]} onChange={value => setForm(current => ({ ...current, [key]: value }))} multiline disabled={saving} />
     return (
       <label className="grid min-w-0 gap-1 text-[11px] text-[var(--md-text)]">
         <span>{t(label)}</span>

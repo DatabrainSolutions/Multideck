@@ -1,3 +1,4 @@
+import { AddressSearch } from "@/components/multideck/address-search"
 import { SpreadsheetImportReview } from "./spreadsheet-import-review"
 import { InlineNotice } from "./inline-notice"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
@@ -487,6 +488,7 @@ function FacilityDialog({
 
       {section === "address" ? (
         <div className="grid content-start gap-4">
+          <AddressSearch onSelect={address => setForm(current => ({ ...current, address1: address.line1, address2: address.line2, townCity: address.townCity, countyState: address.countyState, postZipCode: address.postZipCode, countryCode: address.countryCode }))} />
           <WarehouseFormField label="Address line 1" htmlFor="facility-address1" error={firstFieldError(errors, "Address1")}>
             <Input id="facility-address1" value={form.address1} onChange={(event) => update("address1", event.target.value)} className={fieldControlClass} />
           </WarehouseFormField>
