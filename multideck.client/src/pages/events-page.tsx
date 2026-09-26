@@ -36,13 +36,13 @@ function closedLabel(event: CompanyEvent, t: (text: string) => string) {
   return null
 }
 
-function TicketCard({ event, saving, imageFrameStatus, onRetryImage, onOpen, onRsvp }: { event: CompanyEvent; saving: boolean; imageFrameStatus: RefineFrameStatus | null; onRetryImage: () => void; onOpen: () => void; onRsvp: (status: RsvpStatus) => void }) {
+function TicketCard({ event, priority, saving, imageFrameStatus, onRetryImage, onOpen, onRsvp }: { event: CompanyEvent; priority: boolean; saving: boolean; imageFrameStatus: RefineFrameStatus | null; onRetryImage: () => void; onOpen: () => void; onRsvp: (status: RsvpStatus) => void }) {
   const { t } = useLanguage()
   const imageUrl = useEventImage(event.imagePath)
   return (
     <EventTicket
       title={event.title} startsAt={event.startsAt} endsAt={event.endsAt} timezone={event.timezone} location={event.location}
-      imageUrl={imageUrl} imageFrameStatus={imageFrameStatus} onRetryImage={onRetryImage} goingCount={event.goingCount} closedLabel={closedLabel(event, t)} muted={event.status !== "draft" && isEventOver(event)}
+      imageUrl={imageUrl} imagePriority={priority} imageFrameStatus={imageFrameStatus} onRetryImage={onRetryImage} goingCount={event.goingCount} closedLabel={closedLabel(event, t)} muted={event.status !== "draft" && isEventOver(event)}
       rsvp={saving ? "saving" : event.myRsvp?.status ?? "none"}
       onOpen={onOpen} onRsvp={onRsvp}
     />
@@ -144,13 +144,13 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
     )
   }
 
-  const ticketList = (list: CompanyEvent[]) => (
+  const ticketList = (list: CompanyEvent[], prioritise = true) => (
     <ol className="mx-auto grid w-full max-w-[760px] gap-6 sm:w-[92%] lg:w-[82%]">
       {list.map((event, index) => (
         <motion.li key={event.id} className="grid gap-2"
           initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
           transition={reduce ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.05) }}>
-          <TicketCard event={event} saving={savingIds.has(event.id)} imageFrameStatus={imageFrameStatus(event)} onRetryImage={() => void requestImage(event.id)} onOpen={() => { setRevealForm(false); navigate(`/events/${event.id}`) }} onRsvp={(status) => void rsvpFromTicket(event, status)} />
+          <TicketCard event={event} priority={prioritise && index < 2} saving={savingIds.has(event.id)} imageFrameStatus={imageFrameStatus(event)} onRetryImage={() => void requestImage(event.id)} onOpen={() => { setRevealForm(false); navigate(`/events/${event.id}`) }} onRsvp={(status) => void rsvpFromTicket(event, status)} />
           {imageErrors[event.id] ? <InlineNotice tone="error" action={<Button size="sm" variant="outline" onClick={() => void requestImage(event.id)}>{t("Try again")}</Button>}>{imageErrors[event.id]}</InlineNotice> : null}
           {cardError?.id === event.id ? (
             <InlineNotice tone="error" action={<Button size="sm" variant="outline" onClick={() => void rsvpFromTicket(event, cardError.status)}>{t("Try again")}</Button>}>{cardError.text}</InlineNotice>
@@ -195,7 +195,7 @@ export function EventsPage({ route, navigate }: { route: string; navigate: (path
               {drafts.length ? (
                 <section className="grid gap-4" aria-labelledby="events-drafts-heading">
                   <h2 id="events-drafts-heading" className="text-center text-[14px] font-medium text-[var(--md-text)]">{t("Drafts")} <span className="font-normal text-[var(--md-subtle)] [font-variant-numeric:tabular-nums]">{drafts.length}</span></h2>
-                  {ticketList(drafts)}
+                  {ticketList(drafts, shown.length === 0)}
                 </section>
               ) : null}
             </motion.div>

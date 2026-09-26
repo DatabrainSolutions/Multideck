@@ -16,6 +16,8 @@ import { BellToggle } from "@/components/multideck/bell-toggle"
 import { SpringCheck } from "@/components/multideck/spring-check"
 import { CodeSlots } from "@/components/multideck/code-slots"
 import { InlineNotice } from "@/components/multideck/inline-notice"
+import { NotificationCenter } from "@/components/multideck/notification-center"
+import type { WorkspaceNotification } from "@/lib/notification-api"
 import { SuggestedUpdateIllustration } from "@/components/multideck/suggested-update-illustration"
 import { SignatureBuilder } from "@/components/multideck/signature-builder"
 import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck/dexter-voice-controls"
@@ -429,7 +431,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Feedback",
     helper: "Status and notifications",
-    ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast"],
+    ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast", "notification-center"],
   },
   {
     label: "Events",
@@ -1867,6 +1869,60 @@ export function BookingRouteMilestonesPreview() {
   </div>
 }
 
+function previewNotification(id: string, minutesAgo: number, fields: Partial<WorkspaceNotification> & Pick<WorkspaceNotification, "title">): WorkspaceNotification {
+  return { id, body: "", priority: "normal", status: "unread", targetTable: null, targetId: null, metadata: {}, createdAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(), ...fields }
+}
+
+function previewNotifications(): WorkspaceNotification[] {
+  return [
+    previewNotification("n1", 4, { title: "Q-24018 customer response", body: "The customer accepted this quote. Its booking is ready.", targetTable: "CusQuote_Header", priority: "high", metadata: { event_type: "quote_response", decision: "accepted", eyebrow: "Customer quote response", action_label: "Open quote", action_url: "/quotes/Q-24018" } }),
+    previewNotification("n2", 38, { title: "Booking sent to Customs", body: "Sam Taylor sent booking MD-22481", targetTable: "Customs_Declarations", metadata: { event_type: "customs_handoff", eyebrow: "Customs handoff", action_label: "Open declaration", action_url: "/customs" } }),
+    previewNotification("n3", 95, { title: "Your task is ready to review", body: "# Kestrel air and ocean review\n\nThe overdue follow-up has been prepared for your approval. No workspace change has been made yet.", targetTable: "AI_DexterTaskAssignments", metadata: { action_url: "/agent-dexter" } }),
+    previewNotification("n4", 60 * 20, { title: "You were tagged in a note", body: "Alex Morgan tagged you on MD-22479: Can you confirm the revised cut-off with the haulier before 3pm?", status: "read", metadata: { event_type: "lifecycle_note_mention", eyebrow: "Operational note", action_label: "Open note", action_url: "/bookings" } }),
+    previewNotification("n5", 60 * 30, { title: "Mileage claim needs approval", body: "Jamie Patel · 23 Sep 2026 · GBP 42.60", targetTable: "mileage_trips", metadata: { event_type: "mileage_pending", action_label: "View trip", action_url: "/crm/trips" } }),
+    previewNotification("n6", 60 * 60 * 3, { title: "Inbox document needs a match", body: "Review Commercial invoice 4471.pdf in Suggested updates. Multideck could not find a booking with the reference on this invoice, so it is waiting for you to choose one.", targetTable: "AI_InboxSuggestedUpdates", status: "read" }),
+    previewNotification("n7", 60 * 24 * 12, { title: "You're invited: Winter team dinner", body: "Open Events to see the details and RSVP.", targetTable: "company_events", status: "read", metadata: { event_type: "company_event_invitation", eyebrow: "Company event", action_label: "View event", action_url: "/events" } }),
+  ]
+}
+
+function NotificationCenterPreview() {
+  const [scenario, setScenario] = useState<"Live" | "Loading" | "Error" | "Empty">("Live")
+  const [items, setItems] = useState(previewNotifications)
+  const [version, setVersion] = useState(0)
+  const unreadCount = items.filter((item) => item.status === "unread").length
+  const shown = scenario === "Live" ? items : []
+  return (
+    <div className="grid w-full justify-items-center gap-4">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <SegmentedControl ariaLabel="Preview state" options={["Live", "Loading", "Error", "Empty"] as const} value={scenario} onChange={(value) => { setScenario(value); setVersion((current) => current + 1) }} />
+        <Button type="button" variant="ghost" onClick={() => { setItems(previewNotifications()); setScenario("Live"); setVersion((current) => current + 1) }}>Reset</Button>
+      </div>
+      <div className="flex h-[600px] w-[400px] max-w-full flex-col overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
+        <NotificationCenter
+          key={version}
+          className="min-h-0 flex-1"
+          notifications={shown}
+          unreadCount={scenario === "Live" ? unreadCount : 0}
+          loaded={scenario !== "Loading"}
+          loading={scenario === "Loading"}
+          error={scenario === "Error" ? "Notifications could not be refreshed. Please try again." : null}
+          pending={false}
+          hasMore={false}
+          destinationFor={(notification) => typeof notification.metadata.action_url === "string" ? notification.metadata.action_url : null}
+          onOpen={(notification) => toast.info(`Preview opens ${notification.title}`)}
+          onToggleRead={(id, status) => setItems((current) => current.map((item) => item.id === id ? { ...item, status } : item))}
+          onDismiss={(id) => setItems((current) => current.filter((item) => item.id !== id))}
+          onMarkAllRead={() => setItems((current) => current.map((item) => ({ ...item, status: "read" })))}
+          onClearAll={() => setItems([])}
+          onLoadMore={() => undefined}
+          onRetry={() => setScenario("Live")}
+          onOpenSettings={() => toast.info("Preview opens notification settings")}
+        />
+      </div>
+    </div>
+  )
+}
+
 function CargoAllocationEditorPreview() {
   const cargoId = "00000000-0000-4000-8000-000000000001"
   const firstEquipment = "00000000-0000-4000-8000-000000000002"
@@ -2784,6 +2840,7 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "notification-center" ? <NotificationCenterPreview /> : null}
       {id === "toast" ? (
         <div className="relative flex min-h-[300px] w-full max-w-[760px] items-start justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button

@@ -75,6 +75,20 @@
         "multideck.client/tests/signature-preview/serve.mjs"
       ],
       "port": 3017
+    },
+    {
+      "name": "event-invite-email-previews",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8768",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "output/event-invite-email"
+      ],
+      "port": 8768
     }
   ]
 }

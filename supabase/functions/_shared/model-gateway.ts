@@ -112,8 +112,22 @@ export async function settleModelEgress(context: ModelGatewayContext, input: {
   providerRequestId?: string | null
   inputUnits?: number
   outputUnits?: number
+  responseUsage?: JsonObject
   errorCode?: string | null
 }) {
+  if (input.responseUsage) {
+    const { error } = await context.admin.rpc("multideck_dexter_settle_responses_egress", {
+      p_reservation_id: input.reservationId,
+      p_company_id: context.companyId,
+      p_user_id: context.userId,
+      p_outcome: input.outcome,
+      p_response_id: clean(input.providerRequestId, 240) || null,
+      p_usage: input.responseUsage,
+      p_error_code: clean(input.errorCode, 120) || null,
+    })
+    if (error) console.error("Dexter model egress settlement failed", { reservationId: input.reservationId, code: error.code })
+    return
+  }
   const { error } = await context.admin.rpc("multideck_dexter_settle_model_egress", {
     p_reservation_id: input.reservationId,
     p_company_id: context.companyId,
@@ -174,6 +188,8 @@ export async function governedModelFetch(context: ModelGatewayContext, input: {
       outcome: response.ok ? "succeeded" : "failed",
       providerRequestId: requestId,
       ...usage,
+      responseUsage: input.provider === "openai" && input.model === "gpt-6-luna" && payload?.usage && typeof payload.usage === "object"
+        ? payload.usage as JsonObject : undefined,
       errorCode: response.ok ? null : `provider_${response.status}`,
     })
     return response

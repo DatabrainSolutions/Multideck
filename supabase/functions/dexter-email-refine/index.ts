@@ -117,7 +117,7 @@ async function requestRefinement(
     Deno.env.get("OPENAI_API_KEY")?.trim() ||
     "";
   if (!apiKey) throw new Error("refinement_not_configured");
-  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-5.6-luna";
+  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-6-luna";
   const subject = cleanString(draft.subject, MAX_SUBJECT_CHARACTERS);
   const bodyText =
     typeof draft.bodyText === "string"

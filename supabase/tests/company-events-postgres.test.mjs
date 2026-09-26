@@ -22,10 +22,17 @@ const attendeeMigration = read('20260925170000_company_events_attendee_profiles'
 const invitationMigration = read('20260925180000_company_event_invitations').replace(/^begin;$/m, '').replace(/^commit;$/m, '')
 const notificationMigration = read('20260925190000_company_event_publish_notifications').replace(/^begin;$/m, '').replace(/^commit;$/m, '')
 const asyncImageMigration = read('20260926064912_company_event_async_images').replace(/^begin;$/m, '').replace(/^commit;$/m, '')
+const invitationEmailMigration = read('20260926150000_company_event_invitation_email').replace(/^begin;$/m, '').replace(/^commit;$/m, '')
 
 const fixture = `
   create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
   create schema auth; create schema storage; create schema booking_api;
+  -- Stand-ins for Supabase Vault and pg_net: secrets by name, and a record of every queued post.
+  create schema vault; create table vault.decrypted_secrets(name text primary key, decrypted_secret text);
+  insert into vault.decrypted_secrets values ('multideck_notification_email_endpoint','https://tenant.supabase.co/functions/v1/send-notification-email'),('multideck_notification_webhook_secret','webhook-secret');
+  create schema net; create table net.posts(id bigserial primary key, url text, body jsonb, headers jsonb);
+  create function net.http_post(url text, body jsonb default '{}', params jsonb default '{}', headers jsonb default '{}', timeout_milliseconds integer default 5000)
+  returns bigint language sql as $$ insert into net.posts(url, body, headers) values (url, body, headers) returning id $$;
   create function booking_api.has_permission(uuid,text) returns boolean language sql stable as $$select false$$;
   create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
   grant usage on schema auth, storage to authenticated;
@@ -72,6 +79,7 @@ const fixture = `
   ${invitationMigration}
   ${notificationMigration}
   ${asyncImageMigration}
+  ${invitationEmailMigration}
   grant usage on schema public to authenticated;
 `
 
@@ -288,7 +296,14 @@ begin
   perform public.company_event_set_status(people_id,'published',null);
   perform pg_temp.reset();
   if (select count(*) from public."Comm_Notifications" where "CommNotif_TargetTable"='company_events' and "CommNotif_TargetID"=people_id) <> 1 then raise exception 'People invitation notification count wrong'; end if;
-  if not exists(select 1 from public."Comm_Notifications" where "CommNotif_TargetID"=people_id and "CommNotif_UserID"=colleague and "CommNotif_MetadataJSON"->>'in_app_only'='true' and "CommNotif_MetadataJSON"->>'action_url'='/events/'||people_id) then raise exception 'People invitation notification wrong'; end if;
+  if not exists(select 1 from public."Comm_Notifications" where "CommNotif_TargetID"=people_id and "CommNotif_UserID"=colleague and not ("CommNotif_MetadataJSON" ? 'in_app_only') and "CommNotif_MetadataJSON"->>'event_type'='company_event_invitation' and "CommNotif_MetadataJSON"->>'action_url'='/events/'||people_id) then raise exception 'People invitation notification wrong'; end if;
+  -- Publishing queues exactly one invitation email per invitee, authenticated by the vault secret.
+  if (select count(*) from net.posts p join public."Comm_Notifications" n on n."CommNotif_ID" = (p.body->>'notificationId')::uuid where n."CommNotif_TargetID" = people_id) <> 1
+    or not exists(select 1 from net.posts p join public."Comm_Notifications" n on n."CommNotif_ID" = (p.body->>'notificationId')::uuid
+      where n."CommNotif_TargetID" = people_id and n."CommNotif_UserID" = colleague and p.body->>'action' = 'dispatch'
+        and p.headers->>'x-multideck-notification-secret' = 'webhook-secret' and p.url like 'https://tenant.supabase.co/%') then
+    raise exception 'People invitation email not queued once: %', (select jsonb_agg(body) from net.posts);
+  end if;
   if exists(select 1 from public."Comm_Notifications" where "CommNotif_TargetID"=people_id and "CommNotif_UserID" in (organiser,second,outsider)) then raise exception 'People invitation notification leaked'; end if;
   perform pg_temp.as_user(organiser);
   ev := public.company_event_save(null,0,jsonb_build_object('title','Warehouse breakfast','startsAt','2099-10-02T08:00:00Z','location','Yard','audience','departments','invitees',jsonb_build_array(dept)));
@@ -298,8 +313,71 @@ begin
   perform pg_temp.reset();
   if (select count(*) from public."Comm_Notifications" where "CommNotif_TargetTable"='company_events' and "CommNotif_TargetID"=dept_id) <> 1 then raise exception 'Department invitation notification count wrong'; end if;
   if not exists(select 1 from public."Comm_Notifications" where "CommNotif_TargetID"=dept_id and "CommNotif_UserID"=second) then raise exception 'Department invitation notification missing'; end if;
+  -- Only company event invitations are ever posted: watch alerts and other notifications stay unposted here.
+  if exists(select 1 from net.posts p left join public."Comm_Notifications" n on n."CommNotif_ID" = (p.body->>'notificationId')::uuid
+    where n."CommNotif_ID" is null or n."CommNotif_MetadataJSON"->>'event_type' <> 'company_event_invitation') then raise exception 'Unrelated notification email queued'; end if;
+  if (select count(*) from net.posts) <> (select count(*) from public."Comm_Notifications" where "CommNotif_MetadataJSON"->>'event_type'='company_event_invitation') then raise exception 'Invitation email count differs from invitations'; end if;
+  -- Historical in-app-only invitations are never replayed.
+  n := (select count(*) from net.posts);
+  insert into public."Comm_Notifications"("CommNotif_UserID","CommNotif_Title","CommNotif_TargetTable","CommNotif_TargetID","CommNotif_MetadataJSON")
+  values (second,'Old invitation','company_events',people_id,jsonb_build_object('event_type','company_event_invitation','in_app_only',true));
+  if (select count(*) from net.posts) <> n then raise exception 'In-app-only invitation was emailed'; end if;
+  delete from public."Comm_Notifications" where "CommNotif_Title" = 'Old invitation';
+
+  -- Send-time eligibility: the same visibility and invitation rules as every Events read.
+  ev := public.company_event_invitation_email_context(people_id, colleague, 'invitation');
+  if ev->>'id' <> people_id::text or ev->>'companyName' <> 'Jenkar' or ev->>'hostName' <> 'Olu Organiser' or ev->>'location' <> 'Deli' or (ev->>'formFieldCount')::int <> 0 then raise exception 'Invitation context wrong: %', ev; end if;
+  if public.company_event_invitation_email_context(people_id, second, 'invitation') is not null then raise exception 'Uninvited colleague would be emailed'; end if;
+  if public.company_event_invitation_email_context(people_id, organiser, 'invitation') is not null then raise exception 'Uninvited organiser would be emailed an invitation'; end if;
+  if public.company_event_invitation_email_context(people_id, outsider, 'invitation') is not null then raise exception 'Foreign-company user would be emailed'; end if;
+  if public.company_event_invitation_email_context(people_id, stranger, 'invitation') is not null then raise exception 'Unknown user would be emailed'; end if;
+  if public.company_event_invitation_email_context(dept_id, second, 'invitation') is null then raise exception 'Department invitee missing context'; end if;
+  perform pg_temp.expect_error(format('select public.company_event_invitation_email_context(%L,%L,''broadcast'')', people_id, colleague), 'Unsupported');
+  -- Test renders: organisers may test drafts and published events; invitees only published events they can see.
+  ev := public.company_event_save(null,0,jsonb_build_object('title','Draft social','startsAt','2099-11-01T18:00:00Z','location','Bar'));
+  if public.company_event_invitation_email_context((ev->>'id')::uuid, organiser, 'test') is null then raise exception 'Organiser cannot test a draft'; end if;
+  if public.company_event_invitation_email_context((ev->>'id')::uuid, organiser, 'invitation') is not null then raise exception 'Draft would be emailed as an invitation'; end if;
+  if public.company_event_invitation_email_context((ev->>'id')::uuid, colleague, 'test') is not null then raise exception 'Colleague can test a draft'; end if;
+  if public.company_event_invitation_email_context(people_id, colleague, 'test') is null then raise exception 'Invitee cannot test their own invitation'; end if;
+  if public.company_event_invitation_email_context(people_id, second, 'test') is not null then raise exception 'Uninvited colleague can test a hidden event'; end if;
+  if public.company_event_invitation_email_context(people_id, outsider, 'test') is not null then raise exception 'Foreign-company user can test'; end if;
+  -- Saving a draft never queues email.
+  if exists(select 1 from net.posts where (body->>'notificationId')::uuid in (select "CommNotif_ID" from public."Comm_Notifications" where "CommNotif_TargetID" = (ev->>'id')::uuid)) then raise exception 'Draft queued email'; end if;
+  -- Browser roles cannot read eligibility or the webhook secret.
+  perform pg_temp.as_user(colleague);
+  perform pg_temp.expect_error(format('select public.company_event_invitation_email_context(%L,%L,''test'')', people_id, colleague), 'permission denied');
+  perform pg_temp.expect_error('select public."Comm_GetNotificationWebhookSecret"()', 'permission denied');
+  perform pg_temp.expect_error('select private.company_event_invitation_email_dispatch()', 'permission denied');
+  perform pg_temp.reset();
+  if public."Comm_GetNotificationWebhookSecret"() <> 'webhook-secret' then raise exception 'Webhook secret reader missing'; end if;
+  -- Where the established workspace dispatcher posts every notification, the event trigger stands down (one post, not two).
+  create function pg_temp.generic_dispatch() returns trigger language plpgsql as $g$begin insert into net.posts(url, body) values ('generic', jsonb_build_object('notificationId', new."CommNotif_ID")); return new; end$g$;
+  create trigger "Comm_Notifications_DispatchEmail" after insert on public."Comm_Notifications" for each row execute function pg_temp.generic_dispatch();
+  perform pg_temp.as_user(organiser);
+  w := (public.company_event_save(null,0,jsonb_build_object('title','Pizza','startsAt','2099-11-02T12:00:00Z','location','Kitchen','audience','people','invitees',jsonb_build_array(colleague)))->>'id')::uuid;
+  perform public.company_event_set_status(w,'published',null);
+  perform pg_temp.reset();
+  if (select count(*) from net.posts p join public."Comm_Notifications" n on n."CommNotif_ID" = (p.body->>'notificationId')::uuid where n."CommNotif_TargetID" = w) <> 1
+    or exists(select 1 from net.posts p join public."Comm_Notifications" n on n."CommNotif_ID" = (p.body->>'notificationId')::uuid where n."CommNotif_TargetID" = w and p.url <> 'generic') then
+    raise exception 'Event trigger did not stand down for the workspace dispatcher';
+  end if;
+  drop trigger "Comm_Notifications_DispatchEmail" on public."Comm_Notifications";
+  -- Without the vault endpoint nothing is queued, and publishing still succeeds.
+  delete from vault.decrypted_secrets where name = 'multideck_notification_email_endpoint';
+  perform pg_temp.as_user(organiser);
+  w := (public.company_event_save(null,0,jsonb_build_object('title','Bake off','startsAt','2099-11-03T12:00:00Z','location','Kitchen','audience','people','invitees',jsonb_build_array(colleague)))->>'id')::uuid;
+  if public.company_event_set_status(w,'published',null)->>'status' <> 'published' then raise exception 'Publish failed without email configuration'; end if;
+  perform pg_temp.reset();
+  if not exists(select 1 from public."Comm_Notifications" where "CommNotif_TargetID" = w and "CommNotif_UserID" = colleague) then raise exception 'In-app invitation missing without email configuration'; end if;
+  if exists(select 1 from net.posts p join public."Comm_Notifications" n on n."CommNotif_ID" = (p.body->>'notificationId')::uuid where n."CommNotif_TargetID" = w) then raise exception 'Email queued without an endpoint'; end if;
+  insert into vault.decrypted_secrets values ('multideck_notification_email_endpoint','https://tenant.supabase.co/functions/v1/send-notification-email');
   perform pg_temp.as_user(colleague);
   if public.company_event_get(people_id)->>'invitedCount' <> '1' or public.company_event_get(people_id) ? 'invitees' then raise exception 'Invitee view wrong'; end if;
+  perform public.company_event_rsvp(people_id,'going',null,gen_random_uuid());
+  -- Calendar consumes this same actor-scoped list, then projects Going only.
+  if not exists(select 1 from jsonb_array_elements(public.company_events_list()) e where e->>'id' = people_id::text and e#>>'{myRsvp,status}' = 'going') then raise exception 'Going event missing from calendar source'; end if;
+  perform public.company_event_rsvp(people_id,'maybe',null,gen_random_uuid());
+  if exists(select 1 from jsonb_array_elements(public.company_events_list()) e where e->>'id' = people_id::text and e#>>'{myRsvp,status}' = 'going') then raise exception 'Maybe retained a Going calendar source'; end if;
   perform public.company_event_rsvp(people_id,'going',null,gen_random_uuid());
   perform pg_temp.expect_error(format('select public.company_event_get(%L)', dept_id), 'not available');
   if exists(select 1 from jsonb_array_elements(public.company_events_list()) e where e->>'id' = dept_id::text) then raise exception 'Uninvited colleague sees department event'; end if;

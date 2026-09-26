@@ -105,7 +105,7 @@ async function draftReferenceRule(
   const locale = cleanString(body.locale, 16) || "en"
   const apiKey = Deno.env.get("OPEN_API_KEY")?.trim() || Deno.env.get("OPENAI_API_KEY")?.trim() || ""
   if (!apiKey) throw new QuoteWorkflowError(503, "Dexter rule drafting is not configured for this workspace.")
-  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-5.6-luna"
+  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-6-luna"
   const requestBody: Row = {
     model,
     reasoning: { effort: "medium" },
@@ -833,7 +833,7 @@ async function prepareQuoteEmailDraft(
 
   const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim() || Deno.env.get("OPEN_API_KEY")?.trim() || ""
   if (!apiKey) return { ...fallback, personalised: false, sampleCount: samples.length, model: null }
-  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-5.6-luna"
+  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-6-luna"
   const input = JSON.stringify({
     facts: {
       reference: context.reference,
@@ -928,7 +928,7 @@ async function refineQuoteEmailDraft(
 
   const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim() || Deno.env.get("OPEN_API_KEY")?.trim() || ""
   if (!apiKey) throw new QuoteWorkflowError(503, "Dexter email refinement is not configured for this workspace.")
-  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-5.6-luna"
+  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-6-luna"
   const input = JSON.stringify({
     instruction,
     scope: hasSelection ? "selection" : "whole_draft",

@@ -21,6 +21,9 @@ import codeSlotsCss from "@/components/multideck/code-slots.css?raw"
 import mileageRouteMapSource from "@/components/multideck/mileage-route-map.tsx?raw"
 import inlineNoticeSource from "@/components/multideck/inline-notice.tsx?raw"
 import inlineNoticeStyles from "@/components/multideck/inline-notice.css?raw"
+import notificationCenterSource from "@/components/multideck/notification-center.tsx?raw"
+import notificationCenterStyles from "@/components/multideck/notification-center.css?raw"
+import notificationPresentationSource from "@/lib/notification-presentation.ts?raw"
 import suggestedUpdateIllustrationSource from "@/components/multideck/suggested-update-illustration.tsx?raw"
 import suggestedUpdateIllustrationStyles from "@/components/multideck/suggested-update-illustration.css?raw"
 import signatureBuilderSource from "@/components/multideck/signature-builder.tsx?raw"
@@ -1021,6 +1024,16 @@ export const galleryComponents = [
     foundOn: [{ label: "Customers", route: "/customers" }, { label: "Bookings", route: "/bookings" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `const toastLifetimeMs = 5_000\n\nexport function Toaster(props) {\n  return (\n    <Sonner\n      position="bottom-right"\n      duration={toastLifetimeMs}\n      visibleToasts={4}\n      gap={12}\n      closeButton\n      className="toaster group md-toaster"\n      icons={{\n        success: <ToastStatusIcon src={toastSuccessIcon} kind="success" />,\n        info: <ToastStatusIcon src={toastGeneralIcon} kind="general" />,\n        warning: <ToastStatusIcon src={toastErrorIcon} kind="warning" />,\n        error: <ToastStatusIcon src={toastErrorIcon} kind="error" />,\n        close: <span>Dismiss</span>,\n      }}\n      style={{\n        "--normal-bg": "color-mix(in srgb, var(--md-surface) 94%, transparent)",\n        "--normal-text": "var(--md-ink)",\n        "--normal-border": "transparent",\n        "--border-radius": "var(--md-radius-2xl)",\n        "--width": "min(520px, calc(100vw - 32px))",\n        "--md-toast-duration": "5000ms",\n      }}\n      toastOptions={{\n        classNames: {\n          toast: "cn-toast md-toast",\n          icon: "md-toast-icon",\n          title: "md-toast-title",\n          description: "md-toast-description",\n          actionButton: "md-toast-action",\n          closeButton: "md-toast-close",\n        },\n      }}\n      {...props}\n    />\n  )\n}`,
     usageCode: `<Toaster />\n\ntoast.success("Customer CSV prepared", {\n  description: "The export is ready to download.",\n})\n\n// Triggering several toasts shows a compact stack. Hover or focus it to expand.\ntoast.warning("Declaration needs attention", {\n  description: "Two checks still need review.",\n})`,
+  },
+  {
+    id: "notification-center",
+    name: "Notification Centre",
+    category: "Feedback",
+    description: "The bell's panel: unread work first, each notification shown as what it is about, with its next step one click away.",
+    details: "Opens on Unread when anything is waiting, otherwise All. Each row names its category (quote response, customs, mention, Dexter task, mileage, event and so on) with a matching icon and colour, the title, the record it concerns, a two-line preview and the producer's own action such as Open quote. Unread rows are in colour with a dot; reading one draws the colour back into the dot and dims the text, and in the Unread view it stays where it is until the view is reopened, so it is never lost from under the pointer. Rows are grouped Today, Yesterday, Earlier this week and Older. Hover or focus swaps the time for Mark as read / Mark as unread and Clear; touch keeps both visible. A row with nowhere to go opens its full message in place. Arrow keys move between rows; right-click opens the same actions. Mark all read cascades down the list. Clear all is kept in the options menu because it cannot be undone. Loading uses the dot grid, errors keep a retry, and reduced motion keeps every state change as a short fade.",
+    foundOn: [{ label: "Sidebar · notification bell", route: "/" }, { label: "Components", route: "/components?component=notification-center" }],
+    componentCode: `${notificationCenterSource}\n\n/* notification-presentation.ts */\n${notificationPresentationSource}\n\n/* notification-center.css */\n${notificationCenterStyles}`,
+    usageCode: `const feed = useWorkspaceNotifications()\n\n<NotificationCenter\n  notifications={feed.notifications}\n  unreadCount={feed.unreadCount}\n  loaded={feed.loaded}\n  loading={feed.loading}\n  error={feed.error}\n  pending={feed.pending}\n  hasMore={feed.hasMore}\n  destinationFor={(notification) => workspaceNotificationDestination(notification, window.location.origin)}\n  onOpen={(_notification, url) => navigate(url)}\n  onToggleRead={(id, status) => void feed.updateNotificationStatus(id, status)}\n  onDismiss={(id) => void feed.dismissNotification(id)}\n  onMarkAllRead={() => void feed.markAllRead()}\n  onClearAll={() => void feed.clearNotifications()}\n  onLoadMore={() => void feed.loadMore()}\n  onRetry={() => void feed.refresh()}\n  onOpenSettings={() => navigate("/settings?tab=notifications")}\n/>`,
   },
   {
     id: "metric-card",

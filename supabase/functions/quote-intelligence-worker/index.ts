@@ -5,7 +5,7 @@ import { refreshQuoteIntelligence, type QuoteIntelligenceSnapshot } from "../quo
 type JsonObject = Record<string, unknown>
 type ClaimedJob = { quote_id: string; company_id: string; requested_by: string | null; reason_code: string }
 
-const MODEL = "gpt-5.6-luna"
+const MODEL = "gpt-6-luna"
 const PROMPT_VERSION = "quote-intelligence-refinement-2026-08-20-v1"
 const ALLOWED_CARD_KEYS = new Set([
   "historicalWinRate", "wonPriceBand", "suggestedPitch", "marginHeadroom",

@@ -25,6 +25,8 @@ export interface TearTicketProps {
   stub?: ReactNode;
   image?: string;
   imageAlt?: string;
+  imageLoading?: "eager" | "lazy";
+  imagePriority?: "high" | "low" | "auto";
   scrim?: boolean;
   imageRadius?: number;
   orientation?: TearTicketOrientation;
@@ -217,6 +219,8 @@ const TearTicket: React.FC<TearTicketProps> = ({
   stub = null,
   image = '',
   imageAlt = '',
+  imageLoading = 'eager',
+  imagePriority = 'auto',
   scrim = true,
   imageRadius = 8,
   orientation = 'horizontal',
@@ -703,6 +707,9 @@ const TearTicket: React.FC<TearTicketProps> = ({
                     className="absolute max-w-none object-cover [top:calc(var(--tt-parallax)*-1)] [left:calc(var(--tt-parallax)*-1)] [width:calc(100%_+_var(--tt-parallax)*2)] [height:calc(100%_+_var(--tt-parallax)*2)] [-webkit-user-drag:none] [transition:filter_700ms_ease]"
                     src={image}
                     alt={imageAlt}
+                    loading={imageLoading}
+                    fetchPriority={imagePriority}
+                    decoding="async"
                     draggable={false}
                     style={reduce ? undefined : { transform: art }}
                   />

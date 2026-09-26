@@ -249,7 +249,9 @@ export async function setEventStatus(eventId: string, status: "published" | "can
 
 /** The request id makes a retried or double-submitted RSVP save exactly once. */
 export async function saveRsvp(eventId: string, status: RsvpStatus, answers: RsvpAnswers | null, requestId: string) {
-  return normaliseEvent(await rpc("company_event_rsvp", { p_event_id: eventId, p_status: status, p_answers: answers, p_request_id: requestId }))
+  const event = normaliseEvent(await rpc("company_event_rsvp", { p_event_id: eventId, p_status: status, p_answers: answers, p_request_id: requestId }))
+  window.dispatchEvent(new Event("multideck:calendar:changed"))
+  return event
 }
 
 async function detectImageType(file: File) {
@@ -291,25 +293,67 @@ export async function startEventImage(eventId: string) {
 }
 
 const signedUrls = new Map<string, { url: string; expires: number }>()
+const imageRequests = new Map<string, Promise<string>>()
+const imageQueue = new Map<string, { resolve: (url: string) => void; reject: (error: unknown) => void }>()
 
-export async function eventImageUrl(path: string) {
+function cachedEventImage(path: string | null) {
+  if (!path) return null
   const cached = signedUrls.get(path)
   if (cached && cached.expires > Date.now() + 60_000) return cached.url
-  const { data, error } = await client().storage.from(eventImageBucket).createSignedUrl(path, 3600)
-  if (error || !data?.signedUrl) throw new EventsApiError("The event image could not be loaded.", "network")
-  signedUrls.set(path, { url: data.signedUrl, expires: Date.now() + 3600_000 })
-  return data.signedUrl
+  signedUrls.delete(path)
+  return null
+}
+
+async function flushEventImages() {
+  const batch = new Map(imageQueue)
+  imageQueue.clear()
+  // One authenticated request per group, rather than one round trip per ticket.
+  const entries = [...batch]
+  await Promise.all(Array.from({ length: Math.ceil(entries.length / 100) }, async (_, index) => {
+    const group = entries.slice(index * 100, (index + 1) * 100)
+    try {
+      const expires = Date.now() + 3600_000
+      const { data, error } = await client().storage.from(eventImageBucket).createSignedUrls(group.map(([path]) => path), 3600)
+      if (error) throw error
+      const results = new Map(data?.map((item) => [item.path, item]))
+      for (const [path, request] of group) {
+        const item = results.get(path)
+        if (item?.signedUrl && !item.error) {
+          signedUrls.set(path, { url: item.signedUrl, expires })
+          request.resolve(item.signedUrl)
+        } else request.reject(new EventsApiError("The event image could not be loaded.", "network"))
+      }
+    } catch (error) {
+      group.forEach(([, request]) => request.reject(error))
+    }
+  }))
+}
+
+export function eventImageUrl(path: string): Promise<string> {
+  const cached = cachedEventImage(path)
+  if (cached) return Promise.resolve(cached)
+  const pending = imageRequests.get(path)
+  if (pending) return pending
+  const request = new Promise<string>((resolve, reject) => {
+    const schedule = imageQueue.size === 0
+    imageQueue.set(path, { resolve, reject })
+    if (schedule) queueMicrotask(() => { void flushEventImages() })
+  }).finally(() => { imageRequests.delete(path) })
+  imageRequests.set(path, request)
+  return request
 }
 
 export function useEventImage(path: string | null) {
-  const [url, setUrl] = useState<string | null>(() => (path ? signedUrls.get(path)?.url ?? null : null))
+  const [, refresh] = useState(0)
+  const cached = cachedEventImage(path)
   useEffect(() => {
-    if (!path) { setUrl(null); return }
+    if (!path || cached) return
     let current = true
-    eventImageUrl(path).then((next) => { if (current) setUrl(next) }, () => { if (current) setUrl(null) })
+    eventImageUrl(path).then(() => { if (current) refresh((value) => value + 1) }, () => { if (current) refresh((value) => value + 1) })
     return () => { current = false }
-  }, [path])
-  return url
+  }, [path, cached])
+  // A changed/removed image must never display the previous event's artwork.
+  return cached
 }
 
 export function isEventOver(event: Pick<CompanyEvent, "startsAt" | "endsAt">, now = Date.now()) {

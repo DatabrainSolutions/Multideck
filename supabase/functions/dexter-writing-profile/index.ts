@@ -194,7 +194,7 @@ function outputText(payload: JsonObject) {
 async function generateStructuredProfile(admin: Db, operator: Operator, messages: SourceMessage[]) {
   const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim() || Deno.env.get("OPEN_API_KEY")?.trim() || ""
   if (!apiKey) throw new Error("luna_not_configured")
-  const model = Deno.env.get("INBOX_LUNA_MODEL")?.trim() || "gpt-5.6-luna"
+  const model = Deno.env.get("INBOX_LUNA_MODEL")?.trim() || "gpt-6-luna"
   const source = messages.map((message, index) => `<sample index="${index + 1}">\n${message.bodyText}\n</sample>`).join("\n\n").slice(0, 60_000)
   const requestBody = {
       model,
