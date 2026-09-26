@@ -13,6 +13,7 @@ import companyEventComponentsSource from "@/components/multideck/company-event-c
 import companyEventComponentsStyles from "@/components/multideck/company-event-components.css?raw"
 import tearTicketSource from "@/components/multideck/tear-ticket.tsx?raw"
 import refineFrameSource from "@/components/multideck/refine-frame.tsx?raw"
+import locationAutocompleteSource from "@/components/multideck/location-autocomplete.tsx?raw"
 import refineFrameStyles from "@/components/multideck/refine-frame.css?raw"
 import codeSlotsSource from "@/components/multideck/code-slots.tsx?raw"
 import codeSlotsCss from "@/components/multideck/code-slots.css?raw"
@@ -511,6 +512,16 @@ export const galleryComponents = [
     foundOn: [{ label: "Events · event ticket", route: "/events" }, { label: "Components", route: "/components?component=refine-frame" }],
     componentCode: `${refineFrameSource}\n\n/* refine-frame.css */\n${refineFrameStyles}`,
     usageCode: `<RefineFrame status={imageStatus} src={imageUrl} aspectRatio="21 / 9" onRetry={() => startEventImage(event.id)} />`,
+  },
+  {
+    id: "location-autocomplete",
+    name: "Location Autocomplete",
+    category: "Events",
+    description: "A free-text location with worldwide place, address and postcode suggestions as you type.",
+    details: "The place name leads, with its address beneath. Choose a suggestion to fill the field, or keep any typed location. Debounced queries, cancellation and session caching prevent stale suggestions. Arrow keys, Enter, Escape and Tab keep focus in the form. Search failure never blocks event creation.",
+    foundOn: [{ label: "Events · new event", route: "/events" }, { label: "Components", route: "/components?component=location-autocomplete" }],
+    componentCode: locationAutocompleteSource,
+    usageCode: `<LocationAutocomplete value={location} onChange={setLocation} error={errors.location} />`,
   },
   {
     id: "rsvp-choice",

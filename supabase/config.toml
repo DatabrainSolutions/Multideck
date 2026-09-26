@@ -634,3 +634,7 @@ verify_jwt = false
 # Validates Auth, active CRM access and current scoped evidence before analysis.
 [functions.crm-sales-insights]
 verify_jwt = false
+
+# Validates Auth, active internal actor, Events.Manage and enabled company Events.
+[functions.event-location-search]
+verify_jwt = false

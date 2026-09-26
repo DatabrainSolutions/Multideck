@@ -1,5 +1,6 @@
 import { EventAttendeeStrip, EventAudiencePicker, EventGuestList, EventTicket, EventsEmptyState, RsvpChoice, RsvpFormBuilder, RsvpFormFields } from "@/components/multideck/company-event-components"
 import { RefineFrame } from "@/components/multideck/refine-frame"
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { validateRsvpAnswers, type EventAttendee, type EventAudience, type EventsDirectory, type RsvpAnswers, type RsvpField, type RsvpStatus } from "@/lib/company-events-api"
 import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"
 import dexterActivityTrailSource from "@/components/multideck/dexter-activity-trail.tsx?raw"
@@ -323,6 +324,11 @@ import { TicketAttachmentsPreview } from "@/components/multideck/ticket-attachme
 import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
 
+function LocationAutocompletePreview() {
+  const [location, setLocation] = useState("")
+  return <div className="mx-auto w-full max-w-[440px]"><LocationAutocomplete value={location} onChange={setLocation} /></div>
+}
+
 function DexterActivityPreview({ completed = false }: { completed?: boolean }) {
   const [open, setOpen] = useState(true)
   const [step, setStep] = useState(completed ? 4 : 1)
@@ -421,7 +427,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Events",
     helper: "Company events and RSVPs",
-    ids: ["event-ticket", "refine-frame", "rsvp-choice", "event-audience-picker", "event-attendee-strip", "event-guest-list", "rsvp-form-builder", "rsvp-form-fields", "events-empty-state"],
+    ids: ["event-ticket", "refine-frame", "location-autocomplete", "rsvp-choice", "event-audience-picker", "event-attendee-strip", "event-guest-list", "rsvp-form-builder", "rsvp-form-fields", "events-empty-state"],
   },
   {
     label: "Warehouse",
@@ -2525,6 +2531,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "refine-frame" ? <div className="mx-auto aspect-[21/9] w-full max-w-[560px] overflow-hidden rounded-[var(--md-radius-lg)]"><RefineFrame status="generating" src={null} /></div> : null}
+      {id === "location-autocomplete" ? <LocationAutocompletePreview /> : null}
 
       {id === "rsvp-choice" ? <GalleryRsvpChoice /> : null}
       {id === "event-attendee-strip" ? (

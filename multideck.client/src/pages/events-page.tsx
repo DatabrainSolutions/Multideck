@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import { RefineFrame, type RefineFrameStatus } from "@/components/multideck/refine-frame"
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 
 export const eventDetailRoutePattern = /^\/events\/([0-9a-f-]{36})$/
 
@@ -813,12 +814,8 @@ function EventWizard({ target, onClose, onSaved }: { target: CompanyEvent | "new
               <TimeZoneSelect variant="field" value={draft.timezone} onChange={(timezone) => update({ timezone })} />
             </StepField>
             <StepField index={2}>
-              <label className={labelClass}>
-                {t("Location")}
-                <Input autoFocus value={draft.location} maxLength={240} placeholder={t("e.g. Roof terrace, London office")} aria-invalid={errors.location ? true : undefined}
-                  onChange={(change) => { update({ location: change.target.value }); if (errors.location) setErrors((current) => ({ ...current, location: "" })) }} />
-                {fieldError(errors.location)}
-              </label>
+              <LocationAutocomplete autoFocus value={draft.location} error={errors.location}
+                onChange={location => { update({ location }); if (errors.location) setErrors(current => ({ ...current, location: "" })) }} />
             </StepField>
           </>
         ) : null}
