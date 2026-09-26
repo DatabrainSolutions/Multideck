@@ -1,5 +1,6 @@
 import { resolveCustomsInvoiceDeclaration } from "../../../supabase/functions/_shared/customs-invoices.mts"
 import { restoreCustomsInvoiceHeaders } from "@/lib/customs-invoices"
+import { restoreBookingCustomsPrefill } from "@/lib/booking-customs-prefill"
 import { createExportDeclarationItem, createStandaloneDeclarationDraft, type DeclarationDirection, type ExportDeclarationItem, type StandaloneExportDraft } from "@/lib/customs-declaration"
 import { invalidateRegisterPages, readCachedRegisterPage, type RegisterSort } from "@/lib/application-data-api"
 import type { UserProfilePhoto } from "@/lib/profile-photo"
@@ -259,9 +260,13 @@ export async function loadStandaloneDeclarationDraft(
   if (declarationError) throw declarationError
   if (itemsError) throw itemsError
 
-  const saved = record(declaration.CUST_GenericPayloadJSON)
+  const saved = scope === "job-related"
+    ? restoreBookingCustomsPrefill(record(declaration.CUST_GenericPayloadJSON), declaration.CUST_SourceSnapshot)
+    : record(declaration.CUST_GenericPayloadJSON)
   const items = ((itemRows ?? []) as SavedItemRow[]).map((row, index) => {
-    const item = record(row.CUSTI_ItemPayloadJSON)
+    const item = scope === "job-related"
+      ? record((restoreBookingCustomsPrefill({ items: [row.CUSTI_ItemPayloadJSON] }, declaration.CUST_SourceSnapshot).items as unknown[])?.[0])
+      : record(row.CUSTI_ItemPayloadJSON)
     return {
       ...createExportDeclarationItem(index + 1),
       ...item,

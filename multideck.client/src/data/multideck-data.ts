@@ -2017,10 +2017,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Unified Quote Charges Workspace",
     category: "Operations",
     description: "One configurable quote-charges table for supplier cost, customer sell, both currencies, both exchange rates, base values, and profit.",
-    details: "Use when pricing a quote. Operators can search suppliers and customers by code or name, switch currencies with correct symbols and decimal precision, see base conversions immediately, customise columns, and use freight calculators without leaving the selected charge line.",
-    foundOn: [{ label: "Quote charges", route: "/quotes/Q-19158" }, { label: "Components", route: "/components?component=unified-quote-charges-workspace" }],
+    details: "Shared by Quotes, Provisional planning and operational Booking charges. Operators can search parties, choose currencies, inspect base conversions and use freight calculators. Booking callers supply rowReadOnlyReason to protect financially linked or unverified historical rows without locking unrelated editable lines.",
+    foundOn: [{ label: "Quote charges", route: "/quotes/Q-19158" }, { label: "Booking planning charges (backend capability required)", route: "/bookings/jd0991142" }, { label: "Operational Booking charges (backend capability required)", route: "/bookings/ji0991146" }, { label: "Components", route: "/components?component=unified-quote-charges-workspace" }],
     componentCode: `export function UnifiedQuoteChargesWorkspace({ rows, onRowsChange, currencies, parties, exchangeRates, baseCurrency }) {\n  const resolvedRows = rows.map((row) => resolveChargeRow(row, exchangeRates, baseCurrency))\n\n  return (\n    <div>\n      <DataTable\n        columns={quoteChargeColumns}\n        rows={resolvedRows}\n        storageKey="unified-quote-charges"\n        selectedRowKey={selectedRowId}\n        onRowClick={(row) => setSelectedRowId(row.id)}\n      />\n      <div className="selected-line-layout">\n        <SelectedChargeDetails row={selectedRow} />\n        <ChargeCalculator />\n      </div>\n    </div>\n  )\n}`,
-    usageCode: `<UnifiedQuoteChargesWorkspace\n  rows={chargeRows}\n  onRowsChange={setChargeRows}\n  currencies={currenciesFromSysCurrency}\n  parties={customersAndSuppliers}\n  exchangeRates={jobExchangeRates}\n  baseCurrency="GBP"\n/>`,
+    usageCode: `<UnifiedQuoteChargesWorkspace\n  rows={chargeRows}\n  onRowsChange={setChargeRows}\n  currencies={currenciesFromSysCurrency}\n  parties={customersAndSuppliers}\n  exchangeRates={jobExchangeRates}\n  baseCurrency="GBP"\n  rowReadOnlyReason={(id) => protectedChargeReasons.get(id)}\n/>`,
   },
   {
     id: "quote-search-builder",

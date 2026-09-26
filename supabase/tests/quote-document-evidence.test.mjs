@@ -53,6 +53,40 @@ const quote = {
 }
 const version = { CusQuoteVersion_Number: 1, CusQuoteVersion_CreatedAt: '2026-09-04T12:00:00Z', CusQuoteVersion_SnapshotJSON: { quote } }
 
+test('PDF journey labels follow saved mode for every direction without changing evidence', async () => {
+  for (const mode of ['air', ' AIR ', 'sea', 'ocean', 'road', 'rail', 'other', 'multimodal', '', null]) {
+    for (const direction of ['import', 'export', 'domestic', 'cross_trade']) {
+      const saved = { ...version, CusQuoteVersion_SnapshotJSON: { quote: { ...quote, mode, direction } } }
+      const before = structuredClone(saved)
+      const data = await buildDataset(admin, context, saved)
+      const expected = ['air', ' AIR '].includes(mode) ? ['Departure airport', 'Arrival airport']
+        : ['sea', 'ocean'].includes(mode) ? ['Port of loading', 'Port of discharge'] : ['Origin', 'Destination']
+      assert.deepEqual(data.journey.slice(1, 3).map(item => item.label), expected, `${mode}/${direction}`)
+      assert.deepEqual(data.journey.slice(1, 3).map(item => item.value), ['GBFXT', 'CNSHA'])
+      const html = renderQuotePdfHtml(data)
+      for (const label of expected) assert.ok(html.includes(label))
+      if (!['sea', 'ocean'].includes(mode)) assert.doesNotMatch(html, /Port of loading|Port of discharge/)
+      assert.deepEqual(saved, before)
+    }
+  }
+})
+
+test('new PDF equipment follows the selected service without changing saved history', async () => {
+  for (const [mode, shipmentType, legs, expected] of [
+    ['air', 'AIR', [], false], ['air', 'FCL', [], false], ['sea', 'LCL', [], false],
+    ['sea', 'FCL - FCL', [], true], ['rail', 'CONTAINER', [], true],
+    ['multimodal', 'FCL', [{ mode: 'sea' }], true], ['warehouse', 'WAREHOUSE', [], false],
+    ['', '', [], true],
+  ]) {
+    const saved = { ...version, CusQuoteVersion_SnapshotJSON: { quote: { ...quote, mode, shipmentType,
+      shipmentFacts: { ...quote.shipmentFacts, container: '1 × 40GP; 1 × 20GP', routingLegs: legs } } } }
+    const before = structuredClone(saved)
+    const data = await buildDataset(admin, context, saved)
+    assert.equal(data.shipment[1].value.includes('40GP'), expected, `${mode}/${shipmentType}`)
+    assert.deepEqual(saved, before)
+  }
+})
+
 test('new PDFs use the saved Admin logo and embed its exact bytes without an expiring URL', async () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><path d="M0 0h20v10H0z" fill="#316FAB"/></svg>'
   const brand = { Brand_LogoFilePath: 'old.png', Brand_TemplateSettingsJSON: {

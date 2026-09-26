@@ -74,6 +74,9 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
   await validateDeclaration(admin, actor, input.declarationId)
   await expireOldExtractions(admin)
   const sourceHash = await timings.measure("source_hash", () => sha256Hex(input.bytes))
+  if (input.documentType === "commercial_invoice") {
+    await timings.measure("retain_original", () => retainOriginalInvoice(admin, actor, input, sourceHash))
+  }
   let prepared = await timings.measure("conversion", () => prepareInput(input))
   let preparedHash = await timings.measure("prepared_hash", () => sha256Hex(prepared.pdfBytes))
   const schemaVersion = documentSchemaVersion(input.documentType)
@@ -271,6 +274,27 @@ function prepareInput(input: InvoiceInput, forceSpreadsheetNormalisation = false
     maximumInputBytes: MAX_COMMERCIAL_INVOICE_BYTES,
     forceSpreadsheetNormalisation,
   })
+}
+
+async function retainOriginalInvoice(admin: SupabaseClient, actor: Actor, input: InvoiceInput, sourceHash: string) {
+  if (!input.declarationId) throw new HttpError(409, "Save the declaration before importing its invoice.")
+  // Never use the expiring preview object for evidence: retain the exact upload,
+  // including spreadsheet/Word/image sources before PDF normalisation.
+  const path = `v2/customs/original-invoices/${input.declarationId}/${input.extractionId}/${sourceHash}`
+  const { error: uploadError } = await admin.storage.from(documentBucket).upload(path, input.bytes, {
+    contentType: input.mimeType, upsert: false, cacheControl: "0",
+  })
+  if (uploadError && String(uploadError.statusCode) !== "409") {
+    throw new HttpError(503, "The original invoice could not be retained. Nothing was sent for extraction; please retry.")
+  }
+  const { error } = await admin.rpc("customs_retain_original_invoice", {
+    caller_auth_user_id: actor.authUserId, requested_declaration_id: input.declarationId,
+    requested_upload_id: input.extractionId, requested_file_name: input.fileName,
+    requested_mime_type: input.mimeType, requested_size: input.bytes.byteLength, requested_sha256: sourceHash,
+  })
+  // A failed registration leaves a private object for an idempotent retry. Never
+  // delete here: an uncertain response may have committed its permanent record.
+  if (error) throw new HttpError(503, "The original invoice could not be linked. Please retry before importing lines.")
 }
 
 async function validateDeclaration(admin: SupabaseClient, actor: Actor, declarationId: string | null) {

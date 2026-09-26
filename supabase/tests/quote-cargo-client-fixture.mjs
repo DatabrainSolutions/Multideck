@@ -21,7 +21,7 @@ const ast = ts.createSourceFile('quotes-page.tsx', source, ts.ScriptTarget.Lates
 // React tree or replacing any cargo/direction/date transformation with a mock.
 const names = ['newQuoteDraft', 'quoteUuidPattern', 'millisecondsPerCalendarDay', 'uuidOrNull',
   'quoteContainerRequests', 'quoteRoutingLegs', 'compactQuoteFacts', 'quoteDirectionForSave',
-  'calculatedDirectionForQuote', 'quoteSavePayload', 'quoteRecordFromWorkspace',
+  'calculatedDirectionForQuote', 'quoteSavePayload', 'quoteRecordFromWorkspace', 'quoteChargesFromWorkspace',
   'quoteLifecyclePresentation', 'quoteTransitDays', 'quoteDateInputValue', 'getDateInputValue', 'salesRepresentativeValue',
   'quoteChargeSupplierIdentity', 'quoteChargeParties', 'newQuoteChargeRow']
 const statements = names.map(name => {
@@ -31,7 +31,7 @@ const statements = names.map(name => {
   assert.ok(node, `Production mapping ${name} must exist`)
   return node.getText(ast)
 })
-export const mapping = evaluate(`${statements.join('\n')}\nexport { newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace, salesRepresentativeValue, quoteChargeSupplierIdentity, quoteChargeParties, newQuoteChargeRow, uuidOrNull };`, { ...cargo, ...freight, salesRepresentativeOptions: ['AM1 - Maya Stone'] })
+export const mapping = evaluate(`${statements.join('\n')}\nexport { newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace, quoteChargesFromWorkspace, salesRepresentativeValue, quoteChargeSupplierIdentity, quoteChargeParties, newQuoteChargeRow, uuidOrNull };`, { ...cargo, ...freight, salesRepresentativeOptions: ['AM1 - Maya Stone'] })
 let openingExpression
 let chargeUpdateFunction
 function visit(node) {

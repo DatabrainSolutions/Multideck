@@ -87,6 +87,9 @@ export type QuoteWorkflowCharge = {
   id: string
   code?: string | null
   chargeCodeId?: string | null
+  customerId?: string | null
+  costRoeSource?: "job" | "override"
+  sellRoeSource?: "job" | "override"
   description: string
   supplierId?: string | null
   costCurrency: string

@@ -18,3 +18,11 @@ test('provisioned schema contains the managed charge write boundary', () => {
   assert.match(migration, /revoke all on function quote_api\.save_quote\(uuid,uuid,jsonb\) from service_role/)
   assert.match(migration, /revoke all on function public\.booking_workflow_apply_quote_sync_confirmed\(uuid,uuid,uuid,jsonb,boolean\) from service_role/)
 })
+
+test('Booking responses retain provisional state and historical charge codes alongside managed identities', () => {
+  const edge = read('functions/bookings-workflow/index.ts')
+  assert.match(edge, /code: codeById\.get\(chargeCodeId\) \?\? charge\.code \?\? null/)
+  assert.match(edge, /action === "attachment-access"/)
+  assert.match(edge, /return jsonResponse\(request, await withProvisionalState\(admin, userId, await withManagedChargeCodes\(admin, data\)\)\)/)
+  assert.match(edge, /workspace: await withProvisionalState\(admin, userId, await withManagedChargeCodes\(admin, data\.workspace\)\)/)
+})

@@ -12,7 +12,7 @@ import {
 async function onePagePdf() {
   const document = await PDFDocument.create()
   document.addPage([595, 842])
-  return await document.save({ useObjectStreams: false })
+  return new Uint8Array(await document.save({ useObjectStreams: false }))
 }
 
 function decodeTemplate(value: unknown) {
@@ -265,7 +265,7 @@ Deno.test("coverage accepts visual line wrapping inside a source identifier but 
   assertEquals(missing.passed, false)
 })
 
-Deno.test("validates every accepted source extension against its MIME type and binary signature", () => {
+Deno.test("validates every accepted source extension against its MIME type and binary signature", async () => {
   const textBytes = new TextEncoder()
   const zip = (marker: string) => textBytes.encode(`PK\u0003\u0004 ${marker}`)
   const legacyWorkbook = XLSX.utils.book_new()
@@ -294,12 +294,12 @@ Deno.test("validates every accepted source extension against its MIME type and b
   }
   assertEquals(validateInvoiceDocumentSource(cases[1][2], "invoice.xlsx", "application/vnd.ms-excel").extension, ".xlsx")
   assertEquals(validateInvoiceDocumentSource(cases[3][2], "invoice.csv", "text/plain").extension, ".csv")
-  assertRejects(
+  await assertRejects(
     async () => { validateInvoiceDocumentSource(legacyXls, "invoice.doc", "application/msword") },
     InvoiceDocumentPreparationError,
     "does not match",
   )
-  assertRejects(
+  await assertRejects(
     async () => { validateInvoiceDocumentSource(legacyDoc, "invoice.xls", "application/vnd.ms-excel") },
     InvoiceDocumentPreparationError,
     "does not match",
@@ -389,19 +389,19 @@ Deno.test("preserves quoted UTF-8 CSV newlines and rejects mismatched, encrypted
     Deno.env.delete("CARBONE_API_TOKEN")
   }
 
-  assertRejects(
+  await assertRejects(
     async () => { validateInvoiceDocumentSource(csv, "invoice.pdf", "application/pdf") },
     InvoiceDocumentPreparationError,
     "does not match",
   )
   const fakeMacro = new TextEncoder().encode("PK\u0003\u0004 xl/ [Content_Types].xml vbaProject.bin")
-  assertRejects(
+  await assertRejects(
     async () => { validateInvoiceDocumentSource(fakeMacro, "invoice.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") },
     InvoiceDocumentPreparationError,
     "Macro-enabled",
   )
   const fakeEncrypted = new TextEncoder().encode("PK\u0003\u0004 xl/ [Content_Types].xml EncryptedPackage EncryptionInfo")
-  assertRejects(
+  await assertRejects(
     async () => { validateInvoiceDocumentSource(fakeEncrypted, "invoice.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") },
     InvoiceDocumentPreparationError,
     "Password-protected",
@@ -409,7 +409,7 @@ Deno.test("preserves quoted UTF-8 CSV newlines and rejects mismatched, encrypted
   const legacyMacroContainer = XLSX.CFB.utils.cfb_new()
   XLSX.CFB.utils.cfb_add(legacyMacroContainer, "_VBA_PROJECT", new Uint8Array([1, 2, 3]))
   const legacyMacro = new Uint8Array(XLSX.CFB.write(legacyMacroContainer, { type: "buffer" }))
-  assertRejects(
+  await assertRejects(
     async () => { validateInvoiceDocumentSource(legacyMacro, "invoice.xls", "application/vnd.ms-excel") },
     InvoiceDocumentPreparationError,
     "Macro-enabled",

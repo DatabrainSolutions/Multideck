@@ -1,15 +1,25 @@
 import { emptyCustomsInvoiceHeader } from "../functions/_shared/customs-invoices.mts"
 import assert from "node:assert/strict"
 import test from "node:test"
-import {
+import { build } from "../../multideck.client/node_modules/esbuild/lib/main.js"
+import { fileURLToPath } from "node:url"
+
+// Edge TypeScript is ESM, but the repository root is CommonJS. Compile the
+// actual modules for this Node runner without changing production packaging.
+async function loadEdgeModule(path) {
+  const result = await build({ entryPoints: [fileURLToPath(new URL(path, import.meta.url))],
+    bundle: true, write: false, platform: "node", format: "esm", target: "node24" })
+  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`)
+}
+const {
   MAX_INVOICE_EVIDENCE_BLOCKS,
   invoiceOcrDocument,
   MAX_INVOICE_EVIDENCE_BUDGET_CHARS,
   normalizeCommercialInvoiceAnnotation,
   normalizeFinancePurchaseAnnotation,
   normalizeInvoiceEvidencePages,
-} from "../functions/_shared/customs-invoice-ocr.ts"
-import { redactModelSecrets } from "../functions/_shared/model-gateway.ts"
+} = await loadEdgeModule("../functions/_shared/customs-invoice-ocr.ts")
+const { redactModelSecrets } = await loadEdgeModule("../functions/_shared/model-gateway.ts")
 
 test("OCR document bytes survive gateway redaction without passing storage credentials", () => {
   const bytes = Uint8Array.from({ length: 100_000 }, (_, index) => index % 256)

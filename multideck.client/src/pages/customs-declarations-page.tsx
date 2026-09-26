@@ -70,6 +70,7 @@ import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsC
 import { assignCustomsDeclaration, getCustomsDeclarationAssignment, invalidateCustomsDeclarationPages, listCustomsDeclarationAssignees, listCustomsDeclarationDraftsPage, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveJobRelatedDeclarationDraft, saveStandaloneDeclarationDraft, type CustomsAssignee, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { readCustomsInvoiceImportRecovery, hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
 import { fetchCustomsDeclarationPdf, getCustomsDeclarationDocument, type CustomsDeclarationDocument } from "@/lib/customs-declaration-document-api"
+import { listDeclarationSourceAttachments, getDeclarationSourceAttachmentAccess, type DeclarationSourceAttachment } from "@/lib/booking-workflow-api"
 import { customsStatusPollDelay, isTerminalCustomsStatus, shouldPollCustomsStatus, shouldPollCustomsSubmission } from "@/lib/customs-status-lifecycle"
 import { getCustomer, listAccountsPage, type ApiCustomer, type ApiCustomerDetail } from "@/lib/customer-api"
 import { deleteICustomsProviderDraft, getICustomsCommodityDetails, getICustomsDeclarationState, ICustomsApiError, refreshICustomsDeclaration, saveICustomsProviderDraft, searchICustomsCommodities, startICustomsProviderDraft, submitICustomsDeclaration, validateICustomsDeclaration, type ICustomsCommodityCertificate, type ICustomsCommodityDetail, type ICustomsCommoditySuggestion, type ICustomsProviderIssue, type ICustomsWorkspaceState } from "@/lib/icustoms-api"
@@ -969,6 +970,59 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
   const [iCustomsIssues, setICustomsIssues] = useState<string[]>([])
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const [pdfOpen, setPdfOpen] = useState(false)
+  const [sourceAttachments, setSourceAttachments] = useState<DeclarationSourceAttachment[]>([])
+  const [sourceAttachmentsLoading, setSourceAttachmentsLoading] = useState(false)
+  const [sourceAttachmentsError, setSourceAttachmentsError] = useState<string | null>(null)
+  const [sourceAttachmentsAttempt, setSourceAttachmentsAttempt] = useState(0)
+  const [sourcePreview, setSourcePreview] = useState<{ id: string; name: string; url?: string; mimeType?: string; error?: string } | null>(null)
+  const [sourceDownloading, setSourceDownloading] = useState(false)
+  const sourceRequest = useRef(0)
+  useEffect(() => {
+    let cancelled = false
+    sourceRequest.current += 1
+    setSourcePreview(null)
+    setSourceAttachments([])
+    setSourceAttachmentsError(null)
+    if (!declarationId) return
+    setSourceAttachmentsLoading(true)
+    listDeclarationSourceAttachments(declarationId).then(result => {
+      if (!cancelled) setSourceAttachments(result.documents)
+    }).catch(cause => {
+      if (!cancelled) setSourceAttachmentsError(cause instanceof Error ? cause.message : "The source documents could not be loaded.")
+    }).finally(() => { if (!cancelled) setSourceAttachmentsLoading(false) })
+    return () => { cancelled = true; sourceRequest.current += 1 }
+  }, [declarationId, sourceAttachmentsAttempt, invoiceImportOpen])
+
+  async function openSourceAttachment(id: string, name: string) {
+    if (!declarationId) return
+    const request = ++sourceRequest.current
+    setSourcePreview({ id, name })
+    try {
+      const access = await getDeclarationSourceAttachmentAccess(declarationId, id)
+      if (request === sourceRequest.current) setSourcePreview({ id, name: access.fileName, url: access.signedUrl, mimeType: access.mimeType })
+    } catch (cause) {
+      if (request === sourceRequest.current) setSourcePreview({ id, name, error: cause instanceof Error ? cause.message : t("The attachment could not be opened. Please try again.") })
+    }
+  }
+
+  async function downloadSourceAttachment(id: string) {
+    if (!declarationId || sourceDownloading) return
+    setSourceDownloading(true)
+    try {
+      const access = await getDeclarationSourceAttachmentAccess(declarationId, id)
+      const response = await fetch(access.signedUrl, { credentials: "omit", signal: AbortSignal.timeout(60_000) })
+      if (!response.ok) throw new Error(t("The attachment could not be downloaded. Please try again."))
+      const blob = await response.blob()
+      if (!blob.size || (access.mimeType === "application/pdf" && await blob.slice(0, 5).text() !== "%PDF-")) throw new Error(t("The stored attachment could not be read."))
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url; link.download = access.fileName
+      document.body.appendChild(link); link.click(); link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("The attachment could not be downloaded. Please try again."))
+    } finally { setSourceDownloading(false) }
+  }
   const [pdfBusy, setPdfBusy] = useState(false)
   const [pdfDocument, setPdfDocument] = useState<CustomsDeclarationDocument | null>(null)
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
@@ -1104,22 +1158,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
         setDraft((current) => current.multideckReference === saved.reference ? current : { ...current, multideckReference: saved.reference })
         setAutosaveStatus("saved")
         setCreatingInitialDraft(false)
-        void startICustomsProviderDraft(saved.id, `start-${saved.id}`).then(async () => {
-          try {
-            const state = await getICustomsDeclarationState(saved.id)
-            if (editorMountedRef.current && activeDeclarationIdRef.current === saved.id) setICustomsState(state)
-          } catch (reason) {
-            console.error("The newly started iCustoms draft state could not be refreshed.", reason)
-          }
-        }, (reason: unknown) => {
-            console.error("The initial iCustoms draft could not be created.", reason)
-            const needsFields = reason instanceof ICustomsApiError && reason.issues.length > 0
-            toast.warning(t(needsFields ? "Draft saved — customs details still needed" : "Draft saved — customs connection needs attention"), {
-              description: t(needsFields ? "Continue completing the declaration. Review will show what is still needed before customs submission." : "Your work is saved in Multideck. Open Review to check the customs connection and retry."),
-              duration: Infinity,
-              closeButton: true,
-            })
-        })
+        // Starting a local draft is not authority to create an iCustoms draft.
         navigate(`${registerPath}/${saved.id}`)
       } catch (reason) {
         console.error("The initial Customs draft could not be created.", reason)
@@ -1336,37 +1375,15 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
           toast.warning(t("Draft saved. Calculation history could not be confirmed."), { description: t("Your live estimate is separate. Check calculation history before saving an override.") })
         }
       }
-      const providerStatus = iCustomsState?.declaration.provider?.status
-      const hasEditableProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft) && (providerWasRejected || !["submitted", "accepted", "released", "cleared", "cancelled"].includes(providerStatus ?? ""))
-      if (hasEditableProviderDraft) {
-        setICustomsBusy("draft")
-        const validation = await validateICustomsDeclaration(saved.id)
-        if (!validation.ready) {
-          setICustomsIssues(validation.issues)
-          setProviderSaveFailed(true)
-          toast.warning(t("Saved in Multideck, but the customs test draft needs attention"), { description: `${validation.issues.length} ${t("customs checks remain")}` })
-          return
-        }
-        await saveICustomsProviderDraft(saved.id, crypto.randomUUID())
-        const state = await getICustomsDeclarationState(saved.id)
-        setICustomsState(state)
-        toast.success(t(providerWasRejected ? "Draft saved and corrected iCustoms draft created" : "Draft saved and updated in iCustoms test mode"), { description: saved.reference })
-      } else if (!iCustomsState?.declaration.hasCustomsDraft) {
-        setICustomsBusy("draft")
-        await startICustomsProviderDraft(saved.id, `start-${saved.id}`)
-        const state = await getICustomsDeclarationState(saved.id)
-        setICustomsState(state)
-        toast.success(t("Draft saved and iCustoms draft created"), { description: saved.reference })
-      } else {
-        toast.success(t("Draft saved"), { description: saved.reference })
-      }
+      // Saving operational work never creates or updates an external provider draft.
+      toast.success(t("Draft saved in Multideck"), { description: saved.reference })
       if (returnToRegister) navigate(registerPath)
     } catch (reason) {
-      console.error("The Customs draft or its provider mirror could not be saved.", reason)
+      console.error("The Multideck Customs draft could not be saved.", reason)
       if (savedLocally) {
         setProviderSaveFailed(true)
         if (reason instanceof ICustomsApiError) setICustomsIssues(reason.issues)
-        toast.warning(t("Saved in Multideck — customs draft needs attention"), { description: t("Open Review to check the customs details and retry. Your saved work is intact.") })
+        toast.warning(t("Draft saved in Multideck"), { description: t("Your saved work is intact. Refresh this page before continuing.") })
       } else {
         setAutosaveStatus("error")
       }
@@ -1895,6 +1912,29 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId, scope = "s
           {tab !== "review" ? <Button type="button" variant="outline" onClick={() => moveToSection(editorTabs[editorTabs.findIndex(entry => entry.id === tab) + 1].id)}>{t("Next")}: {editorTabs[editorTabs.findIndex(entry => entry.id === tab) + 1].label}<ArrowLeft className="size-3.5 rotate-180" /></Button> : null}
         </div>
       </footer> : null}
+      {declarationId && (viewMode === "tabs" ? ["documents", "invoices"].includes(tab) : ["general", "invoices"].includes(formTab)) ? (
+        <section aria-label={t("Source documents")} className="grid min-w-0 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+          <h2 className="text-[14px] font-medium">{t("Source documents")}</h2>
+          {sourceAttachmentsLoading ? <DotGridLoader label={t("Loading source documents")} /> : sourceAttachmentsError ? <div role="alert" className="flex flex-wrap items-center gap-2 text-[13px]">
+            <p>{sourceAttachmentsError}</p><Button variant="outline" onClick={() => setSourceAttachmentsAttempt(value => value + 1)}>{t("Try again")}</Button>
+          </div> : sourceAttachments.length ? sourceAttachments.map(doc => <div key={doc.id} className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1"><p className="text-[12px] text-[var(--md-subtle)]">{t(doc.typeCode === "commercial_invoice_original" ? "Original commercial invoice" : doc.typeCode === "commercial_invoice" ? "Commercial invoice" : "Packing list")}{doc.typeCode !== "commercial_invoice_original" && doc.version ? ` · ${t("Version")} ${doc.version}` : ""}</p><p className="break-all text-[13px]" data-i18n-skip>{doc.fileName || t("File unavailable")}</p></div>
+            <div className="flex gap-2"><Button size="sm" variant="outline" disabled={!doc.available} aria-label={`${t("View")}: ${doc.fileName}`} onClick={() => void openSourceAttachment(doc.id, doc.fileName)}>{t("View")}</Button>
+              <Button size="sm" variant="outline" disabled={!doc.available || sourceDownloading} aria-label={`${t("Download")}: ${doc.fileName}`} onClick={() => void downloadSourceAttachment(doc.id)}>{t("Download")}</Button></div>
+          </div>) : <p className="text-[13px] text-[var(--md-subtle)]">{t("No source documents linked to this declaration.")}</p>}
+        </section>
+      ) : null}
+      <Dialog open={sourcePreview !== null} onOpenChange={open => { if (!open) { sourceRequest.current += 1; setSourcePreview(null) } }}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-5xl">
+          <DialogHeader><DialogTitle className="break-all" data-i18n-skip>{sourcePreview?.name}</DialogTitle><DialogDescription>{t("Source document retained for this declaration. The original file is unchanged.")}</DialogDescription></DialogHeader>
+          {sourcePreview?.error ? <div role="alert"><p>{sourcePreview.error}</p><Button variant="outline" onClick={() => void openSourceAttachment(sourcePreview.id, sourcePreview.name)}>{t("Try again")}</Button></div>
+            : sourcePreview?.url ? sourcePreview.mimeType === "application/pdf" ? <iframe title={`${t("Source document")}: ${sourcePreview.name}`} src={sourcePreview.url} className="h-[65vh] w-full rounded-[var(--md-radius-lg)] bg-white" />
+              : sourcePreview.mimeType?.startsWith("image/") ? <img src={sourcePreview.url} alt={sourcePreview.name} className="max-h-[65vh] w-full object-contain" />
+                : <p>{t("Preview is not available for this file type. Download it to open it.")}</p>
+            : <div className="grid place-items-center py-8"><DotGridLoader label={t("Opening attachment…")} /></div>}
+          <DialogFooter><Button disabled={!sourcePreview?.url || sourceDownloading} onClick={() => sourcePreview && void downloadSourceAttachment(sourcePreview.id)}>{t(sourceDownloading ? "Downloading…" : "Download")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={submitDialogOpen} onOpenChange={setSubmitDialogOpen}>
         <DialogContent className="rounded-[var(--md-radius-xl)] sm:max-w-md">
           <DialogHeader>
@@ -3946,7 +3986,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
         {provider?.errorMessage && !providerIssues.length ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs service needs attention")}</strong>{t(provider.errorMessage)}</span></div> : null}
         {iCustomsIssues.length ? <div role="alert" className="mt-4"><p className="text-[12px] font-medium text-[var(--md-red)]">{t("Customs checks still need attention")}</p><ul className="mt-2 space-y-1.5 ps-4 text-[11px] leading-4 text-[var(--md-text)]">{iCustomsIssues.slice(0, 8).map((issue) => <li key={issue} className="list-disc">{translateCustomsMessage(issue, t)}</li>)}</ul></div> : null}
 
-        {providerLifecycleStarted ? null : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || provider?.status === "queued"} onClick={onSaveDraft}><Save className="size-4" />{t(savingDraft || iCustomsBusy === "draft" ? "Saving draft" : "Save draft")}</Button>{!hasProviderDraft ? <Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || provider?.status === "queued"} onClick={onCreateDraft}><RefreshCw className={cn("size-4", (iCustomsBusy === "draft" || provider?.status === "queued") && "animate-spin motion-reduce:animate-none")} />{t(provider?.status === "queued" ? "Starting iCustoms draft" : iCustomsBusy === "draft" ? "Retrying iCustoms draft" : "Retry iCustoms draft")}</Button> : null}{providerRejected ? null : <Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || connectionUnavailable || provider?.status === "queued"} onClick={onSubmit}>{iCustomsBusy === "validate" ? <RefreshCw className="size-4 animate-spin motion-reduce:animate-none" /> : <Send className="size-4" />}{t(iCustomsBusy === "validate" ? "Checking declaration" : "Submit")}</Button>}</>}
+        {providerLifecycleStarted ? null : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || provider?.status === "queued"} onClick={onSaveDraft}><Save className="size-4" />{t(savingDraft || iCustomsBusy === "draft" ? "Saving draft" : "Save draft")}</Button>{<Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || provider?.status === "queued"} onClick={onCreateDraft}><RefreshCw className={cn("size-4", (iCustomsBusy === "draft" || provider?.status === "queued") && "animate-spin motion-reduce:animate-none")} />{t(iCustomsBusy === "draft" ? "Saving iCustoms draft" : hasProviderDraft ? "Update iCustoms draft" : "Create iCustoms draft")}</Button>}{providerRejected ? null : <Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || connectionUnavailable || provider?.status === "queued"} onClick={onSubmit}>{iCustomsBusy === "validate" ? <RefreshCw className="size-4 animate-spin motion-reduce:animate-none" /> : <Send className="size-4" />}{t(iCustomsBusy === "validate" ? "Checking declaration" : "Submit")}</Button>}</>}
       </Surface>
     </div>
   </div>

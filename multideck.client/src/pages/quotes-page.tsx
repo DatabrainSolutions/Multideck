@@ -96,7 +96,6 @@ import {
   CargoWiseField,
   CargoWiseGroup,
   AmountCurrencyField,
-  CargoCharacteristicsField,
   CompactCombobox,
   CompactFieldRow,
   CompactFieldShell,
@@ -108,12 +107,10 @@ import {
 } from "@/components/multideck/quote-details/quote-detail-fields"
 import {
   EMPTY_CARGO_CHARACTERISTICS,
-  EMPTY_HAZARDOUS_DETAILS,
   EMPTY_RECURRENCE,
   getIncotermDefinition,
   INCOTERMS_2020,
   type CargoCharacteristics,
-  type HazardousDetails,
   type LocationOption,
   type LocationValue,
   type RecurrenceValue,
@@ -121,7 +118,7 @@ import {
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { organisationIsCustomer } from "@/lib/organisation-roles"
 import { calculateQuoteFreightDirection } from "@/lib/freight-direction"
-import { newQuoteCargoLine, quoteCargoSummary, quoteCargoSafety, quoteCargoHandlingSummary, readQuoteCargoLines, type QuoteCargoLine } from "@/lib/quote-cargo"
+import { newQuoteCargoLine, quoteCargoSummary, quoteCargoHandlingSummary, readQuoteCargoLines, type QuoteCargoLine } from "@/lib/quote-cargo"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { textareaSelectionAnchor, type TextareaSelection, type TextareaSelectionAnchor } from "@/lib/textarea-selection"
 import { formatQuoteLossReason, quoteCustomerDeclineReasons, quoteLossReasons } from "@/lib/quote-loss-reasons"
@@ -184,7 +181,6 @@ const quoteWorkspaceTabs: QuoteWorkspaceTab[] = ["overview", "details", "charges
 
 // Quote and Booking use the same package vocabulary; existing custom values remain valid.
 
-const commonFreightPackageTypeOptions = freightPackageTypeOptions.slice(0, 7)
 const freightPackageTypeSelectOptions = freightPackageTypeOptions.map((option) => ({
   value: option.value,
   label: `${option.value} · ${option.description}`,
@@ -2021,7 +2017,7 @@ function UnifiedQuoteChargesPanel({
       code: charge.code,
       description: charge.description,
       supplierId: quoteChargeSupplierIdentity(charge, index),
-      customerId: quote.customer.trim() ? uuidOrNull(quote.customerId) ?? "customer-current" : null,
+      customerId: charge.customerId ?? (quote.customer.trim() ? uuidOrNull(quote.customerId) ?? "customer-current" : null),
       cost: charge.costAmount,
       costCurrency: charge.costCurrency,
       sell: charge.sellAmount,
@@ -3626,6 +3622,8 @@ function QuoteDetailsPanelV2({
   )
   const fieldPolicy = freightFieldPolicy({ mode: quote.mode, shipmentType: quote.shipmentType, direction: quote.direction, stage: editable ? "draft" : "submitted", legModes: routingLegs.map((leg) => leg.mode) })
   const isSeaContainerised = fieldPolicy.containerRequests
+  // Retain access to recorded physical legs when the overall service changes.
+  const showTransportSchedule = fieldPolicy.transport || routingLegs.length > 0
   const recurrence: RecurrenceValue = {
     ...EMPTY_RECURRENCE,
     mode: (["once", "interval", "times-per-month", "custom"] as const).includes(quote.frequency as RecurrenceValue["mode"])
@@ -3638,21 +3636,6 @@ function QuoteDetailsPanelV2({
     notes: quote.frequencyNotes || "",
   }
   const characteristics = cargoCharacteristicsFromQuote(quote)
-  const hazardousDetails: HazardousDetails = {
-    ...EMPTY_HAZARDOUS_DETAILS,
-    unNumber: quote.hazardousUnNumber ?? "",
-    properShippingName: quote.hazardousShippingName ?? "",
-    hazardClass: quote.hazardousClass ?? "",
-    packingGroup: (["I", "II", "III", "N/A"] as const).includes(quote.hazardousPackingGroup as "I") ? quote.hazardousPackingGroup as HazardousDetails["packingGroup"] : "",
-    packageCount: quote.packageQuantity ?? "",
-    packageType: quote.packageType ?? "",
-    netWeightKg: quote.hazardousNetWeightKg ?? "",
-    grossWeightKg: quote.grossWeightKg ?? "",
-    marinePollutant: quote.hazardousMarinePollutant === "Yes",
-    limitedQuantity: quote.hazardousLimitedQuantity === "Yes",
-    notes: quote.hazardousNotes || quote.hazardousEmergencyContact || "",
-  }
-
   function updateContainerRequests(nextRequests: QuoteContainerRequest[]) {
     const requests = nextRequests.slice(0, 20)
     onQuotePatch({
@@ -3798,22 +3781,6 @@ function QuoteDetailsPanelV2({
       frequencyTimesPerMonth: value.timesPerMonth,
       frequencyCount: value.totalOccurrences,
       frequencyNotes: value.notes,
-    })
-  }
-
-  function updateHazardousDetails(value: HazardousDetails) {
-    onQuotePatch({
-      hazardousUnNumber: value.unNumber,
-      hazardousShippingName: value.properShippingName,
-      hazardousClass: value.hazardClass,
-      hazardousPackingGroup: value.packingGroup,
-      packageQuantity: value.packageCount,
-      packageType: value.packageType,
-      hazardousNetWeightKg: value.netWeightKg,
-      grossWeightKg: value.grossWeightKg,
-      hazardousMarinePollutant: value.marinePollutant ? "Yes" : "No",
-      hazardousLimitedQuantity: value.limitedQuantity ? "Yes" : "No",
-      hazardousNotes: value.notes,
     })
   }
 
@@ -4157,11 +4124,11 @@ function QuoteDetailsPanelV2({
       <CompactSectionShell
         title="Route & service"
         meta={routingLegs.length > 0 ? `${routingLegs.length} planned ${routingLegs.length === 1 ? "leg" : "legs"}` : undefined}
-        action={(
+        action={showTransportSchedule ? (
           <Button type="button" variant="ghost" size="sm" disabled={!editable || routingLegs.length >= 30} onClick={addRoutingLeg} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]">
             <Plus className="size-3" aria-hidden="true" />{t("Add routing leg")}
           </Button>
-        )}
+        ) : undefined}
       >
         <div className="grid gap-2">
           {isSeaContainerised ? (
@@ -4235,13 +4202,13 @@ function QuoteDetailsPanelV2({
             <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
             <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
           </div>
-          <div className="md-quote-routing-grid">
+          {showTransportSchedule ? <div className="md-quote-routing-grid">
             <QuoteCompactInput label="Via" value={quote.via} width="full" disabled={!editable} onChange={(value) => onQuoteChange("via", value)} />
             <QuoteCompactDatePicker label="ETD" width="full" value={quote.estimatedDeparture ?? ""} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(0, { estimatedDeparture: value }) : onQuotePatch({ estimatedDeparture: value, transitDays: quoteTransitDays(value, quote.estimatedArrival), transitUnit: "Days" })} />
             <QuoteCompactDatePicker label="ETA" width="full" value={quote.estimatedArrival ?? ""} minDate={quote.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(routingLegs.length - 1, { estimatedArrival: value }) : onQuotePatch({ estimatedArrival: value, transitDays: quoteTransitDays(quote.estimatedDeparture, value), transitUnit: "Days" })} />
             <NumberUnitField label="Transit time" value={{ value: quoteTransitDays(quote.estimatedDeparture, quote.estimatedArrival) || quote.transitDays || "", unit: "Days" }} units={[{ value: "Days", label: "Days" }]} width="full" disabled onChange={() => undefined} />
             <div className="min-w-0"><RecurrenceBuilder value={recurrence} onChange={updateRecurrence} disabled={!editable} /></div>
-          </div>
+          </div> : null}
           {routingLegs.length > 0 ? (
             <div className="grid gap-1.5" role="group" aria-label={t("Planned routing legs")}>
               <div className="flex items-center justify-between gap-3">
@@ -4401,61 +4368,31 @@ function QuoteDetailsPanelV2({
 
       <CompactSectionShell title="Goods">
         <div className="grid min-w-0 gap-4">
-          {!quote.cargoLines ? (
-            <div className="grid min-w-0 gap-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h4 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Shipment totals")}</h4>
-                <span className="text-[11px] text-[var(--md-subtle)]">{t("Individual cargo lines have not been recorded")}</span>
-              </div>
-              <div className={cn("grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2", fieldPolicy.chargeableWeight ? "@min-[60rem]/quote-details:grid-cols-7" : "@min-[60rem]/quote-details:grid-cols-6")}>
-            <CompactCombobox label="Commodity" value={quote.commodity ?? ""} options={(lookups?.commodities ?? []).map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.code }))} onValueChange={(value) => onQuoteChange("commodity", value)} placeholder="Search or type commodity" disabled={!editable} width="full" className="sm:col-span-2" />
-            <QuoteCompactInput label="Packages / pieces" value={quote.packageQuantity ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("packageQuantity", value)} />
-            <CompactCombobox
-              label="Package type"
-              value={quote.packageType ?? ""}
-              options={freightPackageTypeOptions}
-              recommendedOptions={commonFreightPackageTypeOptions}
-              recommendedLabel="Common package types"
-              allLabel="All package types"
-              emptyLabel="No matching package types"
-              placeholder="Select or type package type"
-              onValueChange={(value) => onQuoteChange("packageType", value)}
-              disabled={!editable}
-              width="full"
-            />
-            <QuoteCompactInput label="Gross weight (kg)" value={quote.grossWeightKg ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("grossWeightKg", value)} />
-            <QuoteCompactInput label="Volume (CBM)" value={quote.volumeCbm ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("volumeCbm", value)} />
-            {fieldPolicy.chargeableWeight ? <QuoteCompactInput label="Chargeable weight (kg)" value={quote.chargeableWeightKg ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("chargeableWeightKg", value)} /> : null}
-              </div>
-            </div>
-          ) : null}
           <QuoteCargoEditor lines={quote.cargoLines} editable={editable} chargeableWeight={fieldPolicy.chargeableWeight}
             legacy={{ description: quote.commodity || "", commodity: quote.commodity || "", packageQuantity: quote.packageQuantity || "", packageType: quote.packageType || "", grossWeightKg: quote.grossWeightKg || "", volumeCbm: quote.volumeCbm || "", chargeableWeightKg: quote.chargeableWeightKg || "", isHazardous: characteristics.hazardous, isTemperatureControlled: characteristics.temperatureControlled }}
             onChange={(cargoLines) => onQuotePatch({ cargoLines })} />
           <div className="grid gap-2 pt-3 shadow-[var(--md-stroke-top)]">
-            <h4 className="text-[12px] font-medium text-[var(--md-text)]">{t("Shipment values & customs")}</h4>
+            <h4 className="text-[12px] font-medium text-[var(--md-text)]">{t(fieldPolicy.customs ? "Shipment values & customs" : "Shipment values")}</h4>
             <div className="grid min-w-0 gap-2 sm:grid-cols-2 @min-[60rem]/quote-details:grid-cols-[minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <AmountCurrencyField label="Goods value" value={{ amount: quote.goodsValue ?? "", currency: quote.goodsValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("goodsValue", value.amount); onQuoteChange("goodsValueCurrency", value.currency) }} width="full" />
             <AmountCurrencyField label="Insurance value" value={{ amount: quote.insuranceValue ?? "", currency: quote.insuranceValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("insuranceValue", value.amount); onQuoteChange("insuranceValueCurrency", value.currency) }} width="full" />
-            <QuoteCompactInput label="Entries" value={quote.entries ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("entries", value)} />
-            <QuoteCompactInput label="Invoice lines" value={quote.invoiceLines ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
+            {fieldPolicy.customs ? <>
+              <QuoteCompactInput label="Entries" value={quote.entries ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("entries", value)} />
+              <QuoteCompactInput label="Invoice lines" value={quote.invoiceLines ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
+            </> : null}
             </div>
-            {originIsUs ? <QuoteCompactSelect label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("fmcTid", value)} /> : null}
+            {originIsUs && fieldPolicy.sea && fieldPolicy.customs ? <QuoteCompactSelect label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("fmcTid", value)} /> : null}
           </div>
-          {!quote.cargoLines ? <div>
-            <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t(quote.cargoLines ? "Shipment handling (in addition to line flags)" : "Cargo characteristics")}</p>
-            <CargoCharacteristicsField value={characteristics} inherited={quoteCargoSafety(quote.cargoLines)} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
-          </div> : null}
-          {quote.cargoLines && [quote.hazardousUnNumber, quote.hazardousShippingName, quote.hazardousClass, quote.hazardousNotes].some(Boolean) ? <p className="text-[12px] text-[var(--md-text)]">{t("Earlier shipment-level hazardous details are retained. Review and assign them to the relevant cargo line; they have not been copied automatically.")} <span data-i18n-skip>{[quote.hazardousUnNumber, quote.hazardousShippingName, quote.hazardousClass, quote.hazardousNotes].filter(Boolean).join(" · ")}</span></p> : null}
+          {[quote.cargoCharacteristics, quote.hazardousUnNumber, quote.hazardousShippingName, quote.hazardousClass, quote.hazardousNotes].some(Boolean) ? <details className="text-[12px] text-[var(--md-text)]"><summary>{t("Earlier shipment handling retained")}</summary><dl className="grid gap-1 pt-2">{Object.entries({ "Cargo characteristics": quote.cargoCharacteristics, "UN number": quote.hazardousUnNumber, "Proper shipping name": quote.hazardousShippingName, "Hazard class": quote.hazardousClass, "Packing group": quote.hazardousPackingGroup, "Emergency contact": quote.hazardousEmergencyContact, "Net weight (kg)": quote.hazardousNetWeightKg, "Marine pollutant": quote.hazardousMarinePollutant, "Limited quantity": quote.hazardousLimitedQuantity, "Notes": quote.hazardousNotes }).filter(([, value]) => Boolean(value)).map(([label, value]) => <div key={label}><dt className="inline">{t(label)}: </dt><dd className="inline" data-i18n-skip>{value}</dd></div>)}</dl></details> : null}
         </div>
       </CompactSectionShell>
 
-      <CompactSectionShell title="Customs agents">
+      {fieldPolicy.customs ? <CompactSectionShell title="Customs agents">
           <div className="grid gap-1.5 md:grid-cols-2">
             <CompactCombobox label="Origin customs agent" value={quote.originCustomsAgentName ?? ""} options={organisationDirectories.agent.options} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("originCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.originCustomsAgentId); if (selected?.name !== value) onQuoteChange("originCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) { onQuoteChange("originCustomsAgentId", item.id); onQuoteChange("originCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
             <CompactCombobox label="Destination customs agent" value={quote.destinationCustomsAgentName ?? ""} options={organisationDirectories.agent.options} recommendedOptions={relatedOptions("agent")} recommendedOptionLimit={organisationRecentOptionLimit} onValueChange={(value) => { onQuoteChange("destinationCustomsAgentName", value); const selected = organisations.find((item) => item.id === quote.destinationCustomsAgentId); if (selected?.name !== value) onQuoteChange("destinationCustomsAgentId", "") }} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) { onQuoteChange("destinationCustomsAgentId", item.id); onQuoteChange("destinationCustomsAgentName", item.name) } }} placeholder="Select us, an agent, or type manually" disabled={!editable} width="full" />
           </div>
-      </CompactSectionShell>
+      </CompactSectionShell> : null}
 
       <CompactSectionShell title="Customer terms" meta={quote.customerTermsSource ? `${t("Inherited from")} ${quote.customerTermsSource}` : "Stored on the customer account"} contentClassName="bg-[var(--md-surface-soft)]" action={<span className="flex items-center gap-1 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 py-1 text-[10.5px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]"><HugeiconsIcon icon={LockPasswordSolidRoundedIcon} className="size-3" aria-hidden="true" />{t("Locked to customer account")}</span>}>
           <div className="grid gap-2 md:grid-cols-2">
@@ -4825,7 +4762,10 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     email: record.contactEmail,
     code: fact("clientCode"),
   }
-  const payerOrganisation = lookups?.organisations.find((option) => option.id === payer.orgId) ?? customer
+  // Customer / Billing is the payer for editable Quotes. Historical rendering
+  // supplies no live lookups and continues to show the saved version only.
+  const payerOrganisation = customer ?? lookups?.organisations.find((option) => option.id === payer.orgId)
+  const replacesHiddenPayer = Boolean(customer && payer.orgId && payer.orgId !== record.customerId)
   const payerTerms = payerOrganisation?.quoteTerms
   const hasPayerTerms = Boolean(payerTerms && [payerTerms.terms, payerTerms.subjectTo, payerTerms.notes, payerTerms.deadline].some((value) => value?.trim()))
   const contact = customer?.contacts.find((option) => option.id === record.contactId)
@@ -4863,7 +4803,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     customer: record.customerName,
     customerId: record.customerId,
     clientCode: customer?.code ?? fact("clientCode"),
-    customerAddress: customer?.addresses[0]?.address ?? fact("customerAddress"),
+    customerAddress: typeof facts.customerAddress === "string" ? facts.customerAddress : customer?.addresses[0]?.address ?? "",
     contactId: record.contactId ?? "",
     customerContact: record.contactName ?? contact?.name ?? "",
     customerEmail: record.contactEmail ?? contact?.email ?? "",
@@ -4977,10 +4917,10 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     originCustomsAgentName: fact("originCustomsAgentName"),
     destinationCustomsAgentId: fact("destinationCustomsAgentId"),
     destinationCustomsAgentName: fact("destinationCustomsAgentName"),
-    subjectToTerms: fact("subjectToTerms") || payerTerms?.subjectTo?.trim() || "",
-    customerTermsSource: hasPayerTerms ? payerOrganisation?.name ?? payer.name : fact("customerTermsSource"),
-    terms: record.terms?.trim() || payerTerms?.terms?.trim() || "",
-    customerNotes: record.customerNotes?.trim() || payerTerms?.notes?.trim() || "",
+    subjectToTerms: replacesHiddenPayer ? payerTerms?.subjectTo?.trim() || "" : fact("subjectToTerms") || payerTerms?.subjectTo?.trim() || "",
+    customerTermsSource: replacesHiddenPayer ? customer?.name ?? "" : fact("customerTermsSource") || (hasPayerTerms ? payerOrganisation?.name ?? payer.name : ""),
+    terms: replacesHiddenPayer ? payerTerms?.terms?.trim() || "" : record.terms?.trim() || payerTerms?.terms?.trim() || "",
+    customerNotes: replacesHiddenPayer ? payerTerms?.notes?.trim() || "" : record.customerNotes?.trim() || payerTerms?.notes?.trim() || "",
     internalNotes: record.internalNotes ?? "",
     fmcTid: fact("fmcTid"),
     margin: workspace.totals.marginPct === null ? "" : `${workspace.totals.marginPct.toFixed(2)}%`,
@@ -4992,10 +4932,15 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
   }
 }
 
-function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace): QuoteCharge[] {
-  return workspace.charges.map((line) => ({
+function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace, version = workspace.versions.find((item) => item.CusQuoteVersion_IsCurrent)): QuoteCharge[] {
+  // The saved payload owns stable line identities across revisions. The working
+  // SQL rows are rebuilt on save and must not replace those source identities.
+  const snapshotCharges = version?.CusQuoteVersion_SnapshotJSON?.quote?.charges
+  const charges = Array.isArray(snapshotCharges) ? snapshotCharges : workspace.charges
+  return charges.map((line) => ({
     id: line.id,
     code: line.code ?? "",
+    customerId: line.customerId,
     description: line.description,
     creditor: line.sourceLabel || "",
     supplierId: line.supplierId,
@@ -5007,8 +4952,8 @@ function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace): QuoteChar
     localSell: line.sellLocal,
     costExchange: line.costRoe,
     sellExchange: line.sellRoe,
-    costRoeSource: "job",
-    sellRoeSource: "job",
+    costRoeSource: line.costRoeSource ?? "job",
+    sellRoeSource: line.sellRoeSource ?? "job",
     calculationBasis: line.calculationBasis,
     quantity: line.quantity,
     department: "",
@@ -5179,6 +5124,9 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
   const mappedCharges: QuoteWorkflowCharge[] = charges.map((line) => ({
     id: line.id ?? crypto.randomUUID(),
     code: line.code,
+    customerId: uuidOrNull(line.customerId),
+    costRoeSource: line.costRoeSource,
+    sellRoeSource: line.sellRoeSource,
     description: line.description || line.code,
     // The compact charge workspace includes display-only party IDs for its
     // demo/current-party options. Only real organisation UUIDs can be sent
@@ -5248,8 +5196,8 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       copyReason: quote.copyReason,
       clientCode: quote.clientCode,
       customerAddress: quote.customerAddress,
-      payerCode: quote.payerCode,
-      payerEmail: quote.payerEmail,
+      payerCode: quote.clientCode,
+      payerEmail: quote.customerEmail,
       shipperCode: quote.shipperCode,
       shipperEmail: quote.shipperEmail,
       shipperAddressOverride: quote.shipperAddressOverride === "Yes" ? "Yes" : "",
@@ -5340,12 +5288,12 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
     markupOverrideReason: "",
     followUpAt: "",
     payer: {
-      orgId: quote.payerOrgId || quote.customerId || "",
-      name: quote.payerName || quote.customer,
-      address: quote.payerAddress || quote.customerAddress || "",
-      contact: quote.payerContact || quote.customerContact || "",
-      email: quote.payerEmail || quote.customerEmail || "",
-      code: quote.payerCode || quote.clientCode || "",
+      orgId: quote.customerId || "",
+      name: quote.customer,
+      address: quote.customerAddress || "",
+      contact: quote.customerContact || "",
+      email: quote.customerEmail || "",
+      code: quote.clientCode || "",
     },
     shipper: {
       orgId: quote.shipperOrgId ?? "",
@@ -5845,7 +5793,7 @@ export function QuoteDetailPage({
     ? quoteRecordFromWorkspace(viewedVersionWorkspace, null)
     : draftQuote
   const activeCharges = viewedVersionWorkspace
-    ? quoteChargesFromWorkspace(viewedVersionWorkspace)
+    ? quoteChargesFromWorkspace(viewedVersionWorkspace, presentedVersion ?? undefined)
     : draftCharges
   const activeTotals = useMemo(() => getChargeTotals(activeCharges), [activeCharges])
   const activeQuote = {

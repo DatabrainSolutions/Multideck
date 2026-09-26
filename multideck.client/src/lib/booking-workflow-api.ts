@@ -1,4 +1,6 @@
 import { supabase } from "@/lib/supabase"
+import { readBookingPlanningWorkspace, type bookingPlanningSavePayload } from "@/lib/booking-planning-charges"
+import { readOperationalCharges, readQuoteChargeReview, type operationalChargeSavePayload, type QuoteChargeDecision } from "@/lib/booking-operational-charges"
 
 export type BookingWorkflowParty = {
   id?: string
@@ -270,6 +272,7 @@ export type BookingWorkflowDeclaration = {
 }
 
 export type BookingWorkflowCharge = {
+  planningCurrency?: { cost?: string | null; sell?: string | null; base?: string | null } | null
   id?: string
   code?: string | null
   chargeCodeId?: string | null
@@ -297,7 +300,28 @@ export type BookingWorkflowEvent = {
 }
 
 export type BookingWorkflowWorkspace = {
+  provisionalCancellation?: {
+    supported: boolean
+    planningEditorSupported?: boolean
+    operationalEditorSupported?: boolean
+    cancelled: boolean
+    canReopen: boolean
+    planningChargeCount: number
+    chargeDecision: "keep" | "discard" | null
+    reviewPricesAndDates: boolean
+    requiresFinanceReview: boolean
+  }
   lifecycleSupported?: boolean
+  ownership?: {
+    supported: boolean
+    editable: boolean
+    officeId: string
+    branch: string
+    ownerId: string | null
+    owner: string | null
+    offices: { id: string; name: string }[]
+    users: { id: string; name: string }[]
+  }
   dangerousGoodsSupported?: boolean
   securityEvidenceSupported?: boolean
   routeCutoffsSupported?: boolean
@@ -319,6 +343,8 @@ export type BookingWorkflowWorkspace = {
     supplierId?: string | null
     supplierName?: string | null
     officeId: string
+    operationsOwnerId?: string | null
+    operationsOwner?: string | null
     origin?: string | null
     originUnlocode?: string | null
     destination?: string | null
@@ -450,12 +476,38 @@ async function invokeNullable<T>(body: Record<string, unknown>, fallback: string
 
 export type BookingOpeningDirection = "import" | "export" | "domestic" | "cross_trade"
 
-export function openBookingWorkflow(idempotencyKey: string, initialMode?: "road", direction?: BookingOpeningDirection) {
+export function getBookingAttachmentAccess(reference: string, documentId: string) {
+  return invoke<{ signedUrl: string; fileName: string; mimeType: string; expiresAt: string }>(
+    { action: "attachment-access", reference, documentId }, "The attachment could not be opened. Please try again.")
+}
+
+export type DeclarationSourceAttachment = { id: string; fileName: string; typeCode: string; version: number; available: boolean }
+
+export function listDeclarationSourceAttachments(declarationId: string) {
+  return invoke<{ documents: DeclarationSourceAttachment[] }>({ action: "declaration-attachments", declarationId }, "The source documents could not be loaded. Please try again.")
+}
+
+export function getDeclarationSourceAttachmentAccess(declarationId: string, documentId: string) {
+  return invoke<{ signedUrl: string; fileName: string; mimeType: string; expiresAt: string }>(
+    { action: "declaration-attachment-access", declarationId, documentId }, "The attachment could not be opened. Please try again.")
+}
+
+export function getBookingQuoteDocumentAccess(reference: string, documentId: string) {
+  return invoke<{ signedUrl: string; fileName: string; expiresAt: string }>(
+    { action: "quote-document-access", reference, documentId }, "The Quote PDF could not be opened. Please try again.")
+}
+
+export function getBookingOpeningModes() {
+  return invoke<{ modes: { code: string; name: string }[] }>({ action: "opening-options" }, "Booking modes could not be loaded.")
+}
+
+export function openBookingWorkflow(idempotencyKey: string, initialMode?: "road", direction?: BookingOpeningDirection, mode?: string) {
   return invoke<{ jobId: string; bookingReference: string; route: string; reused: boolean }>({
     action: initialMode === "road" ? "open-road" : "open",
     idempotencyKey,
     sequenceKey: "default",
     direction,
+    mode: mode ?? initialMode,
   }, "The new booking could not be opened.")
 }
 
@@ -465,6 +517,48 @@ export function getBookingWorkflow(reference: string) {
 
 export function saveBookingWorkflow(jobId: string, booking: Record<string, unknown>) {
   return invoke<BookingWorkflowWorkspace>({ action: "save", jobId, booking }, "The booking could not be saved.")
+}
+
+export function saveBookingOwnership(jobId: string, officeId: string, ownerId: string, expectedUpdatedAt: string) {
+  return invoke<{ saved: boolean; jobId: string }>({ action: "save-ownership", jobId, officeId, ownerId, expectedUpdatedAt }, "Booking ownership could not be saved.")
+}
+
+export function changeProvisionalBooking(jobId: string, operation: "cancel" | "reopen", reason: string, expectedUpdatedAt: string, chargeDecision?: "keep" | "discard") {
+  return invoke<{ jobId: string; status: "draft" | "cancelled" }>({ action: "provisional-action", jobId, operation, reason, expectedUpdatedAt, chargeDecision }, "The Booking status could not be changed.")
+}
+
+export async function getBookingPlanningCharges(jobId: string) {
+  const result = await invoke<unknown>({ action: "planning-charges", jobId }, "Planning charges could not be loaded.")
+  return readBookingPlanningWorkspace(result, jobId)
+}
+
+export async function getBookingOperationalCharges(jobId: string) {
+  return readOperationalCharges(await invoke<unknown>({ action: "operational-charges", jobId }, "Booking charges could not be loaded."), jobId)
+}
+
+export async function getBookingQuoteChargeReview(jobId: string) {
+  return readQuoteChargeReview(await invokeNullable<unknown>({ action: "quote-charge-review", jobId }, "Quote charge changes could not be loaded."))
+}
+
+export async function applyBookingQuoteChargeReview(jobId: string, reviewId: string, token: string, decisions: { key: string; action: QuoteChargeDecision }[], reason: string) {
+  const workspace = readOperationalCharges(await invoke<unknown>({ action: "apply-quote-charge-review", jobId, reviewId, token, decisions, reason }, "Quote charge decisions could not be applied. Reload the review before retrying."), jobId)
+  if (!workspace.supported) throw new Error("Quote charge changes could not be confirmed.")
+  return workspace
+}
+
+export async function saveBookingOperationalCharges(payload: ReturnType<typeof operationalChargeSavePayload>) {
+  const workspace = readOperationalCharges(await invoke<unknown>({ ...payload, action: "save-operational-charges" }, "Booking charges could not be saved. Your entries are retained."), payload.jobId)
+  if (!workspace.supported) throw new Error("Charge saving could not be confirmed. Reload before retrying.")
+  return workspace
+}
+
+export async function saveBookingPlanningCharges(payload: ReturnType<typeof bookingPlanningSavePayload>) {
+  const result = await invoke<unknown>({ ...payload, action: "save-planning-charges" }, "Planning charges could not be saved. Your changes are still available to retry.")
+  const workspace = readBookingPlanningWorkspace(result, payload.jobId)
+  if (!workspace.supported || !workspace.chargeSet || workspace.chargeSet.revision < payload.expectedRevision) {
+    throw new Error("Planning charge saving could not be confirmed. Reload before continuing.")
+  }
+  return workspace
 }
 
 export function saveBookingMilestone(jobId: string, milestone: BookingMilestoneSave) {
