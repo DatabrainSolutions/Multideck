@@ -23,7 +23,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getHmrcVatConnections(legalEntityId: string) {
-  return call<{ legalEntityId: string; connections: HmrcVatConnection[] }>(`/status/${encodeURIComponent(legalEntityId)}`)
+  return call<{ legalEntityId: string; connections: HmrcVatConnection[]; sandboxConfigured: boolean }>(`/status/${encodeURIComponent(legalEntityId)}`)
 }
 
 export function refreshHmrcVatConnection(legalEntityId: string, connectionId: string) {

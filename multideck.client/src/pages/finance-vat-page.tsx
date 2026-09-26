@@ -51,6 +51,9 @@ import {
 type Entity = Awaited<ReturnType<typeof getUkVatEntities>>["entities"][number]
 const message = (cause: unknown) => cause instanceof Error ? cause.message : "The VAT request could not be completed."
 
+// Cash Accounting is deferred until its full return workflow is verified.
+const cashAccountingEnabled = false
+
 export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUserSummary | null; navigate: (path: string) => void }) {
   const { t, language } = useLanguage()
   const canManage = hasPermission(currentUser, "Finance.Compliance.Manage")
@@ -116,6 +119,7 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
   const [filingStatusError, setFilingStatusError] = useState<string | null>(null)
   const [declarationConfirmed, setDeclarationConfirmed] = useState(false)
   const [revocationReason, setRevocationReason] = useState("")
+  const [hmrcSandboxConfigured, setHmrcSandboxConfigured] = useState(false)
   const [hmrcConnections, setHmrcConnections] = useState<HmrcVatConnection[] | null>(null)
   const [hmrcError, setHmrcError] = useState<string | null>(null)
   const [hmrcCallbackNotice, setHmrcCallbackNotice] = useState<string | null>(null)
@@ -291,7 +295,7 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     setFilingStatus(null)
     setDeclarationConfirmed(false)
     setRevocationReason("")
-    setHmrcConnections(null)
+    setHmrcConnections(null); setHmrcSandboxConfigured(false)
     setHmrcError(null)
     setLockReason("")
     setReopenReason("")
@@ -357,12 +361,12 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
   }, [entityId, refreshEntity])
 
   useEffect(() => {
-    if (!entityId) { setHmrcConnections(null); return }
+    if (!entityId) { setHmrcConnections(null); setHmrcSandboxConfigured(false); return }
     let cancelled = false
-    setHmrcConnections(null)
+    setHmrcConnections(null); setHmrcSandboxConfigured(false)
     setHmrcError(null)
     getHmrcVatConnections(entityId)
-      .then((result) => { if (!cancelled) setHmrcConnections(result.connections) })
+      .then((result) => { if (!cancelled) { setHmrcConnections(result.connections); setHmrcSandboxConfigured(result.sandboxConfigured === true) } })
       .catch((cause) => { if (!cancelled) setHmrcError(message(cause)) })
     return () => { cancelled = true }
   }, [entityId, hmrcRefresh])
@@ -440,7 +444,7 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
     return () => { cancelled = true }
   }, [entityId, periodId, priorErrorRefresh])
   useEffect(() => {
-    if (!entityId) { setCashDateQueue(null); return }
+    if (!cashAccountingEnabled || !entityId) { setCashDateQueue(null); return }
     let cancelled = false
     setCashDateQueue(null)
     setCashDateError(null)
@@ -1254,8 +1258,9 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
               {canManage && connection.status === "connected" && connection.environment === "sandbox" ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void renewHmrcToken(connection.connection_id)}>{t("Renew access token")}</Button> : null}
             </div>) : <p className="py-3 text-[12px] text-[var(--md-subtle)]">{t("No HMRC VAT connection is recorded for this legal entity.")}</p>}
           </div> : !hmrcError ? <p className="px-5 py-3 text-[12px] text-[var(--md-subtle)]">{t("HMRC connection status is loading.")}</p> : null}
+          {hmrcConnections && !hmrcSandboxConfigured ? <p role="status" className="px-5 py-3 text-[12px] text-[var(--md-subtle)]">{t("HMRC sandbox application setup is incomplete. Your administrator must configure it before you can connect.")}</p> : null}
           <div className="flex flex-wrap items-center gap-3 px-5 py-3">
-            {canManage ? <Button type="button" variant="outline" disabled={busy || !entityId || !registration?.registration || registration.registration.status === "not_configured"} onClick={() => void connectHmrcSandbox()}>{t("Connect HMRC sandbox")}</Button> : null}
+            {canManage ? <Button type="button" variant="outline" disabled={busy || !hmrcSandboxConfigured || !entityId || !registration?.registration || registration.registration.status === "not_configured"} onClick={() => void connectHmrcSandbox()}>{t("Connect HMRC sandbox")}</Button> : null}
             <p className="text-[11px] text-[var(--md-subtle)]">{t("Connection does not approve or submit a VAT return. HMRC obligation verification and filing remain unavailable.")}</p>
           </div>
         </SettingsPanel>
@@ -1273,6 +1278,7 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
           {queue ? <div className="flex flex-wrap items-center justify-between gap-3 pt-3 text-[11px] text-[var(--md-subtle)]"><p>{t("Showing")} <span data-i18n-skip>{queue.items.length}</span> {t("of")} <span data-i18n-skip>{queue.totalUnreviewed}</span> {t("unreviewed events")}</p>{queue.nextCursor ? <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void loadMoreEvidence()}>{t("Load more evidence")}</Button> : null}</div> : null}
           {reviewItem ? <div className="mt-4 grid gap-3 border-t border-[var(--md-line)] pt-4 sm:grid-cols-[180px_minmax(0,1fr)]"><label className="grid gap-1 text-[12px] text-[var(--md-text)]">{t("VAT tax point")}<Input type="date" value={taxPoint} onChange={(event) => setTaxPoint(event.target.value)} /></label><label className="grid gap-1 text-[12px] text-[var(--md-text)]">{t("Review reason")}<Textarea value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} minLength={10} maxLength={2000} /></label><div className="flex gap-2 sm:col-span-2"><Button type="button" disabled={busy || !taxPoint || reviewReason.trim().length < 10} onClick={() => void review()}>{t("Save VAT review")}</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setReviewItem(null)}>{t("Cancel")}</Button></div></div> : null}
         </SettingsPanel>
+        {cashAccountingEnabled ? <>
         <SettingsPanel title={t("Cash Accounting payment dates")} description={t("Record the date supported by each payment method and its evidence. These reviews prepare for Cash Accounting; they do not affect a VAT return yet.")}>
           {cashDateError ? <p role="alert" className="py-2 text-[12px] text-[var(--md-red)]">{cashDateError}</p> : null}
           {cashDateQueue ? <>
@@ -1318,6 +1324,7 @@ export function FinanceVatPage({ currentUser, navigate }: { currentUser?: AuthUs
             <p className="text-[11px] text-[var(--md-subtle)]">{t("These are unrounded source amounts for supported GBP invoices. Accepted Standard-return invoices are excluded; unresolved or mixed scheme transitions block the preview. Recorded payment events are audit preparation only. Cash Accounting remains unavailable until credits, advances, currency conversion, VAT control and nine-box review are implemented.")}</p>
           </div> : null}
         </SettingsPanel>
+        </> : null}
         <SettingsPanel title={t("VAT periods")} description={t("Set ordinary quarterly dates from a return period end. HMRC obligations must still be verified before filing.")}>
           {canManage && registration?.registration?.schemeCode === "standard" ? <div className="flex flex-wrap items-end gap-3 border-b border-[var(--md-line)] py-3">
             <label className="grid min-w-40 gap-1 text-[12px] text-[var(--md-text)]">{t("Set quarter from")}<Select value={quarterReference} onValueChange={(value) => setQuarterReference(value as "last" | "next")}><SelectTrigger aria-label={t("Quarter reference")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="last">{t("Last return")}</SelectItem><SelectItem value="next">{t("Next return")}</SelectItem></SelectContent></Select></label>

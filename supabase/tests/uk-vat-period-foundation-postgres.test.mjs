@@ -4089,6 +4089,47 @@ test("indirect tax period and evidence boundaries hold in PostgreSQL", () => {
         if v_lock->>'status'<>'review_locked' then
           raise exception 'Method 1 filing gate cleared without a review lock'; end if;
       end $method1_plan$; select 'method1 plan checked';`), "method1 plan checked")
+    sql(readFileSync(new URL('../migrations/20260925153903_uk_vat_reviewed_outside_scope.sql', import.meta.url), 'utf8'))
+    assert.equal(sql(`begin;
+      do $probe$
+      declare e uuid:=gen_random_uuid(); actor uuid:='00000000-0000-0000-0000-000000000003';
+        tax uuid:=gen_random_uuid(); doc uuid:=gen_random_uuid(); line uuid:=gen_random_uuid();
+        batch uuid:=gen_random_uuid(); nominal uuid:=gen_random_uuid(); control uuid:=gen_random_uuid();
+        period_id uuid; event_id uuid; result jsonb; calc uuid;
+      begin
+        insert into "cmp_LegalEntities"("LegalEntity_ID","LegalEntity_IsActive","LegalEntity_CountryCode") values(e,true,'GB');
+        insert into "FIN_LegalEntityComplianceRegistrations"("FINComplianceReg_LegalEntityID","FINComplianceReg_ObligationID","FINComplianceReg_StatusCode","FINComplianceReg_RegistrationReference","FINComplianceReg_EffectiveFrom","FINComplianceReg_SettingsJSON")
+          select e,"FINCompliance_ID",'configured','123456789','2026-01-01','{"schemeCode":"standard"}' from "FIN_ComplianceObligations" where "FINCompliance_Code"='gb-vat-mtd' limit 1;
+        insert into "FIN_TaxCodes" values(tax,e,'GB','none',true,now(),'OUTSIDE',0,'2026-01-01',null,'out_of_scope',false,null,null);
+        insert into "FIN_NominalAccounts"("FINNom_ID","FINNom_LegalEntityID","FINNom_Code","FINNom_ControlTypeCode") values(nominal,e,'4000',null),(control,e,'1100','receivables');
+        insert into "FIN_PostingBatches"("FINPostBatch_ID","FINPostBatch_LegalEntityID","FINPostBatch_StatusCode","FINPostBatch_DebitTotal","FINPostBatch_CreditTotal") values(batch,e,'posted',100,100);
+        insert into "FIN_Documents"("FINDoc_ID","FINDoc_LegalEntityID","FINDoc_NativePostingStatusCode","FINDoc_NativePostingBatchID","FINDoc_CurrencyCodeSnapshot","FINDoc_ExchangeRate","FINDoc_DocumentDate","FINDoc_NativePostedBy") values(doc,e,'posted',batch,'GBP',1,'2026-07-15',actor);
+        insert into "FIN_DocumentLines"("FINDocLine_ID","FINDocLine_DocumentID","FINDocLine_NetAmount","FINDocLine_TaxAmount","FINDocLine_LocalNetAmount","FINDocLine_LocalTaxAmount","FINDocLine_TaxCodeID","FINDocLine_TaxCodeSnapshot","FINDocLine_TaxRatePercent","FINDocLine_NominalAccountID") values(line,doc,100,0,100,0,tax,'OUTSIDE',0,nominal);
+        insert into "FIN_PostingLines"("FINPostLine_BatchID","FINPostLine_LineNo","FINPostLine_NominalAccountID","FINPostLine_DocumentID","FINPostLine_DocumentLineID","FINPostLine_DebitAmount","FINPostLine_CreditAmount","FINPostLine_CurrencyCodeSnapshot","FINPostLine_Description") values(batch,1,control,doc,null,100,0,'GBP','Control'),(batch,2,nominal,doc,line,0,100,'GBP','Outside scope source');
+        perform public.multideck_uk_vat_backfill_posted(actor,e,100,'Capture outside-scope test source');
+        select id into event_id from "FIN_IndirectTaxEvidence" where source_document_id=doc;
+        result:=public.multideck_uk_vat_review_evidence(actor,event_id,'2026-07-15','Reviewed explicitly outside-scope source');
+        if result->>'treatment'<>'outside_scope' then raise exception 'Outside-scope decision missing'; end if;
+        period_id:=(public.multideck_uk_vat_create_draft_period(actor,e,'2026-07-01','2026-09-30')->>'periodId')::uuid;
+        result:=public.multideck_uk_vat_calculate_draft(actor,period_id);
+        if exists(select 1 from jsonb_each_text(result->'boxes') box where box.value::numeric<>0) then raise exception 'Outside-scope net leaked into a VAT box: %',result; end if;
+        calc:=(result->>'calculationId')::uuid;
+        if not exists(select 1 from "FIN_IndirectTaxCalculationLines" where calculation_id=calc and evidence_id=event_id and signed_amount=0) then raise exception 'Outside-scope source was lost from audit'; end if;
+        update "FIN_TaxCodes" set "FINTax_TreatmentCategoryCode"='zero_rated' where "FINTax_ID"=tax;
+        begin
+          perform public.multideck_uk_vat_review_evidence(actor,event_id,'2026-07-15','A non-tax code alone must never authorise exclusion');
+          raise exception 'Ambiguous non-tax rule accepted';
+        exception when sqlstate '22023' then null; end;
+        update "FIN_TaxCodes" set "FINTax_TreatmentCategoryCode"='out_of_scope' where "FINTax_ID"=tax;
+        result:=public.multideck_uk_vat_reconcile_transactions(actor,e,calc,result->>'sourceDigest',array[event_id],'Reconcile audited outside-scope zero contribution');
+        if (result->>'inserted')::integer<>1 then raise exception 'Outside-scope evidence was not reconciled'; end if;
+        begin
+          perform public.multideck_uk_vat_review_evidence(actor,event_id,'2026-07-15','Attempt to change reconciled exclusion');
+          raise exception 'Reconciled outside-scope treatment was changed';
+        exception when sqlstate '22023' then null; end;
+
+      end $probe$;
+      rollback; select 'outside scope checked';`), 'outside scope checked')
   } finally {
     if (started) run("pg_ctl", ["-D", join(directory, "data"), "-m", "immediate", "-w", "stop"])
     rmSync(directory, { recursive: true, force: true })

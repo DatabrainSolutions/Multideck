@@ -147,7 +147,13 @@ async function status(request: Request, admin: SupabaseClient, entityId: string)
     p_actor: actor.User_ID, p_entity: entityId, p_project_ref: projectRef(),
   })
   if (error) throw new HttpError(error.code === "42501" ? 403 : 503, "HMRC VAT connection status could not be read.")
-  return json(request, data)
+  let sandboxConfigured = false
+  try {
+    credentials("sandbox")
+    appReturnUrl("connected")
+    sandboxConfigured = true
+  } catch { /* Report readiness only; never expose secret values. */ }
+  return json(request, { ...data, sandboxConfigured })
 }
 
 async function refresh(request: Request, admin: SupabaseClient) {

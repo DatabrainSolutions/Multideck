@@ -1,0 +1,26 @@
+-- Register VAT audit types required by Audit_Events foreign keys.
+INSERT INTO public."sys_WorkflowRecordTypes" ("WorkflowRecordType_Code", "WorkflowRecordType_Name", "WorkflowRecordType_SourceTable", "WorkflowRecordType_Description") VALUES
+  ('hmrc_vat_connection', 'HMRC VAT Connection', 'FIN_HmrcVatConnections', 'Audited UK VAT workflow record'),
+  ('hmrc_vat_oauth_state', 'HMRC VAT OAuth State', 'FIN_HmrcVatOAuthStates', 'Audited UK VAT workflow record'),
+  ('hmrc_vat_obligation_verification', 'HMRC VAT Obligation Verification', 'FIN_HmrcVatObligationVerifications', 'Audited UK VAT workflow record'),
+  ('hmrc_vat_return_readback', 'HMRC VAT Return Readback', 'FIN_HmrcVatReturnReadbackChecks', 'Audited UK VAT workflow record'),
+  ('hmrc_vat_settlement', 'HMRC VAT Settlement', 'FIN_HmrcVatSettlements', 'Audited UK VAT workflow record'),
+  ('hmrc_vat_submission_attempt', 'HMRC VAT Submission Attempt', 'FIN_HmrcVatSubmissionAttempts', 'Audited UK VAT workflow record'),
+  ('hmrc_vat_submission_receipt', 'HMRC VAT Submission Receipt', 'FIN_HmrcVatSubmissionReceipts', 'Audited UK VAT workflow record'),
+  ('indirect_tax_control_review', 'Indirect Tax Control Review', 'FIN_IndirectTaxControlReviews', 'Audited UK VAT workflow record'),
+  ('indirect_tax_credit_application', 'Indirect Tax Credit Application', 'FIN_IndirectTaxCreditApplications', 'Audited UK VAT workflow record'),
+  ('indirect_tax_credit_link', 'Indirect Tax Credit Link', 'FIN_IndirectTaxCreditLinks', 'Audited UK VAT workflow record'),
+  ('indirect_tax_decision', 'Indirect Tax Decision', 'FIN_IndirectTaxDecisions', 'Audited UK VAT workflow record'),
+  ('indirect_tax_evidence', 'Indirect Tax Evidence', 'FIN_IndirectTaxEvidence', 'Audited UK VAT workflow record'),
+  ('indirect_tax_filing_approval', 'Indirect Tax Filing Approval', 'FIN_IndirectTaxFilingApprovals', 'Audited UK VAT workflow record'),
+  ('indirect_tax_filing_approval_revocation', 'Indirect Tax Filing Approval Revocation', 'FIN_IndirectTaxFilingApprovalRevocations', 'Audited UK VAT workflow record'),
+  ('indirect_tax_filing_projection', 'Indirect Tax Filing Projection', 'FIN_IndirectTaxFilingProjections', 'Audited UK VAT workflow record'),
+  ('indirect_tax_period_review_lock', 'Indirect Tax Period Review Lock', 'FIN_IndirectTaxPeriodReviewLocks', 'Audited UK VAT workflow record'),
+  ('indirect_tax_period_review_unlock', 'Indirect Tax Period Review Unlock', 'FIN_IndirectTaxPeriodReviewUnlocks', 'Audited UK VAT workflow record'),
+  ('indirect_tax_reconciliation', 'Indirect Tax Reconciliation', 'FIN_IndirectTaxReconciliations', 'Audited UK VAT workflow record'),
+  ('prior_period_vat_error', 'Prior Period VAT Error', 'FIN_IndirectTaxPriorPeriodErrorIntake', 'Audited UK VAT workflow record'),
+  ('prior_period_vat_error_conduct', 'Prior Period VAT Error Conduct', 'FIN_IndirectTaxPriorPeriodErrorConductReviews', 'Audited UK VAT workflow record'),
+  ('prior_period_vat_error_notification', 'Prior Period VAT Error Notification', 'FIN_IndirectTaxPriorErrorNotifications', 'Audited UK VAT workflow record'),
+  ('prior_period_vat_error_time_limit', 'Prior Period VAT Error Time Limit', 'FIN_IndirectTaxPriorErrorTimeLimitReviews', 'Audited UK VAT workflow record'),
+  ('uk_vat_registration', 'UK VAT Registration', 'FIN_LegalEntityComplianceRegistrations', 'Audited UK VAT workflow record')
+ON CONFLICT ("WorkflowRecordType_Code") DO NOTHING;
