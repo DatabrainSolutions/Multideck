@@ -253,7 +253,6 @@ export const adminHubs: AdminHub[] = [
           { label: "Compliance obligations", route: "/finance/compliance", description: "The filings your jurisdiction pack expects, and when.", keywords: "jurisdiction pack filing", icon: BadgeCheck },
           { label: "UK VAT review", route: "/finance/vat", description: "Check the VAT figures before a return is made.", keywords: "mtd return", icon: ClipboardCheck },
         ],
-        comingSoon: ["Invoice tax messages"],
       },
       {
         id: "sales-ledger",
@@ -265,7 +264,6 @@ export const adminHubs: AdminHub[] = [
           { label: "Payment terms", route: "/finance/documents", description: "The due dates customers are given by default.", keywords: "due days credit terms", icon: CalendarDays },
           { label: "Document defaults", route: "/finance/documents", description: "What every new finance document starts with.", icon: FileText },
         ],
-        comingSoon: ["Customer & supplier groups", "Invoice & credit batches"],
       },
       {
         id: "purchase-ledger",
@@ -277,7 +275,6 @@ export const adminHubs: AdminHub[] = [
           { label: "Invoice matching", route: "/finance/payables/matching", description: "Match supplier invoices to the costs you expected.", keywords: "accruals costs match", icon: ScanText },
           { label: "Payment runs & remittances", route: "/finance/payables/payment-runs", description: "Batch supplier payments and send remittances.", icon: CreditCard },
         ],
-        comingSoon: ["CASS cost file import", "Recurring supplier items"],
       },
       {
         id: "cashbook",
@@ -289,7 +286,6 @@ export const adminHubs: AdminHub[] = [
           { label: "Bank statement imports", route: "/finance/systems", description: "Bring statements in to reconcile against.", keywords: "feeds csv statements", icon: Upload },
           { label: "Bank reconciliation", route: "/finance/bank-reconciliation", description: "Agree the cashbook with the bank statement.", icon: BadgeCheck },
         ],
-        comingSoon: ["Cheque books", "Collection batches"],
       },
       {
         id: "nominal-ledger",
@@ -390,8 +386,8 @@ export const adminHubs: AdminHub[] = [
     id: "operations",
     label: "Operations",
     icon: Ship,
-    route: "/admin/system-preferences#reference-rules",
-    display: "menu",
+    route: "/admin/operations",
+    display: "hub",
     description: "The rules that shape every booking.",
     blocks: [
       {
@@ -411,8 +407,8 @@ export const adminHubs: AdminHub[] = [
     id: "warehouse",
     label: "Warehouse",
     icon: Forklift,
-    route: "/warehouse/facilities",
-    display: "menu",
+    route: "/admin/warehouse",
+    display: "hub",
     description: "Sites, locations, stocked items and default charges.",
     owns: ["/warehouse/pricing", "/warehouse/facilities", "/warehouse/locations", "/warehouse/items"],
     blocks: [
@@ -434,8 +430,8 @@ export const adminHubs: AdminHub[] = [
     id: "general-reporting",
     label: "General reporting",
     icon: ChartAnalysis,
-    route: "/reports",
-    display: "menu",
+    route: "/admin/general-reporting",
+    display: "hub",
     description: "Report templates, schedules and what has already been sent.",
     blocks: [
       {
@@ -486,8 +482,8 @@ export const adminHubs: AdminHub[] = [
     id: "documents-storage",
     label: "Documents & Storage",
     icon: FolderOpen,
-    route: "/documents/templates",
-    display: "menu",
+    route: "/admin/documents-storage",
+    display: "hub",
     description: "Templates, document identity and where company files live.",
     blocks: [
       {
@@ -543,8 +539,8 @@ export const adminHubs: AdminHub[] = [
     id: "customs-compliance",
     label: "Customs & compliance",
     icon: ShieldCheck,
-    route: "/admin/system-preferences#customs",
-    display: "menu",
+    route: "/admin/customs-compliance",
+    display: "hub",
     description: "Customs defaults and the screening that protects every shipment.",
     blocks: [
       {
@@ -690,18 +686,13 @@ export const sidebarAreas: SidebarArea[] = [
         label: "Customers & receivables",
         icon: ReceiptText,
         children: [
-          { label: "Customer accounts", icon: Users, route: "/customers" },
+          { label: "Customers", icon: Users, route: "/crm/accounts?view=customers" },
           { label: "Sales invoices & credits", icon: ReceiptText, route: "/finance/receivables" },
           { label: "Receivables approvals", icon: BadgeCheck, route: "/finance/receivables/approvals" },
           { label: "Customer receipts & allocation", icon: Layers3, route: "/finance/receivables/cash" },
           { label: "Credit control & collections", icon: CreditCard, route: "/finance/receivables/credit-control" },
-          { label: "Invoice & credit batches", value: "Planned", icon: FileText },
-          { label: "Receivables enquiries", value: "Planned", icon: MessageCircle },
-          { label: "Collection calls & orders", value: "Planned", icon: Phone },
           { label: "Collections worklist", icon: CreditCard, route: "/finance/receivables/collections" },
           { label: "Statements", icon: FileText, route: "/finance/receivables/statements" },
-          { label: "Customer claims & queries", value: "Planned", icon: MessageCircle },
-          { label: "Print & resend documents", value: "Planned", icon: ReceiptText },
         ],
       },
       {
@@ -709,19 +700,13 @@ export const sidebarAreas: SidebarArea[] = [
         label: "Suppliers & payables",
         icon: SlidersHorizontal,
         children: [
-          { label: "Supplier accounts", icon: Users, route: "/suppliers" },
+          { label: "Suppliers", icon: Users, route: "/crm/accounts?view=suppliers" },
           { label: "Supplier invoices & credits", icon: SlidersHorizontal, route: "/finance/payables" },
           { label: "Supplier document intake", icon: Upload, route: "/finance/payables/intake" },
           { label: "Payables approvals", icon: BadgeCheck, route: "/finance/payables/approvals" },
           { label: "Supplier payments & allocation", icon: Layers3, route: "/finance/payables/cash" },
           { label: "Supplier purchase orders", icon: ReceiptText, route: "/finance/payables/purchase-orders" },
-          { label: "Incomplete supplier invoices", value: "Planned", icon: TriangleAlert },
-          { label: "Payables enquiries", value: "Planned", icon: MessageCircle },
           { label: "Invoice matching", icon: BadgeCheck, route: "/finance/payables/matching" },
-          { label: "Pending allocation approval", value: "Planned", icon: ClipboardCheck },
-          { label: "Supplier claims & queries", value: "Planned", icon: MessageCircle },
-          { label: "CASS cost file import", value: "Planned", icon: Upload },
-          { label: "Recurring supplier items", value: "Planned", icon: CalendarDays },
         ],
       },
       {
@@ -734,9 +719,6 @@ export const sidebarAreas: SidebarArea[] = [
           { label: "Allocation & reconciliation", icon: BadgeCheck, route: "/finance/cash/reconciliation" },
           { label: "Bank reconciliation", icon: BadgeCheck, route: "/finance/bank-reconciliation" },
           { label: "Payment runs & remittances", icon: CreditCard, route: "/finance/payables/payment-runs" },
-          { label: "Collection batches", value: "Planned", icon: Layers3 },
-          { label: "Cheque books", value: "Planned", icon: FileText },
-          { label: "Cheque controls", value: "Planned", icon: BadgeCheck },
         ],
       },
       {
@@ -752,19 +734,6 @@ export const sidebarAreas: SidebarArea[] = [
         ],
       },
       {
-        id: "finance-accounting-planned",
-        label: "More accounting settings",
-        icon: Globe2,
-        children: [
-          { label: "Customer & supplier groups", value: "Planned", icon: Users },
-          { label: "Sales & expense groups", value: "Planned", icon: Layers3 },
-          { label: "Invoice tax messages", value: "Planned", icon: MessageCircle },
-          { label: "Job billing exchange rates", value: "Planned", icon: Globe2 },
-          { label: "Intercompany mappings", value: "Planned", icon: Layers3 },
-          { label: "Multi-language account labels", value: "Planned", icon: Globe2 },
-        ],
-      },
-      {
         id: "finance-management",
         label: "Management accounting",
         icon: ChartLine,
@@ -774,12 +743,6 @@ export const sidebarAreas: SidebarArea[] = [
           { label: "Financial reports", icon: ChartAnalysis, route: "/finance/reports" },
           { label: "Compliance obligations", icon: BadgeCheck, route: "/finance/compliance" },
           { label: "UK VAT review", icon: Calculator, route: "/finance/vat" },
-          { label: "Fixed assets", value: "Planned", icon: Building2 },
-          { label: "Departments & projects", value: "Planned", icon: BriefcaseBusiness },
-          { label: "Products & services", value: "Planned", icon: Package },
-          { label: "Finance diary", value: "Planned", icon: CalendarDays },
-          { label: "Import chart of accounts", value: "Planned", icon: Upload },
-          { label: "Import finance data", value: "Planned", icon: FileText },
         ],
       },
       { id: "finance-mileage", label: "Mileage payments", icon: ReceiptText, route: "/finance/mileage" },

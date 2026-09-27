@@ -1,5 +1,5 @@
 import { preloadRoute } from "@/lib/route-pages"
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, PencilEdit01, Plus, Pin, Search, Send, Settings, Star, Tags, Ticket, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { LayoutLeftIcon } from "@hugeicons/core-free-icons"
@@ -13,7 +13,6 @@ import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { isDefaultScope, mergeSavedOrder, useSidebarLayoutScope } from "@/lib/sidebar-preferences"
@@ -51,11 +50,6 @@ import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
 import { useEventsSettings } from "@/lib/company-events-api"
 
-const sidebarItemTransition = {
-  duration: 0.18,
-  ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
-}
-
 const sidebarActiveTransition = {
   type: "spring" as const,
   stiffness: 430,
@@ -68,8 +62,6 @@ const sidebarPaneTransition = {
   ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
 }
 
-const sidebarCascadeStepMs = 18
-
 type SearchableDexterConversation = DexterConversationSummary & {
   matchSnippet?: string
 }
@@ -80,24 +72,6 @@ const sidebarPinTransition = {
   stiffness: 520,
   damping: 42,
   mass: 0.9,
-}
-
-const navReveal = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      duration: 0.18,
-      ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
-      staggerChildren: sidebarCascadeStepMs / 1000,
-      delayChildren: 0.01,
-    },
-  },
-}
-
-const navItemReveal = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: sidebarItemTransition },
 }
 
 function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
@@ -388,33 +362,23 @@ function SidebarSection({
   children: ReactNode
   className?: string
 }) {
-  const shouldReduceMotion = useReducedMotion()
-
   return (
-    <motion.nav
-      className={cn("flex flex-col gap-1", className)}
-      variants={shouldReduceMotion ? undefined : navReveal}
-      initial={shouldReduceMotion ? undefined : "hidden"}
-      animate={shouldReduceMotion ? undefined : "show"}
-    >
+    <nav className={cn("flex flex-col gap-1", className)}>
       {children}
-    </motion.nav>
+    </nav>
   )
 }
 
-function SidebarSectionItem({ children, layout = false, cascadeIndex }: { children: ReactNode; layout?: boolean; cascadeIndex?: number }) {
+function SidebarSectionItem({ children, layout = false, layoutDependency }: { children: ReactNode; layout?: boolean; layoutDependency?: string }) {
   const shouldReduceMotion = useReducedMotion()
-  const cascadeStyle = cascadeIndex === undefined
-    ? undefined
-    : { "--md-sidebar-cascade-delay": `${Math.min(cascadeIndex, 10) * sidebarCascadeStepMs}ms` } as CSSProperties
 
   return (
     <motion.div
-      variants={navItemReveal}
       layout={layout && !shouldReduceMotion ? "position" : false}
+      layoutDependency={layoutDependency}
       transition={{ layout: sidebarPinTransition }}
     >
-      {cascadeIndex === undefined ? children : <div data-sidebar-cascade-item style={cascadeStyle}>{children}</div>}
+      {children}
     </motion.div>
   )
 }
@@ -501,7 +465,6 @@ function CustomisableSidebarSection({
   favouriteIdForItem,
   onToggleFavourite,
   className,
-  cascadeStart = 0,
 }: {
   scopeId: string
   baseIds: string[]
@@ -517,7 +480,6 @@ function CustomisableSidebarSection({
   favouriteIdForItem?: (id: string) => string | null
   onToggleFavourite?: (id: string) => void
   className?: string
-  cascadeStart?: number
 }) {
   const { t } = useLanguage()
   const { scope, save, togglePin } = useSidebarLayoutScope(scopeId)
@@ -540,6 +502,7 @@ function CustomisableSidebarSection({
     const validIds = new Set([...baseIds, ...promotedIds])
     return scope.pinned.filter((id) => validIds.has(id))
   }, [baseIds, promotedIds, scope.pinned])
+  const pinLayoutKey = `${scope.pinned.join(",")}|${scope.order.join(",")}`
 
   if (arranging) {
     return (
@@ -564,7 +527,7 @@ function CustomisableSidebarSection({
     const favourite = Boolean(favouriteId && favouriteIds?.has(favouriteId))
 
     rows.push(
-      <SidebarSectionItem key={id} layout cascadeIndex={cascadeStart + index}>
+      <SidebarSectionItem key={id} layout layoutDependency={pinLayoutKey}>
         <SidebarItemMenu
           pinned={pinned}
           onTogglePin={() => togglePin(id)}
@@ -595,6 +558,7 @@ function CustomisableSidebarSection({
           key="pinned-divider"
           aria-hidden="true"
           layout="position"
+          layoutDependency={pinLayoutKey}
           transition={{ layout: sidebarPinTransition }}
           className="mx-2 my-1 h-px bg-[var(--md-line-strong)]"
         />,
@@ -793,70 +757,52 @@ function InboxContextSidebar({
       transition={sidebarPaneTransition}
     >
       <SidebarSection>
-        <SidebarSectionItem cascadeIndex={4}>
-          <SidebarNavItem
-            item={{ label: "Back", icon: ArrowLeft }}
-            onClick={() => {
-              navigate("/")
-              onRequestClose?.()
-            }}
-            collapsed={collapsed}
-          />
+        <SidebarSectionItem>
+          <div className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <SidebarNavItem
+                item={{ label: "Back", icon: ArrowLeft }}
+                onClick={() => {
+                  navigate("/")
+                  onRequestClose?.()
+                }}
+                collapsed={collapsed}
+              />
+            </div>
+            {!collapsed && providers.length > 1 ? (
+              <div role="group" aria-label={t("Mail provider")} className="flex shrink-0 items-center gap-1">
+                {providers.map((candidate) => (
+                  <button
+                    key={candidate}
+                    type="button"
+                    aria-label={t(mailProviderLabels[candidate])}
+                    aria-pressed={provider === candidate}
+                    title={t(mailProviderLabels[candidate])}
+                    onClick={() => selectProvider(candidate)}
+                    className={cn(
+                      "grid size-10 place-items-center rounded-[var(--md-radius-lg)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-ink)]",
+                      provider === candidate && "bg-[var(--md-bg-strong)]",
+                    )}
+                  >
+                    <MailProviderMark provider={candidate} className="size-5" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </SidebarSectionItem>
       </SidebarSection>
 
-      <div className={cn("mt-4 px-1", collapsed && "px-0")}>
-        {provider && providers.length > 1 ? (
-          <Select value={provider} onValueChange={(value) => selectProvider(value as typeof provider)}>
-            <SelectTrigger
-              aria-label={t("Mail provider")}
-              className={cn(
-                "h-10 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-2.5 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus:ring-[3px] focus:ring-[var(--md-accent-a14)]",
-                collapsed && "justify-center px-0 [&>svg]:hidden",
-              )}
-            >
-              <SelectValue>
-                <span className="flex min-w-0 items-center gap-2">
-                  <MailProviderMark provider={provider} />
-                  <span className={cn("truncate", collapsed && "sr-only")}>{mailProviderLabels[provider]}</span>
-                </span>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
-              {providers.map((candidate) => (
-                <SelectItem key={candidate} value={candidate} className="text-[13px]">
-                  <span className="flex items-center gap-2">
-                    <MailProviderMark provider={candidate} />
-                    {mailProviderLabels[candidate]}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : provider ? (
-          <div className={cn(
-            "flex h-10 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 shadow-[var(--md-shadow-line)]",
-            collapsed && "justify-center px-0",
-          )}>
-            <MailProviderMark provider={provider} />
-            <span className={cn("truncate text-[13px] font-medium text-[var(--md-ink)]", collapsed && "sr-only")}>{mailProviderLabels[provider]}</span>
-          </div>
-        ) : (
-          <p className={cn("px-2 text-[12px] text-[var(--md-subtle)]", collapsed && "sr-only")}>
-            {t(accountState === "idle" || accountState === "loading" ? "Loading mailboxes" : accountState === "error" ? "Mail unavailable" : "No mail connected")}
-          </p>
-        )}
-      </div>
-
-      <div className={cn("mt-4 flex min-h-9 items-center gap-2.5 border-b border-[var(--md-line)] px-2 pb-3", collapsed && "justify-center border-b-0 px-0 pb-0")}>
-        <Inbox className="size-[18px] shrink-0 text-[var(--md-accent)]" strokeWidth={1.3} aria-hidden="true" />
-        <h2 className={cn("truncate text-[17px] font-medium leading-6 tracking-[-0.015em] text-[var(--md-ink)]", collapsed && "sr-only")}>{t("Inbox")}</h2>
-      </div>
+      {!provider ? (
+        <p className={cn("mt-2 px-2 text-[12px] text-[var(--md-subtle)]", collapsed && "sr-only")}>
+          {t(accountState === "idle" || accountState === "loading" ? "Loading mailboxes" : accountState === "error" ? "Mail unavailable" : "No mail connected")}
+        </p>
+      ) : null}
 
       <SidebarSection className="mt-2">
-        {items.map((item, index) => (
+        {items.map((item) => (
           <Fragment key={item.view}>
-            <SidebarSectionItem cascadeIndex={5 + index}>
+            <SidebarSectionItem>
               <SidebarNavItem
                 item={{ label: item.label, icon: item.icon, value: item.value }}
                 isActive={item.view === view && !folderId}
@@ -1048,35 +994,7 @@ export function AppSidebar({
   const aiAgentName = useAiAgentName()
   const inboxWorkspace = useOptionalInboxWorkspace()
   const shouldReduceMotion = useReducedMotion()
-  // Fade the outgoing content before labels and shortcuts reflow into the rail.
-  // A second click cancels the pending switch and reverses from the current width.
-  const [collapsed, setPresentedCollapsed] = useState(requestedCollapsed)
-  const presentedCollapsedRef = useRef(requestedCollapsed)
-  const [cascadeReady, setCascadeReady] = useState(true)
-  const [instantCollapse, setInstantCollapse] = useState(false)
-  useEffect(() => {
-    if (shouldReduceMotion) {
-      presentedCollapsedRef.current = requestedCollapsed
-      setPresentedCollapsed(requestedCollapsed)
-      setCascadeReady(true)
-      return
-    }
-    if (requestedCollapsed === presentedCollapsedRef.current) {
-      setCascadeReady(true)
-      return
-    }
-    setCascadeReady(false)
-    let frame = 0
-    const timer = window.setTimeout(() => {
-      presentedCollapsedRef.current = requestedCollapsed
-      setPresentedCollapsed(requestedCollapsed)
-      frame = window.requestAnimationFrame(() => setCascadeReady(true))
-    }, 100)
-    return () => {
-      window.clearTimeout(timer)
-      window.cancelAnimationFrame(frame)
-    }
-  }, [requestedCollapsed, shouldReduceMotion])
+  const collapsed = requestedCollapsed
   const isCustomer = currentUser?.actorType === "customer"
   const accentPreferenceId = useAccentPresetId()
   const companyAppearance = useCompanyAppearance(currentUser?.id)
@@ -1454,7 +1372,7 @@ export function AppSidebar({
   }
 
   const homeSidebarItem = (
-    <SidebarSectionItem cascadeIndex={0}>
+    <SidebarSectionItem>
       <SidebarNavItem
         item={homeNavItem}
         isActive={route === "/"}
@@ -1466,7 +1384,7 @@ export function AppSidebar({
   )
 
   const inboxSidebarItem = (
-    <SidebarSectionItem cascadeIndex={1}>
+    <SidebarSectionItem>
       <SidebarNavItem
         item={inboxNavItem}
         isActive={route === "/inbox"}
@@ -1481,7 +1399,7 @@ export function AppSidebar({
   )
 
   const todoSidebarItem = (
-    <SidebarSectionItem cascadeIndex={2}>
+    <SidebarSectionItem>
       <SidebarNavItem
         item={todoNavItem}
         isActive={route === "/to-do"}
@@ -1493,7 +1411,7 @@ export function AppSidebar({
   )
 
   const calendarSidebarItem = (
-    <SidebarSectionItem cascadeIndex={3}>
+    <SidebarSectionItem>
       <SidebarNavItem
         item={calendarNavItem}
         isActive={route === "/calendar"}
@@ -1504,12 +1422,12 @@ export function AppSidebar({
     </SidebarSectionItem>
   )
 
-  const favouriteSidebarItems = favouriteIds.map((id, index) => {
+  const favouriteSidebarItems = favouriteIds.map((id) => {
     const favourite = favouriteCandidates.get(id)
     if (!favourite) return null
 
     return (
-      <SidebarSectionItem key={id} layout cascadeIndex={4 + index}>
+      <SidebarSectionItem key={id} layout layoutDependency={favouriteIds.join(",")}>
         <SidebarItemMenu favourite onToggleFavourite={() => toggleSidebarFavourite(id)}>
           <SidebarNavItem
             item={favourite.item}
@@ -1524,7 +1442,7 @@ export function AppSidebar({
   })
 
   const dexterSidebarItem = (
-    <SidebarSectionItem cascadeIndex={4 + favouriteIds.length}>
+    <SidebarSectionItem>
       <SidebarNavItem
         item={{ label: `Agent ${aiAgentName}`, icon: AiBrain, route: "/agent-dexter" }}
         isActive={route === "/agent-dexter"}
@@ -1538,9 +1456,6 @@ export function AppSidebar({
   return (
     <aside
       data-sidebar-collapsed={requestedCollapsed ? "true" : undefined}
-      data-sidebar-content-changing={requestedCollapsed !== collapsed ? "true" : undefined}
-      data-sidebar-cascade-ready={requestedCollapsed === collapsed && cascadeReady ? "true" : "false"}
-      data-sidebar-instant={instantCollapse ? "true" : undefined}
       data-sidebar-mode={isInboxRoute ? "inbox" : isAgentRoute ? "dexter" : isSettingsRoute ? "settings" : activeArea?.id ?? "areas"}
       className={cn(
         "md-app-sidebar relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)]",
@@ -1552,7 +1467,6 @@ export function AppSidebar({
         {collapsed ? null : (
           activeCompanyBrand ? (
             <span
-              data-sidebar-transition-content
               className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
               aria-label={`${activeCompanyBrand.displayName}, with Multideck`}
               title={`${activeCompanyBrand.displayName} × Multideck`}
@@ -1578,12 +1492,11 @@ export function AppSidebar({
             <img
               src={multideckFullLogo}
               alt="Multideck"
-              data-sidebar-transition-content
               className="me-auto h-[34px] min-w-0 max-w-[112px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
             />
           )
         )}
-        {!collapsed ? <span data-sidebar-transition-content className="shrink-0 self-start"><NotificationBell onNavigate={onRequestClose} /></span> : null}
+        {!collapsed ? <span className="shrink-0 self-start"><NotificationBell onNavigate={onRequestClose} /></span> : null}
         {!collapsed && onRequestClose ? (
           <Button
             type="button"
@@ -1605,25 +1518,14 @@ export function AppSidebar({
             aria-label={t(requestedCollapsed ? "Expand sidebar" : "Collapse sidebar")}
             title={t(requestedCollapsed ? "Expand sidebar" : "Collapse sidebar")}
             className={cn("absolute top-0 size-9 shrink-0 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]", collapsed ? "end-0.5" : "end-0")}
-            onPointerDown={() => setInstantCollapse(false)}
-            onClick={(event) => {
-              const nextCollapsed = !requestedCollapsed
-              if (event.detail === 0) {
-                setInstantCollapse(true)
-                presentedCollapsedRef.current = nextCollapsed
-                setPresentedCollapsed(nextCollapsed)
-                setCascadeReady(true)
-                window.requestAnimationFrame(() => window.requestAnimationFrame(() => setInstantCollapse(false)))
-              }
-              onCollapsedChange(nextCollapsed)
-            }}
+            onClick={() => onCollapsedChange(!collapsed)}
           >
             <HugeiconsIcon icon={LayoutLeftIcon} size={16} strokeWidth={1.3} aria-hidden="true" />
           </Button>
         ) : null}
       </div>
 
-      {collapsed ? <div data-sidebar-transition-content className="relative z-10 mt-2 flex justify-center"><NotificationBell /></div> : null}
+      {collapsed ? <div className="relative z-10 mt-2 flex justify-center"><NotificationBell /></div> : null}
 
       {isTrainingWorkspace ? (
         <div className="relative z-10 mt-3 flex justify-center" role="status" aria-label="Training workspace">
@@ -1635,14 +1537,13 @@ export function AppSidebar({
         <nav
           aria-label={t("Pinned shortcuts")}
           data-sidebar-shortcuts
-          data-sidebar-transition-content
           className={cn("relative z-10 mt-[var(--md-page-stack-gap)] grid shrink-0 gap-1 pb-4", collapsed ? "grid-cols-1" : "grid-cols-4")}
         >
           {homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{calendarSidebarItem}
         </nav>
       ) : null}
 
-      <div data-sidebar-transition-content className={cn("relative z-10 min-h-0 flex-1", isCustomer && "mt-[var(--md-page-stack-gap)]")}>
+      <div className={cn("relative z-10 min-h-0 flex-1", isCustomer && "mt-[var(--md-page-stack-gap)]")}>
         <div
           ref={sidebarScrollRef}
           className="md-sidebar-scroll-region h-full overflow-y-auto overflow-x-hidden"
@@ -1669,7 +1570,7 @@ export function AppSidebar({
               transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
               <SidebarSection>
-                <SidebarSectionItem cascadeIndex={4}>
+                <SidebarSectionItem>
                   <SidebarNavItem
                     item={{ label: "Back", icon: ArrowLeft }}
                     onClick={() => {
@@ -1680,7 +1581,7 @@ export function AppSidebar({
                     collapsed={collapsed}
                   />
                 </SidebarSectionItem>
-                <SidebarSectionItem cascadeIndex={5}>
+                <SidebarSectionItem>
                   <button
                     type="button"
                     className={cn(
@@ -1948,17 +1849,14 @@ export function AppSidebar({
               </div>
 
               <nav aria-label={t("Settings")} className="mt-3 flex flex-col gap-[var(--md-page-stack-gap)]">
-                {settingsNavigationGroups.map((group, groupIndex) => (
+                {settingsNavigationGroups.map((group) => (
                   <div key={group.label}>
                     <p className={cn("mb-1.5 px-2 text-[11px] font-medium text-[var(--md-subtle)]", collapsed && "sr-only")}>
                       {t(group.label)}
                     </p>
                     <SidebarSection>
-                      {group.items.map((item, itemIndex) => (
-                        <SidebarSectionItem
-                          key={item.id}
-                          cascadeIndex={5 + settingsNavigationGroups.slice(0, groupIndex).reduce((count, previous) => count + previous.items.length, 0) + itemIndex}
-                        >
+                      {group.items.map((item) => (
+                        <SidebarSectionItem key={item.id}>
                           <SidebarNavItem
                             item={{ label: item.id === "dexter" ? aiAgentName : item.label, icon: item.icon }}
                             isActive={activeSettingsSection === item.id}
@@ -2007,7 +1905,6 @@ export function AppSidebar({
 
               <CustomisableSidebarSection
                 className="mt-2.5"
-                cascadeStart={isCustomer ? 0 : 5 + favouriteIds.length}
                 scopeId={activeArea.id}
                 baseIds={destinationBaseIds}
                 promotedIds={promotedDestinationIds}
@@ -2119,7 +2016,6 @@ export function AppSidebar({
 
               <CustomisableSidebarSection
                 className="mt-[var(--md-gap-sm)]"
-                cascadeStart={isCustomer ? 0 : 5 + favouriteIds.length}
                 scopeId={areasScopeId}
                 baseIds={areaBaseIds}
                 arrangeItems={areaArrangeItems}
@@ -2165,7 +2061,7 @@ export function AppSidebar({
         />
       </div>
 
-      <div data-sidebar-transition-content className="relative z-10 mt-[var(--md-page-stack-gap)] shrink-0">
+      <div className="relative z-10 mt-[var(--md-page-stack-gap)] shrink-0">
         {supportTicketFeatureEnabled ? <><Separator className="sidebar-support-divider mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
         <button
           type="button"

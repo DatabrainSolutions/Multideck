@@ -28,7 +28,7 @@ import {
   HomeDeckTile,
   homeDeckRowButtonClass,
 } from "@/components/multideck/home-deck-panel"
-import type { HomePromptSuggestion } from "@/components/multideck/home-prompt-rail"
+import type { DexterPromptPreset } from "@/components/multideck/dexter-prompt-presets"
 import { TodoCompletionControl } from "@/components/multideck/todo-components"
 import { getDefaultDateRange } from "@/components/multideck/date-picker"
 import { loadDashboardOverview, type DashboardOverviewReadModel } from "@/lib/dashboard-api"
@@ -48,7 +48,12 @@ const deckRowLimit = 5
 const clockOffLimit = 8
 /** The register's own ceiling. A star outside this page would not be found. */
 const myJobsLimit = 50
-const suggestionLimit = 3
+const suggestionLimit = 5
+
+function shortPresetName(name: string, limit = 18) {
+  const trimmed = name.trim()
+  return trimmed.length > limit ? `${trimmed.slice(0, limit - 1).trimEnd()}…` : trimmed
+}
 
 const todoEmptyPhrases = [
   "All clear.",
@@ -291,15 +296,15 @@ export function HomePage({
 
   /** Prompts built from this operator's own records, so Dexter never has to
       guess what the suggestion was about. */
-  const suggestions = useMemo<HomePromptSuggestion[]>(() => {
+  const suggestions = useMemo<DexterPromptPreset[]>(() => {
     const leadItem = priorityItems[0]
     const waiting = followUps[0]
-    const built: HomePromptSuggestion[] = []
+    const built: DexterPromptPreset[] = []
 
     if (dueTodayCount > 1) {
       built.push({
         id: "triage",
-        title: t("Work through what is due before cutoff"),
+        title: t("Clear today's cutoffs"),
         prompt: t("Take my queue for today in deadline order and tell me exactly what to do on each one."),
         meta: t("{count} due").replace("{count}", String(dueTodayCount)),
         icon: Zap,
@@ -310,14 +315,12 @@ export function HomePage({
     if (leadItem) {
       built.push({
         id: `lead-${leadItem.id}`,
-        title: t("Pick up {reference} for {customer}")
-          .replace("{reference}", leadItem.reference)
-          .replace("{customer}", leadItem.customer),
+        title: t("Pick up {reference}").replace("{reference}", leadItem.reference),
         prompt: t("Review {reference} for {customer} – {task}. Tell me the next action and draft it.")
           .replace("{reference}", leadItem.reference)
           .replace("{customer}", leadItem.customer)
           .replace("{task}", t(leadItem.task)),
-        meta: t(leadItem.status),
+        meta: `${leadItem.customer} · ${t(leadItem.status)}`,
         icon: leadItem.kind === "exception" ? TriangleAlert : ReceiptText,
         specialistId: leadItem.kind === "exception" ? "ops" : "sales",
       })
@@ -327,13 +330,15 @@ export function HomePage({
       const recommendation = formatFollowUpRecommendation(waiting.recommendationCode, t)
       built.push({
         id: `follow-${waiting.threadId ?? `${waiting.recordType}-${waiting.recordId ?? waiting.name}`}`,
-        title: `${recommendation} · ${waiting.name}`,
+        // The whole name – a first word alone reads wrongly for a company –
+        // shortened so one long name cannot crowd the rest of the tray.
+        title: t("Follow up {name}").replace("{name}", shortPresetName(waiting.name)),
         prompt: t("Review the conversation with {name} ({address}) about “{subject}”. The recommended next action is: {action}. Help me complete it.")
           .replace("{name}", waiting.name)
           .replace("{address}", waiting.address ?? t("No email address recorded"))
           .replace("{subject}", waiting.subject)
           .replace("{action}", recommendation),
-        meta: t("waiting {gap}").replace("{gap}", formatWait(waiting.waitingFor)),
+        meta: `${recommendation} · ${t("waiting {gap}").replace("{gap}", formatWait(waiting.waitingFor))}`,
         icon: Mail,
         specialistId: "customer",
       })
@@ -342,7 +347,7 @@ export function HomePage({
     if ((overview?.counts.readyQuotes ?? 0) > 0) {
       built.push({
         id: "ready-quotes",
-        title: t("Send the quotes that are ready"),
+        title: t("Send ready quotes"),
         prompt: t("Show me every quote that is ready to send, check each one, and draft the covering email."),
         meta: t("{count} ready").replace("{count}", String(overview?.counts.readyQuotes ?? 0)),
         icon: PackageCheck,
@@ -353,7 +358,7 @@ export function HomePage({
     if (recentWork?.type === "booking") {
       built.push({
         id: `recent-${recentWork.recordId}`,
-        title: t("Chase what is missing on {reference}").replace("{reference}", recentWork.recordId),
+        title: t("Chase {reference}").replace("{reference}", recentWork.recordId),
         prompt: t("Check what information is still missing on booking {reference} and help me chase it up.")
           .replace("{reference}", recentWork.recordId),
         icon: Handshake,
@@ -364,14 +369,14 @@ export function HomePage({
     built.push(
       {
         id: "at-risk",
-        title: t("Review the bookings most at risk"),
+        title: t("At-risk bookings"),
         prompt: t("Show me the bookings most at risk right now and what I should do next on each."),
         icon: BarChart3,
         specialistId: "analytics",
       },
       {
         id: "customer-update",
-        title: t("Draft the customer update that is overdue"),
+        title: t("Overdue customer update"),
         prompt: t("Draft an update for the customer who most needs one today."),
         icon: MessageCircle,
         specialistId: "customer",
@@ -596,7 +601,7 @@ export function HomePage({
         {/* Auto margins rather than `justify-center`: a centred flex column
             clips its own top once the content is taller than the viewport, and
             the greeting is the first thing that would go. */}
-        <div className={cn("mx-auto w-full", docked ? "mt-auto max-w-none" : "my-auto max-w-[980px]")}>
+        <div className={cn("mx-auto w-full max-w-[980px]", docked ? "mt-auto" : "my-auto")}>
           <HomeDexterLauncher
             className="max-w-none"
             operatorName={operatorName}

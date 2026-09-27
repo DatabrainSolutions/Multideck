@@ -3,7 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 const tableCode = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/record-tables.ts', import.meta.url), 'utf8'))
-const { createRecordTable, recordActionTarget } = await import(`data:text/javascript;base64,${Buffer.from(tableCode).toString('base64')}`)
+const { createRecordTable, recordActionTarget, upsertRecordTable } = await import(`data:text/javascript;base64,${Buffer.from(tableCode).toString('base64')}`)
 
 const asyncCode = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/async-domain-reads.ts', import.meta.url), 'utf8'))
 const { asyncDomainReads } = await import(`data:text/javascript;base64,${Buffer.from(asyncCode).toString('base64')}`)
@@ -43,6 +43,42 @@ test('record tables reject unqueried IDs and use only server-returned values and
   assert.equal(result.table.rows[0].values.privateField, undefined)
   records.get('leads').get('lead-1')._citation.url = '//untrusted.example'
   assert.equal(createRecordTable({ domain: 'leads', record_ids: ['lead-1'] }, records).table.rows[0].url, undefined)
+})
+
+test('a revised record table replaces its earlier snapshot with a stable stream ID', () => {
+  const tables = []
+  const first = upsertRecordTable(tables, { id: 'first', domain: 'bookings', rows: ['job-a'] })
+  upsertRecordTable(tables, { id: 'leads', domain: 'leads', rows: ['lead-a'] })
+  const revised = upsertRecordTable(tables, { id: 'second', domain: 'bookings', rows: ['job-a', 'job-b'] })
+  assert.equal(first.id, revised.id)
+  assert.deepEqual(tables, [revised, { id: 'leads', domain: 'leads', rows: ['lead-a'] }])
+  assert.deepEqual(revised.rows, ['job-a', 'job-b'])
+})
+
+test('two booking table calls in one reply persist one table and update the streamed table', async () => {
+  const records = [
+    { recordId: 'job-a', bookingReference: 'A', status: 'Open' },
+    { recordId: 'job-b', bookingReference: 'B', status: 'Booked' },
+  ]
+  const show = (call_id, record_ids) => ({ type: 'function_call', name: 'show_record_table', call_id,
+    arguments: JSON.stringify({ domain: 'bookings', title: 'Bookings needing attention first', record_ids, fields: null, filters: null }) })
+  const query = { type: 'function_call', name: 'query_data_domain', call_id: 'query',
+    arguments: JSON.stringify({ domain: 'bookings', search: null, take: 25 }) }
+  const h = harness([
+    response([query]),
+    response([show('first', ['job-a']), show('revised', ['job-a', 'job-b'])]),
+    { status: 200, response: { output: [], answer: 'Review these bookings.' } },
+  ], {
+    input: { domainCodes: ['bookings'], userClient: { rpc: async () => ({ data: { data: records }, error: null }) } },
+    dependencies: { createRecordTable, upsertRecordTable, addDomainCitations: (_domain, data) => data,
+      collectEmailAddresses: () => {}, rememberCurrentRecords: () => {} },
+  })
+  const result = await h.run()
+  const streamed = h.events.filter(event => event.type === 'record_table').map(event => event.table)
+  assert.equal(streamed.length, 2)
+  assert.equal(streamed[0].id, streamed[1].id)
+  assert.equal(result.recordTables.length, 1)
+  assert.deepEqual(result.recordTables[0].rows.map(row => row.id), ['job-a', 'job-b'])
 })
 
 const deferredCode = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/deferred-work.ts', import.meta.url), 'utf8'))

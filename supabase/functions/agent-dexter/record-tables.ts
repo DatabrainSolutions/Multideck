@@ -72,6 +72,25 @@ export function createRecordTable(args: Json, records: Map<string, Map<string, J
   return { table: { id: crypto.randomUUID(), domain, title: typeof args.title === "string" ? args.title.slice(0, 120) : "Records", columns: selectedColumns, rows, retrievedAt: now.toISOString() } }
 }
 
+/** A later selection for the same record type revises its existing snapshot. */
+export function upsertRecordTable(tables: Json[], table: Json): Json {
+  const index = tables.findIndex(existing => existing.domain === table.domain)
+  if (index < 0) {
+    tables.push(table)
+    return table
+  }
+  const updated = { ...table, id: tables[index].id }
+  tables[index] = updated
+  return updated
+}
+
+/** Keep the latest saved snapshot for each record type in older replies. */
+export function latestRecordTables<T extends { domain: string }>(tables: T[]): T[] {
+  const latest = new Map<string, T>()
+  for (const table of tables) latest.set(table.domain, table)
+  return [...latest.values()]
+}
+
 /** The caller supplies an authorised query result, never model-authored target details. */
 export function recordActionTarget(record?: Json) {
   if (!record || typeof record.recordId !== "string") return undefined

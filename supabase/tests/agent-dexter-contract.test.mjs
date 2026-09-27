@@ -112,7 +112,7 @@ const modelGateway = read("supabase/functions/_shared/model-gateway.ts")
 const dexterDocumentOcr = read("supabase/functions/_shared/dexter-document-ocr.ts")
 const dexterDocumentOcrMigration = read("supabase/migrations/20260810141116_dexter_mistral_document_ocr.sql")
 const customerApi = read("multideck.client/src/lib/customer-api.ts")
-const customerPage = read("multideck.client/src/pages/customer-detail-page.tsx")
+const customerPage = read("multideck.client/src/components/multideck/account-operations-workspace.tsx")
 const emailWatchWorker = read(
   "supabase/functions/email-watch-worker/index.ts",
 )
@@ -664,7 +664,7 @@ test("customer documents list and open only through the authenticated Supabase E
   assert.match(customerDocumentsRuntime, /createSignedUrl/)
   assert.match(customerApi, /supabaseFunctionsUrl}\/customer-documents/)
   assert.doesNotMatch(customerApi, /api\/v1\/customers\/.*documents/)
-  assert.match(customerPage, /<CustomerDocuments customerId=\{customer\.id\}/)
+  assert.match(customerPage, /listCustomerDocuments\(account\.id, \{ limit: documentPageSize/)
 })
 
 test("Approve and Deny stay explicit, single-submit, and recoverable", () => {
@@ -728,7 +728,7 @@ test("Dexter attaches clickable inline citations only to records returned by its
   assert.match(edgeFunction, /\/crm\/leads\/\$\{encodeURIComponent\(recordId\)\}/)
   assert.match(edgeFunction, /\/crm\/deals\?record=/)
   assert.match(edgeFunction, /\/quotes\?search=/)
-  assert.match(edgeFunction, /\/customers\/\$\{encodeURIComponent\(recordId\)\}/)
+  assert.match(edgeFunction, /\/crm\/accounts\/\$\{encodeURIComponent\(recordId\)\}`, "Company record"/)
   assert.match(edgeFunction, /\/warehouse\/orders\?/)
   assert.match(edgeFunction, /\/warehouse\/inventory\?search=/)
   assert.match(edgeFunction, /domain === "warehouse_reference"/)

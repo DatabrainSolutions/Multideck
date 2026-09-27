@@ -99,10 +99,10 @@ export function dockedAdminHubFor(route: string, hubId: string | null): AdminHub
   const hubs = adminHubs.filter((hub) => hub.display === "hub")
   const landing = hubs.find((hub) => hub.route === route)
   if (landing) return landing
-  if (operationalRoutes.has(route)) return null
   const contains = (hub: AdminHub) => hub.blocks.some((block) => block.links.some((link) => pathOf(link.route) === route))
   const remembered = hubs.find((hub) => hub.id === hubId)
   if (remembered && contains(remembered)) return remembered
+  if (operationalRoutes.has(route)) return null
   return hubs.find((hub) => hub.owns?.some((owned) => route === owned || route.startsWith(`${owned}/`)) && contains(hub)) ?? null
 }
 

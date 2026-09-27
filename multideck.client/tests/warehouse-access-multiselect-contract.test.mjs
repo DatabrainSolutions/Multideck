@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const root = new URL("../", import.meta.url)
-const customerPage = await readFile(new URL("src/pages/customer-detail-page.tsx", root), "utf8")
+const customerPage = await readFile(new URL("src/pages/warehouse-customer-access.tsx", root), "utf8")
 const multiSelect = await readFile(new URL("src/components/multideck/multi-select-menu.tsx", root), "utf8")
 const componentData = await readFile(new URL("src/data/multideck-data.ts", root), "utf8")
 
@@ -20,5 +20,5 @@ test("the shared multi-select supports labelled values and remains documented", 
   assert.match(multiSelect, /DropdownMenuCheckboxItem/)
   assert.match(multiSelect, /option\.translate \? t\(option\.label\) : option\.label/)
   assert.match(customerPage, /placeholder="Select warehouses"/)
-  assert.match(componentData, /Customer warehouse access", route: "\/customers"/)
+  assert.match(componentData, /Customer warehouse access", route: "\/warehouse\/users"/)
 })

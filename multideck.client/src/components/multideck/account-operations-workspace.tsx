@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  Check,
+  ChevronDown,
   Download,
   FileText,
   LockKeyhole,
@@ -8,9 +10,16 @@ import {
   Trash2,
 } from "@/components/icons/hugeicons";
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu";
+import { Pagination } from "@/components/multideck/pagination";
 import { Surface } from "@/components/multideck/surface";
 import { TabsRail } from "@/components/multideck/workflow-components";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -22,11 +31,15 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useLanguage } from "@/i18n/language-provider";
+import { defaultPaginationPageSize } from "@/lib/pagination";
+import { cn } from "@/lib/utils";
 import { customsImporterProfileErrors } from "../../../../supabase/functions/_shared/customs-importer-profile.ts";
 import {
   getCustomerDocumentUrl,
+  listContactsPage,
   listCustomerDocuments,
   replaceAccountOperations,
+  type ContactRegisterPage,
   type AccountOperations,
   type ApiCustomerDetail,
   type ApiCustomerDocument,
@@ -46,6 +59,7 @@ export type AccountDetailTab =
   | "documents"
   | "instructions"
   | "privacy"
+  | "roles"
   | `role:${string}`;
 
 const blankOperations: AccountOperations = {
@@ -152,6 +166,45 @@ function newId() {
   );
 }
 
+/** Every role the company holds, in the order operators expect to work them. */
+export function accountRoleOptions(account: ApiCustomerDetail, t: (value: string) => string) {
+  return account.types
+    .map((type) => roleKey(type) === "key customer account" ? "customer" : roleKey(type))
+    .filter(
+      (role, index, roles) =>
+        role && role !== "company" && roles.indexOf(role) === index,
+    )
+    .map((role, index) => ({
+      id: role,
+      label: t(account.types.find((type) => roleKey(type) === role) ?? role),
+      order: accountRoleTabOrder[role] ?? Number.MAX_SAFE_INTEGER,
+      index,
+    }))
+    .sort((left, right) => left.order - right.order || left.index - right.index)
+    .map(({ id, label }) => ({ id, label }));
+}
+
+/** Customers and suppliers carry invoicing, credit and bank details. */
+export function accountHasFinancialRole(account: Pick<ApiCustomerDetail, "types">) {
+  return account.types.some((type) =>
+    [
+      "customer",
+      "potential customer",
+      "key account",
+      "key customer account",
+      "supplier",
+    ].includes(roleKey(type)),
+  );
+}
+
+const moreAccountTabs = ["warehouse", "customs", "instructions", "privacy", "live"] as const;
+
+/**
+ * The record's sections. The ones an operator opens every day sit on the rail;
+ * set-up that is visited occasionally waits under More, and a company's roles
+ * share one tab with its own switch rather than taking a tab each, so a
+ * ten-role agent does not push Financial off the screen.
+ */
 export function AccountDetailTabs({
   account,
   activeTab,
@@ -162,80 +215,81 @@ export function AccountDetailTabs({
   onChange: (tab: AccountDetailTab) => void;
 }) {
   const { t } = useLanguage();
-  const roleTabs = useMemo(
-    () =>
-      account.types
-        .map((type) => roleKey(type) === "key customer account" ? "customer" : roleKey(type))
-        .filter(
-          (role, index, roles) =>
-            role && role !== "company" && roles.indexOf(role) === index,
-        )
-        .map((role, index) => ({
-          id: `role:${role}`,
-          label: t(
-            account.types.find((type) => roleKey(type) === role) ?? role,
-          ),
-          order: accountRoleTabOrder[role] ?? Number.MAX_SAFE_INTEGER,
-          index,
-        }))
-        .sort((left, right) => left.order - right.order || left.index - right.index)
-        .map(({ id, label }) => ({ id, label })),
-    [account.types, t],
-  );
-  const financial = account.types.some((type) =>
-    [
-      "customer",
-      "potential customer",
-      "key account",
-      "key customer account",
-      "supplier",
-    ].includes(roleKey(type)),
-  );
+  const roleCount = useMemo(() => accountRoleOptions(account, t).length, [account, t]);
+  const financial = accountHasFinancialRole(account);
   const tabs = [
     { id: "overview", label: t("Overview") },
     { id: "details", label: t("Details") },
-    { id: "notes", label: t("Notes") },
+    {
+      id: "contacts",
+      label: t("Contacts"),
+      value: String(account.contactCount ?? account.contacts.length),
+    },
     {
       id: "addresses",
       label: t("Addresses"),
       value: String(account.addresses.length),
     },
-    {
-      id: "contacts",
-      label: t("Contacts"),
-      value: String(account.contacts.length),
-    },
-    ...roleTabs,
+    ...(roleCount ? [{ id: "roles", label: t("Roles"), value: String(roleCount) }] : []),
     ...(financial ? [{ id: "financial", label: t("Financial") }] : []),
-    { id: "warehouse", label: t("Warehouse") },
-    { id: "customs", label: t("Customs") },
     {
       id: "documents",
       label: t("Documents"),
       value: String(account.operations?.documents.length ?? 0),
     },
+    { id: "notes", label: t("Notes") },
+  ];
+  const moreTabs = [
+    { id: "warehouse", label: t("Warehouse") },
+    { id: "customs", label: t("Customs") },
     {
       id: "instructions",
       label: t("Instructions"),
-      value: String(
-        account.operations?.instructions.filter((item) => item.isActive)
-          .length ?? 0,
-      ),
+      value: account.operations?.instructions.filter((item) => item.isActive).length ?? 0,
     },
     { id: "privacy", label: t("Privacy") },
     { id: "live", label: "Multideck Live" },
-  ];
+  ] satisfies Array<{ id: (typeof moreAccountTabs)[number]; label: string; value?: number }>;
+  const activeMore = moreTabs.find((tab) => tab.id === activeTab) ?? null;
   return (
     <Surface
       padding="none"
       className="overflow-hidden rounded-[var(--md-radius-xl)]"
     >
-      <TabsRail
-        tabs={tabs}
-        activeTab={activeTab}
-        onChange={(tab) => onChange(tab as AccountDetailTab)}
-        className="px-4 sm:px-5"
-      />
+      <div className="flex min-w-0 items-stretch shadow-[inset_0_-1px_0_var(--md-line)]">
+        <TabsRail
+          tabs={tabs}
+          activeTab={activeTab}
+          onChange={(tab) => onChange(tab as AccountDetailTab)}
+          className="min-w-0 flex-1 ps-4 pe-2 shadow-none sm:ps-5"
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "relative flex h-12 shrink-0 items-center gap-1.5 pe-4 ps-3 text-[14px] font-medium text-[var(--md-text)] shadow-[inset_1px_0_0_var(--md-line)] outline-none transition-colors duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-accent)] focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)] rtl:shadow-[inset_-1px_0_0_var(--md-line)] sm:pe-5",
+                activeMore && "text-[var(--md-accent)]",
+              )}
+            >
+              {activeMore ? activeMore.label : t("More")}
+              <ChevronDown className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+              {activeMore ? <span aria-hidden="true" className="absolute inset-x-3 bottom-0 h-[3px] rounded-full bg-[var(--md-accent)]" /> : null}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-[220px] rounded-[var(--md-radius-lg)]">
+            {moreTabs.map((tab) => (
+              <DropdownMenuItem key={tab.id} onSelect={() => onChange(tab.id)} className="justify-between">
+                <span>{tab.label}</span>
+                <span className="flex items-center gap-2 text-[11px] tabular-nums text-[var(--md-subtle)]">
+                  {"value" in tab && tab.value ? tab.value : null}
+                  {activeTab === tab.id ? <Check className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.8} aria-hidden="true" /> : null}
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </Surface>
   );
 }
@@ -251,7 +305,7 @@ export function AccountOperationsPanel({
   onOpenContact,
 }: {
   account: ApiCustomerDetail;
-  activeTab: Exclude<AccountDetailTab, "overview" | "details" | "live" | "notes">;
+  activeTab: Exclude<AccountDetailTab, "overview" | "details" | "live" | "notes" | "roles">;
   canManageFinancial: boolean;
   canManageBankDetails: boolean;
   currencyOptions: Array<{ code: string; name: string }>;
@@ -436,15 +490,51 @@ function ControlField({
   );
 }
 
+/** Every person at the company, paged from the contact register rather than the record's short sample. */
 function Contacts({ account, onOpenContact }: { account: ApiCustomerDetail; onOpenContact: (contactId: string) => void }) {
   const { t } = useLanguage();
+  const [contactListing, setContactListing] = useState<ContactRegisterPage | null>(null);
+  const [contactsLoading, setContactsLoading] = useState(true);
+  const [contactsError, setContactsError] = useState<string | null>(null);
+  const [contactPage, setContactPage] = useState(1);
+  const [contactPageSize, setContactPageSize] = useState(defaultPaginationPageSize);
+  const [contactsReload, setContactsReload] = useState(0);
+
+  useEffect(() => { setContactPage(1); }, [account.id]);
+
+  useEffect(() => {
+    let active = true;
+    setContactsLoading(true);
+    setContactsError(null);
+    listContactsPage({
+      accountId: account.id,
+      sort: { id: "contact", direction: "asc" },
+      limit: contactPageSize,
+      offset: (contactPage - 1) * contactPageSize,
+    })
+      .then((listing) => { if (active) setContactListing(listing); })
+      .catch((cause) => { if (active) setContactsError(cause instanceof Error ? cause.message : t("Company contacts are unavailable.")); })
+      .finally(() => { if (active) setContactsLoading(false); });
+    return () => { active = false; };
+  }, [account.id, account.contacts.length, contactPage, contactPageSize, contactsReload, t]);
+
+  const contacts = contactListing?.rows ?? [];
   return (
     <>
       <SectionTitle
         title="Linked contacts"
         detail="People are linked to this account through their current organisation relationship."
       />
-      {account.contacts.length ? (
+      {contactsError ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 py-3 text-[12px] text-[var(--md-red)]">
+          <span>{contactsError}</span>
+          <Button variant="outline" size="sm" onClick={() => setContactsReload((value) => value + 1)}>{t("Try again")}</Button>
+        </div>
+      ) : !contactListing && contactsLoading ? (
+        <div className="grid min-h-24 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)]">
+          <LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" aria-label={t("Loading contacts")} />
+        </div>
+      ) : contacts.length ? (
         <div className="overflow-x-auto rounded-[var(--md-radius-lg)] shadow-[var(--md-shadow-line)]">
           <table className="w-full min-w-[640px] text-start text-[12px]">
             <thead className="bg-[var(--md-surface-soft)] text-[10.5px] text-[var(--md-subtle)]">
@@ -467,7 +557,7 @@ function Contacts({ account, onOpenContact }: { account: ApiCustomerDetail; onOp
               </tr>
             </thead>
             <tbody>
-              {account.contacts.map((contact) => (
+              {contacts.map((contact) => (
                 <tr
                   key={contact.id}
                   role="link"
@@ -512,6 +602,9 @@ function Contacts({ account, onOpenContact }: { account: ApiCustomerDetail; onOp
           {t("No contacts are linked to this account yet.")}
         </p>
       )}
+      {!contactsError && contactListing && contactListing.total > contactPageSize ? (
+        <Pagination className="mt-3" page={contactPage} pageCount={Math.max(1, Math.ceil(contactListing.total / contactPageSize))} totalItems={contactListing.total} pageSize={contactPageSize} onPageSizeChange={setContactPageSize} onPageChange={setContactPage} loading={contactsLoading} itemCount={contacts.length} itemLabel="contacts" />
+      ) : null}
     </>
   );
 }
@@ -1720,14 +1813,21 @@ function Documents({ account, draft, setDraft }: Props) {
   const [loadingDocuments, setLoadingDocuments] = useState(true);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [documentPage, setDocumentPage] = useState(1);
+  const [documentPageSize, setDocumentPageSize] = useState(defaultPaginationPageSize);
+  const [documentTotal, setDocumentTotal] = useState(0);
+
+  useEffect(() => { setDocumentPage(1); }, [account.id]);
 
   useEffect(() => {
     let cancelled = false;
     setLoadingDocuments(true);
     setDocumentsError(null);
-    void listCustomerDocuments(account.id, { limit: 50 })
+    void listCustomerDocuments(account.id, { limit: documentPageSize, offset: (documentPage - 1) * documentPageSize })
       .then((listing) => {
-        if (!cancelled) setLinkedDocuments(listing.documents);
+        if (cancelled) return;
+        setLinkedDocuments(listing.documents);
+        setDocumentTotal(listing.total);
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -1744,7 +1844,7 @@ function Documents({ account, draft, setDraft }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [account.id, t]);
+  }, [account.id, documentPage, documentPageSize, t]);
 
   async function openDocument(document: ApiCustomerDocument) {
     const pendingWindow = window.open("about:blank", "_blank");
@@ -1805,7 +1905,7 @@ function Documents({ account, draft, setDraft }: Props) {
             </p>
           </div>
           <span className="text-[11px] tabular-nums text-[var(--md-subtle)]">
-            {linkedDocuments.length}
+            {documentTotal}
           </span>
         </div>
         {loadingDocuments ? (
@@ -1864,6 +1964,11 @@ function Documents({ account, draft, setDraft }: Props) {
             {t("No files are linked to this account yet.")}
           </p>
         )}
+        {!documentsError && documentTotal > documentPageSize ? (
+          <div className="p-2 shadow-[var(--md-stroke-top)]">
+            <Pagination page={documentPage} pageCount={Math.max(1, Math.ceil(documentTotal / documentPageSize))} totalItems={documentTotal} pageSize={documentPageSize} onPageSizeChange={setDocumentPageSize} onPageChange={setDocumentPage} loading={loadingDocuments} itemCount={linkedDocuments.length} itemLabel="documents" />
+          </div>
+        ) : null}
       </div>
       <div className="grid gap-2">
         {draft.documents.map((doc, index) => (
@@ -2420,7 +2525,7 @@ function RoleProfile({
     <>
       <SectionTitle
         title={`${role.replace(/\b\w/g, (c) => c.toUpperCase())} details`}
-        detail="This tab appears because the role is applied to the account."
+        detail="Shown because this role is applied to the company."
       />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {fields.map(([key, label]) => (

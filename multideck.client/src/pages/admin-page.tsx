@@ -161,7 +161,7 @@ function referencePatternError(pattern: string, target: ReferenceRuleTarget, com
   return null
 }
 
-export type AdminRoute = "/admin" | "/admin/settings" | "/admin/finance" | "/admin/sales-crm" | "/admin/users" | "/admin/usage" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/branding" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
+export type AdminRoute = "/admin" | "/admin/settings" | "/admin/finance" | "/admin/sales-crm" | "/admin/operations" | "/admin/warehouse" | "/admin/general-reporting" | "/admin/documents-storage" | "/admin/customs-compliance" | "/admin/users" | "/admin/usage" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/branding" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
 type AuditCategory = "all" | "authentication" | "application"
 const auditRefreshIntervalMs = 60_000
 

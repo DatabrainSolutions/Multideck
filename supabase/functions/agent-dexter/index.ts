@@ -23,7 +23,7 @@ import { dealStageActionReview } from "./deal-stage-review.ts"
 import { dealSalesActionReview } from "./deal-sales-review.ts"
 import { requestedInboxProviders } from "./inbox-intent.ts"
 import { prepareProviderDraftSend } from "./provider-draft-send.ts"
-import { createRecordTable, recordTableTool, recordActionTarget } from "./record-tables.ts"
+import { createRecordTable, recordTableTool, recordActionTarget, upsertRecordTable } from "./record-tables.ts"
 import { hydrateConversationArtifacts } from "./conversation-artifacts.ts"
 import { reportActionChanges } from "./report-review.ts"
 import { isTrainingDatabase } from "../_shared/training-environment.ts"
@@ -1579,7 +1579,7 @@ function addDomainCitations(domain: string, value: unknown) {
         const recordId = cleanString(record.recordId, 80)
         const title = cleanString(record.name, 240) || "Customer"
         return recordId
-          ? addRecordCitation(record, title, `/customers/${encodeURIComponent(recordId)}`, "Customer record")
+          ? addRecordCitation(record, title, `/crm/accounts/${encodeURIComponent(recordId)}`, "Company record")
           : record
       }),
     }
@@ -3651,8 +3651,8 @@ async function runStreamedAgent(
       } else if (call.name === "show_record_table") {
         const result = createRecordTable(args, tableRecords)
         if (result.table) {
-          recordTables.push(result.table)
-          emit({ type: "record_table", table: result.table })
+          const table = upsertRecordTable(recordTables, result.table)
+          emit({ type: "record_table", table })
           toolOutput = { displayed: true, rows: result.table.rows.length, instruction: "The operator can see this native table. Explain the takeaway without duplicating its rows in text." }
         } else toolOutput = result
       } else if (call.name === DEXTER_DOCUMENT_OCR_TOOL) {

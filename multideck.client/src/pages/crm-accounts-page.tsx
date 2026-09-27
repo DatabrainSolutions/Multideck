@@ -34,23 +34,51 @@ const emptyAccount = (): CreateCustomerInput => ({
   contactFirstName: null, contactLastName: null, contactEmail: null,
 })
 
-const accountScopes = ["All", "Mine"] as const
-type AccountScope = typeof accountScopes[number]
+/**
+ * Customers and suppliers are companies with a role, so they are views of the
+ * one register rather than registers of their own. The view changes what is
+ * fetched (and, for customers, adds the receivables columns); the filters only
+ * narrow what came back.
+ */
+const companyViews = ["All", "Mine", "Customers", "Suppliers"] as const
+type CompanyView = typeof companyViews[number]
+const companyViewParams: Record<CompanyView, string | null> = { All: null, Mine: "mine", Customers: "customers", Suppliers: "suppliers" }
 const emptyAccountSummary: AccountRegisterPage["summary"] = { accounts: 0, contacts: 0, needsAttention: 0, marketingOptedIn: 0, unassigned: 0, healthy: 0 }
 const emptyAccountFacets: AccountRegisterPage["facets"] = { relationships: [], owners: [], hasUnassigned: false }
 const emptyFinancialSummary: NonNullable<AccountRegisterPage["financialSummary"]> = { balanceDue: null, overdueAmount: null, openInvoiceCount: 0, overdueInvoiceCount: 0, overdueCustomerCount: 0, creditAttentionCount: 0, onHoldCount: 0, accountingAttentionCount: null }
 type OrganisationRegisterType = "company" | ProviderPartyType
 
-export function CrmAccountsPage({ navigate, currentUser, organisationType = "company" }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null; organisationType?: OrganisationRegisterType }) {
+/** The view lives in the address, so a filtered register survives reloads, links and Back. */
+function readCompanyView(): CompanyView {
+  const param = new URLSearchParams(window.location.search).get("view")
+  // The retired /customers and /suppliers addresses open their view while App rewrites the address.
+  if (param === "customers" || window.location.pathname.startsWith("/customers")) return "Customers"
+  if (param === "suppliers" || window.location.pathname.startsWith("/suppliers")) return "Suppliers"
+  return param === "mine" ? "Mine" : "All"
+}
+
+function companyViewUrl(view: CompanyView, search = window.location.search) {
+  const params = new URLSearchParams(search)
+  const value = companyViewParams[view]
+  if (value) params.set("view", value)
+  else params.delete("view")
+  const query = params.toString()
+  return `/crm/accounts${query ? `?${query}` : ""}`
+}
+
+export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null }) {
   const { language, t } = useLanguage()
+  const [view, setView] = useState<CompanyView>(readCompanyView)
+  const organisationType: OrganisationRegisterType = view === "Customers" ? "customer" : view === "Suppliers" ? "supplier" : "company"
+  const accountScope = view === "Mine" ? "Mine" : "All"
   const customerAccounts = organisationType === "customer"
-  const title = customerAccounts ? "Customer accounts" : organisationType === "supplier" ? "Suppliers" : "Companies"
-  const singular = organisationType === "customer" ? "customer" : organisationType === "supplier" ? "supplier" : "company"
-  const routeBase = organisationType === "customer" ? "/customers" : organisationType === "supplier" ? "/suppliers" : "/crm/accounts"
+  const title = "Companies"
+  const singular = "company"
+  const viewNoun = view === "Customers" ? "customers" : view === "Suppliers" ? "suppliers" : "companies"
+  const routeBase = "/crm/accounts"
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
-  const [accountScope, setAccountScope] = useState<AccountScope>("All")
   const [relationshipFilter, setRelationshipFilter] = useState("")
   const [ownerFilter, setOwnerFilter] = useState("")
   const [advancedFilter, setAdvancedFilter] = useState<FilterQuery>(() => createEmptyFilterQuery("any"))
@@ -120,7 +148,27 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
     return () => window.clearTimeout(timer)
   }, [query])
 
-  useEffect(() => setOffset(0), [query, accountScope, relationshipFilter, ownerFilter])
+  useEffect(() => setOffset(0), [query, view, relationshipFilter, ownerFilter])
+
+  useEffect(() => {
+    const syncView = () => {
+      const next = readCompanyView()
+      setView((current) => {
+        if (current !== next) setAccounts([])
+        return next
+      })
+    }
+    window.addEventListener("popstate", syncView)
+    return () => window.removeEventListener("popstate", syncView)
+  }, [])
+
+  function changeView(next: CompanyView) {
+    if (next === view) return
+    // Each view fetches different companies (and customers carry receivables), so rows from the last view are not shown under its columns.
+    setAccounts([])
+    setView(next)
+    window.history.replaceState(window.history.state, "", companyViewUrl(next))
+  }
 
   useEffect(() => {
     let active = true
@@ -162,17 +210,18 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
     getCustomerReference().then((data) => {
       if (!active) return
       setReference(data)
-      if (organisationType !== "company") {
-        const requiredType = data.organisationTypes.find((type) => type.name.trim().toLowerCase() === organisationType)
-        if (requiredType) setDraft((current) => current.orgTypeIds.length ? current : { ...current, orgTypeIds: [requiredType.id] })
-      }
       setReferenceState("ready")
     }).catch((error) => {
       console.error("Account reference data could not be loaded.", error)
       if (active) setReferenceState("error")
     })
     return () => { active = false }
-  }, [organisationType, reference, referenceReloadToken])
+  }, [reference, referenceReloadToken])
+
+  // A company created from the Customers or Suppliers view starts with that role.
+  useEffect(() => {
+    setDraft((current) => ({ ...current, orgTypeIds: requiredOrgTypeId ? [requiredOrgTypeId] : [] }))
+  }, [requiredOrgTypeId])
 
   useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmAccount, openCreate), [])
 
@@ -208,7 +257,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   const contactTotal = summary.contacts
   const unassignedAccounts = summary.unassigned
   const healthyAccounts = summary.healthy
-  const accountFiltersActive = Boolean(query || relationshipFilter || ownerFilter || accountScope !== "All" || countActiveFilterConditions(advancedFilter))
+  const accountFiltersActive = Boolean(query || relationshipFilter || ownerFilter || countActiveFilterConditions(advancedFilter))
   const relationshipOptions = useMemo(() => facets.relationships.map((value) => ({ value, label: humanize(value) })), [facets.relationships])
   const ownerOptions = useMemo(() => {
     const assigned = facets.owners.map((owner) => ({ value: owner.id, label: owner.name }))
@@ -245,7 +294,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
     if (customerAccounts) {
       const financialColumns: DataTableColumn<ApiCustomer>[] = [
         {
-          id: "account", label: "Customer", width: 265, minWidth: 220, maxWidth: 380, canHide: false, resizable: true,
+          id: "account", label: "Company", width: 265, minWidth: 220, maxWidth: 380, canHide: false, resizable: true,
           sortValue: (account) => account.name,
           exportValue: (account) => account.name,
           cell: (account) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.accountCode ? `${t("Account")} ${account.accountCode}` : null, account.location].filter(Boolean).join(" · ") || t("No account code or location")}</span></div>,
@@ -333,7 +382,6 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
 
   function clearAccountFilters() {
     setQuery("")
-    setAccountScope("All")
     setRelationshipFilter("")
     setOwnerFilter("")
     setAdvancedFilter(createEmptyFilterQuery("any"))
@@ -457,17 +505,17 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
     [t("Over credit limit"), financialAccess ? financialSummary.creditAttentionCount : "—", financialAccess ? t("accounts beyond their limit") : restrictedFinancialDetail],
     [t("On hold"), financialAccess ? financialSummary.onHoldCount : "—", financialAccess ? t("credit-controlled accounts") : restrictedFinancialDetail],
   ] : [
-    [t(`Total ${title.toLowerCase()}`), summary.accounts, t(`all ${singular} records`)],
+    [t(`Total ${viewNoun}`), summary.accounts, t(view === "Mine" ? "assigned to you" : `all ${viewNoun === "companies" ? "company" : viewNoun.slice(0, -1)} records`)],
     [t("Contacts"), contactTotal, t("recorded contacts")],
     [t("Needs attention"), needsAttention, t("need attention now")],
     [t("Unassigned"), unassignedAccounts, t("without an assigned owner")],
-    [t(`Healthy ${title.toLowerCase()}`), healthyAccounts, t("health score 70 or above")],
+    [t(`Healthy ${viewNoun}`), healthyAccounts, t("health score 70 or above")],
   ]
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t(title)} className="md-page md-page-stack-compact">
       <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(customerAccounts ? "Accounts receivable" : "Organisations")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(organisationType === "company" ? "Every company, its contacts and all operational roles kept in one place." : customerAccounts ? "Balances, overdue invoices, credit limits, payment terms and accounting status in one place." : "Supplier accounts, contacts and accounting-system status in one place.")}</p></div>
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(customerAccounts ? "Customers · accounts receivable" : view === "Suppliers" ? "Suppliers" : "Organisations")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(customerAccounts ? "Every company you invoice, with balances, overdue invoices, credit limits and payment terms beside its record." : view === "Suppliers" ? "Every company that supplies you, with its contacts and accounting-system status." : "Every company, its contacts and all operational roles kept in one place. Customers and suppliers are companies with that role.")}</p></div>
         <div className="flex flex-wrap gap-2">
           {organisationType !== "company" && canManageAccounting ? <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => { setLatestSync(null); setSyncOpen(true) }}><RefreshCw className="size-4" strokeWidth={1.4} />{t("Sync with accounting system")}</Button> : null}
           <DexterActionPill onClick={() => setDexterOpen(true)} label={t("Ask Dexter")} />
@@ -492,8 +540,8 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
 
       <DataTable
         key={customerAccounts ? "customer-accounts-receivable-v2" : `crm-${organisationType}-organisations-v1`}
-        ariaLabel={customerAccounts ? "Customer accounts receivable register" : `${title} directory`}
-        columnsButtonLabel={customerAccounts ? "Manage customer account columns" : `Manage ${singular} columns`}
+        ariaLabel={customerAccounts ? "Customer companies with receivables" : `${title} directory`}
+        columnsButtonLabel={customerAccounts ? "Manage customer columns" : `Manage ${singular} columns`}
         storageKey={customerAccounts ? "customer-accounts-receivable-v2" : `crm-${organisationType}-organisations-v1`}
         columns={accountColumns}
         rows={accounts}
@@ -506,10 +554,10 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
             dateLabel: "Oldest overdue date",
             dateValue: (account) => account.financial?.oldestOverdueDate,
             busy: query.trim() !== debouncedQuery,
-            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({ organisationType: "customer", search: debouncedQuery, marketingScope: "all", sort, ...page }, { forceRefresh: true }), (account) => account.id, signal),
+            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({ organisationType: "customer", search: debouncedQuery, marketingScope: "all", relationship: relationshipFilter, owner: ownerFilter, filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter, sort, ...page }, { forceRefresh: true }), (account) => account.id, signal),
           },
         } : {
-          fileName: `crm-${title.toLowerCase()}`,
+          fileName: `crm-${viewNoun}`,
           recordCategory: `${singular[0].toUpperCase() + singular.slice(1)} details`,
           register: {
             dateLabel: "Last contact date",
@@ -524,9 +572,9 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "account", direction: "asc" }); setOffset(0) } }}
         pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setAccountPageSize, error: state === "error" }}
         compactToolbar
-        toolbarTabs={customerAccounts ? undefined : <RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel={`${singular[0].toUpperCase() + singular.slice(1)} ownership filter`} compact />}
-        toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${title.toLowerCase()}`} placeholder={`Search ${title.toLowerCase()}…`} className="sm:w-[180px]" />}
-        toolbarFilters={customerAccounts ? undefined : <>
+        toolbarTabs={<RegisterViewSwitch options={companyViews} value={view} onChange={changeView} counts={{ [view]: summary.accounts }} ariaLabel="Company view" compact />}
+        toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${viewNoun}`} placeholder={`Search ${viewNoun}…`} className="sm:w-[180px]" />}
+        toolbarFilters={<>
           <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className="w-[132px]" />
           <RegisterFacetSelect label="Owner" allLabel="All owners" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter} className="w-[126px]" />
           <AdvancedFilterPopover
@@ -534,7 +582,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
             value={advancedFilter}
             onChange={(value) => { setAdvancedFilter(value); setOffset(0) }}
             storageKey={`crm-${organisationType}-organisation-register`}
-            itemLabel={title.toLowerCase()}
+            itemLabel={viewNoun}
             totalCount={total}
             countMatches={countAdvancedMatches}
           />
@@ -542,21 +590,21 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         toolbarOptions={<><RegisterRevalidatingMark active={state === "loading" && accounts.length > 0} />{customerAccounts ? <RegisterRefreshButton pending={state === "loading"} onRefresh={() => setReloadToken((value) => value + 1)} /> : null}</>}
         contentBeforeTable={customerAccounts && state !== "loading" && !financialAccess ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Receivables permission is required to view balances, overdue invoices and credit controls.")}</div> : customerAccounts && state !== "loading" && financialAccess && !financeReady ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_9%,var(--md-surface))] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Complete the tenant base-currency setup in Finance before customer balances and available credit are compared.")}</div> : undefined}
         emptyState={state === "loading"
-          ? <RecordState icon={<DotGridLoader size="sm" decorative />} title={t(`Loading ${title.toLowerCase()}…`)} />
+          ? <RecordState icon={<DotGridLoader size="sm" decorative />} title={t(`Loading ${viewNoun}…`)} />
           : state === "error"
-            ? <RecordState icon={<RefreshCw className="size-5" />} title={t(`${title} could not be loaded.`)} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
-            : customerAccounts ? <RecordState illustration="contacts" icon={<Building2 className="size-5" />} title={query ? t("No customer accounts match this search.") : t("No customer accounts yet.")} detail={query ? t("Clear the search or try another customer name or account code.") : t("Create the first customer before setting credit terms or raising an invoice.")} action={query ? <Button variant="outline" onClick={() => setQuery("")}>{t("Clear search")}</Button> : <Button onClick={openCreate}>{t("New customer")}</Button>} /> : <RecordState illustration="contacts" icon={<Building2 className="size-5" />} title={accountFiltersActive ? t(`No ${title.toLowerCase()} match these filters.`) : t(`No ${title.toLowerCase()} yet.`)} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t(`Create the first ${singular} to keep its contacts and operational roles together.`)} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t(`New ${singular}`)}</Button>} />}
+            ? <RecordState icon={<RefreshCw className="size-5" />} title={t(`${viewNoun[0].toUpperCase() + viewNoun.slice(1)} could not be loaded.`)} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
+            : <RecordState illustration="contacts" icon={<Building2 className="size-5" />} title={accountFiltersActive ? t(`No ${viewNoun} match these filters.`) : t(view === "Mine" ? "No companies are assigned to you yet." : `No ${viewNoun} yet.`)} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t(customerAccounts ? "Give a company the Customer role before setting credit terms or raising an invoice." : view === "Suppliers" ? "Give a company the Supplier role to see it here." : "Create the first company to keep its contacts and operational roles together.")} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t("New company")}</Button>} />}
       />
 
       {organisationType !== "company" ? (
         <Dialog open={syncOpen} onOpenChange={(next) => { if (syncState !== "syncing" && !partyBusy) setSyncOpen(next) }}>
           <DialogContent className="max-h-[88vh] overflow-hidden border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
             <DialogHeader className="text-start">
-              <DialogTitle>{t(`Sync ${title.toLowerCase()} with accounting system`)}</DialogTitle>
+              <DialogTitle>{t(`Sync ${viewNoun} with accounting system`)}</DialogTitle>
               <DialogDescription>{t(`Check account delivery, review exceptions and configure automatic creation. Ledger and balance reconciliation are separate checks.`)}</DialogDescription>
             </DialogHeader>
             <div className="grid min-h-0 gap-4 overflow-y-auto pe-1">
-              {syncState === "loading" ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label={`Loading ${singular} sync history`} /></div> : null}
+              {syncState === "loading" ? <div className="grid min-h-[180px] place-items-center"><DotGridLoader label={`Loading ${viewNoun.slice(0, -1)} sync history`} /></div> : null}
               {syncState === "ready" || syncState === "syncing" ? (
                 <label className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]">
                   <span>{t("Accounting system")}</span>
@@ -572,7 +620,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
                   <p className="text-[12px] text-[var(--md-text)]">{t("These checks cover customer and supplier records and accounting addresses. They do not confirm matching ledgers or balances.")}</p>
                   {partyHealth.incoming ? <div className="space-y-2 border-t border-[var(--md-line)] pt-3"><h4 className="text-[13px] font-medium">{t("Incoming accounting changes")}</h4><p className="text-[12px] text-[var(--md-text)]">{t("Pending")}: {partyHealth.incoming.pending} · {t("Matched deliveries")}: {partyHealth.incoming.matched} · {t("Needs review")}: {partyHealth.incoming.attention}</p><p className="text-[12px] text-[var(--md-text)]">{t("External changes are checked against approved deliveries. They do not change Multideck’s books automatically.")}</p>{partyHealth.incoming.issues.map((issue) => <div key={issue.id} className="py-1 text-[12px]"><p className="font-medium" data-i18n-skip>{issue.document_type} · {issue.document_number}</p><p className="text-[var(--md-text)]">{t(issue.message || "This incoming change needs review in Finance setup.")}</p></div>)}</div> : null}
                   {partyHealth.total === 0 ? <p className="text-[13px] text-[var(--md-text)]">{t("No accounts have been queued for this connection yet.")}</p> : null}
-                  <div className="max-h-[180px] overflow-y-auto divide-y divide-[var(--md-line)]">{partyHealth.issues.map((issue) => <div key={issue.id} className="py-2 text-[12px]"><a className="text-[var(--md-accent)] underline" href={`${issue.party_type === "customer" ? "/customers" : "/suppliers"}/${issue.org_id}`}>{issue.organisation_name}</a><span className="ms-2">{t(humanize(issue.status))}</span><p className="mt-1 text-[var(--md-text)]">{t(issue.last_error || "Waiting for the next account check.")}</p></div>)}</div>
+                  <div className="max-h-[180px] overflow-y-auto divide-y divide-[var(--md-line)]">{partyHealth.issues.map((issue) => <div key={issue.id} className="py-2 text-[12px]"><a className="text-[var(--md-accent)] underline" href={`/crm/accounts/${issue.org_id}`}>{issue.organisation_name}</a><span className="ms-2">{t(humanize(issue.status))}</span><p className="mt-1 text-[var(--md-text)]">{t(issue.last_error || "Waiting for the next account check.")}</p></div>)}</div>
                   {syncOverview?.connections.find((connection) => connection.id === selectedConnectionId)?.providerCode === "erpnext" ? <details className="text-[13px]"><summary className="cursor-pointer font-medium">{t("Automatic account sync settings")}</summary><div className="mt-3 grid gap-3"><label className="flex items-center gap-2"><input type="checkbox" checked={partySettings.enabled} disabled={partyBusy} onChange={(event) => setPartySettings((value) => ({ ...value, enabled: event.target.checked }))} />{t("Create and maintain accounts automatically")}</label><div className="grid gap-3 sm:grid-cols-3"><Field label={t("Customer group")} value={partySettings.customerGroup ?? ""} onChange={(customerGroup) => setPartySettings((value) => ({ ...value, customerGroup }))} /><Field label={t("Supplier group")} value={partySettings.supplierGroup ?? ""} onChange={(supplierGroup) => setPartySettings((value) => ({ ...value, supplierGroup }))} /><Field label={t("Territory")} value={partySettings.territory ?? ""} onChange={(territory) => setPartySettings((value) => ({ ...value, territory }))} /></div><Button variant="outline" disabled={partyBusy} onClick={() => void accountCheckAction(true)}>{t("Save sync settings")}</Button></div></details> : <p className="text-[12px] text-[var(--md-text)]">{t("Automatic verified sync is not yet available for this provider.")}</p>}
                   {partySettings.enabled ? <Button variant="outline" disabled={partyBusy} onClick={() => void reviewIdentities()}>{t("Review existing account links")}</Button> : null}
                   {identityReview ? <section aria-label={t("Existing account link review")} className="space-y-3 border-t border-[var(--md-line)] pt-3"><h4 className="text-[13px] font-medium">{t("Review existing account links")}</h4><p className="text-[12px] text-[var(--md-text)]">{t("Keep these existing ERPNext accounts and attach permanent Multideck identities. The next account check will apply the listed name, classification and address changes. Financial transactions are unchanged.")}</p><div className="max-h-[240px] overflow-y-auto divide-y divide-[var(--md-line)]">{identityReview.reviews.map((item) => <div key={item.jobId} className="py-2 text-[12px]"><p className="font-medium" data-i18n-skip>{item.organisationName} · {item.partyType}</p><p data-i18n-skip>{item.providerName} ({item.providerId})</p>{item.changes.map((change) => <p key={change.field} data-i18n-skip>{humanize(change.field)}: {String(change.from || "Not set")} → {String(change.to || "Not set")}</p>)}<p>{t(item.addressAction)}</p>{item.addressChanges.map((change) => <p key={change.field} data-i18n-skip>{humanize(change.field)}: {String(change.from || "Not set")} → {String(change.to || "Not set")}</p>)}</div>)}</div>{identityReview.issues.map((issue) => <p key={issue.jobId} role="status" className="text-[12px] text-[var(--md-amber)]">{t(issue.message)}</p>)}{!identityReview.reviews.length ? <p className="text-[12px]">{t("No existing links are ready for identity review.")}</p> : <Button disabled={partyBusy} onClick={() => void reviewIdentities(true)}>{t("Confirm these existing links")}</Button>}<Button variant="ghost" disabled={partyBusy} onClick={() => setIdentityReview(null)}>{t("Close review")}</Button></section> : null}
@@ -592,7 +640,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
                   </div>
                   {displayedSync.completedAt ? <p className="px-3 py-2 text-[10.5px] text-[var(--md-subtle)]">{t("Completed")} · {new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(displayedSync.completedAt))}</p> : null}
                 </div>
-              ) : syncState === "ready" ? <p className="py-8 text-center text-[13px] text-[var(--md-text)]">{t(`No ${singular} account syncs have run yet.`)}</p> : null}
+              ) : syncState === "ready" ? <p className="py-8 text-center text-[13px] text-[var(--md-text)]">{t(`No ${viewNoun.slice(0, -1)} account syncs have run yet.`)}</p> : null}
               {syncError ? <p role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_8%,var(--md-surface))] px-4 py-3 text-[13px] leading-5 text-[var(--md-red)]">{t(syncError)}</p> : null}
             </div>
             <DialogFooter>

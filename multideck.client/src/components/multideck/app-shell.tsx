@@ -279,7 +279,7 @@ export function AppShell({
           currentUser={currentUser}
           collapsed={sidebarCollapsed}
           onCollapsedChange={setSidebarCollapsed}
-          className="hidden h-full min-h-0 lg:flex"
+          className="md-sidebar-floating hidden min-h-0 lg:flex"
         />
         {currentUser?.actorType === "internal" ? <AdminSectionsDockHost route={route} navigate={navigate} /> : null}
         {isFullHeightRoute || isSignatureRoute ? (

@@ -1,5 +1,5 @@
 import { useId, useState } from "react"
-import { X } from "@/components/icons/hugeicons"
+import { SlidersHorizontal, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -8,9 +8,12 @@ import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import { getContact, updateContact, type ApiContactDetail, type UpdateContactInput } from "@/lib/customer-api"
 import { useLanguage } from "@/i18n/language-provider"
 
-/** Fetch the person's authoritative record on demand, never company consent. */
-export function ContactPreferencesPopover({ contactId, name, onSaved, previewContact }: {
-  contactId: string; name: string; onSaved?: (contact: ApiContactDetail) => void; previewContact?: ApiContactDetail
+/**
+ * Fetch the person's authoritative record on demand, never company consent.
+ * `compact` draws the trigger as an icon for dense lists such as a record's people column.
+ */
+export function ContactPreferencesPopover({ contactId, name, onSaved, previewContact, compact = false }: {
+  contactId: string; name: string; onSaved?: (contact: ApiContactDetail) => void; previewContact?: ApiContactDetail; compact?: boolean
 }) {
   const { t } = useLanguage()
   const id = useId()
@@ -33,7 +36,9 @@ export function ContactPreferencesPopover({ contactId, name, onSaved, previewCon
   }
   const consentChanged = Boolean(contact && marketing !== contact.consentMarketing)
   return <Popover open={open} onOpenChange={next => { if (saving) return; setOpen(next); if (next && !contact) void load() }}>
-    <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" onClick={event => event.stopPropagation()} className="h-8 px-2 text-[12px] active:scale-[0.98] motion-reduce:transform-none" aria-label={`${t("Contact preferences")}: ${name}`}>{t("Contact preferences")}</Button></PopoverTrigger>
+    <PopoverTrigger asChild>{compact
+      ? <Button type="button" variant="ghost" size="icon" onClick={event => event.stopPropagation()} className="size-8 text-[var(--md-text)] hover:text-[var(--md-ink)] active:scale-[0.96] motion-reduce:transform-none" aria-label={`${t("Contact preferences")}: ${name}`} title={t("Contact preferences")}><SlidersHorizontal className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button>
+      : <Button type="button" variant="ghost" size="sm" onClick={event => event.stopPropagation()} className="h-8 px-2 text-[12px] active:scale-[0.98] motion-reduce:transform-none" aria-label={`${t("Contact preferences")}: ${name}`}>{t("Contact preferences")}</Button>}</PopoverTrigger>
     <PopoverContent align="start" sideOffset={8} collisionPadding={12} aria-labelledby={`${id}-title`} onClick={event => event.stopPropagation()} onInteractOutside={event => event.preventDefault()} onEscapeKeyDown={event => { if (saving) event.preventDefault() }} className="contact-compose-popover max-h-[min(82dvh,var(--radix-popover-content-available-height))] w-[min(360px,calc(100vw-24px))] overflow-y-auto bg-[var(--md-surface)] p-4">
       <div className="flex items-center justify-between gap-2"><h2 id={`${id}-title`} className="truncate font-medium" data-i18n-skip>{name}</h2><Button variant="ghost" size="icon" className="size-8" disabled={saving} aria-label={t("Close contact preferences")} onClick={() => setOpen(false)}><X className="size-4" /></Button></div>
       {!contact && !error ? <DotGridLoaderPanel label="Loading contact preferences" minHeight={180} /> : null}

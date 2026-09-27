@@ -1,4 +1,7 @@
 import { Fragment, type MouseEvent } from "react"
+import { Home03, MoreHorizontal } from "@/components/icons/hugeicons"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import "./app-breadcrumbs.css"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -30,6 +33,11 @@ const staticLeafLabels: Record<string, string> = {
   "/admin/finance": "Finance",
   "/admin/settings": "Settings",
   "/admin/sales-crm": "Sales & CRM",
+  "/admin/operations": "Operations",
+  "/admin/warehouse": "Warehouse",
+  "/admin/general-reporting": "General reporting",
+  "/admin/documents-storage": "Documents & Storage",
+  "/admin/customs-compliance": "Customs & compliance",
   "/bookings": "Bookings",
   "/bookings/new": "New booking",
   "/bookings/provisional": "Provisional booking",
@@ -418,30 +426,56 @@ export function AppBreadcrumbs({
     navigate(path)
   }
 
+  const collapsed = trail.length > 4
+  const hiddenAncestors = collapsed ? trail.slice(2, -1) : []
+
   return (
-    <Breadcrumb dir={direction} className={cn("min-w-0", className)}>
-      <BreadcrumbList className="flex-nowrap gap-1.5 text-[14px] font-medium text-[var(--md-text)]">
+    <Breadcrumb dir={direction} className={cn("md-app-breadcrumbs min-w-0", className)}>
+      <BreadcrumbList className="md-breadcrumb-list">
         {trail.map((item, index) => {
           const isCurrent = index === trail.length - 1
+          const isHome = index === 0
           const label = item.localize === false || item.preserveDirection ? item.label : t(item.label)
+          const content = isHome ? <><Home03 aria-hidden="true" /><span className="sr-only">{label}</span></> : label
+          if (collapsed && index > 1 && !isCurrent) {
+            if (index !== 2) return null
+            return <Fragment key="ancestors">
+              <BreadcrumbSeparator className="md-breadcrumb-separator">/</BreadcrumbSeparator>
+              <BreadcrumbItem>
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="md-breadcrumb-chip md-breadcrumb-overflow" aria-label={t("Show parent pages")}>
+                    <MoreHorizontal aria-hidden="true" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {hiddenAncestors.map((ancestor, ancestorIndex) => ancestor.route ? (
+                      <DropdownMenuItem key={ancestorIndex} asChild>
+                        <a href={ancestor.route} onClick={(event) => handleNavigate(event, ancestor.route!)}>
+                          {ancestor.localize === false || ancestor.preserveDirection ? ancestor.label : t(ancestor.label)}
+                        </a>
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem key={ancestorIndex} disabled>{ancestor.localize === false ? ancestor.label : t(ancestor.label)}</DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </BreadcrumbItem>
+            </Fragment>
+          }
 
           return (
-            <Fragment key={`${item.route ?? "current"}-${item.label}-${index}`}>
-              {index > 0 ? <BreadcrumbSeparator className="hidden shrink-0 text-[var(--md-subtle)] sm:inline-flex" /> : null}
-              <BreadcrumbItem className={cn("min-w-0", !isCurrent && "hidden sm:inline-flex")}>
+            <Fragment key={`${item.route ?? "current"}-${index}`}>
+              {index > 0 ? <BreadcrumbSeparator className="md-breadcrumb-separator">{index === 1 ? undefined : "/"}</BreadcrumbSeparator> : null}
+              <BreadcrumbItem className={cn("min-w-0", isHome && "md-breadcrumb-home-item", isCurrent && "md-breadcrumb-current-item")}>
                 {isCurrent ? (
-                  <BreadcrumbPage
-                    dir={item.preserveDirection ? "ltr" : undefined}
-                    className="max-w-[220px] truncate font-medium text-[var(--md-ink)]"
-                  >
-                    {label}
+                  <BreadcrumbPage dir={item.preserveDirection ? "ltr" : undefined} title={label} className={cn("md-breadcrumb-current", isHome && "md-breadcrumb-home")}>
+                    {content}
                   </BreadcrumbPage>
-                ) : (
-                  <BreadcrumbLink asChild className="truncate text-[var(--md-text)] hover:text-[var(--md-accent)]">
-                    <a href={item.route} onClick={(event) => handleNavigate(event, item.route!)}>
-                      {label}
-                    </a>
+                ) : item.route ? (
+                  <BreadcrumbLink asChild className={cn("md-breadcrumb-chip", isHome && "md-breadcrumb-home")}>
+                    <a href={item.route} title={label} onClick={(event) => handleNavigate(event, item.route!)}>{content}</a>
                   </BreadcrumbLink>
+                ) : (
+                  <span title={label} className="md-breadcrumb-chip">{content}</span>
                 )}
               </BreadcrumbItem>
             </Fragment>

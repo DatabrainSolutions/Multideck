@@ -45,16 +45,20 @@ const financialRoute = between(
   "customer register finance response",
 )
 
-test("the /customers route selects the accounts-receivable register without changing CRM companies or suppliers", () => {
-  assert.match(app, /route === "\/customers"[\s\S]*?<CrmAccountsPage[^>]*organisationType="customer"/)
+test("customers and suppliers are views of the one Companies register, and their old addresses land there", () => {
   assert.match(app, /route === "\/crm\/accounts"[\s\S]*?<CrmAccountsPage[^>]*currentUser=\{currentUser\}/)
-  assert.match(app, /route === "\/suppliers"[\s\S]*?<CrmAccountsPage[^>]*organisationType="supplier"/)
+  assert.doesNotMatch(app, /route === "\/customers"/)
+  assert.doesNotMatch(app, /route === "\/suppliers"/)
+  assert.doesNotMatch(app, /CustomerDetailPage/)
+  assert.match(app, /\(customers\|suppliers\|crm\\\/suppliers\)\$\/\.test\(path\)\) return "\/crm\/accounts"/)
+  assert.match(app, /return `\/crm\/accounts\/\$\{partyDetail\[1\]\}`/)
+  assert.match(app, /params\.set\("view", view\)/)
+  assert.match(accountPage, /const companyViews = \["All", "Mine", "Customers", "Suppliers"\] as const/)
+  assert.match(accountPage, /const organisationType: OrganisationRegisterType = view === "Customers" \? "customer" : view === "Suppliers" \? "supplier" : "company"/)
   assert.match(accountPage, /const customerAccounts = organisationType === "customer"/)
-  assert.match(accountPage, /customerAccounts \? "Customer accounts"/)
-  assert.match(accountPage, /customerAccounts \? "Accounts receivable" : "Organisations"/)
-  assert.match(accountPage, /Balances, overdue invoices, credit limits, payment terms and accounting status in one place\./)
-  assert.match(accountPage, /toolbarTabs=\{customerAccounts \? undefined/)
-  assert.match(accountPage, /toolbarFilters=\{customerAccounts \? undefined/)
+  assert.match(accountPage, /const title = "Companies"/)
+  assert.match(accountPage, /const routeBase = "\/crm\/accounts"/)
+  assert.match(accountPage, /toolbarTabs=\{<RegisterViewSwitch options=\{companyViews\} value=\{view\} onChange=\{changeView\}/)
 
   for (const id of ["company-types", "temperature", "relationship", "owner", "last-contact", "contacts", "marketing"]) {
     assert.match(genericColumns, new RegExp(`id: "${id}"`), `The generic CRM branch should retain ${id}.`)
@@ -102,7 +106,7 @@ test("the customers Edge Function delegates bounded finance projection behind bo
 test("the customer DataTable has fresh storage, refresh, accessible rows and finance-aware export", () => {
   assert.match(accountPage, /key=\{customerAccounts \? "customer-accounts-receivable-v2"/)
   assert.match(accountPage, /storageKey=\{customerAccounts \? "customer-accounts-receivable-v2"/)
-  assert.match(accountPage, /ariaLabel=\{customerAccounts \? "Customer accounts receivable register"/)
+  assert.match(accountPage, /ariaLabel=\{customerAccounts \? "Customer companies with receivables"/)
   assert.match(accountPage, /rowAriaLabel=\{\(account\) => customerAccounts \?[\s\S]*?balance due/)
   assert.match(accountPage, /exportConfig=\{customerAccounts \? \{[\s\S]*?fileName: "customer-accounts-receivable"[\s\S]*?collectExportPages[\s\S]*?organisationType: "customer"[\s\S]*?forceRefresh: true/)
   assert.match(accountPage, /customerAccounts \? <RegisterRefreshButton[^>]*onRefresh=\{\(\) => setReloadToken/)

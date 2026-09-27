@@ -263,13 +263,35 @@ async function detectImageType(file: File) {
 }
 
 export async function uploadEventImage(file: File) {
-  if (file.size > eventImageMaxBytes) throw new EventsApiError("Choose an image under 5 MB.", "invalid")
   const type = await detectImageType(file)
   if (!type) throw new EventsApiError("Choose a JPEG, PNG or WebP image.", "invalid")
+  if (file.size > 20 * 1024 * 1024) throw new EventsApiError("Choose an image under 20 MB.", "invalid")
+  let upload = file
+  try {
+    const bitmap = await createImageBitmap(file)
+    try {
+      const scale = Math.min(1, 1920 / Math.max(bitmap.width, bitmap.height))
+      const canvas = document.createElement("canvas")
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+      const context = canvas.getContext("2d")
+      if (context) {
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+        const compressed = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.8))
+        if (compressed && compressed.type === "image/webp" && compressed.size < file.size * 0.9) {
+          upload = new File([compressed], "event.webp", { type: "image/webp" })
+        }
+      }
+    } finally { bitmap.close() }
+  } catch {
+    // Keep a valid original if this browser cannot decode or encode it.
+  }
+  if (upload.size > eventImageMaxBytes) throw new EventsApiError("Choose an image under 5 MB, or a photo that can be compressed below 5 MB.", "invalid")
   const { data: auth } = await client().auth.getUser()
   if (!auth.user) throw new EventsApiError("Sign in again to upload images.", "forbidden")
-  const path = `${auth.user.id}/${crypto.randomUUID()}.${type.ext}`
-  const { error } = await client().storage.from(eventImageBucket).upload(path, file, { contentType: type.mime, upsert: false })
+  const uploadType = upload === file ? type : { mime: "image/webp", ext: "webp" }
+  const path = `${auth.user.id}/${crypto.randomUUID()}.${uploadType.ext}`
+  const { error } = await client().storage.from(eventImageBucket).upload(path, upload, { contentType: uploadType.mime, cacheControl: "3600", upsert: false })
   if (error) throw new EventsApiError(/row-level|policy|403/i.test(error.message) ? "You need the Event organiser role to upload images." : "The image could not be uploaded. Try again.", "invalid")
   return path
 }
@@ -292,15 +314,19 @@ export async function startEventImage(eventId: string) {
   }
 }
 
+type EventImageSize = "full" | "ticket"
 const signedUrls = new Map<string, { url: string; expires: number }>()
 const imageRequests = new Map<string, Promise<string>>()
 const imageQueue = new Map<string, { resolve: (url: string) => void; reject: (error: unknown) => void }>()
 
-function cachedEventImage(path: string | null) {
+function imageKey(path: string, size: EventImageSize) { return `${size}:${path}` }
+
+function cachedEventImage(path: string | null, size: EventImageSize) {
   if (!path) return null
-  const cached = signedUrls.get(path)
+  const key = imageKey(path, size)
+  const cached = signedUrls.get(key)
   if (cached && cached.expires > Date.now() + 60_000) return cached.url
-  signedUrls.delete(path)
+  signedUrls.delete(key)
   return null
 }
 
@@ -319,7 +345,7 @@ async function flushEventImages() {
       for (const [path, request] of group) {
         const item = results.get(path)
         if (item?.signedUrl && !item.error) {
-          signedUrls.set(path, { url: item.signedUrl, expires })
+          signedUrls.set(imageKey(path, "full"), { url: item.signedUrl, expires })
           request.resolve(item.signedUrl)
         } else request.reject(new EventsApiError("The event image could not be loaded.", "network"))
       }
@@ -329,29 +355,40 @@ async function flushEventImages() {
   }))
 }
 
-export function eventImageUrl(path: string): Promise<string> {
-  const cached = cachedEventImage(path)
+export function eventImageUrl(path: string, size: EventImageSize = "full"): Promise<string> {
+  const cached = cachedEventImage(path, size)
   if (cached) return Promise.resolve(cached)
-  const pending = imageRequests.get(path)
+  const key = imageKey(path, size)
+  const pending = imageRequests.get(key)
   if (pending) return pending
-  const request = new Promise<string>((resolve, reject) => {
-    const schedule = imageQueue.size === 0
-    imageQueue.set(path, { resolve, reject })
-    if (schedule) queueMicrotask(() => { void flushEventImages() })
-  }).finally(() => { imageRequests.delete(path) })
-  imageRequests.set(path, request)
+  const request = (size === "ticket" ? client().storage.from(eventImageBucket)
+    .createSignedUrl(path, 3600, { transform: { width: 1200, quality: 76, resize: "contain" } })
+    .then(({ data, error }) => {
+      if (error || !data?.signedUrl) throw error ?? new EventsApiError("The event image could not be loaded.", "network")
+      signedUrls.set(key, { url: data.signedUrl, expires: Date.now() + 3600_000 })
+      return data.signedUrl
+    }).catch(async () => {
+      const url = await eventImageUrl(path, "full")
+      signedUrls.set(key, { url, expires: signedUrls.get(imageKey(path, "full"))?.expires ?? Date.now() + 3600_000 })
+      return url
+    }) : new Promise<string>((resolve, reject) => {
+      const schedule = imageQueue.size === 0
+      imageQueue.set(path, { resolve, reject })
+      if (schedule) queueMicrotask(() => { void flushEventImages() })
+    })).finally(() => { imageRequests.delete(key) })
+  imageRequests.set(key, request)
   return request
 }
 
-export function useEventImage(path: string | null) {
+export function useEventImage(path: string | null, size: EventImageSize = "full") {
   const [, refresh] = useState(0)
-  const cached = cachedEventImage(path)
+  const cached = cachedEventImage(path, size)
   useEffect(() => {
     if (!path || cached) return
     let current = true
-    eventImageUrl(path).then(() => { if (current) refresh((value) => value + 1) }, () => { if (current) refresh((value) => value + 1) })
+    eventImageUrl(path, size).then(() => { if (current) refresh((value) => value + 1) }, () => { if (current) refresh((value) => value + 1) })
     return () => { current = false }
-  }, [path, cached])
+  }, [path, size, cached])
   // A changed/removed image must never display the previous event's artwork.
   return cached
 }

@@ -39,7 +39,7 @@ import { defaultPaginationPageSize } from "@/lib/pagination"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { useTheme } from "@/lib/theme-provider"
-import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pen01, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, MessageCircle, Moon02, PackageCheck, Pen01, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, TriangleAlert, UserRound, Zap } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -108,11 +108,9 @@ import {
   ContactProfileModule,
   CustomerAvatar,
   CustomerActivityPanel,
-  CustomerDetailHero,
   CustomerFootprintMap,
   CustomerListTable,
   CustomerMetricCard,
-  CustomerMetricsGrid,
   customerViewOptions,
   type CustomerViewMode,
   LaneMixPanel,
@@ -208,7 +206,8 @@ import {
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
 import { HomeDexterLauncher } from "@/components/multideck/home-dexter-launcher"
-import { HomePromptRail, type HomePromptSuggestion } from "@/components/multideck/home-prompt-rail"
+import { DexterPromptPresets, type DexterPromptPreset } from "@/components/multideck/dexter-prompt-presets"
+import { DexterGreeting } from "@/components/multideck/dexter-greeting"
 import {
   HomeDeckAction,
   HomeDeckPanel,
@@ -219,6 +218,7 @@ import {
 import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
 import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
 import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
+import { RecordProfileHeader, RecordProfileStat } from "@/components/multideck/record-profile-header"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
 import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
@@ -442,12 +442,12 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-greeting", "dexter-prompt-composer", "dexter-prompt-presets", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Home",
-    helper: "The launcher, its prompts, and the deck beneath it",
-    ids: ["home-dexter-launcher", "home-prompt-rail", "home-deck-panel"],
+    helper: "The launcher and the deck beneath it",
+    ids: ["home-dexter-launcher", "home-deck-panel"],
   },
   {
     label: "Support",
@@ -543,10 +543,12 @@ function GalleryRsvpFields() {
   )
 }
 
-const previewHomeSuggestions: HomePromptSuggestion[] = [
-  { id: "triage", title: "Work through what is due before cutoff", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
-  { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
-  { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
+const previewHomeSuggestions: DexterPromptPreset[] = [
+  { id: "triage", title: "Clear today's cutoffs", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
+  { id: "lead", title: "Pick up MD-22455", prompt: "Review MD-22455 for Northwind GmbH – release the customs hold. Tell me the next action and draft it.", meta: "Northwind GmbH · On hold", icon: TriangleAlert, specialistId: "ops" },
+  { id: "quotes", title: "Send ready quotes", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
+  { id: "risk", title: "At-risk bookings", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
+  { id: "update", title: "Overdue customer update", prompt: "Draft an update for the customer who most needs one today.", icon: MessageCircle, specialistId: "customer" },
 ]
 
 function DealWorkflowPreview({ loss = false }: { loss?: boolean }) {
@@ -2510,7 +2512,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "app-breadcrumbs" ? (
-        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <AppBreadcrumbs
             route="/crm/leads/northstar-components/convert"
             leafLabel="Northstar Components"
@@ -3711,8 +3713,21 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "record-header" ? (
         <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <CustomerDetailHero />
-          <CustomerMetricsGrid />
+          <RecordProfileHeader
+            back={{ label: "Companies", onClick: () => undefined }}
+            avatar={<CustomerAvatar initials="MA" tone="teal" className="size-full text-[22px] sm:text-[26px]" />}
+            title={<h3 className="text-[22px] font-medium leading-7 tracking-[-0.015em] text-[var(--md-ink)]">Marlow Apparel Ltd</h3>}
+            badges={<StatusPill kind="status" indicator={false} tone="blue">Key Account</StatusPill>}
+            meta={<><span className="font-medium text-[var(--md-ink)]">Customer, Consignee</span><span className="text-[var(--md-subtle)]">·</span><span>Apparel</span><span className="text-[var(--md-subtle)]">·</span><span>Leeds, GB</span></>}
+            actions={<><Button variant="outline" className="h-8 text-[12.5px]">Email</Button><Button variant="outline" className="h-8 text-[12.5px]">Call</Button></>}
+            bannerLabel="Ocean · Shanghai to Felixstowe"
+            stats={<>
+              <RecordProfileStat label="Active shipments" value={6} detail={<span className="text-[var(--md-amber)]">1 open exception</span>} />
+              <RecordProfileStat label="Balance due" value="£18,420" detail="Nothing overdue" />
+              <RecordProfileStat label="Credit available" value="£31,580" detail="of £50,000 limit" />
+              <RecordProfileStat label="Last contact" value="Yesterday" detail="Next action 2 Oct 2026" />
+            </>}
+          />
         </div>
       ) : null}
 
@@ -4123,7 +4138,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "swatch-picker" ? <SwatchPickerGallery /> : null}
       {id === "email-signature-control" ? <SignatureControlGallery /> : null}
       {id === "contact-email-action" ? <div className="w-full max-w-md p-6"><p className="text-[14px] font-medium">Alex Morgan</p><p className="mb-3 text-[12px] text-[var(--md-subtle)]">Operations manager</p><ContactEmailAction email="alex@example.test" name="Alex Morgan" preview /></div> : null}
-      {id === "contact-preferences-popover" ? <ContactPreferencesPopover contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /> : null}
+      {id === "contact-preferences-popover" ? <div className="flex items-center gap-3"><ContactPreferencesPopover contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /><ContactPreferencesPopover compact contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /></div> : null}
 
       {id === "dexter-email-compose-card" ? (
         <div className="w-full max-w-[720px]">
@@ -4171,16 +4186,28 @@ function ComponentPreview({ id }: { id: string }) {
             onAccessModeChange={setPreviewDexterAccessMode}
             onRemoveAttachment={togglePreviewDexterAttachment}
             onSend={() => toast.success("Dexter conversation started")}
+            presets={<DexterPromptPresets presets={previewHomeSuggestions} onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })} />}
           />
         </div>
       ) : null}
 
-      {id === "home-prompt-rail" ? (
-        <div className="w-full max-w-[620px]">
-          <HomePromptRail
-            suggestions={previewHomeSuggestions}
-            onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })}
-          />
+      {id === "dexter-prompt-presets" ? (
+        <div className="w-full max-w-[760px] overflow-hidden rounded-[26px] md-composer-bloom relative">
+          <span aria-hidden="true" className="md-composer-bloom__effect">
+            <span className="md-composer-bloom__contrast" />
+          </span>
+          <div className="relative z-[2] flex h-[46px] items-center overflow-x-auto px-2.5">
+            <DexterPromptPresets
+              presets={previewHomeSuggestions}
+              onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {id === "dexter-greeting" ? (
+        <div className="w-full max-w-[760px]">
+          <DexterGreeting title="Good afternoon, Harry" standfirst="Three jobs need you before today's cutoff." />
         </div>
       ) : null}
 

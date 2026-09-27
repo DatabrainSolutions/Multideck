@@ -118,6 +118,7 @@ export type EventTicketProps = {
   location: string
   imageUrl: string | null
   imagePriority?: boolean
+  onImageError?: () => void
   imageFrameStatus?: RefineFrameStatus | null
   onRetryImage?: () => void
   rsvp: EventTicketRsvp
@@ -140,7 +141,7 @@ export type EventTicketProps = {
  * gesture. The body opens the event; attendance is only ever the explicit RSVP
  * button in the stub.
  */
-export function EventTicket({ title, startsAt, endsAt, timezone, location, imageUrl, imagePriority = false, imageFrameStatus = null, onRetryImage, rsvp, closedLabel, goingCount = 0, onOpen, onRsvp, muted = false, cancelled = false, className }: EventTicketProps) {
+export function EventTicket({ title, startsAt, endsAt, timezone, location, imageUrl, imagePriority = false, onImageError, imageFrameStatus = null, onRetryImage, rsvp, closedLabel, goingCount = 0, onOpen, onRsvp, muted = false, cancelled = false, className }: EventTicketProps) {
   const { language, t } = useLanguage()
   const rootRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -178,8 +179,9 @@ export function EventTicket({ title, startsAt, endsAt, timezone, location, image
           imageRadius={roomy ? 10 : 8}
           image={imageFrameStatus ? "" : imageUrl ?? ""}
           imageAlt=""
-          imageLoading="eager"
+          imageLoading={imagePriority ? "eager" : "lazy"}
           imagePriority={imagePriority ? "high" : "auto"}
+          onImageError={onImageError}
           scrim={false}
           parallax={0}
           background="var(--md-surface)"

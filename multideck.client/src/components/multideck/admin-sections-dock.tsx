@@ -20,11 +20,9 @@ function orderedBlocks(hub: AdminHub) {
 }
 
 /**
- * The second sidebar's list. Each category with more than one setting is a
- * dropdown of those settings; a category with one setting opens it directly.
- * A category opens in place like every other sidebar dropdown; choosing a
- * setting opens its page and keeps this sidebar beside it. One highlight
- * travels to the setting on screen.
+ * The second sidebar's list. Small areas show their settings directly;
+ * larger categories expand in place. One highlight travels to the setting
+ * on screen.
  */
 function AdminDockNav({ hub, route, navigate }: { hub: AdminHub; route: string; navigate: (path: string) => void }) {
   const { t } = useLanguage()
@@ -74,7 +72,7 @@ function AdminDockNav({ hub, route, navigate }: { hub: AdminHub; route: string; 
       event.preventDefault()
       if (expandedId !== blockId) toggle(blockId, true)
       else rows[index + 1]?.focus()
-    } else if (event.key === "ArrowLeft") {
+    } else if (event.key === "ArrowLeft" && (parentId || blockId)) {
       event.preventDefault()
       if (parentId) rootRef.current?.querySelector<HTMLElement>(`[data-dock-block="${CSS.escape(parentId)}"] [data-sidebar-row]`)?.focus()
       else if (blockId) toggle(blockId, false)
@@ -90,6 +88,22 @@ function AdminDockNav({ hub, route, navigate }: { hub: AdminHub; route: string; 
           {group.title ? <p className="mb-1 px-2.5 text-[11px] font-medium text-[var(--md-subtle)]">{t(group.title)}</p> : null}
           <div className="flex flex-col gap-1">
             {group.blocks.map((block) => {
+              const directLinks = hub.id === "warehouse" || hub.id === "general-reporting" || (hub.id === "operations" && block.id === "bookings")
+              if (directLinks) return (
+                <div key={block.id} className="mb-3 flex flex-col gap-1 last:mb-0">
+                  {group.blocks.length > 1 ? <p className="mb-1 px-2.5 text-[11px] text-[var(--md-subtle)]">{t(block.title)}</p> : null}
+                  {block.links.map((link) => (
+                    <div key={`${link.label}|${link.route}`} data-dock-item="">
+                      <SidebarNavItem
+                        item={{ label: link.label, icon: link.icon ?? block.icon, route: link.route }}
+                        isActive={activeLink === link}
+                        onClick={() => openSetting(link)}
+                        activeLayoutId={activeLayoutId}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )
               const expandable = block.links.length > 1 || Boolean(block.comingSoon?.length)
               const isOpen = expandable && expandedId === block.id
               const singleActive = !expandable && selectedBlock?.id === block.id
