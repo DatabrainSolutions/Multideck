@@ -4376,6 +4376,7 @@ function ControlsTab({
   const revisions = setup.administration.revisions.filter(
     (item) => item.FINAdminRevision_LegalEntityID === selectedEntityId,
   )
+  const mirrorMode = text(draft.controls.externalMirrorModeCode, "optional")
   return (
     <div className="space-y-[var(--md-page-stack-gap-compact)]">
       <div className="grid items-start gap-3 @min-[900px]/finance:grid-cols-2">
@@ -4398,11 +4399,15 @@ function ControlsTab({
               label={t("External accounting mirror")}
               labelFor="control-external-mirror"
               description={t(
-                "Required: finance is not ready until an active connection exists.",
+                mirrorMode === "required"
+                  ? "Required: finance is not ready until an active connection exists."
+                  : mirrorMode === "disabled"
+                    ? "External accounting is off. Multideck Accounts can be ready without a connection."
+                    : "External accounting is optional. Multideck Accounts can be ready without a connection.",
               )}
             >
               <Select
-                value={text(draft.controls.externalMirrorModeCode, "optional")}
+                value={mirrorMode}
                 onValueChange={(externalMirrorModeCode) =>
                   setControls({ externalMirrorModeCode })
                 }
