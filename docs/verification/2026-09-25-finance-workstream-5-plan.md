@@ -8,6 +8,14 @@ guards stay enabled. UK VAT filing/HMRC remain a separate release, while the
 accounting-month VAT control is part of the native close journey. This plan
 records checks to perform, not passing evidence.
 
+## Integrated development acceptance update — 27 September 2026
+
+The founder authorised a separate fictional native-only legal entity in the intended development Supabase project. Its exact setup, source IDs, protected policy decisions, authenticated local journey, deliberate denials and limitations are recorded in [the Accounts demo evidence](2026-09-27-native-accounts-demo-evidence.md). The local serial access regression passed 133 PostgreSQL/access cases and 9 boundary contracts. PR #29 then merged the evidence and two narrow display fixes to `dev`.
+
+At 10:51 UTC, `dev.multideck.app` resolved to READY Vercel Preview deployment `dpl_9fKSAq8UrE5PsM8pEJR67HdsAgPi` from Git commit `36632853c228217349de63985bec0482bfb3fa8c`. The hosted workspace descriptor names the exact hostname, `dev` workspace and intended Supabase project `aqtwypsuijxlnvtxpuxe`. Authenticated Chrome on that hostname loaded the fictional entity's Finance controls, the approved GBP 100 PO and GBP 175 draft exception, the approved source-cited GBP 100 invoice match, and the tax-pending supplier draft. The new approved-match display removes a stale GBP 0 conflict; disabled-mirror guidance now matches the saved setting. The hosted follow-up was read-only and did not repeat the local tax Submit denial.
+
+This is **partial development acceptance**. The demo entity still needs qualified local tax advice and approved effective treatments; both invoices remain drafts, with zero cash, native posting batches and external connections. Supplier payment, customer receipt, bank reconciliation, native journals, financial statements, close, a distinct human exception approval, and production/provider parity remain unverified. No HMRC filing or provider link was attempted. Historical preflight observations below retain their original dates and must not be read as the current hosted state.
+
 ## Release identity and evidence rules
 
 - Record Git commit, dirty-file inventory, migration range, built client version,
