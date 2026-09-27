@@ -5,7 +5,7 @@ import { mileageRequest, type MileageVisit } from "@/lib/mileage-api"
 import { ContactEmailAction } from "@/components/multideck/contact-email-action"
 import { ContactPreferencesPopover } from "@/components/multideck/contact-preferences-popover"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { ArrowRight, Briefcase, CalendarDays, Globe2, Handshake, LinkedinBrand, LoaderCircle, Mail, MapPin, Phone, Plus, RefreshCw, Route, ShieldCheck, Tag, Trash2, Trophy, UserRound, Users, X } from "@/components/icons/hugeicons"
+import { ArrowRight, Briefcase, CalendarDays, Check, Globe2, Handshake, Image, LinkedinBrand, LoaderCircle, Mail, MapPin, Phone, Plus, RefreshCw, Route, ShieldCheck, Tag, Trash2, Trophy, UserRound, Users, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { LifecycleNotes } from "@/components/multideck/lifecycle-notes"
@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/i18n/language-provider"
 import { clearCustomerClassification, isCustomerClassification, isLegacyKeyCustomerRole, normaliseOrganisationRole, organisationIsCustomer, selectCustomerClassification } from "@/lib/organisation-roles"
 import { cn } from "@/lib/utils"
+import { companyCovers, selectedCompanyCover } from "@/lib/company-covers"
 import { CustomerApiError, getCustomer, getCustomerReference, listAccountsPage, updateAccount, updateAccountCompanyTypes, type AccountScoreExplanation, type ApiCustomerDetail, type CustomerAccountFinancial, type CustomerReference, type UpdateAccountInput } from "@/lib/customer-api"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getScreeningCheck, getScreeningWorkspace, runScreeningCheck, type ScreeningCheck } from "@/lib/screening-api"
@@ -100,6 +101,10 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [addContactOpen, setAddContactOpen] = useState(false)
+  const [coverDialogOpen, setCoverDialogOpen] = useState(false)
+  const [coverSavingId, setCoverSavingId] = useState<string | null>(null)
+  const [coverError, setCoverError] = useState<string | null>(null)
+  const coverTriggerRef = useRef<HTMLButtonElement>(null)
   const [reference, setReference] = useState<CustomerReference | null>(null)
   const [companyTypesSaving, setCompanyTypesSaving] = useState(false)
   const [companyTypeIdsDraft, setCompanyTypeIdsDraft] = useState<string[] | null>(null)
@@ -365,6 +370,33 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   const operationalRoleTypes = reference?.organisationTypes.filter((type) => !isCustomerClassification(type.name) && !isLegacyKeyCustomerRole(type.name)) ?? []
   const address = currentAccount.address
   const businessProfile = companyProfile(currentAccount.metadata)
+  const companyCover = selectedCompanyCover(currentAccount.id, currentAccount.metadata)
+  const savedCoverId = companyCovers.find((cover) => cover.id === currentAccount.metadata.companyCoverId)?.id ?? null
+  const canChangeCover = hasPermission(currentUser, "Customers.Write")
+
+  async function saveCompanyCover(coverId: string | null) {
+    if (coverSavingId || !canChangeCover) return
+    if (coverId === savedCoverId || (coverId === null && savedCoverId === null)) {
+      setCoverDialogOpen(false)
+      return
+    }
+    setCoverSavingId(coverId ?? "default")
+    setCoverError(null)
+    try {
+      await patch((current) => {
+        const metadata = { ...current.metadata }
+        if (coverId) metadata.companyCoverId = coverId
+        else delete metadata.companyCoverId
+        return { metadata }
+      })
+      setCoverDialogOpen(false)
+      toast.success(t("Company cover updated"))
+    } catch (cause) {
+      setCoverError(cause instanceof CustomerApiError ? cause.message : t("The cover could not be saved. Check your connection and try again."))
+    } finally {
+      setCoverSavingId(null)
+    }
+  }
   const saveBusinessProfile = (key: CompanyProfileKey, value: string) => patch(current => ({ metadata: updateCompanyProfile(current.metadata, key, value) }))
   const saveAddressField = (key: keyof AccountDraft["address"], value: string) => patch(current => {
     if (key === "countryCode" && value && !/^[a-z]{2}$/i.test(value)) throw new Error("Use a two-letter country code, for example GB.")
@@ -511,6 +543,8 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
           </>
         }
         bannerLabel={tradeLane ? <span className="flex items-center gap-1.5" dir="auto" data-i18n-skip><Route className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.6} aria-hidden="true" />{tradeLane}</span> : null}
+        bannerImageUrl={companyCover.url}
+        bannerAction={canChangeCover ? <button ref={coverTriggerRef} type="button" aria-haspopup="dialog" onClick={() => { setCoverError(null); setCoverDialogOpen(true) }} className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-[color-mix(in_srgb,var(--md-surface)_88%,transparent)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] backdrop-blur-md transition-[background-color,scale] hover:bg-[var(--md-surface)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a24)] active:scale-[0.96] motion-reduce:transition-none"><Image className="size-3.5" aria-hidden="true" />{t("Change cover")}</button> : null}
         stats={
           <>
             <RecordProfileStat
@@ -555,12 +589,8 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
           <ProfileCard title={t("About")} action={<Button variant="ghost" className="h-7 px-2 text-[12px]" onClick={() => changeTab("details")}>{t("Edit")}<ArrowRight className="size-3.5 rtl:rotate-180" /></Button>}>
             {currentAccount.summary ? (
               <p className="line-clamp-4 whitespace-pre-wrap text-pretty text-[12.5px] leading-5 text-[var(--md-text)]" dir="auto" data-i18n-skip title={currentAccount.summary}>{currentAccount.summary}</p>
-            ) : (
-              <button type="button" onClick={() => changeTab("details")} className="w-full rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2 text-start text-[12px] leading-5 text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] outline-none transition-colors duration-150 hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]">
-                {t("Add a line on what this company buys and what matters to them.")}
-              </button>
-            )}
-            <dl className="mt-3 grid gap-0.5">
+            ) : null}
+            <dl className={cn("grid gap-0.5", currentAccount.summary && "mt-3")}>
               <Fact icon={UserRound} label={t("Owner")} value={currentAccount.ownerName || <span className="text-[var(--md-subtle)]">{t("Unassigned")}</span>} />
               <Fact icon={Handshake} label={t("Relationship")} value={relationshipName} />
               <Fact icon={Briefcase} label={t("Industry")} value={industry} />
@@ -888,23 +918,25 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
               <div className="grid items-start gap-[var(--md-page-stack-gap-compact)] @3xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
                 {/* One history. Calls, notes and emails interleaved in the order they
                     happened, because that is the order they happened in. */}
-                <Panel title={t("History")} meta={moments.length ? t("Newest first") : undefined}>
-                  {moments.length ? (
-                    <ol className="grid border-t border-[var(--md-line)] px-2.5 pb-3 pt-1.5 sm:px-3.5">
-                      {moments.map((moment, index) => (
-                        <MomentRow key={moment.id} moment={moment} last={index === moments.length - 1} onOpen={moment.email ? () => navigate(`/inbox?thread=${moment.email?.threadId}`) : undefined} />
-                      ))}
-                    </ol>
-                  ) : (
-                    <Empty text={t("No activity has been recorded and no recent emails are linked to this company or its people.")} />
-                  )}
-                  {!currentAccount.recentEmails.available ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("Conversations are missing from this history – you need email access to include them.")}</p> : currentAccount.recentEmails.items.length === 0 && moments.length ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("No recent emails are linked to this company or its people.")}</p> : null}
-                </Panel>
+                <div className="min-w-0 @3xl:relative @3xl:self-stretch">
+                  <Panel title={t("History")} meta={moments.length ? t("Newest first") : undefined} className="@3xl:absolute @3xl:inset-0 @3xl:flex @3xl:flex-col">
+                    {moments.length ? (
+                      <ol tabIndex={0} aria-label={t("Company history")} className="md-scrollbar grid max-h-[320px] content-start overflow-y-auto border-t border-[var(--md-line)] px-2.5 pb-3 pt-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent)] sm:px-3.5 @3xl:min-h-0 @3xl:max-h-none @3xl:flex-1">
+                        {moments.map((moment, index) => (
+                          <MomentRow key={moment.id} moment={moment} last={index === moments.length - 1} onOpen={moment.email ? () => navigate(`/inbox?thread=${moment.email?.threadId}`) : undefined} />
+                        ))}
+                      </ol>
+                    ) : (
+                      <Empty text={t("No activity has been recorded and no recent emails are linked to this company or its people.")} />
+                    )}
+                    {!currentAccount.recentEmails.available ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("Conversations are missing from this history – you need email access to include them.")}</p> : currentAccount.recentEmails.items.length === 0 && moments.length ? <p className="border-t border-[var(--md-line)] px-4 py-2.5 text-[11.5px] leading-4 text-[var(--md-subtle)] sm:px-5">{t("No recent emails are linked to this company or its people.")}</p> : null}
+                  </Panel>
+                </div>
 
                 <div className="grid min-w-0 content-start gap-[var(--md-page-stack-gap-compact)]">
                   <CompanyMeetings key={currentAccount.id} accountId={currentAccount.crmAccountId ?? null} navigate={navigate} />
                   <Panel title={t("Recent visits")} action={<Button variant="ghost" size="sm" className="h-7 px-2 text-[12px]" onClick={() => navigate("/crm/trips")}>{t("Trips & mileage")}<ArrowRight data-icon="inline-end" className="rtl:rotate-180" /></Button>}>
-                    {visitsLoading ? <p role="status" className="border-t border-[var(--md-line)] px-4 py-4 text-[12.5px] text-[var(--md-text)]">{t("Loading visits…")}</p> : visitsError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--md-line)] px-4 py-3 text-[12.5px]"><p>{visitsError}</p><Button variant="outline" size="sm" onClick={() => setVisitsReload(value => value + 1)}>{t("Try again")}</Button></div> : !visits.length ? <Empty text={t("No visits recorded yet.")} /> : <ul className="grid">{visits.map(visit => <li key={visit.id} className="flex flex-wrap items-start justify-between gap-3 border-t border-[var(--md-line)] px-4 py-2.5"><div className="min-w-0"><p data-i18n-skip className="break-words text-[13px] text-[var(--md-ink)]">{visit.purpose}</p><p data-i18n-skip className="mt-0.5 text-[11.5px] text-[var(--md-text)]">{visit.employee_name} · {new Date(`${visit.trip_date}T12:00:00`).toLocaleDateString(language)}</p></div>{visit.can_open && <Button variant="ghost" size="sm" className="h-7 px-2 text-[12px]" onClick={() => navigate(`/crm/trips/${visit.id}`)}>{t("View trip")}<ArrowRight data-icon="inline-end" className="rtl:rotate-180" /></Button>}</li>)}</ul>}
+                    {visitsLoading ? <p role="status" className="border-t border-[var(--md-line)] px-4 py-4 text-[12.5px] text-[var(--md-text)]">{t("Loading visits…")}</p> : visitsError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--md-line)] px-4 py-3 text-[12.5px]"><p>{visitsError}</p><Button variant="outline" size="sm" onClick={() => setVisitsReload(value => value + 1)}>{t("Try again")}</Button></div> : !visits.length ? <Empty text={t("No visits recorded yet.")} /> : <ul className="grid">{visits.slice(0, 3).map(visit => <li key={visit.id} className="flex flex-wrap items-start justify-between gap-3 border-t border-[var(--md-line)] px-4 py-2.5"><div className="min-w-0"><p data-i18n-skip className="break-words text-[13px] text-[var(--md-ink)]">{visit.purpose}</p><p data-i18n-skip className="mt-0.5 text-[11.5px] text-[var(--md-text)]">{visit.employee_name} · {new Date(`${visit.trip_date}T12:00:00`).toLocaleDateString(language)}</p></div>{visit.can_open && <Button variant="ghost" size="sm" className="h-7 px-2 text-[12px]" onClick={() => navigate(`/crm/trips/${visit.id}`)}>{t("View trip")}<ArrowRight data-icon="inline-end" className="rtl:rotate-180" /></Button>}</li>)}</ul>}
                   </Panel>
                 </div>
               </div>
@@ -952,6 +984,27 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
           navigate(`/crm/contacts/${contact.id}`)
         }}
       />
+      <Dialog open={coverDialogOpen} onOpenChange={(open) => { if (!coverSavingId) setCoverDialogOpen(open) }}>
+        <DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); coverTriggerRef.current?.focus() }} className="max-h-[min(88vh,760px)] overflow-y-auto border-0 bg-[var(--md-surface)] sm:max-w-[720px]">
+          <DialogHeader>
+            <DialogTitle>{t("Company cover")}</DialogTitle>
+            <DialogDescription>{t("Choose a Multideck background for this company.")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {companyCovers.map((cover, index) => (
+              <button key={cover.id} type="button" aria-label={`${t("Background")} ${index + 1}`} aria-pressed={companyCover.id === cover.id} disabled={Boolean(coverSavingId)} onClick={() => void saveCompanyCover(cover.id)} className={cn("group relative aspect-[2.1/1] overflow-hidden rounded-[var(--md-radius-lg)] outline-none ring-inset transition-[scale,box-shadow] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] active:scale-[0.98] motion-reduce:transition-none", companyCover.id === cover.id ? "ring-2 ring-[var(--md-accent)]" : "hover:ring-2 hover:ring-[var(--md-line-strong)]")}>
+                <img src={cover.url} alt="" loading="lazy" className="size-full object-cover" />
+                {companyCover.id === cover.id ? <span className="absolute end-2 top-2 grid size-6 place-items-center rounded-full bg-[var(--md-surface)] text-[var(--md-accent)]"><Check className="size-3.5" aria-hidden="true" /></span> : null}
+                {coverSavingId === cover.id ? <span className="absolute inset-0 grid place-items-center bg-black/25 text-white"><LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /></span> : null}
+              </button>
+            ))}
+          </div>
+          {coverError || savedCoverId ? <div className="flex flex-wrap items-center justify-between gap-3">
+            {coverError ? <p role="alert" className="text-[12px] text-[var(--md-red)]">{coverError}</p> : null}
+            {savedCoverId ? <Button type="button" variant="ghost" disabled={Boolean(coverSavingId)} onClick={() => void saveCompanyCover(null)} className="ms-auto">{coverSavingId === "default" ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}{t("Use default cover")}</Button> : null}
+          </div> : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1148,6 +1201,7 @@ function CompanyMeetings({ accountId, navigate }: { accountId: string | null; na
   const [meetings, setMeetings] = useState<CalendarEvent[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selection, setSelection] = useState<MeetingDetailsAnchor | null>(null)
+  const [allMeetingsShown, setAllMeetingsShown] = useState(false)
   const [reload, setReload] = useState(0)
   const [now, setNow] = useState(Date.now)
   const [timeZone, setTimeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
@@ -1185,7 +1239,7 @@ function CompanyMeetings({ accountId, navigate }: { accountId: string | null; na
       <div className="min-h-[156px]">
         {error ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-[12px] text-[var(--md-text)]"><span>{t(error)}</span><Button variant="outline" size="sm" onClick={refresh}>{t("Try again")}</Button></div> : null}
         {meetings === null && !error ? <DotGridLoaderPanel label={t("Loading meetings…")} /> : upcoming.length ? <div className="max-h-[420px] overflow-y-auto md-scrollbar">
-          {upcoming.map(event => {
+          {(allMeetingsShown ? upcoming : upcoming.slice(0, 3)).map(event => {
             const provider = event.provider === "calendar" ? "multideck" : event.provider
             const providerLabel = event.provider === "calendar" ? event.calendarSource === "microsoft" ? "Microsoft Calendar" : "Google Calendar" : meetingProviderLabels[provider]
             return <button key={event.id} type="button" onClick={click => setSelection({ event, anchor: click.currentTarget })} className="flex min-h-14 w-full min-w-0 items-center gap-2.5 border-t border-[var(--md-line)] px-4 py-2.5 text-start transition-colors duration-150 hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent)] motion-reduce:transition-none">
@@ -1205,6 +1259,7 @@ function CompanyMeetings({ accountId, navigate }: { accountId: string | null; na
           <p className="mt-1 max-w-sm text-[12px] leading-5 text-[var(--md-subtle)]">{t("Meetings linked to this company will appear here.")}</p>
         </div> : null}
       </div>
+      {upcoming.length > 3 ? <button type="button" aria-expanded={allMeetingsShown} onClick={() => setAllMeetingsShown(shown => !shown)} className="flex h-10 w-full items-center justify-center border-t border-[var(--md-line)] text-[12px] font-medium text-[var(--md-text)] outline-none transition-colors hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a24)]">{allMeetingsShown ? t("Show fewer") : `${t("Show all")} ${upcoming.length}`}</button> : null}
     </Panel>
     <MeetingDetailsPopover selection={selection} onClose={() => setSelection(null)} onChanged={refresh} navigate={navigate} />
   </>
@@ -1431,9 +1486,9 @@ function toDraft(account: ApiCustomerDetail, reference: CustomerReference | null
   }
 }
 
-function Panel({ title, meta, action, children }: { title: string; meta?: string; action?: ReactNode; children: ReactNode }) {
+function Panel({ title, meta, action, className, children }: { title: string; meta?: string; action?: ReactNode; className?: string; children: ReactNode }) {
   return (
-    <section className="min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+    <section className={cn("min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", className)}>
       <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2">
         <h2 className="text-[13px] font-medium text-[var(--md-ink)]">{title}</h2>
         {meta || action ? (

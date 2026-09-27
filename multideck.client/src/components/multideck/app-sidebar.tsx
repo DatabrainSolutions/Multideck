@@ -2108,7 +2108,7 @@ export function AppSidebar({
               title={collapsed ? accountName : undefined}
               className={cn(
                 "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.004] hover:text-[var(--md-ink)] active:scale-[0.986] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
-                collapsed && "justify-center px-0",
+                collapsed && "h-10 justify-center p-0",
                 profileIsActive && "text-[var(--md-ink)]",
               )}
               style={{
@@ -2133,7 +2133,7 @@ export function AppSidebar({
                   }}
                 />
               )}
-              <Avatar className="relative size-10 rounded-full">
+              <Avatar className={cn("relative size-10 rounded-full", collapsed && "size-9")}>
                 {accountPhotoUrl ? <AvatarImage src={accountPhotoUrl} alt="" /> : null}
                 <AvatarFallback
                   className={cn(
@@ -2145,10 +2145,10 @@ export function AppSidebar({
                   {currentUser?.profilePhoto ? null : accountInitials}
                 </AvatarFallback>
               </Avatar>
-              <div className={cn("relative min-w-0 flex-1", collapsed && "sr-only")}>
+              {!collapsed ? <div className="relative min-w-0 flex-1">
                 <p className="truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
                 <p className="truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
-              </div>
+              </div> : null}
             </button>
           </PopoverTrigger>
           <PopoverContent

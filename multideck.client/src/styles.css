@@ -1215,16 +1215,24 @@ button {
   transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1), padding-inline 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Match the header's 8px top inset; the desktop rail is its own surface. */
-.md-app-sidebar.md-sidebar-floating {
-  --md-sidebar-bg: var(--md-surface);
+/* The main rail and Admin navigation share one floating, rounded surface. */
+.md-sidebar-cluster {
   height: calc(100% - 2 * var(--md-gap-sm));
   margin-block: var(--md-gap-sm);
   margin-inline-start: var(--md-gap-sm);
-  border: 0;
   border-radius: var(--md-radius-2xl);
-  box-shadow: none;
+  background: var(--md-surface);
   overflow: clip;
+}
+
+.md-sidebar-cluster > .md-app-sidebar {
+  --md-sidebar-bg: transparent;
+  height: 100%;
+  box-shadow: none;
+}
+
+.md-admin-dock {
+  border-inline-start: 1px solid color-mix(in srgb, var(--md-hairline) 40%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -6183,6 +6191,10 @@ html.md-summon-picking {
   display: grid;
   gap: var(--md-gap-md);
   grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+}
+
+.md-drive-folder-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 200px));
 }
 
 /* --------------------------------------------------------------- folder tile */

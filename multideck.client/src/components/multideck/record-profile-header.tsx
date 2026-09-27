@@ -7,10 +7,9 @@ import { cn } from "@/lib/utils"
  * edge, then identity, actions and a hairline strip of figures.
  *
  * The banner is deliberately shallow (72px on a phone, 96px from `sm`) so the
- * first working content stays above the fold. It is drawn from the Multideck
- * accent and neutral tokens only, so it follows the operator's accent and theme
- * and never takes tenant branding. When the record has a route worth naming
- * (a company's main trade lane, say), `bannerLabel` prints it beside the arc.
+ * first working content stays above the fold. Records may supply an image; the
+ * Multideck accent illustration remains the fallback. When the record has a
+ * route worth naming, `bannerLabel` prints it over the banner.
  */
 export function RecordProfileHeader({
   avatar,
@@ -20,6 +19,8 @@ export function RecordProfileHeader({
   meta,
   actions,
   bannerLabel,
+  bannerImageUrl,
+  bannerAction,
   back,
   stats,
   className,
@@ -33,6 +34,9 @@ export function RecordProfileHeader({
   meta?: ReactNode
   actions?: ReactNode
   bannerLabel?: ReactNode
+  /** An optional record-specific image; the shared illustration remains the fallback. */
+  bannerImageUrl?: string
+  bannerAction?: ReactNode
   back?: { label: string; onClick: () => void }
   /** `RecordProfileStat` cells. They share one hairline strip beneath the identity. */
   stats?: ReactNode
@@ -43,7 +47,7 @@ export function RecordProfileHeader({
   return (
     <section className={cn("min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", className)}>
       <div className="relative h-[72px] sm:h-[96px]">
-        <RecordProfileBanner />
+        {bannerImageUrl ? <img src={bannerImageUrl} alt="" className="absolute inset-0 size-full object-cover" /> : <RecordProfileBanner />}
         {back ? (
           <button
             type="button"
@@ -55,10 +59,11 @@ export function RecordProfileHeader({
           </button>
         ) : null}
         {bannerLabel ? (
-          <div className="absolute end-3 top-3 max-w-[60%] truncate rounded-full bg-[color-mix(in_srgb,var(--md-surface)_82%,transparent)] px-2.5 py-1 text-[11px] font-medium leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)] backdrop-blur-md sm:end-4">
+          <div className={cn("absolute end-3 max-w-[60%] truncate rounded-full bg-[color-mix(in_srgb,var(--md-surface)_82%,transparent)] px-2.5 py-1 text-[11px] font-medium leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)] backdrop-blur-md sm:end-4", bannerAction ? "bottom-2" : "top-3")}>
             {bannerLabel}
           </div>
         ) : null}
+        {bannerAction ? <div className="absolute end-3 top-3 sm:end-4">{bannerAction}</div> : null}
       </div>
 
       <div className="flex flex-col gap-3 px-4 pb-4 sm:flex-row sm:items-start sm:gap-4 sm:px-5">

@@ -219,6 +219,7 @@ import { DexterActionApproval } from "@/components/multideck/dexter-action-appro
 import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
 import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
 import { RecordProfileHeader, RecordProfileStat } from "@/components/multideck/record-profile-header"
+import { companyCovers } from "@/lib/company-covers"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
 import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
@@ -3721,6 +3722,7 @@ function ComponentPreview({ id }: { id: string }) {
             meta={<><span className="font-medium text-[var(--md-ink)]">Customer, Consignee</span><span className="text-[var(--md-subtle)]">·</span><span>Apparel</span><span className="text-[var(--md-subtle)]">·</span><span>Leeds, GB</span></>}
             actions={<><Button variant="outline" className="h-8 text-[12.5px]">Email</Button><Button variant="outline" className="h-8 text-[12.5px]">Call</Button></>}
             bannerLabel="Ocean · Shanghai to Felixstowe"
+            bannerImageUrl={companyCovers[0]?.url}
             stats={<>
               <RecordProfileStat label="Active shipments" value={6} detail={<span className="text-[var(--md-amber)]">1 open exception</span>} />
               <RecordProfileStat label="Balance due" value="£18,420" detail="Nothing overdue" />

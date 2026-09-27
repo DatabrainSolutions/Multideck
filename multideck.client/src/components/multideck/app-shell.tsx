@@ -273,15 +273,16 @@ export function AppShell({
   const shell = (
     <div className="md-app-shell h-dvh w-full max-w-full overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
       <div className="flex h-full w-full min-h-0 min-w-0 overflow-hidden">
-        <AppSidebar
-          route={route}
-          navigate={navigate}
-          currentUser={currentUser}
-          collapsed={sidebarCollapsed}
-          onCollapsedChange={setSidebarCollapsed}
-          className="md-sidebar-floating hidden min-h-0 lg:flex"
-        />
-        {currentUser?.actorType === "internal" ? <AdminSectionsDockHost route={route} navigate={navigate} /> : null}
+        <div className="md-sidebar-cluster hidden min-h-0 shrink-0 lg:flex">
+          <AppSidebar
+            route={route}
+            navigate={navigate}
+            currentUser={currentUser}
+            collapsed={sidebarCollapsed}
+            onCollapsedChange={setSidebarCollapsed}
+          />
+          {currentUser?.actorType === "internal" ? <AdminSectionsDockHost route={route} navigate={navigate} /> : null}
+        </div>
         {isFullHeightRoute || isSignatureRoute ? (
           <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
             <SheetTrigger asChild>

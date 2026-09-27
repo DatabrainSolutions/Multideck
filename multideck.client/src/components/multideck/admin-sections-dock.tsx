@@ -158,18 +158,17 @@ function AdminDockNav({ hub, route, navigate }: { hub: AdminHub; route: string; 
 }
 
 /**
- * The second sidebar. Opening a large Admin area slides it out from behind the
- * main sidebar: the column grows while the panel travels out from under the
- * main sidebar's edge, so the page glides aside rather than jumping. It stays
- * while one of the area's settings pages is open, and moving between areas
- * swaps only what is inside it. Recently opened settings stay on the Admin
+ * The second sidebar expands inside the main sidebar's shared surface. Its
+ * column grows while the page glides aside, with a hairline between the two
+ * navigation areas. It stays while one of the area's settings pages is open,
+ * and moving between areas swaps only what is inside it. Recently opened
+ * settings stay on the Admin
  * dashboard, so this column is only ever the area's own map.
  */
 export function AdminSectionsDock({ hub, route, navigate }: { hub: AdminHub; route: string; navigate: (path: string) => void }) {
-  const { t, direction } = useLanguage()
+  const { t } = useLanguage()
   const reduceMotion = useReducedMotion()
   const Icon = hub.icon
-  const hidden = direction === "rtl" ? "100%" : "-100%"
   const travel = reduceMotion ? { duration: 0 } : mdMotion.panel
   const leave = reduceMotion ? { duration: 0 } : { ...mdMotion.panel, duration: 0.24 }
 
@@ -183,12 +182,12 @@ export function AdminSectionsDock({ hub, route, navigate }: { hub: AdminHub; rou
     >
       <motion.aside
         aria-label={t(`${hub.label} settings`)}
-        className="flex h-full flex-col border-e border-[var(--md-hairline)] bg-[var(--md-sidebar-bg)]"
+        className="md-admin-dock flex h-full flex-col"
         style={{ width: dockWidth }}
-        initial={{ x: hidden }}
-        animate={{ x: 0 }}
-        exit={{ x: hidden, transition: leave }}
-        transition={travel}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, transition: leave }}
+        transition={reduceMotion ? mdMotion.micro : travel}
       >
         <AnimatePresence initial={false} mode="popLayout">
           <motion.div
