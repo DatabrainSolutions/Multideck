@@ -242,6 +242,10 @@ export function SidebarNavItem({
   const Icon = item.icon
   const { t } = useLanguage()
   const aiAgentName = useAiAgentName()
+  const label = t(item.label)
+  const labelRef = useRef<HTMLSpanElement>(null)
+  const [labelTruncated, setLabelTruncated] = useState(false)
+  const [labelTooltipOpen, setLabelTooltipOpen] = useState(false)
   const isDisabled = !onClick
   const isDexterItem = accent === "dexter"
   const valueTone =
@@ -260,6 +264,24 @@ export function SidebarNavItem({
   }
   const hideLabel = collapsed || iconOnly
 
+  useEffect(() => {
+    const labelElement = labelRef.current
+    if (!labelElement || hideLabel) return
+
+    const checkTruncation = () => setLabelTruncated(labelElement.scrollWidth > labelElement.clientWidth + 1)
+    checkTruncation()
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(checkTruncation)
+    observer.observe(labelElement)
+    return () => observer.disconnect()
+  }, [hideLabel, label])
+
+  const showLabelTooltip = hideLabel || labelTruncated
+
+  useEffect(() => {
+    if (!showLabelTooltip) setLabelTooltipOpen(false)
+  }, [showLabelTooltip])
+
   const button = (
     <button
       type="button"
@@ -267,8 +289,7 @@ export function SidebarNavItem({
       aria-current={isActive ? "page" : undefined}
       aria-disabled={isDisabled || undefined}
       aria-expanded={expanded}
-      aria-label={hideLabel ? t(item.label) : undefined}
-      title={iconOnly ? undefined : t(item.label)}
+      aria-label={hideLabel ? label : undefined}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
         "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-lg)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
@@ -279,7 +300,7 @@ export function SidebarNavItem({
         iconOnly && "h-11",
         isActive && "text-[var(--md-selected-text)]",
         accent === "dexter" && isActive && "!text-white",
-        isDisabled && "cursor-default opacity-55 hover:text-[var(--md-text)]",
+        isDisabled && "pointer-events-none cursor-default opacity-55 hover:text-[var(--md-text)]",
         className,
       )}
       style={{
@@ -353,7 +374,7 @@ export function SidebarNavItem({
           <Icon data-icon={hideLabel ? undefined : "inline-start"} strokeWidth={1.2} />
         </span>
       </span>
-      <span className={cn("min-w-0 flex-1 truncate text-start", isDexterItem && "z-10", hideLabel ? "sr-only !absolute" : "relative")}>{t(item.label)}</span>
+      <span ref={labelRef} className={cn("min-w-0 flex-1 truncate text-start", isDexterItem && "z-10", hideLabel ? "sr-only !absolute" : "relative")}>{label}</span>
       {item.value ? (
         <span
           className={cn(
@@ -373,12 +394,14 @@ export function SidebarNavItem({
     </button>
   )
 
-  return iconOnly ? (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side={collapsed ? "right" : "bottom"} sideOffset={6}>{t(item.label)}</TooltipContent>
+  return (
+    <Tooltip disableHoverableContent open={showLabelTooltip && labelTooltipOpen} onOpenChange={(open) => setLabelTooltipOpen(showLabelTooltip && open)}>
+      <TooltipTrigger asChild>
+        <span className="block min-w-0 w-full">{button}</span>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={6}>{label}</TooltipContent>
     </Tooltip>
-  ) : button
+  )
 }
 
 function SidebarSection({
