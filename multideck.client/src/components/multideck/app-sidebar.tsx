@@ -1,5 +1,5 @@
 import { preloadRoute } from "@/lib/route-pages"
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, PencilEdit01, Plus, Pin, Search, Send, Settings, Star, Tags, Ticket, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { LayoutLeftIcon } from "@hugeicons/core-free-icons"
@@ -594,18 +594,24 @@ function CustomisableSidebarSection({
 
 function routePatternMatches(item: NavItem | SidebarDestination, route: string) {
   if (!item.route) return false
-  if ("owns" in item && item.owns?.some((owned) => route === owned || route.startsWith(`${owned}/`))) return true
-  if (item.route === "/") return route === "/"
-  if (item.route === "/admin") return route === "/admin"
-  if (item.route === "/calendar/meetings") return route === "/calendar/meetings" || route === "/calendar/booking-links"
-  if (item.route === "/customs/standalone/export") return /^\/customs\/standalone\/(export|import)(\/|$)/.test(route)
-  if (item.route === "/customs/job-related/export") return /^\/customs\/job-related\/(export|import)(\/|$)/.test(route)
-  if (item.route === "/bookings") {
-    return route === "/bookings" || (/^\/bookings\/[^/]+$/.test(route) && route !== "/bookings/new" && route !== "/bookings/provisional")
+  const pathname = route.split("?", 1)[0]
+  if (item.route.includes("?")) {
+    const [itemPath, itemSearch] = item.route.split("?", 2)
+    const routeSearch = new URLSearchParams(route.split("?", 2)[1] ?? "")
+    return pathname === itemPath && Array.from(new URLSearchParams(itemSearch)).every(([key, value]) => routeSearch.get(key) === value)
   }
-  if (item.route === "/crm") return route === "/crm"
-  if (item.route === "/warehouse") return route === "/warehouse"
-  return route === item.route || route.startsWith(`${item.route}/`)
+  if ("owns" in item && item.owns?.some((owned) => pathname === owned || pathname.startsWith(`${owned}/`))) return true
+  if (item.route === "/") return pathname === "/"
+  if (item.route === "/admin") return pathname === "/admin"
+  if (item.route === "/calendar/meetings") return pathname === "/calendar/meetings" || pathname === "/calendar/booking-links"
+  if (item.route === "/customs/standalone/export") return /^\/customs\/standalone\/(export|import)(\/|$)/.test(pathname)
+  if (item.route === "/customs/job-related/export") return /^\/customs\/job-related\/(export|import)(\/|$)/.test(pathname)
+  if (item.route === "/bookings") {
+    return pathname === "/bookings" || (/^\/bookings\/[^/]+$/.test(pathname) && pathname !== "/bookings/new" && pathname !== "/bookings/provisional")
+  }
+  if (item.route === "/crm") return pathname === "/crm"
+  if (item.route === "/warehouse") return pathname === "/warehouse"
+  return pathname === item.route || pathname.startsWith(`${item.route}/`)
 }
 
 const sidebarRouteItems = sidebarAreas.flatMap((area) =>
@@ -647,6 +653,19 @@ function findAreaForRoute(route: string, areas: SidebarArea[] = sidebarAreas) {
 function activeDestinationIds(area: SidebarArea | undefined, route: string) {
   if (!area) return []
   return area.destinations.filter((destination) => destination.children && destinationMatches(destination, route)).map((destination) => destination.id)
+}
+
+function subscribeToLocationSearch(onChange: () => void) {
+  window.addEventListener("popstate", onChange)
+  window.addEventListener("multideck:location-change", onChange)
+  return () => {
+    window.removeEventListener("popstate", onChange)
+    window.removeEventListener("multideck:location-change", onChange)
+  }
+}
+
+function getLocationSearch() {
+  return window.location.search
 }
 
 function nestedDestinationId(parentId: string, item: NavItem, siblings: NavItem[]) {
@@ -1017,6 +1036,8 @@ export function AppSidebar({
   const aiAgentName = useAiAgentName()
   const inboxWorkspace = useOptionalInboxWorkspace()
   const shouldReduceMotion = useReducedMotion()
+  const locationSearch = useSyncExternalStore(subscribeToLocationSearch, getLocationSearch, () => "")
+  const navigationRoute = route === "/crm/accounts" ? `${route}${locationSearch}` : route
   const collapsed = requestedCollapsed
   const isCustomer = currentUser?.actorType === "customer"
   const accentPreferenceId = useAccentPresetId()
@@ -1069,7 +1090,7 @@ export function AppSidebar({
       ? availableAreas[0]
       : isTopLevelRoute(route)
         ? undefined
-        : findAreaForRoute(route, availableAreas)
+        : findAreaForRoute(navigationRoute, availableAreas)
   const [activeAreaId, setActiveAreaId] = useState<string | null>(initialArea?.id ?? null)
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>(readSettingsSectionFromUrl)
   const [expandedDestinationId, setExpandedDestinationId] = useSidebarDropdown("main")
@@ -1268,11 +1289,11 @@ export function AppSidebar({
         ? availableAreas[0]
         : isTopLevelRoute(route)
           ? undefined
-          : findAreaForRoute(route, availableAreas)
+          : findAreaForRoute(navigationRoute, availableAreas)
     setActiveAreaId(routeArea?.id ?? null)
-    const routeDestinationId = activeDestinationIds(routeArea, route)[0]
+    const routeDestinationId = activeDestinationIds(routeArea, navigationRoute)[0]
     if (routeDestinationId) setExpandedDestinationId(routeDestinationId)
-  }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers, canShowDocumentBuilder]) // availableAreas is intentionally derived from the account type, environment and permissions.
+  }, [navigationRoute, isCustomer, isSettingsRoute, canManageWarehouseUsers, canShowDocumentBuilder]) // availableAreas is intentionally derived from the account type, environment and permissions.
 
   useEffect(() => {
     if (!isSettingsRoute) return
@@ -1301,7 +1322,7 @@ export function AppSidebar({
 
   function openArea(area: SidebarArea) {
     setActiveAreaId(area.id)
-    setExpandedDestinationId(activeDestinationIds(area, route)[0] ?? null)
+    setExpandedDestinationId(activeDestinationIds(area, navigationRoute)[0] ?? null)
   }
 
   function toggleSidebarFavourite(id: string) {
@@ -1454,7 +1475,7 @@ export function AppSidebar({
         <SidebarItemMenu favourite onToggleFavourite={() => toggleSidebarFavourite(id)}>
           <SidebarNavItem
             item={favourite.item}
-            isActive={favourite.item.route ? routeMatches(favourite.item, route) : false}
+            isActive={favourite.item.route ? routeMatches(favourite.item, navigationRoute) : false}
             onClick={() => openSidebarFavourite(favourite)}
             collapsed={collapsed}
             trailing={<Star className="size-3.5 text-[var(--md-accent)]" fill="currentColor" strokeWidth={1.3} />}
@@ -1953,7 +1974,7 @@ export function AppSidebar({
                     return (
                       <SidebarNavItem
                         item={item}
-                        isActive={routeMatches(item, route)}
+                        isActive={routeMatches(item, navigationRoute)}
                         onClick={item.route ? () => navigate(item.route!) : undefined}
                         collapsed={collapsed}
                         className={pinned && !collapsed ? "pe-9" : undefined}
@@ -1966,7 +1987,7 @@ export function AppSidebar({
 
                   const hasChildren = Boolean(destination.children?.length)
                   const isExpanded = expandedDestinationId === destination.id
-                  const destinationActive = destinationMatches(destination, route)
+                  const destinationActive = destinationMatches(destination, navigationRoute)
 
                   return (
                     <>
@@ -2006,7 +2027,7 @@ export function AppSidebar({
                                       >
                                         <SidebarNavItem
                                           item={child}
-                                          isActive={routeMatches(child, route)}
+                                          isActive={routeMatches(child, navigationRoute)}
                                           onClick={child.route ? () => navigate(child.route!) : undefined}
                                           collapsed={collapsed}
                                           nested

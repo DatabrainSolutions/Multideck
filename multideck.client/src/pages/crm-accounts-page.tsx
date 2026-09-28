@@ -5,7 +5,7 @@ import { EmptyStateIllustration } from "@/components/multideck/empty-state-illus
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
-import { ArrowRight, Building2, RefreshCw } from "@/components/icons/hugeicons"
+import { ArrowRight, Building2, RefreshCw, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
@@ -35,18 +35,20 @@ const emptyAccount = (): CreateCustomerInput => ({
 })
 
 /**
- * Customers and suppliers are companies with a role, so they are views of the
- * one register rather than registers of their own. The view changes what is
- * fetched (and, for customers, adds the receivables columns); the filters only
- * narrow what came back.
+ * Customers and suppliers are companies with a role. The route selects the
+ * relevant register, while the Companies tabs only switch All and Mine.
  */
-const companyViews = ["All", "Mine", "Customers", "Suppliers"] as const
-type CompanyView = typeof companyViews[number]
+const companyTabs = ["All", "Mine"] as const
+type CompanyView = typeof companyTabs[number] | "Customers" | "Suppliers"
 const companyViewParams: Record<CompanyView, string | null> = { All: null, Mine: "mine", Customers: "customers", Suppliers: "suppliers" }
 const emptyAccountSummary: AccountRegisterPage["summary"] = { accounts: 0, contacts: 0, needsAttention: 0, marketingOptedIn: 0, unassigned: 0, healthy: 0 }
 const emptyAccountFacets: AccountRegisterPage["facets"] = { relationships: [], owners: [], hasUnassigned: false }
-const emptyFinancialSummary: NonNullable<AccountRegisterPage["financialSummary"]> = { balanceDue: null, overdueAmount: null, openInvoiceCount: 0, overdueInvoiceCount: 0, overdueCustomerCount: 0, creditAttentionCount: 0, onHoldCount: 0, accountingAttentionCount: null }
 type OrganisationRegisterType = "company" | ProviderPartyType
+
+function financeSetupNoticeDismissed(key: string | null) {
+  if (!key || typeof window === "undefined") return false
+  try { return window.localStorage.getItem(key) === "true" } catch { return false }
+}
 
 /** The view lives in the address, so a filtered register survives reloads, links and Back. */
 function readCompanyView(): CompanyView {
@@ -92,6 +94,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   const [createError, setCreateError] = useState<string | null>(null)
   const [reference, setReference] = useState<CustomerReference | null>(null)
   const [referenceState, setReferenceState] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [referenceRequested, setReferenceRequested] = useState(false)
   const [referenceReloadToken, setReferenceReloadToken] = useState(0)
   const [draft, setDraft] = useState<CreateCustomerInput>(emptyAccount())
   const [offset, setOffset] = useState(0)
@@ -102,8 +105,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   const [financialAccess, setFinancialAccess] = useState(false)
   const [accountingSyncAccess, setAccountingSyncAccess] = useState(false)
   const [financeReady, setFinanceReady] = useState(false)
-  const [financeCurrencyCode, setFinanceCurrencyCode] = useState<string | null>(null)
-  const [financialSummary, setFinancialSummary] = useState(emptyFinancialSummary)
+  const [dismissedFinanceNoticeKey, setDismissedFinanceNoticeKey] = useState<string | null>(null)
   const [sort, setSort] = useState<RegisterSort | null>({ id: "account", direction: "asc" })
   const [syncOpen, setSyncOpen] = useState(false)
   const [partyHealth, setPartyHealth] = useState<AccountingPartyHealth | null>(null)
@@ -119,7 +121,19 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   const [selectedConnectionId, setSelectedConnectionId] = useState("")
   const [latestSync, setLatestSync] = useState<ProviderPartySyncResponse | null>(null)
   const currentOwnerId = currentUser?.internalUserId ?? null
+  const financeNoticeKey = currentUser?.id && typeof window !== "undefined" ? `multideck.finance.customer-currency-notice-dismissed:${window.location.host}:${currentUser.id}` : null
+  const showFinanceSetupNotice = customerAccounts && state !== "loading" && financialAccess && !financeReady && financeNoticeKey && dismissedFinanceNoticeKey !== financeNoticeKey && !financeSetupNoticeDismissed(financeNoticeKey)
   const canManageAccounting = hasPermission(currentUser, "Finance.Integration.Manage")
+
+  function dismissFinanceSetupNotice() {
+    if (!financeNoticeKey) return
+    try {
+      window.localStorage.setItem(financeNoticeKey, "true")
+      setDismissedFinanceNoticeKey(financeNoticeKey)
+    } catch {
+      toast.error(t("This notice could not be dismissed on this device."))
+    }
+  }
   const requiredOrgTypeId = organisationType === "company" ? null : reference?.organisationTypes.find((type) => type.name.trim().toLowerCase() === organisationType)?.id ?? null
 
   function withRequiredOrganisationType(orgTypeIds: string[]) {
@@ -168,6 +182,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     setAccounts([])
     setView(next)
     window.history.replaceState(window.history.state, "", companyViewUrl(next))
+    window.dispatchEvent(new Event("multideck:location-change"))
   }
 
   useEffect(() => {
@@ -195,8 +210,6 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
         setFinancialAccess(data.financialAccess === true)
         setAccountingSyncAccess(data.accountingSyncAccess === true)
         setFinanceReady(data.financeReady === true)
-        setFinanceCurrencyCode(data.financeCurrencyCode ?? null)
-        setFinancialSummary(data.financialSummary ?? emptyFinancialSummary)
         setState("ready")
       })
       .catch((error) => { console.error("Accounts could not be loaded.", error); if (active) setState("error") })
@@ -204,7 +217,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   }, [accountPageSize, accountScope, advancedFilter, currentOwnerId, debouncedQuery, offset, organisationType, ownerFilter, relationshipFilter, reloadToken, sort])
 
   useEffect(() => {
-    if (reference) return
+    if (reference || (customerAccounts && !referenceRequested)) return
     let active = true
     setReferenceState("loading")
     getCustomerReference().then((data) => {
@@ -216,7 +229,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
       if (active) setReferenceState("error")
     })
     return () => { active = false }
-  }, [reference, referenceReloadToken])
+  }, [customerAccounts, reference, referenceReloadToken, referenceRequested])
 
   // A company created from the Customers or Suppliers view starts with that role.
   useEffect(() => {
@@ -388,6 +401,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   }
 
   function openCreate() {
+    setReferenceRequested(true)
     setCreateError(null)
     setCreateSection("account")
     setDraft((current) => ({ ...current, orgTypeIds: withRequiredOrganisationType(current.orgTypeIds) }))
@@ -397,6 +411,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   function changeCreateOpen(nextOpen: boolean) {
     setCreateOpen(nextOpen)
     if (nextOpen) {
+      setReferenceRequested(true)
       setCreateError(null)
       setCreateSection("account")
       setDraft((current) => ({ ...current, orgTypeIds: withRequiredOrganisationType(current.orgTypeIds) }))
@@ -496,15 +511,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   ]
   const countryCodeIsValid = !draft.countryCode || /^[A-Z]{2}$/.test(draft.countryCode)
   const displayedSync = latestSync ?? syncOverview?.runs[0] ?? null
-  const restrictedFinancialDetail = t("Receivables permission required")
-  const summaryCards: Array<[string, string | number, string]> = customerAccounts ? [
-    [t("Open balance"), financialAccess && financeReady ? formatAccountMoney(financialSummary.balanceDue, financeCurrencyCode, language, true) : "—", financialAccess ? t("approved customer documents") : restrictedFinancialDetail],
-    [t("Overdue"), financialAccess && financeReady ? formatAccountMoney(financialSummary.overdueAmount, financeCurrencyCode, language, true) : "—", financialAccess ? `${financialSummary.overdueInvoiceCount} ${t(financialSummary.overdueInvoiceCount === 1 ? "invoice" : "invoices")}` : restrictedFinancialDetail],
-    [t("Open invoices"), financialAccess ? financialSummary.openInvoiceCount : "—", financialAccess ? t("with an amount still due") : restrictedFinancialDetail],
-    [t("Overdue customers"), financialAccess ? financialSummary.overdueCustomerCount : "—", financialAccess ? t("need collection attention") : restrictedFinancialDetail],
-    [t("Over credit limit"), financialAccess ? financialSummary.creditAttentionCount : "—", financialAccess ? t("accounts beyond their limit") : restrictedFinancialDetail],
-    [t("On hold"), financialAccess ? financialSummary.onHoldCount : "—", financialAccess ? t("credit-controlled accounts") : restrictedFinancialDetail],
-  ] : [
+  const summaryCards: Array<[string, string | number, string]> = [
     [t(`Total ${viewNoun}`), summary.accounts, t(view === "Mine" ? "assigned to you" : `all ${viewNoun === "companies" ? "company" : viewNoun.slice(0, -1)} records`)],
     [t("Contacts"), contactTotal, t("recorded contacts")],
     [t("Needs attention"), needsAttention, t("need attention now")],
@@ -514,15 +521,15 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t(title)} className="md-page md-page-stack-compact">
-      <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(customerAccounts ? "Customers · accounts receivable" : view === "Suppliers" ? "Suppliers" : "Organisations")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(customerAccounts ? "Every company you invoice, with balances, overdue invoices, credit limits and payment terms beside its record." : view === "Suppliers" ? "Every company that supplies you, with its contacts and accounting-system status." : "Every company, its contacts and all operational roles kept in one place. Customers and suppliers are companies with that role.")}</p></div>
+      <header className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 ${customerAccounts ? "items-center" : "items-start"}`}>
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1>{!customerAccounts ? <p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(view === "Suppliers" ? "Suppliers" : "Organisations")}</p> : null}</div>{!customerAccounts ? <p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(view === "Suppliers" ? "Every company that supplies you, with its contacts and accounting-system status." : "Every company, its contacts and all operational roles kept in one place. Customers and suppliers are companies with that role.")}</p> : null}</div>
         <div className="flex flex-wrap gap-2">
-          {organisationType !== "company" && canManageAccounting ? <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => { setLatestSync(null); setSyncOpen(true) }}><RefreshCw className="size-4" strokeWidth={1.4} />{t("Sync with accounting system")}</Button> : null}
+          {organisationType === "supplier" && canManageAccounting ? <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => { setLatestSync(null); setSyncOpen(true) }}><RefreshCw className="size-4" strokeWidth={1.4} />{t("Sync with accounting system")}</Button> : null}
           <DexterActionPill onClick={() => setDexterOpen(true)} label={t("Ask Dexter")} />
         </div>
       </header>
 
-      <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${customerAccounts ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}>
+      {!customerAccounts ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
         {summaryCards.map(([label, value, detail]) => (
           <Surface key={String(label)} padding="none" className="h-[44px] min-w-0 rounded-[var(--md-radius-lg)] px-3 py-1.5">
             <div className="flex h-full min-w-0 items-center gap-2.5">
@@ -536,7 +543,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
             </div>
           </Surface>
         ))}
-      </div>
+      </div> : null}
 
       <DataTable
         key={customerAccounts ? "customer-accounts-receivable-v2" : `crm-${organisationType}-organisations-v1`}
@@ -572,12 +579,15 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "account", direction: "asc" }); setOffset(0) } }}
         pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setAccountPageSize, error: state === "error" }}
         compactToolbar
-        toolbarTabs={<RegisterViewSwitch options={companyViews} value={view} onChange={changeView} counts={{ [view]: summary.accounts }} ariaLabel="Company view" compact />}
-        toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${viewNoun}`} placeholder={`Search ${viewNoun}…`} className="sm:w-[180px]" />}
+        fillToolbarSpace={customerAccounts}
+        viewportScrollRail={customerAccounts}
+        toolbarTabs={organisationType === "company" ? <RegisterViewSwitch options={companyTabs} value={view} onChange={changeView} counts={{ [view]: summary.accounts }} ariaLabel="Company view" compact /> : undefined}
+        toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${viewNoun}`} placeholder={`Search ${viewNoun}…`} className={customerAccounts ? "sm:w-full sm:max-w-none sm:flex-1" : "sm:w-[180px]"} />}
         toolbarFilters={<>
-          <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className="w-[132px]" />
-          <RegisterFacetSelect label="Owner" allLabel="All owners" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter} className="w-[126px]" />
+          <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className={customerAccounts ? "w-[132px] sm:flex-1" : "w-[132px]"} />
+          <RegisterFacetSelect label="Owner" allLabel="All owners" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter} className={customerAccounts ? "w-[126px] sm:flex-1" : "w-[126px]"} />
           <AdvancedFilterPopover
+            onOpenChange={(open) => { if (open) setReferenceRequested(true) }}
             fields={advancedFilterFields}
             value={advancedFilter}
             onChange={(value) => { setAdvancedFilter(value); setOffset(0) }}
@@ -588,7 +598,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
           />
         </>}
         toolbarOptions={<><RegisterRevalidatingMark active={state === "loading" && accounts.length > 0} />{customerAccounts ? <RegisterRefreshButton pending={state === "loading"} onRefresh={() => setReloadToken((value) => value + 1)} /> : null}</>}
-        contentBeforeTable={customerAccounts && state !== "loading" && !financialAccess ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Receivables permission is required to view balances, overdue invoices and credit controls.")}</div> : customerAccounts && state !== "loading" && financialAccess && !financeReady ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_9%,var(--md-surface))] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Complete the tenant base-currency setup in Finance before customer balances and available credit are compared.")}</div> : undefined}
+        contentBeforeTable={customerAccounts && state !== "loading" && !financialAccess ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Receivables permission is required to view balances, overdue invoices and credit controls.")}</div> : showFinanceSetupNotice ? <div role="note" className="flex items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_9%,var(--md-surface))] px-4 py-2 text-[12px] leading-5 text-[var(--md-text)]"><span>{t("Complete the tenant base-currency setup in Finance before customer balances and available credit are compared.")}</span><button type="button" onClick={dismissFinanceSetupNotice} aria-label={t("Dismiss finance setup notice")} className="grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] outline-none transition-colors hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"><X className="size-4" strokeWidth={1.5} /></button></div> : undefined}
         emptyState={state === "loading"
           ? <RecordState icon={<DotGridLoader size="sm" decorative />} title={t(`Loading ${viewNoun}…`)} />
           : state === "error"
@@ -678,7 +688,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
                 placeholder={reference ? "Choose company types" : "Loading company types"}
                 label="Company types"
                 required={!draft.orgTypeIds.length}
-                disabled={referenceState === "loading" || referenceState === "error"}
+                disabled={referenceState !== "ready"}
                 className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 text-[16px] sm:text-[14px]"
               />
               <span className="text-[12px] font-normal leading-5 text-[var(--md-text)]">{t("Choose one customer classification, then add every other role this company has.")}</span>

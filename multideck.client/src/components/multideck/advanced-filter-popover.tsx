@@ -71,6 +71,7 @@ export function AdvancedFilterPopover({
   countMatches,
   totalCount,
   align = "end",
+  onOpenChange,
 }: {
   fields: readonly FilterFieldOption[]
   value: FilterQuery
@@ -83,6 +84,7 @@ export function AdvancedFilterPopover({
   countMatches?: (query: FilterQuery) => number | Promise<number>
   totalCount?: number
   align?: "start" | "center" | "end"
+  onOpenChange?: (open: boolean) => void
 }) {
   const { language, t } = useLanguage()
   const reduceMotion = useReducedMotion()
@@ -135,6 +137,7 @@ export function AdvancedFilterPopover({
       setDraftName("")
     }
     setOpen(next)
+    onOpenChange?.(next)
   }
 
   function updateGroup(groupId: string, updater: (group: FilterGroup) => FilterGroup) {
