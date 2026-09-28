@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process'
 const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
 const migration = readFileSync(new URL('../migrations/20260924133000_booking_confirmation_scope_and_snapshot.sql', import.meta.url), 'utf8')
+const partiesMigration = readFileSync(new URL('../migrations/20260928132500_booking_confirmation_parties.sql', import.meta.url), 'utf8')
 const detailMigration = readFileSync(new URL('../migrations/20260901100000_booking_detail_editing.sql', import.meta.url), 'utf8')
 const originalDetailSave = detailMigration.slice(
   detailMigration.indexOf('create or replace function booking_api.save_booking_detail_fields('),
@@ -37,7 +38,7 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
       create table public."cmp_Users_Offices" ("User_ID" uuid, "Office_ID" uuid);
       create table public."Org_Master" ("Org_id" uuid, "Org_Name" text);
       create table public."Job_Header" ("Job_ID" uuid, "Job_OrgOfficeID" uuid, "Job_OfficeID" uuid,
-        "Job_Status" text, "Job_Customer" uuid, "Job_IsDeleted" boolean default false,
+        "Job_Status" text, "Job_Direction" text, "Job_Customer" uuid, "Job_IsDeleted" boolean default false,
         "Job_EditableDetailsJSON" jsonb default '{}'::jsonb, "Job_BookingReference" text,
         "Job_SourceQuoteVersionID" uuid, "Job_CollectionAddress" text, "Job_DeliveryAddress" text,
         "Job_CustomerReference" text, "Job_ReadyDate" date, "Job_RequiredDeliveryDate" date,
@@ -46,6 +47,9 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
         "JobCargo_IsDeleted" boolean default false, "JobCargo_Description" text, "JobCargo_CargoJSON" jsonb,
         "JobCargo_MarksNumbers" text, "JobCargo_PackageQty" numeric, "JobCargo_PackageTypeCodeSnapshot" text,
         "JobCargo_GrossKilos" numeric, "JobCargo_VolumeCBM" numeric);
+      create table public."Job_Parties" ("JobParty_ID" uuid, "JobParty_JobID" uuid, "JobParty_Role" text,
+        "JobParty_NameSnapshot" text, "JobParty_AddressSnapshot" text,
+        "JobParty_IsPrimary" boolean, "JobParty_Sequence" integer);
       create table public."Job_Routing" ("JobRoute_ID" uuid, "Job_ID" uuid, "JobRoute_OrderNo" integer,
         "JobRoute_ModeCode" text, "JobRoute_OriginNameSnapshot" text, "JobRoute_OriginUNLocode" text,
         "JobRoute_DestinationNameSnapshot" text, "JobRoute_DestinationUNLocode" text,
@@ -82,6 +86,7 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
     `)
     sql(originalDetailSave)
     sql(migration)
+    sql(partiesMigration)
     const result = sql(`
       insert into public."cmp_Users" values
         ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','active','Lee','Wright'),
@@ -100,6 +105,10 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
         'PO-1','2026-09-24','2026-09-30');
       insert into public."Job_Cargo" values ('80000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001',1,false,
         'Widgets','{"marksAndNumbers":"BOX-1"}',null,2,'Cartons',100,1);
+      update public."Job_Header" set "Job_Direction"='export' where "Job_ID"='60000000-0000-4000-8000-000000000001';
+      insert into public."Job_Parties" values
+        ('81000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','consignor','Demo Shipper','Factory Road',true,1),
+        ('81000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001','consignee','Demo Receiver','Harbour Street',true,1);
       insert into public."Job_Routing" values ('90000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001',1,
         'air','London','GBLHR','New York','USJFK',null,'2026-09-24T12:00:00Z','2026-09-25T12:00:00Z',null,
         'REF', 'FL1', null, null, null, '{"carrierNotes":"Private rate and carrier note"}');
@@ -133,7 +142,10 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
         if review#>>'{chargeTotals,0,amount}'<>'200' or jsonb_array_length(review->'chargeLines')<>2
           or review->'delivery'<>'null'::jsonb or review#>>'{cargo,0,marksAndNumbers}'<>'BOX-1'
           or review->>'customerReference'<>'PO-1' or review#>>'{collection,plannedAt}'<>'2026-09-24'
-          or review#>>'{collection,plannedAtLabel}'<>'24 Sep 2026' then
+          or review#>>'{collection,plannedAtLabel}'<>'24 Sep 2026'
+          or review->>'direction'<>'Export'
+          or review#>>'{shipper,name}'<>'Demo Shipper'
+          or review#>>'{consignee,address}'<>'Harbour Street' then
           raise exception 'Review failed customer pricing, scope or marks'; end if;
         if review::text like '%Private rate%' or review::text like '%Private cost%'
           or review::text like '%Customer onward%' or review::text like '%CostAmount%' then
@@ -143,7 +155,9 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
         begin perform document_api.booking_confirmation_review('30000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001');
           raise exception 'Unlinked colleague read allowed'; exception when insufficient_privilege then null; end;
         snapshot:=document_api.prepare_booking_confirmation('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000001',review->>'reviewToken',true);
-        if snapshot#>>'{bookingConfirmation,chargeTotals,0,amount}'<>'200' or snapshot->'meta'<> '{"schemaVersion":2}'::jsonb then
+        if snapshot#>>'{bookingConfirmation,chargeTotals,0,amount}'<>'200'
+          or snapshot#>>'{bookingConfirmation,shipper,name}'<>'Demo Shipper'
+          or snapshot->'meta'<> '{"schemaVersion":2}'::jsonb then
           raise exception 'Snapshot total or safe metadata incorrect'; end if;
         update public."Job_Costing_Lines" set "JobCostingLine_RevenueAmountCurrency"=75
           where "JobCostingLine_ID"='a0000000-0000-4000-8000-000000000002';

@@ -82,13 +82,26 @@ def table(headers, first_row, marker):
     doc.add_paragraph().paragraph_format.space_after = Pt(0)
 
 
-doc.add_paragraph("Booking information", style="Title")
+doc.add_paragraph("Booking confirmation", style="Title")
 doc.add_paragraph("{d.bookingConfirmation.provisional:ifEQ(true):show('Provisional—not confirmed'):elseShow('')}")
 label_value("Booking reference", "{d.bookingConfirmation.bookingReference}")
+label_value("Direction", "{d.bookingConfirmation.direction}")
 label_value("Customer", "{d.customer.name}")
 label_value("Customer reference", "{d.bookingConfirmation.customerReference}")
 label_value("Prepared by", "{d.bookingConfirmation.preparedBy}")
 doc.add_paragraph("This document records only the transport services shown below and the information available when this version was prepared.")
+
+doc.add_paragraph("{d.bookingConfirmation.shipper.name:ifNEM():showBegin}")
+heading("Shipper")
+label_value("Name", "{d.bookingConfirmation.shipper.name}")
+label_value("Address", "{d.bookingConfirmation.shipper.address}")
+doc.add_paragraph("{d.bookingConfirmation.shipper.name:showEnd}")
+
+doc.add_paragraph("{d.bookingConfirmation.consignee.name:ifNEM():showBegin}")
+heading("Consignee")
+label_value("Name", "{d.bookingConfirmation.consignee.name}")
+label_value("Address", "{d.bookingConfirmation.consignee.address}")
+doc.add_paragraph("{d.bookingConfirmation.consignee.name:showEnd}")
 
 doc.add_paragraph("{d.bookingConfirmation.scope.collection:ifEQ(true):showBegin}")
 heading("Collection")
@@ -157,6 +170,6 @@ doc.add_paragraph("{d.bookingConfirmation.priceStatus:showEnd}")
 
 footer = section.footer.paragraphs[0]
 footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-footer.add_run("Booking information · {d.bookingConfirmation.bookingReference}")
+footer.add_run("Booking confirmation · {d.bookingConfirmation.bookingReference}")
 doc.save(DESTINATION)
 print(DESTINATION)
