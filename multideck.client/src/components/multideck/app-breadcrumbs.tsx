@@ -1,4 +1,4 @@
-import { Fragment, type MouseEvent } from "react"
+import { Fragment, useSyncExternalStore, type MouseEvent } from "react"
 import { Home03, MoreHorizontal } from "@/components/icons/hugeicons"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import "./app-breadcrumbs.css"
@@ -153,8 +153,16 @@ function baseTrail(label: string): AppBreadcrumb[] {
   return [{ label: "Home", route: "/" }, { label }]
 }
 
-export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null): AppBreadcrumb[] {
+export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null, search = ""): AppBreadcrumb[] {
   if (route === "/") return [{ label: "Home" }]
+
+  if (route === "/crm/accounts" && new URLSearchParams(search).get("view") === "customers") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Finance" },
+      { label: "Customers" },
+    ]
+  }
 
   if (route === "/bookings/new" || route === "/bookings/provisional") {
     return [
@@ -418,7 +426,12 @@ export function AppBreadcrumbs({
   className?: string
 }) {
   const { direction, t } = useLanguage()
-  const trail = getAppBreadcrumbTrail(route, leafLabel)
+  const search = useSyncExternalStore(
+    (onChange) => { window.addEventListener("popstate", onChange); return () => window.removeEventListener("popstate", onChange) },
+    () => window.location.search,
+    () => "",
+  )
+  const trail = getAppBreadcrumbTrail(route, leafLabel, search)
 
   function handleNavigate(event: MouseEvent<HTMLAnchorElement>, path: string) {
     if (!navigate || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
