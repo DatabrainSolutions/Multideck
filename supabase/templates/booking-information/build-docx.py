@@ -52,6 +52,16 @@ def label_value(label, value):
     para.add_run(value)
 
 
+def aliases(mapping):
+    # Long, unbroken Carbone tags make Word widen table cells even with a fixed
+    # table grid. Declare short names outside the table so every source cell
+    # stays narrow in Word as well as in the rendered customer document.
+    paragraph = doc.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(2)
+    for name, path in mapping.items():
+        paragraph.add_run(f"{{#{name}={path}}}")
+
+
 def table(headers, first_row, marker, column_widths_mm):
     if len(column_widths_mm) != len(headers) or sum(column_widths_mm) != CONTENT_WIDTH_MM:
         raise ValueError("Table columns must fit the A4 text area exactly")
@@ -118,18 +128,25 @@ label_value("Collection remarks", "{d.bookingConfirmation.collection.remarks}")
 doc.add_paragraph("{d.bookingConfirmation.scope.collection:showEnd}")
 
 doc.add_paragraph("{d.bookingConfirmation.scope.mainTransport:ifEQ(true):showBegin}")
+aliases({
+    "t": "d.bookingConfirmation.mainTransport",
+    "origin": "d.bookingConfirmation.mainTransport[i].origin",
+    "destination": "d.bookingConfirmation.mainTransport[i].destination",
+    "departure": "d.bookingConfirmation.mainTransport[i].plannedDepartureAt:formatD('DD MMM YYYY HH:mm')",
+    "arrival": "d.bookingConfirmation.mainTransport[i].plannedArrivalAt:formatD('DD MMM YYYY HH:mm')",
+})
 heading("Main transport")
 table(
     ["Mode", "From", "To", "Planned departure (UTC)", "Planned arrival (UTC)"],
     [
-        "{d.bookingConfirmation.mainTransport[i].mode}",
-        "{d.bookingConfirmation.mainTransport[i].origin}",
-        "{d.bookingConfirmation.mainTransport[i].destination}",
-        "{d.bookingConfirmation.mainTransport[i].plannedDepartureAt:formatD('DD MMM YYYY HH:mm')}",
-        "{d.bookingConfirmation.mainTransport[i].plannedArrivalAt:formatD('DD MMM YYYY HH:mm')}",
+        "{$t[i].mode}",
+        "{$origin}",
+        "{$destination}",
+        "{$departure}",
+        "{$arrival}",
     ],
-    "{d.bookingConfirmation.mainTransport[i+1]}",
-    [17, 35, 35, 43, 43],
+    "{$t[i+1]}",
+    [22, 34, 34, 41, 42],
 )
 doc.add_paragraph("{d.bookingConfirmation.scope.mainTransport:showEnd}")
 
@@ -140,17 +157,24 @@ label_value("Planned delivery", "{d.bookingConfirmation.delivery.plannedAtLabel}
 label_value("Delivery remarks", "{d.bookingConfirmation.delivery.remarks}")
 doc.add_paragraph("{d.bookingConfirmation.scope.delivery:showEnd}")
 
+aliases({
+    "g": "d.bookingConfirmation.cargo",
+    "marks": "d.bookingConfirmation.cargo[i].marksAndNumbers",
+    "packages": "d.bookingConfirmation.cargo[i].packages",
+    "packageType": "d.bookingConfirmation.cargo[i].packageType",
+    "weight": "d.bookingConfirmation.cargo[i].grossWeightKg",
+})
 heading("Goods")
 table(
     ["Description", "Marks and numbers", "Packages", "Type", "Gross weight kg"],
     [
-        "{d.bookingConfirmation.cargo[i].description}",
-        "{d.bookingConfirmation.cargo[i].marksAndNumbers}",
-        "{d.bookingConfirmation.cargo[i].packages}",
-        "{d.bookingConfirmation.cargo[i].packageType}",
-        "{d.bookingConfirmation.cargo[i].grossWeightKg}",
+        "{$g[i].description}",
+        "{$marks}",
+        "{$packages}",
+        "{$packageType}",
+        "{$weight}",
     ],
-    "{d.bookingConfirmation.cargo[i+1]}",
+    "{$g[i+1]}",
     [47, 39, 20, 23, 44],
 )
 label_value("Special instructions", "{d.bookingConfirmation.specialInstructions}")
