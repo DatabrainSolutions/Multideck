@@ -15,6 +15,7 @@ from docx.shared import Inches, Mm, Pt, RGBColor
 
 
 DESTINATION = Path(__file__).with_name("Booking_Information_Carbone_Template.docx")
+CONTENT_WIDTH_MM = 173
 doc = Document()
 section = doc.sections[0]
 section.page_width = Mm(210)
@@ -51,9 +52,14 @@ def label_value(label, value):
     para.add_run(value)
 
 
-def table(headers, first_row, marker):
+def table(headers, first_row, marker, column_widths_mm):
+    if len(column_widths_mm) != len(headers) or sum(column_widths_mm) != CONTENT_WIDTH_MM:
+        raise ValueError("Table columns must fit the A4 text area exactly")
     result = doc.add_table(rows=1, cols=len(headers))
     result.style = "Table Grid"
+    result.autofit = False
+    for column, width_mm in zip(result.columns, column_widths_mm):
+        column.width = Mm(width_mm)
     header_properties = result.rows[0]._tr.get_or_add_trPr()
     repeat_header = OxmlElement("w:tblHeader")
     repeat_header.set(qn("w:val"), "true")
@@ -74,7 +80,8 @@ def table(headers, first_row, marker):
     for cell in end[1:]:
         cell.text = ""
     for row in result.rows:
-        for cell in row.cells:
+        for cell, width_mm in zip(row.cells, column_widths_mm):
+            cell.width = Mm(width_mm)
             for para in cell.paragraphs:
                 para.paragraph_format.space_after = Pt(2)
                 for run in para.runs:
@@ -122,6 +129,7 @@ table(
         "{d.bookingConfirmation.mainTransport[i].plannedArrivalAt:formatD('DD MMM YYYY HH:mm')}",
     ],
     "{d.bookingConfirmation.mainTransport[i+1]}",
+    [17, 35, 35, 43, 43],
 )
 doc.add_paragraph("{d.bookingConfirmation.scope.mainTransport:showEnd}")
 
@@ -143,6 +151,7 @@ table(
         "{d.bookingConfirmation.cargo[i].grossWeightKg}",
     ],
     "{d.bookingConfirmation.cargo[i+1]}",
+    [47, 39, 20, 23, 44],
 )
 label_value("Special instructions", "{d.bookingConfirmation.specialInstructions}")
 
@@ -157,6 +166,7 @@ table(
         "{d.bookingConfirmation.chargeLines[i].sellAmount:formatN(2)}",
     ],
     "{d.bookingConfirmation.chargeLines[i+1]}",
+    [100, 30, 43],
 )
 table(
     ["Total currency", "Customer total"],
@@ -165,6 +175,7 @@ table(
         "{d.bookingConfirmation.chargeTotals[i].amount:formatN(2)}",
     ],
     "{d.bookingConfirmation.chargeTotals[i+1]}",
+    [87, 86],
 )
 doc.add_paragraph("{d.bookingConfirmation.priceStatus:showEnd}")
 
