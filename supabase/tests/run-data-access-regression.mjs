@@ -21,6 +21,7 @@ const tests = [
   'cost-accrual-review-postgres.test.mjs',
   'accounting-profile-guardrails-postgres.test.mjs',
   'balanced-postings-postgres.test.mjs',
+  'finance-director-dashboard-postgres.test.mjs',
   'crm-sales-workflow-postgres.test.mjs',
   'crm-sales-analysis-cache-postgres.test.mjs',
   'crm-sales-briefings-postgres.test.mjs',

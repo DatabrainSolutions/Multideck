@@ -24,7 +24,7 @@ import { draftQuoteReferenceRule, getQuoteBranding, getQuoteFollowUpSettings, ge
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
 import { adminHubForRoute, adminHubs } from "@/data/navigation-data"
-import { AdminDashboard, AdminHubPage } from "@/pages/admin-hub-page"
+import { AdminHubPage } from "@/pages/admin-hub-page"
 import { useDockedAdminSections } from "@/lib/admin-explorer-state"
 import { Switch } from "@/components/ui/switch"
 import { EventsApiError, getEventsSettings, setEventsEnabled } from "@/lib/company-events-api"
@@ -976,7 +976,6 @@ export function AdminPage({ route, currentUser, navigate }: { route: AdminRoute;
     document.title = `${route === "/admin" ? "Dashboard" : hub?.label ?? adminRouteTitles[route as keyof typeof adminRouteTitles] ?? "Admin"} · Admin · Multideck`
   }, [hub, route])
 
-  if (route === "/admin") return <AdminDashboard navigate={navigate} />
   if (hub) return <AdminHubPage hub={hub} navigate={navigate} />
 
   const content = route === "/admin/users"

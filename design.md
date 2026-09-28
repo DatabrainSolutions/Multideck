@@ -122,6 +122,9 @@ Current Multideck components:
 - `DashboardModeChart`: several series on one time axis in the dashboard's chart idiom. One shared scale across every series, so two modes of different volume cannot both fill the panel and look identical.
 - `DashboardBreakdownPanel`: a split of a total as bars. `segmented` puts the whole quantity on one bar for parts of a single total; `ranked` gives each category its own bar, scaled against the largest rather than the total so a long tail still has visible length.
 - `MiniBarChart`: a period as discrete ticks rather than a curve. Use it on cards that sit above a full-size plot — a second smooth line reads as the same drawing twice, where a tick strip reads as the shape and leaves the detail to the chart.
+- `DashboardColumnChart`: months as columns, one series or two side by side. The reported period is in full colour and the rest recede; the month in progress is lighter and named "to date". Columns rise in time order on arrival and morph together on any later change.
+- `DashboardForecastChart`: recorded months as a solid line continued as a dashed projection inside its likely range, over a shaded forecast zone. The history draws first; the projection only appears once the line reaches today.
+- `FinanceProfitLossPanel` / `FinanceWorkingCapitalPanel`: the finance dashboard's statement and cash panels. The P&L measures every line against revenue on one track and fills in statement order; working capital leads with cash at bank and splits what is owed each way by lateness.
 - `CrmOpportunityValue`, `CrmFollowUpQueue`, `CrmQuietLeads`, `CrmAreaHeatmap`, `CrmActivityFeed`: the CRM dashboard panels. One panel shell, one row shape, and one arrival cadence shared with the operations overview.
 - `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
 - `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.
@@ -193,6 +196,13 @@ Overview:
 - Coverage is `DashboardCoveragePanel`: every region's 08:00–17:00 window drawn on one shared 24-hour track in the viewer's own time, with a single "now" line across all of them. It answers overlap — how long until Shanghai closes, who is awake to pick this up — which is the question a freight desk actually has. It must not become a row of clock faces again, and it must not animate per city.
 - The page keeps one live indicator, on live bookings. Continuous ambient motion anywhere else is decoration.
 - AI content should feel assistive and specific.
+
+Finance dashboard (Admin, Finance Director only):
+
+- Periods are whole closed months ending last month, compared with the equal period before. Half a month against a full one would read as a fall every time.
+- Two rows of pairs on one grid: the monthly chart beside the P&L, the forecast beside cash and working capital. The statement panels set each row's height and the charts grow into it, so paired panels share both edges and no panel carries empty surface.
+- The three splits (customers, modes, regions) show at most six rows — five named, the rest folded into one — and share a height.
+- Money in is the accent; money out is the neutral beside it.
 
 CRM dashboard:
 

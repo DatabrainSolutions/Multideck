@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
 import type { AdminHub, AdminHubBlock, AdminHubLink } from "@/data/navigation-data"
 import { useLanguage } from "@/i18n/language-provider"
-import { activeDockSetting, dockedAdminHubFor, noteAdminSettingOpened, rememberAdminSetting, useAdminExplorerState } from "@/lib/admin-explorer-state"
+import { activeDockSetting, dockedAdminHubFor, noteAdminSettingOpened, rememberAdminSetting, restoreAdminDock, useAdminExplorerState } from "@/lib/admin-explorer-state"
 import { useSidebarDropdown } from "@/lib/sidebar-dropdown-state"
 import { mdMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -108,7 +108,7 @@ function AdminDockNav({ hub, route, navigate }: { hub: AdminHub; route: string; 
               const isOpen = expandable && expandedId === block.id
               const singleActive = !expandable && selectedBlock?.id === block.id
               return (
-                <div key={block.id} data-dock-item="" data-dock-block={block.id} data-dock-expandable={expandable ? "true" : "false"}>
+                <div key={block.id} className="md-sidebar-dropdown-group" data-expanded={isOpen ? "true" : undefined} data-dock-item="" data-dock-block={block.id} data-dock-expandable={expandable ? "true" : "false"}>
                   <SidebarNavItem
                     item={{ label: block.title, icon: block.icon }}
                     isActive={singleActive}
@@ -120,13 +120,13 @@ function AdminDockNav({ hub, route, navigate }: { hub: AdminHub; route: string; 
                   <AnimatePresence initial={false}>
                     {isOpen ? (
                       <motion.div
-                        className="mt-1 overflow-hidden"
+                        className="overflow-hidden"
                         initial={reduceMotion ? false : { height: 0 }}
                         animate={{ height: "auto" }}
                         exit={reduceMotion ? undefined : { height: 0 }}
                         transition={reduceMotion ? { duration: 0 } : mdMotion.micro}
                       >
-                        <div className="md-sidebar-expanded-options flex flex-col gap-1 rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-1 dark:bg-[var(--md-surface-soft)]">
+                        <div className="md-sidebar-expanded-options flex flex-col gap-1 px-1 pb-1">
                           {block.links.map((link) => (
                             <div key={`${link.label}|${link.route}`} data-dock-item="" data-dock-parent={block.id}>
                               <SidebarNavItem
@@ -168,7 +168,6 @@ function AdminDockNav({ hub, route, navigate }: { hub: AdminHub; route: string; 
 export function AdminSectionsDock({ hub, route, navigate }: { hub: AdminHub; route: string; navigate: (path: string) => void }) {
   const { t } = useLanguage()
   const reduceMotion = useReducedMotion()
-  const Icon = hub.icon
   const travel = reduceMotion ? { duration: 0 } : mdMotion.panel
   const leave = reduceMotion ? { duration: 0 } : { ...mdMotion.panel, duration: 0.24 }
 
@@ -198,11 +197,9 @@ export function AdminSectionsDock({ hub, route, navigate }: { hub: AdminHub; rou
             exit={{ opacity: 0, transition: { ...mdMotion.exit, duration: 0.1 } }}
             transition={mdMotion.enter}
           >
-            <header className="flex items-center gap-2.5 px-4 pb-4 pt-5">
-              <span className="grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
-                <Icon className="size-4" strokeWidth={1.4} aria-hidden="true" />
-              </span>
-              <h1 className="min-w-0 truncate text-[16px] font-medium text-[var(--md-ink)]">{t(hub.label)}</h1>
+            <header className="px-4 pb-4 pt-5">
+              <p className="mb-1 text-[11px] font-medium uppercase leading-normal tracking-[0.08em] text-[var(--md-subtle)]">{t("Admin settings")}</p>
+              <h2 className="text-[22px] font-medium leading-tight tracking-[-0.02em] text-balance text-[var(--md-ink)]">{t(hub.label)}</h2>
             </header>
             <div className="md-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-4">
               <AdminDockNav key={hub.id} hub={hub} route={route} navigate={navigate} />
@@ -216,8 +213,11 @@ export function AdminSectionsDock({ hub, route, navigate }: { hub: AdminHub; rou
 
 /** Decides from the route and the last opened area whether the second sidebar is out, and for which area. */
 export function AdminSectionsDockHost({ route, navigate }: { route: string; navigate: (path: string) => void }) {
-  const { hubId } = useAdminExplorerState()
-  const hub = dockedAdminHubFor(route, hubId)
+  const { hubId, dismissedDockRoute } = useAdminExplorerState()
+  useEffect(() => {
+    if (dismissedDockRoute && dismissedDockRoute !== route) restoreAdminDock()
+  }, [dismissedDockRoute, route])
+  const hub = dismissedDockRoute === route ? null : dockedAdminHubFor(route, hubId)
   return (
     <AnimatePresence initial={false}>
       {hub ? <AdminSectionsDock key="admin-sections-dock" hub={hub} route={route} navigate={navigate} /> : null}

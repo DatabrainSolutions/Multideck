@@ -20,7 +20,7 @@ import { defaultLanguage, isLanguageCode } from "@/i18n/languages"
 import { translateText } from "@/i18n/translate"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
-import { isTenantAdministrator, summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
+import { hasPermission, isTenantAdministrator, summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
 import { recordWorkspacePresence } from "@/lib/admin-audit-api"
 import { getApiAuthSession } from "@/lib/api"
 import {
@@ -86,6 +86,7 @@ import {
   QuoteResponsePage,
   MileagePage,
   FinancePage,
+  FinanceDirectorDashboardPage,
 } from "@/lib/route-pages"
 
 type AuthStatus = "checking" | "authenticated" | "unauthenticated"
@@ -112,6 +113,13 @@ function preloadImage(url: string) {
   })
 }
 
+/** Admin is for tenant administrators; Finance Directors may open its dashboard. */
+function canOpenAdminRoute(user: AuthUserSummary | null, route: string) {
+  if (route === "/admin" || route === "/admin/finance-dashboard") return hasPermission(user, "Finance.Director.Dashboard.View")
+  if (isTenantAdministrator(user)) return true
+  return ["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) && hasPermission(user, "Email.Signatures.Manage")
+}
+
 const validRoutes = new Set([
   "/onboarding",
   "/",
@@ -133,6 +141,7 @@ const validRoutes = new Set([
   "/admin/branding",
   "/admin/email-signatures",
   "/admin/email-signatures/team",
+  "/admin/finance-dashboard",
   "/inbox/signatures",
   "/admin/system-preferences",
   "/admin/activity",
@@ -790,9 +799,11 @@ export default function App() {
   }, [authStatus, currentUser?.actorType, eventsResolved, eventsSettings, isEventsRoute])
 
   useEffect(() => {
-    if (authStatus !== "authenticated" || !route.startsWith("/admin") || isTenantAdministrator(currentUser) || (["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) && currentUser?.permissions.includes("Email.Signatures.Manage"))) return
-    window.history.replaceState({}, "", "/app")
-    startTransition(() => setRoute("/"))
+    if (authStatus !== "authenticated" || !route.startsWith("/admin") || canOpenAdminRoute(currentUser, route)) return
+    // An administrator without the Finance Director role goes back to Admin.
+    const fallback = isTenantAdministrator(currentUser) ? "/admin/settings" : "/"
+    window.history.replaceState({}, "", fallback === "/" ? "/app" : fallback)
+    startTransition(() => setRoute(fallback))
   }, [authStatus, currentUser, route])
 
   useEffect(() => {
@@ -827,7 +838,7 @@ export default function App() {
     if (currentUser?.actorType === "customer" && !canCustomerOpenRoute(currentUser, path)) {
       path = currentUser.landingPath
     }
-    if (path.startsWith("/admin") && !isTenantAdministrator(currentUser) && !(["/admin/email-signatures", "/admin/email-signatures/team"].includes(path) && currentUser?.permissions.includes("Email.Signatures.Manage"))) path = "/"
+    if (path.startsWith("/admin") && !canOpenAdminRoute(currentUser, path.split(/[?#]/, 1)[0])) path = isTenantAdministrator(currentUser) ? "/admin/settings" : "/"
     if (path !== route && !window.dispatchEvent(new CustomEvent("multideck:before-navigate", { cancelable: true, detail: { proceed: () => navigate(path) } }))) return
     if (path === "/bookings/new" || path === "/bookings/provisional" || path === "/road-control/new") {
       bookingCreationTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -956,7 +967,8 @@ export default function App() {
                       onCoverPhotoChange={handleCoverPhotoChange}
                     />
                   ) : null}
-                  {route.startsWith("/admin") && !["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) ? <AdminPage route={route as AdminRoute} currentUser={currentUser} navigate={navigate} /> : null}
+                  {(route === "/admin" || route === "/admin/finance-dashboard") && canOpenAdminRoute(currentUser, route) ? <FinanceDirectorDashboardPage /> : null}
+                  {route.startsWith("/admin") && !["/admin", "/admin/email-signatures", "/admin/email-signatures/team", "/admin/finance-dashboard"].includes(route) ? <AdminPage route={route as AdminRoute} currentUser={currentUser} navigate={navigate} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
                   {route === "/bookings" || route === "/bookings/new" || route === "/bookings/provisional" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} currentUser={currentUser} /> : null}

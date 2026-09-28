@@ -27,13 +27,13 @@ test("the Users roster keeps Role visible without forcing a narrow table to scro
   assert.match(usersTab, /className="grid gap-3 xl:hidden"/u)
 })
 
-test("invite and edit preserve reusable role selection and open the inline role composer", () => {
-  assert.match(settingsSource, /const makeRoleSelectValue = "__make_workspace_role__"/u)
-  assert.match(settingsSource, /roleId === makeRoleSelectValue\) beginRoleCreation\("invite"\)/u)
-  assert.match(settingsSource, /roleId === makeRoleSelectValue \? beginRoleCreation\("edit"\)/u)
-  assert.match(settingsSource, /roleIds: \[editForm\.roleId\]/u)
-  assert.match(settingsSource, /role && !role\.isLegacyCustom \? role\.id : ""/u)
-  assert.match(settingsSource, /await deleteApiAuthorizationRole\(session\.access_token, previousRole\.id\)/u)
+test("invite and edit preserve multiple assigned roles and open the inline role composer", () => {
+  assert.match(settingsSource, /roleIds: inviteForm\.roleIds/u)
+  assert.match(settingsSource, /roleIds: editForm\.roleIds/u)
+  assert.match(settingsSource, /roleIds: user\.roles\.filter\(/u)
+  assert.match(settingsSource, /beginRoleCreation\("invite"\)/u)
+  assert.match(settingsSource, /beginRoleCreation\("edit"\)/u)
+  assert.match(settingsSource, /await deleteApiAuthorizationRole\(session\.access_token, legacyRole\.id\)/u)
   assert.match(settingsSource, /<RolePermissionMatrix areas=\{permissionAreas\}/u)
   assert.match(settingsSource, /<ArrowLeft className="size-3\.5 rtl:-scale-x-100"/u)
 })

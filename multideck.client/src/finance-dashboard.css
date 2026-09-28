@@ -1,0 +1,587 @@
+/* Finance dashboard. The same panel shell, type and chart idiom as the
+   operations dashboard; only the panels that are specific to money live here. */
+
+@layer md-dashboard {
+  .md-dashboard,
+  .md-finance-scope {
+    /* Money out is drawn in a neutral beside money in, so the eye goes to what
+       came in and reads the gap between them. Validated for separation in both
+       themes; the table under each chart is the contrast relief. */
+    --md-fin-in: var(--md-accent);
+    --md-fin-out: #909d99;
+  }
+
+  .dark .md-dashboard,
+  .dark .md-finance-scope {
+    --md-fin-out: #5d6865;
+  }
+
+  .md-finance-scope {
+    --md-chart-grid: rgba(90, 103, 100, 0.14);
+    --md-dashboard-track: rgba(90, 103, 100, 0.14);
+    --md-dashboard-hush: rgba(11, 20, 19, 0.05);
+  }
+
+  .dark .md-finance-scope {
+    --md-chart-grid: rgba(182, 196, 189, 0.13);
+    --md-dashboard-track: rgba(182, 196, 189, 0.2);
+    --md-dashboard-hush: rgba(255, 255, 255, 0.055);
+  }
+
+  /* ── Layout ──────────────────────────────────────────────────────────── */
+
+  .md-finance-band {
+    display: grid;
+    gap: var(--md-dashboard-band-gap, var(--md-page-stack-gap));
+    align-items: stretch;
+  }
+
+  /* A grid cell whose one panel fills it, so neighbours share both edges. */
+  .md-finance-cell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .md-finance-cell > * {
+    flex: 1 1 auto;
+  }
+
+  .md-finance-band-splits > * {
+    height: 100%;
+  }
+
+  /* The three splits share a height; a panel with fewer rows spaces them out
+     to meet the same bottom edge rather than leaving a band under its list. */
+  .md-finance-band-splits .md-breakdown-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .md-finance-band-splits .md-breakdown-rows {
+    flex: 1 1 auto;
+    justify-content: space-between;
+  }
+
+  .md-finance-chart-panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .md-finance-chart-panel .md-finance-chart-canvas {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  .md-finance-fill {
+    position: relative;
+    flex: 1 1 auto;
+  }
+
+  .md-finance-fill-layer {
+    position: absolute;
+    inset: 0;
+  }
+
+  @container md-dash (min-width: 980px) {
+    .md-finance-band-lead {
+      grid-template-columns: minmax(0, 1.62fr) minmax(320px, 1fr);
+    }
+
+    .md-finance-band-splits {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 720px) and (max-width: 979px) {
+    .md-finance-band-splits {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* A refetch keeps the last reading on screen, quietly dimmed, instead of
+     flashing a loader: the page never jumps while a period changes. */
+  .md-finance-content {
+    transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-finance-content[data-refreshing="true"] {
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .md-finance-content {
+      transition: none;
+    }
+  }
+
+  .md-finance-period-caption {
+    font-size: 12px;
+    color: var(--md-subtle);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Chart panel head ────────────────────────────────────────────────── */
+
+  .md-finance-chart-panel {
+    overflow: hidden;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-finance-chart-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px var(--md-gap-lg);
+    padding: 16px 20px 6px;
+  }
+
+  .md-finance-chart-figure {
+    margin-top: 6px;
+    font-size: 26px;
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--md-ink);
+  }
+
+  .md-finance-chart-canvas {
+    padding: 6px 12px 12px;
+  }
+
+  .md-finance-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    padding-top: 3px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+  }
+
+  .md-finance-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .md-finance-legend-swatch {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+  }
+
+  .md-finance-legend-line {
+    width: 12px;
+    height: 2px;
+    border-radius: 999px;
+  }
+
+  .md-finance-legend-dashed {
+    background: repeating-linear-gradient(to right, var(--md-subtle) 0 3px, transparent 3px 6px);
+  }
+
+  .md-finance-chart-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    padding: 0 20px 16px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--md-text);
+  }
+
+  .md-finance-chart-foot strong {
+    font-weight: 500;
+    color: var(--md-ink);
+  }
+
+  .md-finance-chart-empty {
+    display: grid;
+    flex: 1 1 auto;
+    min-height: 220px;
+    place-items: center;
+    padding: 24px;
+    text-align: center;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--md-subtle);
+  }
+
+  /* ── Column chart ────────────────────────────────────────────────────── */
+
+  .md-column-chart-tooltip {
+    min-width: 172px;
+  }
+
+  .md-column-chart-tooltip-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .md-column-chart-tooltip-row:has(.md-column-chart-tooltip-range) {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+  }
+
+  .md-column-chart-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+
+  .md-column-chart-tooltip-name {
+    color: var(--md-text);
+  }
+
+  .md-column-chart-tooltip-value {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    color: var(--md-ink);
+  }
+
+  .md-column-chart-tooltip-range {
+    grid-column: 2 / -1;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    color: var(--md-subtle);
+  }
+
+  .md-column-chart-tooltip-extra {
+    margin-top: 6px;
+    padding-top: 6px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    box-shadow: var(--md-stroke-top, inset 0 1px 0 var(--md-hairline));
+  }
+
+  /* ── Forecast chart ──────────────────────────────────────────────────── */
+
+  .md-forecast-zone-label {
+    fill: var(--md-subtle);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .md-forecast-end-label {
+    fill: var(--md-ink);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .md-forecast-axis-projected {
+    fill: var(--md-subtle);
+    opacity: 0.8;
+  }
+
+  /* ── Profit and loss ─────────────────────────────────────────────────── */
+
+  .md-pnl-panel,
+  .md-capital-panel {
+    overflow: hidden;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-pnl-lines {
+    display: grid;
+    padding: 12px 16px 16px;
+  }
+
+  .md-pnl-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 4px 10px;
+    padding-block: 8px;
+  }
+
+  /* A result line closes the lines above it, like the rule under a sum. */
+  .md-pnl-line[data-kind="result"] {
+    box-shadow: inset 0 1px 0 var(--md-hairline);
+  }
+
+  .md-pnl-line-label {
+    font-size: 12.5px;
+    color: var(--md-text);
+  }
+
+  .md-pnl-line[data-kind="result"] .md-pnl-line-label,
+  .md-pnl-line[data-kind="income"] .md-pnl-line-label {
+    font-weight: 500;
+    color: var(--md-ink);
+  }
+
+  .md-pnl-line-figure {
+    display: inline-flex;
+    flex-direction: row-reverse;
+    align-items: baseline;
+    gap: 7px;
+  }
+
+  .md-pnl-line-amount {
+    min-width: 76px;
+    padding: 6px 8px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-tint);
+    text-align: end;
+    font-size: 13px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-pnl-line[data-kind="cost"] .md-pnl-line-amount {
+    font-weight: 400;
+    color: var(--md-text);
+  }
+
+  .md-pnl-line[data-negative="true"] .md-pnl-line-amount {
+    color: var(--md-red);
+  }
+
+  .md-pnl-line-note {
+    padding: 6px 8px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-tint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    color: var(--md-subtle);
+  }
+
+  .md-pnl-overheads {
+    margin: 4px 16px 16px;
+    padding-top: 12px;
+    box-shadow: inset 0 1px 0 var(--md-hairline);
+  }
+
+  .md-pnl-overheads-title {
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-pnl-overheads ul {
+    display: grid;
+    gap: 8px;
+  }
+
+  .md-pnl-overheads li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: baseline;
+    gap: 4px 8px;
+  }
+
+  .md-pnl-overhead-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--md-text);
+  }
+
+  .md-pnl-overhead-amount {
+    padding: 5px 7px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-tint);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-pnl-overhead-share {
+    padding: 5px 7px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-tint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    color: var(--md-subtle);
+  }
+
+  /* ── Cash and working capital ────────────────────────────────────────── */
+
+  .md-capital-body {
+    display: grid;
+    gap: 16px;
+    padding: 12px 16px 16px;
+  }
+
+  .md-capital-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .md-capital-hero-label,
+  .md-capital-ledger-label {
+    font-size: 12px;
+    color: var(--md-text);
+  }
+
+  .md-capital-hero-value {
+    font-size: 28px;
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--md-ink);
+  }
+
+  .md-capital-hero-empty {
+    grid-column: 1 / -1;
+    max-width: 34ch;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--md-subtle);
+  }
+
+  .md-capital-ledger {
+    display: grid;
+    gap: 7px;
+    padding-top: 14px;
+    box-shadow: inset 0 1px 0 var(--md-hairline);
+  }
+
+  .md-capital-ledger-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .md-capital-ledger-total {
+    font-size: 15px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-capital-ledger-detail {
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--md-subtle);
+  }
+
+  .md-capital-legend {
+    display: grid;
+    gap: 5px;
+  }
+
+  .md-capital-legend li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+  }
+
+  .md-capital-legend-label {
+    color: var(--md-text);
+  }
+
+  .md-capital-bank-amount {
+    min-width: 100px;
+    padding: 9px 10px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-tint);
+    text-align: end;
+    font-size: 23px;
+  }
+
+  .md-capital-ledger-label { font-weight: 500; color: var(--md-ink); }
+  .md-capital-ledger-head .md-capital-ledger-detail { margin-top: 3px; }
+  .md-capital-ledger-detail[data-overdue="true"] { color: var(--md-amber); }
+  .md-capital-legend { gap: 7px; margin-top: 4px; }
+  .md-capital-bucket-amount { font-size: 12px; font-weight: 400; }
+  .md-capital-credit-label { font-size: 11px; color: var(--md-subtle); }
+
+
+  /* Customer amounts read as labelled figures rather than bar lengths. */
+  .md-finance-customer-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .md-finance-customer-row {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .md-finance-customer-avatar,
+  .md-finance-customer-other-mark {
+    border-radius: var(--md-radius-md);
+  }
+
+  .md-finance-customer-other-mark {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    background: var(--md-surface-tint);
+    color: var(--md-text);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .md-finance-customer-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--md-ink);
+    font-size: 12px;
+  }
+
+  .md-finance-customer-metrics {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .md-finance-customer-metric {
+    display: grid;
+    gap: 1px;
+    min-width: 48px;
+    padding: 4px 6px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-tint);
+    text-align: end;
+    font-size: 10px;
+    line-height: 1.2;
+    color: var(--md-subtle);
+  }
+
+  .md-finance-customer-metric strong {
+    color: var(--md-ink);
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .md-finance-customer-row-other .md-finance-customer-name {
+    color: var(--md-text);
+  }
+}

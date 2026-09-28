@@ -54,6 +54,7 @@ export const ContactCardDetailPage = lazyPage(() => import("@/pages/contact-card
 export const ContactCardPublicPage = lazyPage(() => import("@/pages/contact-card-public-page").then((module) => ({ default: module.ContactCardPublicPage })))
 export const QuoteResponsePage = lazyPage(() => import("@/pages/quote-response-page").then((module) => ({ default: module.QuoteResponsePage })))
 export const MileagePage = lazyPage(() => import("@/pages/mileage-page").then((module) => ({ default: module.MileagePage })))
+export const FinanceDirectorDashboardPage = lazyPage(() => import("@/pages/finance-director-dashboard-page").then((module) => ({ default: module.FinanceDirectorDashboardPage })))
 export const FinancePage = lazyPage(() => import("@/pages/finance-page").then((module) => ({ default: module.FinancePage })))
 
 const destinations = {
@@ -69,7 +70,7 @@ const destinations = {
   "/crm/settings": CrmSettingsPage, "/crm/contact-cards": ContactCardsPage,
   "/settings": SettingsPage, "/components": ComponentsGalleryPage,
   "/inbox/signatures": EmailSignaturesPage, "/admin/email-signatures": EmailSignaturesPage,
-  "/admin/email-signatures/team": SignatureTeamPage, "/compliance/screening": ScreeningPage,
+  "/admin/email-signatures/team": SignatureTeamPage, "/admin": FinanceDirectorDashboardPage, "/admin/finance-dashboard": FinanceDirectorDashboardPage, "/compliance/screening": ScreeningPage,
 }
 const families = [
   ["/quotes/", QuoteDetailPage], ["/bookings/", BookingDetailPage],

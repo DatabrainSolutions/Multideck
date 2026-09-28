@@ -130,6 +130,7 @@ import {
   resendApiTeamUserInvitation,
   resetApiTeamUserPassword,
   updateApiTeamUser,
+  updateApiUserRoles,
   updateApiTeamUserStatus,
   updateApiCurrentUserProfile,
   type ApiAuthorizationRole,
@@ -2493,13 +2494,12 @@ const emptyInviteForm = {
   lastName: "",
   email: "",
   roleTitle: "Operator",
-  roleId: "",
+  roleIds: [] as string[],
   officeId: "",
   departmentIds: [] as string[],
   invitationExpiry: "7d" as ApiInvitationExpiry,
 }
 
-const makeRoleSelectValue = "__make_workspace_role__"
 const accessDialogShellClassName = "h-[min(760px,calc(100dvh-32px))] max-h-none grid-rows-[minmax(0,1fr)] overflow-hidden border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]"
 const accessDialogPanelClassName = "absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-contain pe-1 [backface-visibility:hidden] [scrollbar-gutter:stable] will-change-[transform,opacity] motion-reduce:will-change-auto"
 const accessDialogPanelVariants = {
@@ -2564,6 +2564,13 @@ function getPermissionAreas(permissions: ApiPermission[]): PermissionArea[] {
 function getPrimaryRole(user: ApiTeamUser, roles: ApiAuthorizationRole[]) {
   const roleId = user.roles[0]?.id
   return roles.find((role) => role.id === roleId) ?? null
+}
+
+function getRoleNames(user: ApiTeamUser, roles: ApiAuthorizationRole[]) {
+  return user.roles.map((assigned) => {
+    const role = roles.find((candidate) => candidate.id === assigned.id)
+    return role ? getRoleDisplayName(role) : assigned.name
+  })
 }
 
 function getRoleDisplayName(role: ApiAuthorizationRole | null) {
@@ -2714,7 +2721,7 @@ export function AdminUsersContent() {
   const [confirmUserPassword, setConfirmUserPassword] = useState("")
   const [resettingPassword, setResettingPassword] = useState(false)
   const [editingUser, setEditingUser] = useState<ApiTeamUser | null>(null)
-  const [editForm, setEditForm] = useState({ firstName: "", lastName: "", jobTitle: "", officeId: "", roleId: "", departmentIds: [] as string[] })
+  const [editForm, setEditForm] = useState({ firstName: "", lastName: "", jobTitle: "", officeId: "", roleIds: [] as string[], departmentIds: [] as string[] })
   const [savingUser, setSavingUser] = useState(false)
   const [newDepartmentName, setNewDepartmentName] = useState("")
   const [creatingDepartment, setCreatingDepartment] = useState(false)
@@ -2793,7 +2800,7 @@ export function AdminUsersContent() {
     setInviteForm((current) => ({
       ...current,
       officeId: current.officeId || team?.offices[0]?.id || "",
-      roleId: current.roleId || defaultRole?.id || "",
+      roleIds: current.roleIds.length ? current.roleIds : defaultRole ? [defaultRole.id] : [],
       roleTitle: defaultRole?.name ?? current.roleTitle,
     }))
   }, [authorizationState?.roles, team?.offices])
@@ -2894,10 +2901,10 @@ export function AdminUsersContent() {
         roles: [...current.roles, role].sort((left, right) => left.name.localeCompare(right.name)),
       } : current)
       if (target === "invite") {
-        setInviteForm((current) => ({ ...current, roleId: role.id, roleTitle: role.name }))
+        setInviteForm((current) => ({ ...current, roleIds: [...new Set([...current.roleIds, role.id])], roleTitle: role.name }))
         setRoleComposerTarget(null)
       } else if (target === "edit") {
-        setEditForm((current) => ({ ...current, roleId: role.id }))
+        setEditForm((current) => ({ ...current, roleIds: [...new Set([...current.roleIds, role.id])] }))
         setRoleComposerTarget(null)
       } else {
         setCreateRoleOpen(false)
@@ -2918,7 +2925,7 @@ export function AdminUsersContent() {
       toast.error(t("Email is required"))
       return
     }
-    if (!inviteForm.officeId || !inviteForm.roleId) {
+    if (!inviteForm.officeId || !inviteForm.roleIds.length) {
       toast.error(t("Choose an office and role before sending the invitation."))
       return
     }
@@ -2934,14 +2941,14 @@ export function AdminUsersContent() {
         lastName: inviteForm.lastName.trim() || null,
         companyId: team?.company?.id ?? null,
         officeId: inviteForm.officeId,
-        roleId: inviteForm.roleId,
+        roleIds: inviteForm.roleIds,
         departmentIds: inviteForm.departmentIds,
-        roleTitle: authorizationState?.roles.find((role) => role.id === inviteForm.roleId)?.name ?? null,
+        roleTitle: inviteForm.roleIds.map((id) => authorizationState?.roles.find((role) => role.id === id)?.name).filter(Boolean).join(", ") || null,
         invitationExpiry: inviteForm.invitationExpiry,
       })
       setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, response.user) } : current)
       const defaultRole = getDefaultInviteRole((authorizationState?.roles ?? []).filter((role) => role.isSystem))
-      setInviteForm({ ...emptyInviteForm, officeId: inviteForm.officeId, roleId: defaultRole?.id ?? "", roleTitle: defaultRole?.name ?? "Operator" })
+      setInviteForm({ ...emptyInviteForm, officeId: inviteForm.officeId, roleIds: defaultRole ? [defaultRole.id] : [], roleTitle: defaultRole?.name ?? "Operator" })
       setInviteOpen(false)
       toast.success(t(response.invited ? "Invitation sent" : "User already active"), { description: response.user.email })
       void loadUsers()
@@ -3036,15 +3043,14 @@ export function AdminUsersContent() {
   }
 
   function openUserEditor(user: ApiTeamUser) {
-    const role = getPrimaryRole(user, authorizationState?.roles ?? [])
     setEditingUser(user)
     setNewDepartmentName("")
     setEditForm({
       firstName: user.firstName ?? "",
       lastName: user.lastName ?? "",
       jobTitle: user.jobTitle ?? "",
-      officeId: user.offices[0]?.id ?? team?.offices[0]?.id ?? "",
-      roleId: role && !role.isLegacyCustom ? role.id : "",
+      officeId: user.offices[0]?.id ?? "",
+      roleIds: user.roles.filter((assigned) => !(authorizationState?.roles ?? []).find((role) => role.id === assigned.id)?.isLegacyCustom).map((assigned) => assigned.id),
       departmentIds: user.departments.map((department) => department.id),
     })
   }
@@ -3079,26 +3085,33 @@ export function AdminUsersContent() {
     try {
       const session = await getSupabaseSession()
       if (!session?.access_token) throw new Error(t("Sign in again before managing team users."))
-      const previousRole = getPrimaryRole(editingUser, authorizationState?.roles ?? [])
-      const updated = await updateApiTeamUser(session.access_token, editingUser.id, {
+      const previousLegacyRoles = editingUser.roles.filter((assigned) => (authorizationState?.roles ?? []).find((role) => role.id === assigned.id)?.isLegacyCustom)
+      const roleIdsChanged = [...editingUser.roles.map((role) => role.id)].sort().join("|") !== [...editForm.roleIds].sort().join("|")
+      const detailsChanged = editForm.firstName !== (editingUser.firstName ?? "")
+        || editForm.lastName !== (editingUser.lastName ?? "")
+        || (editForm.jobTitle || null) !== editingUser.jobTitle
+        || editForm.officeId !== (editingUser.offices[0]?.id ?? "")
+        || [...editForm.departmentIds].sort().join("|") !== [...editingUser.departments.map((department) => department.id)].sort().join("|")
+      const updated = detailsChanged ? await updateApiTeamUser(session.access_token, editingUser.id, {
         firstName: editForm.firstName,
         lastName: editForm.lastName,
         jobTitle: editForm.jobTitle || null,
-        officeId: editForm.officeId,
-        roleIds: [editForm.roleId],
+        officeId: editForm.officeId !== (editingUser.offices[0]?.id ?? "") ? editForm.officeId : undefined,
+        roleIds: editForm.roleIds,
         departmentIds: editForm.departmentIds,
-      })
+      }) : null
+      if (!detailsChanged && roleIdsChanged) await updateApiUserRoles(session.access_token, editingUser.id, { roleIds: editForm.roleIds })
       let legacyRoleCleanupError: string | null = null
-      if (previousRole?.isLegacyCustom && previousRole.id !== editForm.roleId) {
+      for (const legacyRole of previousLegacyRoles) {
         try {
-          await deleteApiAuthorizationRole(session.access_token, previousRole.id)
-          setAuthorizationState((current) => current ? { ...current, roles: current.roles.filter((role) => role.id !== previousRole.id) } : current)
+          await deleteApiAuthorizationRole(session.access_token, legacyRole.id)
+          setAuthorizationState((current) => current ? { ...current, roles: current.roles.filter((role) => role.id !== legacyRole.id) } : current)
         } catch (error) {
           legacyRoleCleanupError = error instanceof Error ? error.message : t("The old one-user role could not be removed.")
         }
       }
-      setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updated) } : current)
-      toast.success(t("User details saved"), { description: updated.email })
+      if (updated) setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updated) } : current)
+      toast.success(t(roleIdsChanged && !detailsChanged ? "Roles saved" : "User details saved"), { description: editingUser.email })
       if (legacyRoleCleanupError) toast.warning(t("New role assigned, but cleanup needs attention"), { description: legacyRoleCleanupError })
       setEditingUser(null)
       void loadUsers()
@@ -3248,9 +3261,7 @@ export function AdminUsersContent() {
   const permissionAreas = getPermissionAreas(authorizationState?.permissions ?? [])
   const users = team?.users ?? []
   const totalUsers = team?.total ?? 0
-  const editingUserRole = editingUser ? getPrimaryRole(editingUser, roles) : null
-  const selectedInviteRole = assignableRoles.find((role) => role.id === inviteForm.roleId) ?? null
-  const selectedEditRole = assignableRoles.find((role) => role.id === editForm.roleId) ?? null
+  const editingUserHasLegacyRole = editingUser?.roles.some((assigned) => roles.find((role) => role.id === assigned.id)?.isLegacyCustom) ?? false
   const visibleUsers = users
   const teamPhotoUrl = useCallback((user: ApiTeamUser) => (
     user.profilePhoto ? teamPhotoUrls.get(user.profilePhoto.path) ?? null : null
@@ -3336,10 +3347,11 @@ export function AdminUsersContent() {
       kind: "status",
       width: 144,
       minWidth: 112,
-      sortValue: (user) => getRoleDisplayName(getPrimaryRole(user, roles)),
+      sortValue: (user) => getRoleNames(user, roles).join(", "),
       cell: (user) => {
         const role = getPrimaryRole(user, roles)
-        return <div className="min-w-0 overflow-hidden"><StatusPill className="max-w-full truncate" tone={role?.isLegacyCustom ? "amber" : role?.isSystem ? "blue" : "teal"}>{t(getRoleDisplayName(role))}</StatusPill></div>
+        const names = getRoleNames(user, roles)
+        return <div className="min-w-0 overflow-hidden" title={names.join(", ")}><StatusPill className="max-w-full truncate" tone={role?.isLegacyCustom ? "amber" : role?.isSystem ? "blue" : "teal"}>{names.length ? names.map(t).join(" · ") : t("No role assigned")}</StatusPill></div>
       },
     },
     {
@@ -3450,7 +3462,7 @@ export function AdminUsersContent() {
                 <SettingsInput value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={t("Search users")} className="ps-9" />
               </label>
               {visibleUsers.map((user) => {
-                const role = getPrimaryRole(user, roles)
+                const roleNames = getRoleNames(user, roles)
                 return (
                   <article key={user.id} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
                     <div className="flex items-start justify-between gap-3">
@@ -3458,7 +3470,7 @@ export function AdminUsersContent() {
                       <StatusPill tone={user.status === "Active" ? "green" : user.status === "Deactivated" ? "neutral" : "amber"}>{t(user.status)}</StatusPill>
                     </div>
                     <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[var(--md-line)] pt-3 text-[12px]">
-                      <div className="min-w-0"><dt className="text-[11px] text-[var(--md-subtle)]">{t("Role")}</dt><dd className="mt-1 truncate font-medium text-[var(--md-ink)]">{t(getRoleDisplayName(role))}</dd></div>
+                      <div className="min-w-0"><dt className="text-[11px] text-[var(--md-subtle)]">{t("Roles")}</dt><dd className="mt-1 font-medium text-[var(--md-ink)]">{roleNames.length ? roleNames.map(t).join(" · ") : t("No role assigned")}</dd></div>
                       <div className="min-w-0"><dt className="text-[11px] text-[var(--md-subtle)]">{t("Office")}</dt><dd className="mt-1 truncate font-medium text-[var(--md-ink)]">{user.offices[0] ? getOfficeLabel(user.offices[0]) : t("No office assigned")}</dd></div>
                     </dl>
                     <div className="mt-3 flex items-center justify-end gap-1">
@@ -3531,27 +3543,20 @@ export function AdminUsersContent() {
                     </fieldset>
                   ) : null}
                   <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Work email")}<SettingsInput value={inviteForm.email} onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))} type="email" inputMode="email" autoComplete="email" dir="ltr" required placeholder="name@company.com" data-i18n-skip /></label>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Office")}<Select value={inviteForm.officeId} onValueChange={(officeId) => setInviteForm((current) => ({ ...current, officeId }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose an office")} /></SelectTrigger><SelectContent>{(team?.offices ?? []).map((office) => <SelectItem key={office.id} value={office.id}>{getOfficeLabel(office)}</SelectItem>)}</SelectContent></Select></label>
-                    <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-                      {t("Role")}
-                      <Select value={inviteForm.roleId} onValueChange={(roleId) => {
-                        if (roleId === makeRoleSelectValue) beginRoleCreation("invite")
-                        else setInviteForm((current) => ({ ...current, roleId, roleTitle: assignableRoles.find((role) => role.id === roleId)?.name ?? current.roleTitle }))
-                      }}>
-                        <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose a role")} /></SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup><SelectLabel>{t("Predefined roles")}</SelectLabel>{predefinedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectGroup>
-                          {savedRoles.length ? <><SelectSeparator /><SelectGroup><SelectLabel>{t("Saved roles")}</SelectLabel>{savedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectGroup></> : null}
-                          <SelectSeparator />
-                          <SelectItem value={makeRoleSelectValue}><span className="flex items-center gap-2 font-medium text-[var(--md-accent)]"><Plus className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Make a role")}</span></SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </label>
-                  </div>
-                  {selectedInviteRole ? <div className="flex items-start justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3.5 py-3 shadow-[var(--md-shadow-line)]"><div className="min-w-0"><p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedInviteRole.name}</p><p className="mt-1 text-[11.5px] leading-5 text-[var(--md-text)]">{t(selectedInviteRole.description || "Reusable workspace role.")}</p></div><StatusPill tone={selectedInviteRole.isSystem ? "blue" : "teal"}>{t(selectedInviteRole.isSystem ? "Predefined" : "Saved role")}</StatusPill></div> : null}
+                  <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Office")}<Select value={inviteForm.officeId} onValueChange={(officeId) => setInviteForm((current) => ({ ...current, officeId }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose an office")} /></SelectTrigger><SelectContent>{(team?.offices ?? []).map((office) => <SelectItem key={office.id} value={office.id}>{getOfficeLabel(office)}</SelectItem>)}</SelectContent></Select></label>
+                  <fieldset className="grid gap-2">
+                    <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Roles")}</legend>
+                    <p className="text-[11.5px] text-[var(--md-text)]">{t("Select one or more roles. Their access is combined.")}</p>
+                    <div className="grid gap-1 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-2 sm:grid-cols-2">
+                      <p className="px-2 pt-1 text-[11px] font-medium text-[var(--md-subtle)] sm:col-span-2">{t("Predefined roles")}</p>
+                      {predefinedRoles.map((role) => <label key={role.id} className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[12px] text-[var(--md-ink)] hover:bg-[var(--md-surface)]"><Checkbox checked={inviteForm.roleIds.includes(role.id)} onCheckedChange={(checked) => setInviteForm((current) => ({ ...current, roleIds: checked ? [...new Set([...current.roleIds, role.id])] : current.roleIds.filter((id) => id !== role.id) }))} /><span>{t(role.name)}</span></label>)}
+                      {savedRoles.length ? <p className="px-2 pt-2 text-[11px] font-medium text-[var(--md-subtle)] sm:col-span-2">{t("Saved roles")}</p> : null}
+                      {savedRoles.map((role) => <label key={role.id} className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[12px] text-[var(--md-ink)] hover:bg-[var(--md-surface)]"><Checkbox checked={inviteForm.roleIds.includes(role.id)} onCheckedChange={(checked) => setInviteForm((current) => ({ ...current, roleIds: checked ? [...new Set([...current.roleIds, role.id])] : current.roleIds.filter((id) => id !== role.id) }))} /><span>{t(role.name)}</span></label>)}
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" className="w-fit" onClick={() => beginRoleCreation("invite")}><Plus className="size-3.5" />{t("Make a role")}</Button>
+                  </fieldset>
                   <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Invite expires")}<Select value={inviteForm.invitationExpiry} onValueChange={(invitationExpiry) => setInviteForm((current) => ({ ...current, invitationExpiry: invitationExpiry as ApiInvitationExpiry }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="3d">{t("3 days")}</SelectItem><SelectItem value="7d">{t("7 days")}</SelectItem><SelectItem value="30d">{t("30 days")}</SelectItem><SelectItem value="never">{t("Never (until accepted)")}</SelectItem></SelectContent></Select></label>
-                  <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={inviting} onClick={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button type="submit" disabled={inviting || !team?.subscription?.canAddUser || !team?.offices.length || !assignableRoles.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{inviting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}{t(inviting ? "Sending invitation" : "Send invitation")}</Button></DialogFooter>
+                  <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={inviting} onClick={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button type="submit" disabled={inviting || !team?.subscription?.canAddUser || !team?.offices.length || !inviteForm.roleIds.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{inviting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}{t(inviting ? "Sending invitation" : "Send invitation")}</Button></DialogFooter>
                 </form>
               </motion.div>
             )}
@@ -3633,28 +3638,24 @@ export function AdminUsersContent() {
               <motion.div key="edit-details" className={accessDialogPanelClassName} custom={-accessPanelDistance} variants={accessDialogPanelVariants} initial={shouldReduceMotion ? false : "enter"} animate="visible" exit={shouldReduceMotion ? undefined : "exit"} transition={accessPanelTransition}>
           <DialogHeader className="text-start"><DialogTitle className="text-balance">{t("Edit user")}</DialogTitle><DialogDescription className="text-pretty">{t("Their email address remains tied to their sign-in account.")}</DialogDescription></DialogHeader>
           <form className="mt-5 grid gap-5" onSubmit={saveUser}>
-            {editingUserRole?.isLegacyCustom ? <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,var(--md-surface))] px-3.5 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("This user has an older one-user Custom role. Choose a saved role to replace it.")}</div> : null}
+            {editingUserHasLegacyRole ? <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,var(--md-surface))] px-3.5 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("This user has an older one-user Custom role. Choose a saved role to replace it.")}</div> : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("First name")}<SettingsInput className="text-base sm:text-sm" value={editForm.firstName} onChange={(event) => setEditForm((current) => ({ ...current, firstName: event.target.value }))} maxLength={50} required /></label>
               <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Last name")}<SettingsInput className="text-base sm:text-sm" value={editForm.lastName} onChange={(event) => setEditForm((current) => ({ ...current, lastName: event.target.value }))} maxLength={50} required /></label>
             </div>
             <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Job title")}<SettingsInput className="text-base sm:text-sm" value={editForm.jobTitle} onChange={(event) => setEditForm((current) => ({ ...current, jobTitle: event.target.value }))} maxLength={120} placeholder={t("For example, Operations manager")} /></label>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Office")}<Select value={editForm.officeId} onValueChange={(officeId) => setEditForm((current) => ({ ...current, officeId }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent>{(team?.offices ?? []).map((office) => <SelectItem key={office.id} value={office.id}>{getOfficeLabel(office)}</SelectItem>)}</SelectContent></Select></label>
-              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-                {t("Role")}
-                <Select value={editForm.roleId} onValueChange={(roleId) => roleId === makeRoleSelectValue ? beginRoleCreation("edit") : setEditForm((current) => ({ ...current, roleId }))}>
-                  <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose a role")} /></SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup><SelectLabel>{t("Predefined roles")}</SelectLabel>{predefinedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectGroup>
-                    {savedRoles.length ? <><SelectSeparator /><SelectGroup><SelectLabel>{t("Saved roles")}</SelectLabel>{savedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectGroup></> : null}
-                    <SelectSeparator />
-                    <SelectItem value={makeRoleSelectValue}><span className="flex items-center gap-2 font-medium text-[var(--md-accent)]"><Plus className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Make a role")}</span></SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-            </div>
-            {selectedEditRole ? <div className="flex items-start justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3.5 py-3 shadow-[var(--md-shadow-line)]"><div className="min-w-0"><p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedEditRole.name}</p><p className="mt-1 text-[11.5px] leading-5 text-[var(--md-text)]">{t(selectedEditRole.description || "Reusable workspace role.")}</p></div><StatusPill tone={selectedEditRole.isSystem ? "blue" : "teal"}>{t(selectedEditRole.isSystem ? "Predefined" : "Saved role")}</StatusPill></div> : null}
+            <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Office")}<Select value={editForm.officeId} onValueChange={(officeId) => setEditForm((current) => ({ ...current, officeId }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent>{(team?.offices ?? []).map((office) => <SelectItem key={office.id} value={office.id}>{getOfficeLabel(office)}</SelectItem>)}</SelectContent></Select></label>
+            <fieldset className="grid gap-2">
+              <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Roles")}</legend>
+              <p className="text-[11.5px] text-[var(--md-text)]">{t("Select one or more roles. Their access is combined.")}</p>
+              <div className="grid gap-1 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-2 sm:grid-cols-2">
+                <p className="px-2 pt-1 text-[11px] font-medium text-[var(--md-subtle)] sm:col-span-2">{t("Predefined roles")}</p>
+                {predefinedRoles.map((role) => <label key={role.id} className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[12px] text-[var(--md-ink)] hover:bg-[var(--md-surface)]"><Checkbox checked={editForm.roleIds.includes(role.id)} onCheckedChange={(checked) => setEditForm((current) => ({ ...current, roleIds: checked ? [...new Set([...current.roleIds, role.id])] : current.roleIds.filter((id) => id !== role.id) }))} /><span>{t(role.name)}</span></label>)}
+                {savedRoles.length ? <p className="px-2 pt-2 text-[11px] font-medium text-[var(--md-subtle)] sm:col-span-2">{t("Saved roles")}</p> : null}
+                {savedRoles.map((role) => <label key={role.id} className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[12px] text-[var(--md-ink)] hover:bg-[var(--md-surface)]"><Checkbox checked={editForm.roleIds.includes(role.id)} onCheckedChange={(checked) => setEditForm((current) => ({ ...current, roleIds: checked ? [...new Set([...current.roleIds, role.id])] : current.roleIds.filter((id) => id !== role.id) }))} /><span>{t(role.name)}</span></label>)}
+              </div>
+              <Button type="button" variant="ghost" size="sm" className="w-fit" onClick={() => beginRoleCreation("edit")}><Plus className="size-3.5" />{t("Make a role")}</Button>
+            </fieldset>
             <fieldset className="grid gap-3">
               <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Departments")}</legend>
               <p className="text-pretty text-[11.5px] leading-5 text-[var(--md-text)]">{t("Select one or more departments.")}</p>
@@ -3676,7 +3677,7 @@ export function AdminUsersContent() {
                 <Button type="button" variant="secondary" disabled={creatingDepartment || !newDepartmentName.trim()} className="h-10 rounded-[var(--md-radius-lg)] transition-[background-color,color,scale] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100" onClick={() => void createAndAssignDepartment()}>{creatingDepartment ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Plus className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}{t(creatingDepartment ? "Creating department" : "Create department")}</Button>
               </div>
             </fieldset>
-            <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={savingUser || creatingDepartment} onClick={() => setEditingUser(null)}>{t("Cancel")}</Button><Button type="submit" disabled={savingUser || creatingDepartment || !editForm.firstName.trim() || !editForm.lastName.trim() || !editForm.officeId || !editForm.roleId} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{savingUser ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}{t(savingUser ? "Saving user" : "Save user")}</Button></DialogFooter>
+            <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={savingUser || creatingDepartment} onClick={() => setEditingUser(null)}>{t("Cancel")}</Button><Button type="submit" disabled={savingUser || creatingDepartment || !editForm.firstName.trim() || !editForm.lastName.trim() || !editForm.roleIds.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{savingUser ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}{t(savingUser ? "Saving user" : "Save user")}</Button></DialogFooter>
           </form>
               </motion.div>
             )}

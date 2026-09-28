@@ -2,7 +2,7 @@ import { requireMainIdentityAdministration } from "../_shared/training-environme
 import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, isTrustedMultideckOrigin, json, requirePermission, routeParts } from "../_shared/backend.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
 import { normaliseLocale, renderBrandedEmail } from "../_shared/email-template.ts"
-import { authorizationCatalogueReadModel, isLegacyCustomRoleName, isPendingInvitation, singleTeamUserReadModel, SYSTEM_ROLES, teamCatalogueReadModel, teamUsersByIdsReadModel, teamUsersPageCompatibilityReadModel } from "../_shared/team-read-model.ts"
+import { authorizationCatalogueReadModel, isLegacyCustomRoleName, isPendingInvitation, ROLE_RESTRICTED_PERMISSIONS, singleTeamUserReadModel, SYSTEM_ROLES, teamCatalogueReadModel, teamUsersByIdsReadModel, teamUsersPageCompatibilityReadModel } from "../_shared/team-read-model.ts"
 import { getPasswordPolicyError } from "../_shared/password-policy.ts"
 
 type DeletionEmailLocale = "en"
@@ -238,8 +238,14 @@ async function updateTeamUser(admin: any, current: any, targetId: string, payloa
   if (!roleIds.length) throw new HttpError(400, "Choose at least one role.")
   const { data: roles } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", roleIds)
   if ((roles ?? []).length !== roleIds.length || (roles ?? []).some((role: any) => isLegacyCustomRoleName(role.sys_UserRole_Name))) throw new HttpError(400, "Choose valid reusable roles.")
-  const { data: office } = await admin.from("cmp_Offices").select("Office_ID").eq("Office_ID", payload.officeId).eq("Company_ID", current.Company_ID).maybeSingle()
-  if (!office) throw new HttpError(400, "Choose a valid office in this company.")
+  let office: { Office_ID: string } | null = null
+  if (payload.officeId !== undefined) {
+    if (!payload.officeId) throw new HttpError(400, "Choose a valid office in this company.")
+    const { data, error } = await admin.from("cmp_Offices").select("Office_ID").eq("Office_ID", payload.officeId).eq("Company_ID", current.Company_ID).maybeSingle()
+    if (error) throw new HttpError(500, error.message)
+    if (!data) throw new HttpError(400, "Choose a valid office in this company.")
+    office = data
+  }
   const departmentIds = [...new Set((payload.departmentIds ?? []).map((value: unknown) => String(value)))] as string[]
   const { data: departments } = departmentIds.length ? await admin.from("cmp_Departments").select("Department_ID").in("Department_ID", departmentIds).eq("Company_ID", current.Company_ID).eq("Department_IsActive", true) : { data: [] }
   if ((departments ?? []).length !== departmentIds.length) throw new HttpError(400, "Choose active departments in this company.")
@@ -247,10 +253,12 @@ async function updateTeamUser(admin: any, current: any, targetId: string, payloa
 
   const { error: profileError } = await admin.from("cmp_Users").update({ User_Firstname: firstName, User_Lastname: lastName, User_JobTitle: jobTitle || null }).eq("User_ID", target.User_ID)
   if (profileError) throw new HttpError(500, profileError.message)
-  const { error: officeDeleteError } = await admin.from("cmp_Users_Offices").delete().eq("User_ID", target.User_ID)
-  if (officeDeleteError) throw new HttpError(500, officeDeleteError.message)
-  const { error: officeInsertError } = await admin.from("cmp_Users_Offices").insert({ User_ID: target.User_ID, Office_ID: office.Office_ID })
-  if (officeInsertError) throw new HttpError(500, officeInsertError.message)
+  if (office) {
+    const { error: officeDeleteError } = await admin.from("cmp_Users_Offices").delete().eq("User_ID", target.User_ID)
+    if (officeDeleteError) throw new HttpError(500, officeDeleteError.message)
+    const { error: officeInsertError } = await admin.from("cmp_Users_Offices").insert({ User_ID: target.User_ID, Office_ID: office.Office_ID })
+    if (officeInsertError) throw new HttpError(500, officeInsertError.message)
+  }
   const { error: roleDeleteError } = await admin.from("cmp_Users_Roles").delete().eq("User_ID", target.User_ID)
   if (roleDeleteError) throw new HttpError(500, roleDeleteError.message)
   const { error: roleInsertError } = await admin.from("cmp_Users_Roles").insert(roleIds.map((roleId) => ({ User_ID: target.User_ID, sys_UserRole_ID: roleId })))
@@ -394,6 +402,8 @@ async function setRolePermissions(admin: any, roleId: string, values: string[], 
   if (protect && SYSTEM_ROLES[role.sys_UserRole_Name]) throw new HttpError(400, "Built-in role permissions cannot be changed.")
   const normalized = [...new Set((values ?? []).map((value) => String(value).trim()).filter(Boolean))]
   if (!normalized.length) throw new HttpError(400, "Keep at least one permission on the role.")
+  const reserved = normalized.find((value) => ROLE_RESTRICTED_PERMISSIONS[value] && !ROLE_RESTRICTED_PERMISSIONS[value].includes(role.sys_UserRole_Name))
+  if (reserved) throw new HttpError(400, "That permission is reserved for Finance Directors.")
   const { data: permissions, error: permissionsError } = await admin.from("sys_Permissions").select("sys_Permission_ID,sys_Permission_Value").in("sys_Permission_Value", normalized)
   if (permissionsError) throw new HttpError(500, permissionsError.message)
   if ((permissions ?? []).length !== normalized.length) throw new HttpError(400, "Choose valid permissions before updating the role.")
@@ -434,10 +444,16 @@ Deno.serve(async (request) => {
       if ((departments ?? []).length !== departmentIds.length) throw new HttpError(400, "Choose active departments in this company.")
       let { data: profile } = await admin.from("cmp_Users").select("*").ilike("User_Email", email).maybeSingle()
       if (profile?.Company_ID && profile.Company_ID !== current.Company_ID) throw new HttpError(409, "This email is already linked to another company profile.")
-      if (payload.roleId) {
-        const { data: selectedRole } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").eq("sys_UserRole_ID", payload.roleId).maybeSingle()
-        if (!selectedRole || isLegacyCustomRoleName(selectedRole.sys_UserRole_Name)) throw new HttpError(400, "Choose a valid reusable role before inviting the user.")
+      const inviteRoleIds = payload.roleIds === undefined
+        ? payload.roleId ? [String(payload.roleId)] : []
+        : Array.isArray(payload.roleIds) ? [...new Set(payload.roleIds.map((value: unknown) => String(value)))] : []
+      if (payload.roleIds !== undefined && !inviteRoleIds.length) throw new HttpError(400, "Choose at least one role before inviting the user.")
+      if (inviteRoleIds.length) {
+        const { data: selectedRoles, error: rolesError } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", inviteRoleIds)
+        if (rolesError) throw new HttpError(500, rolesError.message)
+        if ((selectedRoles ?? []).length !== inviteRoleIds.length || (selectedRoles ?? []).some((role: any) => isLegacyCustomRoleName(role.sys_UserRole_Name))) throw new HttpError(400, "Choose valid reusable roles before inviting the user.")
       }
+      if (profile && inviteRoleIds.length) await ensureAdministratorSurvives(admin, current.Company_ID, profile.User_ID, inviteRoleIds)
       if (!profile || profile.Company_ID !== current.Company_ID || profile.User_AccessStatus !== "active") {
         await requireAvailableSeat(admin, current.Company_ID)
       }
@@ -474,10 +490,10 @@ Deno.serve(async (request) => {
       if (officeDeleteError) throw new HttpError(500, officeDeleteError.message)
       const { error: officeInsertError } = await admin.from("cmp_Users_Offices").insert({ User_ID: profile.User_ID, Office_ID: office.Office_ID })
       if (officeInsertError) throw new HttpError(500, officeInsertError.message)
-      if (payload.roleId) {
+      if (inviteRoleIds.length) {
         const { error: roleDeleteError } = await admin.from("cmp_Users_Roles").delete().eq("User_ID", profile.User_ID)
         if (roleDeleteError) throw new HttpError(500, roleDeleteError.message)
-        const { error: roleInsertError } = await admin.from("cmp_Users_Roles").insert({ User_ID: profile.User_ID, sys_UserRole_ID: payload.roleId })
+        const { error: roleInsertError } = await admin.from("cmp_Users_Roles").insert(inviteRoleIds.map((roleId) => ({ User_ID: profile.User_ID, sys_UserRole_ID: roleId })))
         if (roleInsertError) throw new HttpError(500, roleInsertError.message)
       }
       const { error: departmentDeleteError } = await admin.from("cmp_Users_Departments").delete().eq("User_ID", profile.User_ID)

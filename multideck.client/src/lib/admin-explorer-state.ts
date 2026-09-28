@@ -13,12 +13,14 @@ type AdminExplorerState = {
   query: string
   /** The area the second sidebar was last opened for, so a shared page keeps the sidebar it was reached from. */
   hubId: string | null
+  /** Hide the dock while browsing All areas without changing the page underneath. */
+  dismissedDockRoute: string | null
   /** The setting last opened from the second sidebar, so two settings on one page stay distinguishable. */
   opened: { label: string; route: string } | null
 }
 
 const listeners = new Set<() => void>()
-let state: AdminExplorerState = { sectionId: readSectionParam(), query: "", hubId: null, opened: null }
+let state: AdminExplorerState = { sectionId: readSectionParam(), query: "", hubId: null, dismissedDockRoute: null, opened: null }
 
 function readSectionParam() {
   if (typeof window === "undefined") return null
@@ -53,12 +55,20 @@ export function setAdminSettingsQuery(query: string) {
 
 /** Called when a new area opens: start from its address, with no search carried over. */
 export function resetAdminExplorer(hubId: string) {
-  emit({ ...state, sectionId: readSectionParam(), query: "", hubId, opened: null })
+  emit({ ...state, sectionId: readSectionParam(), query: "", hubId, dismissedDockRoute: null, opened: null })
+}
+
+export function dismissAdminDock(route: string) {
+  if (state.dismissedDockRoute !== route) emit({ ...state, dismissedDockRoute: route })
+}
+
+export function restoreAdminDock() {
+  if (state.dismissedDockRoute !== null) emit({ ...state, dismissedDockRoute: null })
 }
 
 /** Record which setting was opened, and from which area, before navigating to its page. */
 export function noteAdminSettingOpened(hubId: string, setting: { label: string; route: string }) {
-  emit({ ...state, hubId, opened: { label: setting.label, route: setting.route } })
+  emit({ ...state, hubId, dismissedDockRoute: null, opened: { label: setting.label, route: setting.route } })
 }
 
 const wideQuery = "(min-width: 1024px)"
@@ -108,7 +118,7 @@ export function dockedAdminHubFor(route: string, hubId: string | null): AdminHub
 
 /** The area the second sidebar shows for this route right now, read without subscribing. */
 export function adminDockHubIdFor(route: string) {
-  return dockedAdminHubFor(route, state.hubId)?.id ?? null
+  return state.dismissedDockRoute === route ? null : dockedAdminHubFor(route, state.hubId)?.id ?? null
 }
 
 /** The setting on screen now: the one opened, or the first of this area's settings for this page. */

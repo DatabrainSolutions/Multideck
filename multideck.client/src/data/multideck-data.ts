@@ -1,3 +1,8 @@
+import workingCapitalPanelSource from "@/components/multideck/finance-working-capital-panel.tsx?raw"
+import breakdownPanelSource from "@/components/multideck/dashboard-breakdown-panel.tsx?raw"
+import profitLossPanelSource from "@/components/multideck/finance-profit-loss-panel.tsx?raw"
+import appSidebarSource from "@/components/multideck/app-sidebar.tsx?raw"
+import sidebarNavigationSearchSource from "@/lib/sidebar-navigation-search.ts?raw"
 import appBreadcrumbsSource from "@/components/multideck/app-breadcrumbs.tsx?raw"
 import appBreadcrumbsStyles from "@/components/multideck/app-breadcrumbs.css?raw"
 import dashboardModeChartSource from "@/components/multideck/dashboard-mode-chart.tsx?raw"
@@ -1193,10 +1198,10 @@ export const galleryComponents = [
     id: "sidebar",
     name: "Area Sidebar Navigation",
     category: "Navigation",
-    description: "The two-level Multideck navigation pattern: Dexter stays first in every rail, followed by stable product areas or area-specific destinations with optional dropdown groups.",
-    details: "Keep Dexter permanently mounted at the top and use its shared shader treatment in both navigation levels, so changing areas never restarts the shader. Selecting a CSV-backed area replaces only the remaining rail without changing the page; destinations can link directly or disclose smaller page links. The shared active surface, motion and collapsed state remain consistent across both levels.",
-    foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar" }],
-    componentCode: `export function AppSidebar({ route, navigate }) {\n  const [activeAreaId, setActiveAreaId] = useState(findAreaForRoute(route)?.id ?? null)\n  const [expandedIds, setExpandedIds] = useState(new Set())\n  const activeArea = sidebarAreas.find((area) => area.id === activeAreaId)\n\n  return (\n    <aside className="relative flex h-full flex-col bg-[var(--md-sidebar-bg)]">\n      <SidebarNavItem\n        item={{ label: "Agent Dexter", icon: AiBrain, route: "/agent-dexter" }}\n        accent="dexter"\n        onClick={() => navigate("/agent-dexter")}\n      />\n      <AnimatePresence mode="popLayout" initial={false}>\n        {activeArea ? (\n          <motion.nav key={activeArea.id}>\n            <button onClick={() => setActiveAreaId(null)}>All areas</button>\n            {activeArea.destinations.map((destination) => (\n              <div key={destination.id}>\n                <SidebarNavItem\n                  item={destination}\n                  expanded={destination.children ? expandedIds.has(destination.id) : undefined}\n                  onClick={destination.children\n                    ? () => toggleExpanded(destination.id)\n                    : destination.route ? () => navigate(destination.route) : undefined}\n                />\n                {expandedIds.has(destination.id)\n                  ? destination.children?.map((child) => (\n                      <SidebarNavItem key={child.label} item={child} nested onClick={() => navigate(child.route)} />\n                    ))\n                  : null}\n              </div>\n            ))}\n          </motion.nav>\n        ) : (\n          <motion.nav key="areas">\n            {sidebarAreas.map((area) => (\n              <SidebarNavItem key={area.id} item={area} onClick={() => setActiveAreaId(area.id)} />\n            ))}\n          </motion.nav>\n        )}\n      </AnimatePresence>\n    </aside>\n  )\n}`,
+    description: "Navigation search, distinct area headings and grouped destinations, with personal quick links above the profile.",
+    details: "Search only available navigation destinations, including nested Admin settings; show each result’s area and update immediately while typing. Area headings sit above the links with their own type hierarchy. Expanded dropdown titles and their options share one surface, with smaller, quieter child rows. Home, Inbox, Tasks and Calendar sit above the profile. Submit a ticket lives in the profile menu. The current destination uses the chosen accent fill with its paired foreground colour. Escape clears search and restores the previous navigation; arrow keys move through search results.",
+    foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Admin", route: "/admin" }, { label: "Admin finance", route: "/admin/finance" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar" }],
+    componentCode: `${appSidebarSource}\n\n${sidebarNavigationSearchSource}`,
     usageCode: `<AppSidebar route={route} navigate={navigate} />`,
   },
   {
@@ -2361,11 +2366,133 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "breakdown-panel",
     name: "Breakdown Panel",
     category: "Data",
-    description: "A split of a total drawn as bars \u2014 segmented, ranked horizontally, or compared as upright columns.",
-    details: "Use for a categorical split in a side column. Prefer this over a ring or a funnel there: both carry a fixed aspect ratio, so beside a tall table they stretch and leave a band of empty surface under the drawing, and comparing lengths on a shared baseline is easier than comparing arc angles. Use `segmented` when the categories are parts of one quantity, `ranked` when the order is the point, and `columns` for a compact stage-by-stage comparison. Ranked and column bars scale against the largest category, not the total, so a long tail still has visible length.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=breakdown-panel" }],
-    componentCode: `export function DashboardBreakdownPanel({ title, subtitle, slices, variant = "ranked" }) {\n  const peak = slices.reduce((highest, slice) => Math.max(highest, slice.value), 0)\n\n  return (\n    <Surface padding="none" className="md-breakdown-panel">\n      <div className="md-breakdown-head">\n        <h2 className="md-panel-title">{title}</h2>\n        <p className="md-panel-meta">{subtitle}</p>\n      </div>\n      <div className="md-breakdown-body">\n        {variant === "columns" ? (\n          <ul className="md-breakdown-columns">\n            {slices.map((slice) => (\n              <li key={slice.label}>\n                <span className="md-breakdown-column-value">{slice.value}</span>\n                <span className="md-breakdown-column-plot">\n                  <motion.span className="md-breakdown-column-bar" style={{ height: String((slice.value / peak) * 100) + "%", background: slice.color }} />\n                </span>\n                <span className="md-breakdown-column-label">{slice.label}</span>\n              </li>\n            ))}\n          </ul>\n        ) : (\n          <ul className="md-breakdown-rows">\n            {slices.map((slice) => (\n              <li key={slice.label}>\n                <span className="md-breakdown-row-head">{slice.label}<span>{slice.value}</span></span>\n                <span className="md-breakdown-track"><motion.span className="md-breakdown-fill" animate={{ scaleX: slice.value / peak }} /></span>\n              </li>\n            ))}\n          </ul>\n        )}\n      </div>\n    </Surface>\n  )\n}`,
-    usageCode: `<DashboardBreakdownPanel\n  title="Mode mix"\n  subtitle="Live bookings by transport mode"\n  slices={dashboardModeMix(bookings).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="segmented"\n  totalLabel="in transit"\n/>\n\n<DashboardBreakdownPanel\n  title="Quote pipeline"\n  subtitle="Open quotes by workflow stage"\n  slices={dashboardQuoteStages(quotes).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="columns"\n/>`,
+    description: "A categorical breakdown shown as aligned figures, segmented bars, ranked bars or columns.",
+    details: "Use for a categorical split in a side column. Prefer this over a ring or a funnel there: both carry a fixed aspect ratio, so beside a tall table they stretch and leave a band of empty surface under the drawing, and comparing lengths on a shared baseline is easier than comparing arc angles. Use `segmented` when the categories are parts of one quantity, `ranked` when the order is the point, and `columns` for a compact stage-by-stage comparison. Use `figures` for exact financial amounts and margin tiles with miniature proportion bars. Ranked and column bars scale against the largest category, not the total, so a long tail still has visible length.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=breakdown-panel" }],
+    componentCode: breakdownPanelSource,
+    usageCode: `<DashboardBreakdownPanel
+  title="Shipping modes"
+  variant="figures"
+  slices={[{ label: "Ocean", value: 24000, color: "var(--md-accent)", meta: "24% margin" }]}
+  formatValue={money.compact}
+/>
+
+<DashboardBreakdownPanel\n  title="Mode mix"\n  subtitle="Live bookings by transport mode"\n  slices={dashboardModeMix(bookings).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="segmented"\n  totalLabel="in transit"\n/>\n\n<DashboardBreakdownPanel\n  title="Quote pipeline"\n  subtitle="Open quotes by workflow stage"\n  slices={dashboardQuoteStages(quotes).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="columns"\n/>`,
+  },
+  {
+    id: "column-chart",
+    name: "Column Chart",
+    category: "Data",
+    description: "Months as columns, one series or two side by side, with the reported period in full colour and the month in progress drawn lighter.",
+    details: "Use for money over time where the reader compares one month with the next and, with two series, the gap inside a month: revenue against costs, cash in against cash out. Put the second series in the neutral so the eye goes to the first and reads the gap. `emphasis` marks the months the rest of the page reports on, so a period reads inside its year without a second chart; `partialIndex` marks the month still in progress so it is never read as a fall. On arrival the columns rise in time order; after that a change of data morphs every column at once from where it stands. Zero is always on the scale, so a loss hangs below the baseline on the same scale as a profit above it. A visually hidden table carries every value.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=column-chart" }],
+    componentCode: `export function DashboardColumnChart({ labels, series, emphasis, partialIndex, formatValue, formatAxis, tooltipExtra, ariaLabel }) {
+  const [containerRef, width] = useElementWidth()
+  const scale = getChartScale([0, ...series.flatMap((entry) => entry.values)], true, 4)
+  const baseline = projectY(0, scale, box)
+
+  return (
+    <div ref={containerRef} className="md-column-chart">
+      <svg role="img" tabIndex={0} aria-label={ariaLabel} onPointerMove={snapToMonth} onKeyDown={stepMonths}>
+        {labels.map((_, index) => series.map((entry, seriesIndex) => (
+          <motion.path
+            key={entry.key}
+            fill={entry.color}
+            initial={{ d: barPath(x, barWidth, baseline, baseline) }}
+            animate={{ d: barPath(x, barWidth, baseline, projectY(entry.values[index], scale, box)), opacity: emphasis[index] ? 1 : 0.4 }}
+            transition={{ d: settled ? mdMotion.morph : { ...mdMotion.panel, delay: staggerRamp(index, 0.034) } }}
+          />
+        )))}
+      </svg>
+      <table className="sr-only">{/* every value */}</table>
+    </div>
+  )
+}`,
+    usageCode: `<DashboardColumnChart
+  labels={months.map((month) => formatMonth(month.month, language))}
+  series={[
+    { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", values: months.map((month) => month.revenue) },
+    { key: "costs", label: "Costs", color: "var(--md-fin-out)", values: months.map((month) => month.directCost + month.overheads) },
+  ]}
+  emphasis={months.map((month) => month.month >= period.start && month.month <= period.end)}
+  partialIndex={months.length - 1}
+  formatValue={money.whole}
+  formatAxis={money.compact}
+  ariaLabel="Revenue and costs, last twelve months"
+/>`,
+  },
+  {
+    id: "forecast-chart",
+    name: "Forecast Chart",
+    category: "Data",
+    description: "Recorded months as a solid line, continued as a dashed projection inside a likely range over a shaded forecast zone.",
+    details: "Use where a figure is carried forward from real history. The join between fact and estimate is always visible: the recorded line ends, the projection starts from its last point, and the forecast zone is shaded behind it. The arrival makes the same point: the recorded line draws itself up to today, and only then do the projection, its range and the end labels appear. End labels are nudged apart only when they would collide. Keep to two or three series on one money scale; the tooltip gives each projected value with its range, and a hidden table carries all of it.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=forecast-chart" }],
+    componentCode: `export function DashboardForecastChart({ labels, series, formatValue, formatAxis, ariaLabel }) {
+  const history = series[0].actual.length
+
+  return (
+    <svg role="img" tabIndex={0} aria-label={ariaLabel}>
+      <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }}>
+        <rect x={x(history - 1)} className="forecast-zone" />
+      </motion.g>
+      {series.map((entry) => (
+        <g key={entry.key}>
+          <motion.path d={bandPath(entry)} fill={entry.color} initial={{ opacity: 0 }} animate={{ opacity: 0.12 }} transition={{ delay: 0.9 }} />
+          <motion.path d={actualPath(entry)} stroke={entry.color} initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.9, ease: mdEaseOut }} />
+          <motion.path d={projectedPath(entry)} stroke={entry.color} strokeDasharray="4 5" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }} />
+        </g>
+      ))}
+    </svg>
+  )
+}`,
+    usageCode: `const outlook = forecast(dashboard.months, period.current)
+
+<DashboardForecastChart
+  labels={[...history.map(label), ...outlook.revenue.map(label)]}
+  series={[
+    { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", actual: history.map((month) => month.revenue), projected: outlook.revenue },
+    { key: "net", label: "Net profit", color: "var(--md-blue)", actual: history.map(netProfit), projected: outlook.netProfit },
+  ]}
+  formatValue={money.whole}
+  formatAxis={money.compact}
+  ariaLabel="Revenue and net profit, recorded and projected"
+/>`,
+  },
+  {
+    id: "profit-loss-panel",
+    name: "Profit and Loss Panel",
+    category: "Finance",
+    description: "A condensed P&L with aligned amount and margin tiles for one reporting period.",
+    details: "Read revenue, costs and results in calculation order. Amounts sit at the right edge in compact rounded tiles with miniature bars showing their relative size; margins remain separate figures. Gross and net profit have a separating rule, and negative results retain a minus sign and red text. Largest overheads use the same treatment.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=profit-loss-panel" }],
+    componentCode: profitLossPanelSource,
+    usageCode: `<FinanceProfitLossPanel
+  title="Profit and loss"
+  subtitle="Jul – Sep 2026"
+  figures={{ revenue: totals.revenue, directCost: totals.directCost, overheads: totals.overheads }}
+  overheadAccounts={dashboard.overheadAccounts}
+  formatMoney={money.whole}
+  formatPercent={(value) => percent(value, language)}
+/>`,
+  },
+  {
+    id: "working-capital-panel",
+    name: "Cash and Working Capital Panel",
+    category: "Finance",
+    description: "A compact cash statement with aligned amount tiles and miniature bars showing when receivables and payables are due.",
+    details: "Cash at bank leads, followed by what customers owe and what the business owes. Each ledger shows its total and overdue amount, then dated buckets with exact figures and small bars proportional to the positive balance. Credit balances remain labelled in the figures and reduce the total without becoming overdue bars. Empty balances and missing bank connections have explicit states. The layout matches the profit and loss panel, and motion respects reduced-motion preferences.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=working-capital-panel" }],
+    componentCode: workingCapitalPanelSource,
+    usageCode: `<FinanceWorkingCapitalPanel
+  title="Cash and working capital"
+  subtitle="Today, across every open invoice and bill"
+  cashAtBank={dashboard.cashAtBank}
+  receivables={dashboard.receivables}
+  payables={dashboard.payables}
+  debtorDays={debtorDays(dashboard.receivables.total, dashboard.months, period.current)}
+  formatMoney={money.whole}
+/>`,
   },
   {
     id: "coverage-panel",

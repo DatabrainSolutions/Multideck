@@ -2,12 +2,18 @@ export const SYSTEM_ROLES: Record<string, { description: string; canEditPermissi
   Administrator: { description: "Full workspace administration across users, roles, data, integrations, and billing.", canEditPermissions: false },
   "Company Admin": { description: "Manage the company workspace, its people, and day-to-day configuration.", canEditPermissions: false },
   "Company Manager": { description: "Coordinate company operations and team activity without system administration.", canEditPermissions: false },
+  "Finance Director": { description: "Read-only finance with the company finance dashboard: revenue, profit, cash flow and forecasts.", canEditPermissions: false },
   "Company User": { description: "Use the company workspace for assigned operational work.", canEditPermissions: false },
   "Guest User": { description: "Limited workspace visibility for temporary or external collaboration.", canEditPermissions: false },
   "Operations manager": { description: "Manage day-to-day freight operations, users, reports, and customer work without changing authorization rules.", canEditPermissions: false },
   Operator: { description: "Create and update operational freight records while keeping destructive and admin actions restricted.", canEditPermissions: false },
   "System Admin": { description: "Maintain system-level configuration and protected workspace access.", canEditPermissions: false },
   Viewer: { description: "Read-only access for people who need visibility without operational edit rights.", canEditPermissions: false },
+}
+
+/** Permissions restricted to named built-in roles. */
+export const ROLE_RESTRICTED_PERMISSIONS: Record<string, readonly string[]> = {
+  "Finance.Director.Dashboard.View": ["Finance Director"],
 }
 
 const LEGACY_CUSTOM_ROLE_PATTERN = /^Custom · [0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i

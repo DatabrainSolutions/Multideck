@@ -10,6 +10,7 @@
 @import "shadcn/tailwind.css";
 @import "./feature-workspaces.css";
 @import "./dashboard.css";
+@import "./finance-dashboard.css";
 @import "./responsive.css";
 
 @custom-variant dark (&:is(.dark *));
@@ -1233,6 +1234,70 @@ button {
 
 .md-admin-dock {
   border-inline-start: 1px solid color-mix(in srgb, var(--md-hairline) 40%, transparent);
+}
+
+/* A disclosure title and its destinations share one continuous surface. */
+.md-sidebar-dropdown-group {
+  position: relative;
+  isolation: isolate;
+}
+
+.md-sidebar-dropdown-group::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--md-radius-xl);
+  background: var(--md-surface-soft);
+  opacity: 0;
+  transition: opacity var(--md-motion-fast);
+}
+
+.md-sidebar-dropdown-group[data-expanded="true"]::before {
+  opacity: 1;
+}
+
+.md-sidebar-dropdown-group[data-expanded="true"] > span > [data-sidebar-row] {
+  color: var(--md-ink);
+}
+
+.md-sidebar-expanded-options [data-sidebar-row] {
+  padding-inline-start: 1rem;
+  font-weight: 400;
+}
+
+[data-sidebar-collapsed="true"] .md-sidebar-expanded-options [data-sidebar-row] {
+  padding-inline: 0;
+}
+
+.md-sidebar-expanded-options [data-sidebar-active-surface] {
+  background: var(--md-accent);
+  box-shadow: none;
+}
+
+.md-sidebar-search {
+  --md-placeholder: var(--md-text);
+  --md-placeholder-opacity: 1;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: background-color var(--md-motion-fast);
+}
+
+.md-sidebar-search:focus-within {
+  outline-color: var(--md-accent);
+  background: var(--md-bg-strong);
+}
+
+.md-sidebar-search-result:active,
+.md-sidebar-search-clear:active {
+  background: var(--md-bg-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-sidebar-dropdown-group::before,
+  .md-sidebar-search {
+    transition-duration: 0ms;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

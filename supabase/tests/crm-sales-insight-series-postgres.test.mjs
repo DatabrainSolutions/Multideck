@@ -14,38 +14,40 @@ const fixture=(sql,ok)=>{
 test('weekly CRM history uses recorded decisions, retains reopened losses, and groups UTC calendar weeks',()=>withProductPostgres((sql,ok)=>{
   fixture(sql,ok)
   ok(sql(`begin;
+    -- Fixed UTC durations keep fixture timestamps and expectations identical across DST
+    -- when the session switches from the host zone to Pacific/Auckland below.
     -- Imported observations establish coverage, but never count as fresh deals/decisions.
-    update "CRM_DealEvents" set kind='observed',occurred_at=test_monday()-interval '21 days'+interval '12 hours';
+    update "CRM_DealEvents" set kind='observed',occurred_at=test_monday()-interval '504 hours'+interval '12 hours';
     update "CRM_DealEvents" set occurred_at=now()-interval '300 days' where deal_id=fid(5);
-    update "CRM_DealEvents" set kind='created',occurred_at=test_monday()-interval '14 days'+interval '10 hours' where deal_id=fid(4);
+    update "CRM_DealEvents" set kind='created',occurred_at=test_monday()-interval '336 hours'+interval '10 hours' where deal_id=fid(4);
     set role authenticated;select login(2);
     select multideck_crm_lose_deal(fid(1),deal_version(1),'{"reasonCode":"price"}');
-    reset role;select stamp_events(1,test_monday()-interval '7 days 1 second');
+    reset role;select stamp_events(1,test_monday()-interval '168 hours 1 second');
     set role authenticated;
     select multideck_crm_reopen_deal(fid(1),deal_version(1),fid(210),'New budget');
-    reset role;select stamp_events(1,test_monday()-interval '7 days');
+    reset role;select stamp_events(1,test_monday()-interval '168 hours');
     set role authenticated;
     select multideck_crm_lose_deal(fid(1),deal_version(1),'{"reasonCode":"timing"}');
-    reset role;select stamp_events(1,test_monday()-interval '7 days'+interval '1 hour');
+    reset role;select stamp_events(1,test_monday()-interval '168 hours'+interval '1 hour');
     set role authenticated;
     select multideck_crm_reopen_deal(fid(1),deal_version(1),fid(210),'Date agreed');
-    reset role;select stamp_events(1,test_monday()-interval '7 days'+interval '2 hours');
+    reset role;select stamp_events(1,test_monday()-interval '168 hours'+interval '2 hours');
     set role authenticated;
     select multideck_crm_lose_deal(fid(1),deal_version(1),'{"reasonCode":"cancelled"}');
-    reset role;select stamp_events(1,test_monday()-interval '7 days'+interval '3 hours');
+    reset role;select stamp_events(1,test_monday()-interval '168 hours'+interval '3 hours');
     set role authenticated;
     select multideck_crm_reopen_deal(fid(1),deal_version(1),fid(210),'Customer returned');
-    reset role;select stamp_events(1,test_monday()-interval '7 days'+interval '4 hours');
+    reset role;select stamp_events(1,test_monday()-interval '168 hours'+interval '4 hours');
     set role authenticated;
     select multideck_crm_update_deal(fid(2),deal_version(2),'{"opportunityTypeCode":"spot_shipment"}');
     select multideck_crm_win_deal(fid(2),fid(212),'Customer accepted');
-    reset role;select stamp_events(2,test_monday()-interval '6 days');
+    reset role;select stamp_events(2,test_monday()-interval '144 hours');
     set local time zone 'Pacific/Auckland';
     set role authenticated;
     do $$declare s jsonb:=multideck_crm_get_sales_insights(30);t jsonb;previous_week jsonb;begin
       t:=s->'trend';
       perform test_assert(t->>'timeZone'='UTC' and t->>'interval'='week','explicit UTC weekly metric');
-      perform test_assert((t->>'coverageStartsAt')::timestamptz=test_monday()-interval '21 days'+interval '12 hours','foreign earlier history does not extend coverage');
+      perform test_assert((t->>'coverageStartsAt')::timestamptz=test_monday()-interval '504 hours'+interval '12 hours','foreign earlier history does not extend coverage');
       perform test_assert((t->'buckets'->0->>'start')::timestamptz=(t->>'coverageStartsAt')::timestamptz,'first bucket begins at actual observation');
       perform test_assert((t->'buckets'->0->>'isPartial')::boolean,'coverage cuts the first week');
       perform test_assert((t->'buckets'->-1->>'isPartial')::boolean,'as-of cuts the last week');
@@ -53,7 +55,7 @@ test('weekly CRM history uses recorded decisions, retains reopened losses, and g
       perform test_assert((select sum((b->>'lost')::int) from jsonb_array_elements(t->'buckets') b)=3,'all prior losses remain after reopening');
       perform test_assert((select sum((b->>'created')::int) from jsonb_array_elements(t->'buckets') b)=1,'observed imports do not count as created');
       perform test_assert((select sum((b->>'entered')::int) from jsonb_array_elements(t->'buckets') b)=4,'new open deal plus three reopens are entries');
-      select b into previous_week from jsonb_array_elements(t->'buckets') b where (b->>'start')::timestamptz=test_monday()-interval '7 days';
+      select b into previous_week from jsonb_array_elements(t->'buckets') b where (b->>'start')::timestamptz=test_monday()-interval '168 hours';
       perform test_assert((previous_week->>'lost')::int=2,'Sunday and Monday are separate UTC weeks even in non-UTC session');
       perform test_assert(jsonb_array_length(previous_week->'lostDealIds')=1 and previous_week->'lostDealIds'->>0=fid(1)::text,'counts events but source deal IDs stay distinct');
       perform test_assert((previous_week->>'entered')::int=3,'Monday boundary included once');

@@ -175,6 +175,10 @@ import { DashboardPerformancePanel } from "@/components/multideck/dashboard-perf
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { DashboardCoveragePanel } from "@/components/multideck/dashboard-coverage-panel"
 import { DashboardBreakdownPanel } from "@/components/multideck/dashboard-breakdown-panel"
+import { DashboardColumnChart } from "@/components/multideck/dashboard-column-chart"
+import { DashboardForecastChart } from "@/components/multideck/dashboard-forecast-chart"
+import { FinanceProfitLossPanel } from "@/components/multideck/finance-profit-loss-panel"
+import { FinanceWorkingCapitalPanel } from "@/components/multideck/finance-working-capital-panel"
 import type { DashboardKpi, DashboardPriorityItem, DashboardTrendPoint } from "@/lib/dashboard-live-data"
 import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingSearchFieldOptions, bookingViewModes, bookingViewOptions, type BookingViewMode } from "@/components/multideck/booking-components"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
@@ -685,6 +689,12 @@ const previewPriorityItems: DashboardPriorityItem[] = [
   { id: "p4", kind: "quote-progress", reference: "Q-1051", task: "Progress carrier pricing", customer: "Bright Harbour Ltd", context: "SGSIN → NLRTM", status: "In progress", owner: "Tomas Berg", dueAt: previewNow + 5 * 60 * 60_000, dueKind: "cutoff", tone: "blue", quoteReference: "Q-1051" },
   { id: "p5", kind: "quote-progress", reference: "Q-1058", task: "Progress customer approval", customer: "Aster Components", context: "CNSHA → GBSOU", status: "Awaiting customer", owner: "Tomas Berg", dueAt: previewNow + 3 * 24 * 60 * 60_000, dueKind: "departure", tone: "neutral", quoteReference: "Q-1058" },
 ]
+
+const previewMoney = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 })
+const previewMoneyCompact = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", notation: "compact", maximumFractionDigits: 1 })
+const previewFinanceMonths = ["Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
+const previewFinanceRevenue = [362000, 388000, 402000, 351000, 372000, 391000, 418000, 409000, 426000, 431000, 447000, 428000, 212000]
+const previewFinanceCosts = [331000, 352000, 361000, 334000, 340000, 352000, 371000, 368000, 380000, 387000, 396000, 381000, 191000]
 
 const previewPerformanceKpis: DashboardKpi[] = [
   { label: "Active jobs", value: "24", change: "3 need action", detail: "3 need action", tone: "amber", series: [18, 19, 21, 20, 22, 23, 22, 24, 23, 24], delta: { direction: "up", text: "+33%", caption: "vs start of period" } },
@@ -3042,20 +3052,15 @@ function ComponentPreview({ id }: { id: string }) {
           </div>
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
             <SidebarNavItem item={{ label: "Agent Dexter", icon: AiBrain }} accent="dexter" onClick={() => undefined} />
-            <div className="mb-3 flex items-center gap-2 px-2 text-[12px] font-medium text-[var(--md-subtle)]">
-              <ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.2} />
-              <span>Operations</span>
-            </div>
-            <SidebarNavItem
-              item={{ label: "Bookings & jobs", icon: Ship }}
-              onClick={() => undefined}
-              expanded
-              affordance="group"
-            />
-            <div className="mt-1 ps-4">
-              <div className="rounded-[var(--md-radius-lg)] bg-white/40 p-1 shadow-[var(--md-shadow-line)]">
-                <SidebarNavItem item={{ label: "Bookings overview", value: "7", icon: Ship }} isActive onClick={() => undefined} nested />
-                <SidebarNavItem item={{ label: "New booking", icon: FileText }} onClick={() => undefined} nested />
+            <header className="px-2.5 pb-4 pt-5">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]">Current area</p>
+              <h2 className="text-[22px] font-medium leading-tight tracking-[-0.02em] text-[var(--md-ink)]">Operations</h2>
+            </header>
+            <div className="md-sidebar-dropdown-group" data-expanded="true">
+              <SidebarNavItem item={{ label: "Bookings & jobs", icon: Ship }} onClick={() => undefined} expanded affordance="group" />
+              <div className="md-sidebar-expanded-options flex flex-col gap-1 px-1 pb-1">
+                <SidebarNavItem item={{ label: "Bookings overview", icon: Ship }} isActive onClick={() => undefined} nested />
+                <SidebarNavItem item={{ label: "Provisional bookings", icon: FileText }} onClick={() => undefined} nested />
               </div>
             </div>
           </div>
@@ -3819,6 +3824,16 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "breakdown-panel" ? (
         <div className="grid w-full max-w-[720px] gap-[var(--md-gap-lg)] sm:grid-cols-2">
           <DashboardBreakdownPanel
+            title="Shipping modes"
+            subtitle="Sales on jobs · Jun – Aug 2026"
+            variant="figures"
+            slices={[
+              { label: "Ocean", value: 24000, color: "var(--md-accent)", meta: "24% margin" },
+              { label: "Air", value: 12000, color: "var(--md-accent)", meta: "18% margin" },
+            ]}
+            formatValue={(value) => `£${value.toLocaleString("en-GB")}`}
+          />
+          <DashboardBreakdownPanel
             title="Mode mix"
             subtitle="Live bookings by transport mode"
             slices={[
@@ -3839,6 +3854,78 @@ function ComponentPreview({ id }: { id: string }) {
               { label: "Drafting", value: 1, color: "var(--md-blue)" },
             ]}
             variant="columns"
+          />
+        </div>
+      ) : null}
+
+      {id === "column-chart" ? (
+        <div className="md-finance-scope w-full max-w-[760px] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
+          <DashboardColumnChart
+            labels={previewFinanceMonths}
+            series={[
+              { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", values: previewFinanceRevenue },
+              { key: "costs", label: "Costs", color: "var(--md-fin-out)", values: previewFinanceCosts },
+            ]}
+            emphasis={previewFinanceMonths.map((_, index) => index >= 9 && index <= 11)}
+            partialIndex={12}
+            formatValue={(value) => previewMoney.format(value)}
+            formatAxis={(value) => previewMoneyCompact.format(value)}
+            tooltipExtra={(index) => ({ label: "Net profit", value: previewMoney.format(previewFinanceRevenue[index] - previewFinanceCosts[index]) })}
+            ariaLabel="Revenue and costs, last twelve months"
+          />
+        </div>
+      ) : null}
+
+      {id === "forecast-chart" ? (
+        <div className="md-finance-scope w-full max-w-[760px] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
+          <DashboardForecastChart
+            labels={[...previewFinanceMonths.slice(3, 12), "Sep", "Oct", "Nov"]}
+            series={[
+              { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", actual: previewFinanceRevenue.slice(3, 12), projected: [{ value: 452000, low: 418000, high: 486000 }, { value: 461000, low: 424000, high: 498000 }, { value: 470000, low: 429000, high: 511000 }] },
+              { key: "net", label: "Net profit", color: "var(--md-blue)", actual: previewFinanceRevenue.slice(3, 12).map((value, index) => value - previewFinanceCosts[index + 3]), projected: [{ value: 41000, low: 29000, high: 53000 }, { value: 43000, low: 30000, high: 56000 }, { value: 45000, low: 31000, high: 59000 }] },
+            ]}
+            formatValue={(value) => previewMoney.format(value)}
+            formatAxis={(value) => previewMoneyCompact.format(value)}
+            ariaLabel="Revenue and net profit, recorded and projected"
+          />
+        </div>
+      ) : null}
+
+      {id === "profit-loss-panel" ? (
+        <div className="md-finance-scope w-full max-w-[380px]">
+          <FinanceProfitLossPanel
+            title="Profit and loss"
+            subtitle="Jun – Aug 2026"
+            figures={{ revenue: 1306000, directCost: 1018000, overheads: 162000 }}
+            overheadAccounts={[
+              { code: "7000", name: "Salaries", amount: 104000 },
+              { code: "7100", name: "Office rent", amount: 27000 },
+              { code: "7300", name: "Software", amount: 14000 },
+            ]}
+            formatMoney={(value) => previewMoney.format(value)}
+            formatPercent={(value) => (value === null ? null : new Intl.NumberFormat("en-GB", { style: "percent" }).format(value))}
+          />
+        </div>
+      ) : null}
+
+      {id === "working-capital-panel" ? (
+        <div className="md-finance-scope grid w-full max-w-[800px] gap-5 xl:grid-cols-2">
+          <FinanceWorkingCapitalPanel
+            title="Cash and working capital"
+            subtitle="Today, across every open invoice and bill"
+            cashAtBank={286400}
+            receivables={{ total: 612000, buckets: [{ key: "current", amount: 402000 }, { key: "1-30", amount: 128000 }, { key: "31-60", amount: 54000 }, { key: "61-90", amount: 18000 }, { key: "90+", amount: 10000 }] }}
+            payables={{ total: 388000, buckets: [{ key: "current", amount: 341000 }, { key: "1-30", amount: 47000 }] }}
+            debtorDays={43}
+            formatMoney={(value) => previewMoney.format(value)}
+          />
+          <FinanceWorkingCapitalPanel
+            title="No outstanding balances"
+            subtitle="An account with no unpaid invoices or bills"
+            cashAtBank={null}
+            receivables={{ total: 0, buckets: [] }}
+            payables={{ total: 0, buckets: [] }}
+            formatMoney={(value) => previewMoney.format(value)}
           />
         </div>
       ) : null}

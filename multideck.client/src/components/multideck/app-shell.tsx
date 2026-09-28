@@ -301,6 +301,9 @@ export function AppShell({
               side={direction === "rtl" ? "right" : "left"}
               showCloseButton={false}
               className="gap-0 border-0 bg-[var(--md-sidebar-bg)] p-0 shadow-[var(--md-shadow-lift)] data-[side=left]:w-[min(var(--md-sidebar-width),calc(100vw-20px))] data-[side=left]:max-w-[var(--md-sidebar-width)] data-[side=right]:w-[min(var(--md-sidebar-width),calc(100vw-20px))] data-[side=right]:max-w-[var(--md-sidebar-width)]"
+              onEscapeKeyDown={(event) => {
+                if (event.target instanceof Element && event.target.closest('[data-sidebar-searching="true"]')) event.preventDefault()
+              }}
             >
               <SheetTitle className="sr-only">{t("Multideck navigation")}</SheetTitle>
               <SheetDescription className="sr-only">{t("Mobile navigation for Multideck")}</SheetDescription>
