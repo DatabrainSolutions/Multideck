@@ -1,4 +1,5 @@
-import { Fragment, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode, type RefObject } from "react"
+import { TableScrollRail, getTableStickyBounds } from "@/components/ui/table-viewport"
+import { Fragment, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Csv02Icon } from "@hugeicons/core-free-icons"
@@ -36,7 +37,10 @@ export type DataTableColumn<Row> = {
   cellClassName?: string
   canHide?: boolean
   canPin?: boolean
+  /** Keep this control column after all movable columns. Opt-in per table. */
+  fixedEnd?: boolean
   defaultHidden?: boolean
+  /** Enabled by default for data columns; set false for a fixed control column. */
   resizable?: boolean
   sortValue?: (row: Row) => string | number | null | undefined
   /** Exact CSV value for a displayed column. Falls back to the row value, sort value, then rendered text. */
@@ -98,13 +102,6 @@ type RowContextMenu<Row> = {
   y: number
 }
 
-type ScrollRailLayout = {
-  visible: boolean
-  viewportWidth: number
-  contentWidth: number
-  scrollLeft: number
-}
-
 type StickyHeaderLayout = {
   visible: boolean
   left: number
@@ -115,121 +112,11 @@ type StickyHeaderLayout = {
   tableWidth: number
   scrollLeft: number
   columnWidths: number[]
+  nested: boolean
+  dialog: boolean
 }
 
-const hiddenStickyHeader: StickyHeaderLayout = { visible: false, left: 0, maskLeft: 0, maskWidth: 0, top: 0, width: 0, tableWidth: 0, scrollLeft: 0, columnWidths: [] }
-
-const hiddenScrollRail: ScrollRailLayout = { visible: false, viewportWidth: 0, contentWidth: 0, scrollLeft: 0 }
-
-/** Sits directly below the sticky column headings in a wide register. */
-function ViewportHorizontalScrollRail({ tableRef, colSpan }: { tableRef: RefObject<HTMLDivElement | null>; colSpan: number }) {
-  const { t } = useLanguage()
-  const [layout, setLayout] = useState<ScrollRailLayout>(hiddenScrollRail)
-  const trackRef = useRef<HTMLDivElement>(null)
-  const dragOffset = useRef<number | null>(null)
-
-  useEffect(() => {
-    const scrollArea = tableRef.current?.querySelector<HTMLElement>('[data-slot="table-container"]')
-    const table = scrollArea?.querySelector("table")
-    if (!scrollArea || !table) return
-
-    let frame = 0
-    const sync = () => {
-      frame = 0
-      const next: ScrollRailLayout = {
-        visible: scrollArea.scrollWidth - scrollArea.clientWidth > 2,
-        viewportWidth: scrollArea.clientWidth,
-        contentWidth: scrollArea.scrollWidth,
-        scrollLeft: scrollArea.scrollLeft,
-      }
-      setLayout((current) => Object.keys(next).every((key) => current[key as keyof ScrollRailLayout] === next[key as keyof ScrollRailLayout]) ? current : next)
-    }
-    const queueSync = () => { if (!frame) frame = window.requestAnimationFrame(sync) }
-    const observer = new ResizeObserver(queueSync)
-    observer.observe(scrollArea)
-    observer.observe(table)
-    scrollArea.addEventListener("scroll", queueSync, { passive: true })
-    window.addEventListener("resize", queueSync)
-    sync()
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame)
-      observer.disconnect()
-      scrollArea.removeEventListener("scroll", queueSync)
-      window.removeEventListener("resize", queueSync)
-    }
-  }, [tableRef])
-
-  const maxScroll = Math.max(0, layout.contentWidth - layout.viewportWidth)
-  const thumbFraction = Math.max(0.1, Math.min(1, layout.viewportWidth / (layout.contentWidth || 1)))
-  const thumbStart = maxScroll ? (layout.scrollLeft / maxScroll) * (1 - thumbFraction) : 0
-
-  function scrollFromPointer(clientX: number, offset: number) {
-    const scrollArea = tableRef.current?.querySelector<HTMLElement>('[data-slot="table-container"]')
-    const track = trackRef.current
-    if (!scrollArea || !track) return
-    const rect = track.getBoundingClientRect()
-    const thumbWidth = rect.width * thumbFraction
-    const travel = rect.width - thumbWidth
-    if (travel <= 0) return
-    const position = Math.max(0, Math.min(travel, clientX - rect.left - offset))
-    scrollArea.scrollLeft = (position / travel) * (scrollArea.scrollWidth - scrollArea.clientWidth)
-  }
-
-  function startDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    const track = trackRef.current
-    if (!track) return
-    const thumb = track.querySelector<HTMLElement>('[data-scroll-rail-thumb]')
-    dragOffset.current = thumb?.contains(event.target as Node)
-      ? event.clientX - thumb.getBoundingClientRect().left
-      : track.getBoundingClientRect().width * thumbFraction / 2
-    event.currentTarget.setPointerCapture(event.pointerId)
-    scrollFromPointer(event.clientX, dragOffset.current)
-  }
-
-  if (!layout.visible) return null
-  return (
-    <TableRow className="h-3 border-0 bg-[var(--md-surface-soft)] hover:bg-[var(--md-surface-soft)]">
-    <TableHead colSpan={colSpan} className="h-3 p-0">
-    <div
-      data-table-viewport-scroll-rail
-      className="sticky start-0 z-20 flex h-3 items-center bg-[var(--md-surface-soft)] px-2"
-      style={{ width: layout.viewportWidth }}
-    >
-      <div
-        ref={trackRef}
-        role="scrollbar"
-        aria-label={t("Scroll customer table horizontally")}
-        aria-orientation="horizontal"
-        aria-valuemin={0}
-        aria-valuemax={Math.round(maxScroll)}
-        aria-valuenow={Math.round(layout.scrollLeft)}
-        tabIndex={0}
-        className="relative h-2.5 min-w-0 flex-1 touch-none cursor-pointer rounded-[var(--md-radius-md)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"
-        onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); startDrag(event) }}
-        onPointerMove={(event) => { if (dragOffset.current !== null) scrollFromPointer(event.clientX, dragOffset.current) }}
-        onPointerUp={(event) => { event.stopPropagation(); dragOffset.current = null }}
-        onPointerCancel={() => { dragOffset.current = null }}
-        onClick={(event) => { event.stopPropagation() }}
-        onKeyDown={(event) => {
-          const scrollArea = tableRef.current?.querySelector<HTMLElement>('[data-slot="table-container"]')
-          if (!scrollArea) return
-          const step = event.key === "PageDown" || event.key === "PageUp" ? scrollArea.clientWidth * 0.8 : 80
-          if (event.key === "ArrowRight" || event.key === "PageDown") scrollArea.scrollLeft += step
-          else if (event.key === "ArrowLeft" || event.key === "PageUp") scrollArea.scrollLeft -= step
-          else if (event.key === "Home") scrollArea.scrollLeft = 0
-          else if (event.key === "End") scrollArea.scrollLeft = scrollArea.scrollWidth
-          else return
-          event.preventDefault()
-        }}
-      >
-        <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-[var(--md-line)]" />
-        <span data-scroll-rail-thumb aria-hidden="true" className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-[var(--md-accent)]" style={{ left: `${thumbStart * 100}%`, width: `${thumbFraction * 100}%` }} />
-      </div>
-    </div>
-    </TableHead>
-    </TableRow>
-  )
-}
+const hiddenStickyHeader: StickyHeaderLayout = { visible: false, left: 0, maskLeft: 0, maskWidth: 0, top: 0, width: 0, tableWidth: 0, scrollLeft: 0, columnWidths: [], dialog: false, nested: false }
 
 type DataTableProps<Row> = {
   columns: DataTableColumn<Row>[]
@@ -364,7 +251,7 @@ export function DataTable<Row>({
   contentBeforeTable,
   compactToolbar = false,
   fillToolbarSpace = false,
-  viewportScrollRail = false,
+  viewportScrollRail = true,
   emptyState,
   minimumWidth: minimumWidthOverride,
   showToolbar = true,
@@ -472,11 +359,11 @@ export function DataTable<Row>({
       const rect = scrollArea.getBoundingClientRect()
       const mainRect = scrollArea.closest("main")?.getBoundingClientRect()
       const headerHeight = header.getBoundingClientRect().height
-      const topBar = document.querySelector<HTMLElement>(".md-topbar")
-      const top = Math.max(0, (topBar?.getBoundingClientRect().bottom ?? 0) + 8)
+      const bounds = getTableStickyBounds(scrollArea)
+      const top = bounds.top
       const columnWidths = [...header.querySelectorAll<HTMLElement>("tr:first-child th")].map((cell) => cell.getBoundingClientRect().width)
       const next: StickyHeaderLayout = {
-        visible: rect.top < top && rect.bottom > top + headerHeight,
+        visible: rect.top < top && Math.min(rect.bottom, bounds.bottom) > top + headerHeight && rect.right > bounds.left && rect.left < bounds.right,
         left: rect.left,
         maskLeft: mainRect?.left ?? rect.left,
         maskWidth: mainRect?.width ?? rect.width,
@@ -485,6 +372,8 @@ export function DataTable<Row>({
         tableWidth: table.getBoundingClientRect().width,
         scrollLeft: scrollArea.scrollLeft,
         columnWidths,
+        dialog: bounds.dialog,
+        nested: bounds.nested,
       }
       setStickyHeaderLayout((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next)
     }
@@ -613,7 +502,7 @@ export function DataTable<Row>({
   const orderedColumns = useMemo(() => {
     const lookup = new Map(columns.map((column) => [column.id, column]))
     const resolved = order.map((id) => lookup.get(id)).filter((column): column is DataTableColumn<Row> => Boolean(column))
-    return [...resolved.filter((column) => pinned.has(column.id)), ...resolved.filter((column) => !pinned.has(column.id))]
+    return [...resolved.filter((column) => !column.fixedEnd && pinned.has(column.id)), ...resolved.filter((column) => !column.fixedEnd && !pinned.has(column.id)), ...resolved.filter((column) => column.fixedEnd)]
   }, [columns, order, pinned])
 
   const visibleColumns = orderedColumns.filter((column) => !hidden.has(column.id))
@@ -622,7 +511,7 @@ export function DataTable<Row>({
   const pinnedOffsets = new Map<string, number>()
   let nextOffset = selectionColumnWidth
   visibleColumns.forEach((column) => {
-    if (!pinned.has(column.id)) return
+    if (column.fixedEnd || !pinned.has(column.id)) return
     pinnedOffsets.set(column.id, nextOffset)
     nextOffset += columnWidth(column)
   })
@@ -630,13 +519,17 @@ export function DataTable<Row>({
   // Saved pins are retained and return when the register has room again.
   const stickyColumnsEnabled = containerWidth >= 768 && nextOffset <= containerWidth * 0.5
 
-  const minimumWidth = (minimumWidthOverride ?? Math.max(visibleColumns.reduce((width, column) => width + columnWidth(column), 0), 720)) + selectionColumnWidth
-  // Once a customer column is resized, keep the widths that were actually on
+  const contentWidth = visibleColumns.reduce((width, column) => width + columnWidth(column), 0) + selectionColumnWidth
+  // Once a column is resized, keep the widths that were actually on
   // screen. Auto table layout otherwise redistributes spare room across every
   // column, so a dragged edge appears to move from both sides.
   const fixedColumnLayout = viewportScrollRail && visibleColumns.every((column) => widths[column.id] !== undefined)
-  const trailingSpace = fixedColumnLayout ? Math.max(0, containerWidth - minimumWidth) : 0
-  const fixedTableWidth = fixedColumnLayout ? minimumWidth + trailingSpace : undefined
+  const minimumWidth = fixedColumnLayout
+    ? Math.max(minimumWidthOverride ?? 720, contentWidth)
+    : (minimumWidthOverride ?? Math.max(contentWidth - selectionColumnWidth, 720)) + selectionColumnWidth
+  const trailingSpace = fixedColumnLayout ? Math.max(0, Math.max(containerWidth, minimumWidth) - contentWidth) : 0
+  const spacerBeforeId = visibleColumns.find((column) => column.fixedEnd)?.id
+  const fixedTableWidth = fixedColumnLayout ? contentWidth + trailingSpace : undefined
   const hasCustomLayout = Boolean(sort) || hidden.size !== defaultHidden.length || [...hidden].some((id) => !defaultHidden.includes(id)) || Object.keys(widths).length > 0 || pinned.size > 0 || order.some((id, index) => id !== columnIds[index])
   const contextColumn = contextMenu ? columns.find((column) => column.id === contextMenu.columnId) : undefined
   const sortedRows = useMemo(() => {
@@ -814,7 +707,7 @@ export function DataTable<Row>({
   }
 
   function moveColumn(sourceId: string, targetId: string) {
-    if (sourceId === targetId) return
+    if (sourceId === targetId || columns.find((column) => column.id === sourceId)?.fixedEnd) return
     setOrder((current) => {
       const next = current.filter((id) => id !== sourceId)
       const targetIndex = next.indexOf(targetId)
@@ -824,9 +717,10 @@ export function DataTable<Row>({
   }
 
   function moveColumnByStep(columnId: string, step: -1 | 1) {
+    if (columns.find((column) => column.id === columnId)?.fixedEnd) return
     const columnIsPinned = pinned.has(columnId)
     const groupOrder = orderedColumns
-      .filter((column) => pinned.has(column.id) === columnIsPinned)
+      .filter((column) => !column.fixedEnd && pinned.has(column.id) === columnIsPinned)
       .map((column) => column.id)
     const currentIndex = groupOrder.indexOf(columnId)
     const targetIndex = currentIndex + step
@@ -855,7 +749,7 @@ export function DataTable<Row>({
   }
 
   function togglePinned(column: DataTableColumn<Row>) {
-    if (column.canPin === false) return
+    if (column.canPin === false || column.fixedEnd) return
     const next = new Set(pinned)
     if (next.has(column.id)) next.delete(column.id)
     else {
@@ -899,6 +793,7 @@ export function DataTable<Row>({
   }
 
   function openColumnContextMenu(column: DataTableColumn<Row>, event: ReactMouseEvent<HTMLTableCellElement>) {
+    if (column.fixedEnd) return
     event.preventDefault()
     const menuWidth = 252
     const menuHeight = sort?.id === column.id ? 304 : 264
@@ -945,7 +840,7 @@ export function DataTable<Row>({
   }
 
   function captureRenderedColumnWidths() {
-    const cells = tableContainerRef.current?.querySelectorAll<HTMLElement>('[data-slot="table-container"] thead tr:first-child th')
+    const cells = tableContainerRef.current?.querySelectorAll<HTMLElement>('[data-slot="table-container"] thead tr:first-child th:not([data-table-spacer])')
     if (!cells) return null
     const offset = selectionMode ? 1 : 0
     if (cells.length < visibleColumns.length + offset) return null
@@ -1055,13 +950,14 @@ export function DataTable<Row>({
               </TableHead>
             ) : null}
             {visibleColumns.map((column) => {
-              const isPinned = stickyColumnsEnabled && pinned.has(column.id)
+              const isPinned = stickyColumnsEnabled && !column.fixedEnd && pinned.has(column.id)
               return (
+                <Fragment key={`${column.id}:${isPinned ? "pinned" : "unpinned"}`}>
+                {trailingSpace > 0 && column.id === spacerBeforeId ? <TableHead aria-hidden="true" data-table-spacer className="bg-[var(--md-surface-soft)] p-0" style={{ width: trailingSpace }} /> : null}
                 <TableHead
-                  key={`${column.id}:${isPinned ? "pinned" : "unpinned"}`}
-                  draggable
+                  draggable={!column.fixedEnd}
                   onDragStart={(event) => {
-                    if (resizeStart.current) {
+                    if (resizeStart.current || column.fixedEnd) {
                       event.preventDefault()
                       return
                     }
@@ -1080,7 +976,7 @@ export function DataTable<Row>({
                     columnAlignment(column) === "text-end" && "w-full justify-end",
                     columnAlignment(column) === "text-center" && "w-full justify-center",
                   )}>
-                    <GripVertical className="size-3 -ms-1 text-[var(--md-subtle)] opacity-0 transition-opacity group-hover/header:opacity-70" strokeWidth={1.3} aria-hidden="true" />
+                    {!column.fixedEnd ? <GripVertical className="size-3 -ms-1 text-[var(--md-subtle)] opacity-0 transition-opacity group-hover/header:opacity-70" strokeWidth={1.3} aria-hidden="true" /> : null}
                     {column.sortValue ? (
                       <button type="button" onClick={() => toggleSort(column)} className="inline-flex min-h-6 min-w-0 items-center gap-1.5 rounded-[var(--md-radius-xs)] text-start outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_24%,transparent)]" aria-label={`${t("Sort column")}: ${t(column.label)}`}>
                         <span className="truncate">{column.headerContent ?? t(column.label)}</span>
@@ -1089,7 +985,7 @@ export function DataTable<Row>({
                     ) : <span className="truncate">{column.headerContent ?? t(column.label)}</span>}
                     {isPinned ? <Pin className="size-3 text-[var(--md-accent)]" strokeWidth={1.3} aria-label={t("Pinned column")} /> : null}
                   </span>
-                  {column.resizable ? (
+                  {(column.resizable ?? column.kind !== "actions") ? (
                     <span
                       role="separator"
                       tabIndex={0}
@@ -1105,11 +1001,12 @@ export function DataTable<Row>({
                     />
                   ) : null}
                 </TableHead>
+                </Fragment>
               )
             })}
-            {trailingSpace > 0 ? <TableHead aria-hidden="true" className="bg-[var(--md-surface-soft)] p-0" style={{ width: trailingSpace }} /> : null}
+            {trailingSpace > 0 && !spacerBeforeId ? <TableHead data-table-spacer aria-hidden="true" className="bg-[var(--md-surface-soft)] p-0" style={{ width: trailingSpace }} /> : null}
           </TableRow>
-          {viewportScrollRail ? <ViewportHorizontalScrollRail tableRef={tableContainerRef} colSpan={visibleColumns.length + (selectionMode ? 1 : 0) + (trailingSpace > 0 ? 1 : 0)} /> : null}
+          {viewportScrollRail ? <TableScrollRail tableRef={tableContainerRef} colSpan={visibleColumns.length + (selectionMode ? 1 : 0) + (trailingSpace > 0 ? 1 : 0)} /> : null}
         </TableHeader>
   )
 
@@ -1189,7 +1086,7 @@ export function DataTable<Row>({
             </div>
             <div className="max-h-[360px] overflow-y-auto p-1 md-scrollbar">
               <AnimatePresence initial={false}>
-                {orderedColumns.map((column) => {
+                {orderedColumns.filter((column) => !column.fixedEnd).map((column) => {
                   const isHidden = hidden.has(column.id)
                   const isPinned = pinned.has(column.id)
                   return (
@@ -1206,13 +1103,13 @@ export function DataTable<Row>({
                     >
                       <GripVertical className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
                       <span className={cn("min-w-0 flex-1 truncate font-medium text-[var(--md-ink)]", isHidden && "text-[var(--md-subtle)]")}>{t(column.label)}</span>
-                      <button type="button" disabled={orderedColumns.filter((candidate) => pinned.has(candidate.id) === isPinned)[0]?.id === column.id} onClick={() => moveColumnByStep(column.id, -1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column earlier")}: ${t(column.label)}`}>
+                      <button type="button" disabled={column.fixedEnd || orderedColumns.filter((candidate) => !candidate.fixedEnd && pinned.has(candidate.id) === isPinned)[0]?.id === column.id} onClick={() => moveColumnByStep(column.id, -1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column earlier")}: ${t(column.label)}`}>
                         <ChevronUp className="size-3.5" strokeWidth={1.4} />
                       </button>
-                      <button type="button" disabled={orderedColumns.filter((candidate) => pinned.has(candidate.id) === isPinned).at(-1)?.id === column.id} onClick={() => moveColumnByStep(column.id, 1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column later")}: ${t(column.label)}`}>
+                      <button type="button" disabled={column.fixedEnd || orderedColumns.filter((candidate) => !candidate.fixedEnd && pinned.has(candidate.id) === isPinned).at(-1)?.id === column.id} onClick={() => moveColumnByStep(column.id, 1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column later")}: ${t(column.label)}`}>
                         <ChevronDown className="size-3.5" strokeWidth={1.4} />
                       </button>
-                      <button type="button" disabled={column.canPin === false} onClick={() => togglePinned(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", isPinned ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)]", column.canPin === false && "cursor-not-allowed opacity-25")} aria-label={`${t(isPinned ? "Unpin column" : "Pin column")}: ${t(column.label)}`}>
+                      <button type="button" disabled={column.canPin === false || column.fixedEnd} onClick={() => togglePinned(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", isPinned ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)]", column.canPin === false && "cursor-not-allowed opacity-25")} aria-label={`${t(isPinned ? "Unpin column" : "Pin column")}: ${t(column.label)}`}>
                         <MorphingIcon from={Pin} to={PinOff} active={isPinned} className="size-3.5" strokeWidth={1.4} />
                       </button>
                       <button type="button" disabled={column.canHide === false || (!isHidden && visibleColumns.length <= 1)} onClick={() => toggleHidden(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", !isHidden ? "text-[var(--md-ink)]" : "text-[var(--md-subtle)]", (column.canHide === false || (!isHidden && visibleColumns.length <= 1)) ? "cursor-not-allowed opacity-25" : "hover:bg-[var(--md-surface)]")} aria-label={`${t(isHidden ? "Show column" : "Hide column")}: ${t(column.label)}`}>
@@ -1232,11 +1129,11 @@ export function DataTable<Row>({
       {!showToolbar && selectionMode ? <div className="mb-2 flex justify-end"><AnimatePresence initial={false}>{selectionControls}</AnimatePresence></div> : null}
 
       <div data-table-surface className={cn("overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", !showToolbar && "h-full", pageRows.length === 0 && "[container-type:inline-size]")}>
-      <Table aria-label={ariaLabel ? t(ariaLabel) : undefined} className={tableClassName} style={{ minWidth: minimumWidth, width: fixedTableWidth, tableLayout: fixedColumnLayout ? "fixed" : undefined }}>
+      <Table enhanced={false} aria-label={ariaLabel ? t(ariaLabel) : undefined} className={tableClassName} style={{ minWidth: minimumWidth, width: fixedTableWidth, tableLayout: fixedColumnLayout ? "fixed" : undefined }}>
         {fixedColumnLayout ? <colgroup>
           {selectionMode ? <col style={{ width: selectionColumnWidth }} /> : null}
-          {visibleColumns.map((column) => <col key={column.id} style={{ width: columnWidth(column) }} />)}
-          {trailingSpace > 0 ? <col style={{ width: trailingSpace }} /> : null}
+          {visibleColumns.map((column) => <Fragment key={column.id}>{trailingSpace > 0 && column.id === spacerBeforeId ? <col style={{ width: trailingSpace }} /> : null}<col style={{ width: columnWidth(column) }} /></Fragment>)}
+          {trailingSpace > 0 && !spacerBeforeId ? <col style={{ width: trailingSpace }} /> : null}
         </colgroup> : null}
         {renderTableHeader(stickyHeaderLayout.visible)}
         <TableBody>
@@ -1329,8 +1226,10 @@ export function DataTable<Row>({
                   </TableCell>
                 ) : null}
                 {visibleColumns.map((column) => {
-                  const isPinned = stickyColumnsEnabled && pinned.has(column.id)
+                  const isPinned = stickyColumnsEnabled && !column.fixedEnd && pinned.has(column.id)
                   return (
+                    <Fragment key={`${column.id}:${isPinned ? "pinned" : "unpinned"}`}>
+                    {trailingSpace > 0 && column.id === spacerBeforeId ? <TableCell aria-hidden="true" className="p-0" style={{ width: trailingSpace }} /> : null}
                     <TableCell
                       // Recreate the cell when it crosses the sticky boundary. Chromium
                       // can otherwise keep the former sticky layer painted until hover.
@@ -1339,7 +1238,7 @@ export function DataTable<Row>({
                       title={column.cellTitle?.(row)}
                       data-column-kind={column.kind}
                       className={cn(
-                        "transition-[background,box-shadow,opacity] duration-200",
+                        "overflow-hidden text-ellipsis transition-[background,box-shadow,opacity] duration-200",
                         columnAlignment(column),
                         columnDataClass(column),
                         // The pinned colour is opaque. A backdrop filter here creates a
@@ -1358,9 +1257,10 @@ export function DataTable<Row>({
                         {column.cell(row)}
                       </TablePillKindContext.Provider>
                     </TableCell>
+                    </Fragment>
                   )
                 })}
-                {trailingSpace > 0 ? <TableCell aria-hidden="true" className="p-0" style={{ width: trailingSpace }} /> : null}
+                {trailingSpace > 0 && !spacerBeforeId ? <TableCell aria-hidden="true" className="p-0" style={{ width: trailingSpace }} /> : null}
               </TableRow>
             )
             return (
@@ -1398,15 +1298,15 @@ export function DataTable<Row>({
       </div>
       {viewportScrollRail && stickyHeaderLayout.visible && typeof document !== "undefined" ? createPortal(
         <>
-          <div
+          {!stickyHeaderLayout.dialog && !stickyHeaderLayout.nested ? <div
             aria-hidden="true"
             className="pointer-events-none fixed top-0 z-[9] bg-[var(--md-bg)]"
             style={{ left: stickyHeaderLayout.maskLeft, width: stickyHeaderLayout.maskWidth, height: stickyHeaderLayout.top }}
-          />
+          /> : null}
           <div
             data-table-sticky-header
             className="fixed z-20 bg-[var(--md-bg)]"
-            style={{ left: stickyHeaderLayout.left, top: stickyHeaderLayout.top, width: stickyHeaderLayout.width }}
+            style={{ left: stickyHeaderLayout.left, top: stickyHeaderLayout.top, width: stickyHeaderLayout.width, zIndex: stickyHeaderLayout.dialog ? 60 : 20 }}
           >
             <div className="overflow-hidden rounded-t-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
               <div ref={stickyHeaderScrollRef} className="overflow-x-hidden">

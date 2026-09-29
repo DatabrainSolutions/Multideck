@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import { AddressSearch } from "@/components/multideck/address-search"
 import { useEffect, useMemo, useState } from "react"
 import { Building2, Clock, MapPin, Plus, RefreshCw, Trash2 } from "@/components/icons/hugeicons"
@@ -235,7 +236,7 @@ export function OrganisationFoundationPanel({
         </div>
         {account.addresses.length ? (
           <div className="mt-3 overflow-x-auto rounded-[var(--md-radius-lg)] shadow-[var(--md-shadow-line)]">
-            <table className="w-full min-w-[680px] text-start text-[12px]">
+            <Table className="w-full min-w-[680px] text-start text-[12px]">
               <thead className="bg-[var(--md-surface-soft)] text-[10.5px] text-[var(--md-subtle)]"><tr><th className="px-3 py-2 text-start font-medium">{t("Name")}</th><th className="px-3 py-2 text-start font-medium">{t("Address")}</th><th className="px-3 py-2 text-start font-medium">{t("Purposes")}</th><th className="px-3 py-2 text-start font-medium">{t("Opening hours")}</th></tr></thead>
               <tbody>{account.addresses.map((item) => {
                 const selected = editingAddress?.id === item.id
@@ -246,7 +247,7 @@ export function OrganisationFoundationPanel({
                   <td className="px-3 py-2.5 text-[var(--md-subtle)]">{item.weeklyHours.length ? t("Recorded") : t("Not recorded")}</td>
                 </tr>
               })}</tbody>
-            </table>
+            </Table>
           </div>
         ) : <EmptyFoundation icon={MapPin} text={t("Add the company's main, office, postal, pickup, delivery or billing addresses.")} />}
       </section> : null}

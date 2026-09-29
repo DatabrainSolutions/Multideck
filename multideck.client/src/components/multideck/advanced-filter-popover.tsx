@@ -64,6 +64,7 @@ export function AdvancedFilterPopover({
   fields,
   value,
   onChange,
+  normalizeQuery,
   storageKey,
   label = "Advanced filters",
   title = "Advanced filters",
@@ -76,6 +77,8 @@ export function AdvancedFilterPopover({
   fields: readonly FilterFieldOption[]
   value: FilterQuery
   onChange: (value: FilterQuery) => void
+  /** Adapts a previously saved query when a register's available fields change. */
+  normalizeQuery?: (query: FilterQuery) => FilterQuery
   /** Namespaces saved filters so each register keeps its own list. */
   storageKey: string
   label?: string
@@ -203,7 +206,7 @@ export function AdvancedFilterPopover({
     const view = views.find((candidate) => candidate.id === viewId)
     if (!view) return
     setSelectedViewId(viewId)
-    setDraft(view.query)
+    setDraft(normalizeQuery?.(view.query) ?? view.query)
   }
 
   function confirmSave() {
@@ -386,6 +389,32 @@ export function AdvancedFilterPopover({
                             allowClear
                             triggerClassName="h-7 w-full gap-1.5 rounded-[var(--md-radius-md)] px-2 text-[12px] [&_svg]:size-3.5"
                           />
+                        ) : kind === "number" ? (
+                          <div className="flex min-w-0 items-center gap-1">
+                            <Input
+                              type="number"
+                              step="any"
+                              value={condition.value}
+                              aria-label={t(needsRange ? "Minimum amount" : "Filter value")}
+                              placeholder={t(needsRange ? "Minimum" : "Enter an amount")}
+                              className="h-7 min-w-0 flex-1 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-2 text-base shadow-[var(--md-shadow-line)] sm:text-[12px]"
+                              onChange={(event) => updateCondition(group.id, condition.id, { value: event.target.value })}
+                              onKeyDown={(event) => { if (event.key === "Enter") applyDraft() }}
+                            />
+                            {needsRange ? <>
+                              <span aria-hidden="true" className="text-[var(--md-subtle)]">–</span>
+                              <Input
+                                type="number"
+                                step="any"
+                                value={condition.valueTo ?? ""}
+                                aria-label={t("Maximum amount")}
+                                placeholder={t("Maximum")}
+                                className="h-7 min-w-0 flex-1 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-2 text-base shadow-[var(--md-shadow-line)] sm:text-[12px]"
+                                onChange={(event) => updateCondition(group.id, condition.id, { valueTo: event.target.value })}
+                                onKeyDown={(event) => { if (event.key === "Enter") applyDraft() }}
+                              />
+                            </> : null}
+                          </div>
                         ) : kind === "select" ? (
                           <Select value={condition.value} onValueChange={(value) => updateCondition(group.id, condition.id, { value })}>
                             <SelectTrigger size="sm" aria-label={t("Filter value")} className="h-7 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-2 text-[12px] font-normal text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">

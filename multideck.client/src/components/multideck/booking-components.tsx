@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { bookingLifecycle, bookingLifecycleLabel, type BookingLifecycle } from "@/lib/booking-lifecycle"
@@ -3403,7 +3404,7 @@ function BookingRecordDetails({
             </div>
           ) : null}
           <div role="region" aria-label={t("Cargo line comparison")} tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">
-            <table className="w-full text-left text-[12px]">
+            <Table className="w-full text-left text-[12px]">
               <caption className="sr-only">{t("Select a cargo line to edit its goods details below")}</caption>
               <thead className="bg-[var(--md-surface-soft)] text-[var(--md-text)]"><tr>
                 {["Goods description", "Packages", "Gross weight (kg)", ...(showChargeableWeight ? ["Chargeable weight (kg)"] : []), "Volume (CBM)", "Actions"].map((label) => <th key={label} scope="col" className="px-3 py-2 font-medium">{t(label)}</th>)}
@@ -3418,7 +3419,7 @@ function BookingRecordDetails({
                   <td className="px-3 py-1.5"><Button variant="ghost" size="icon" disabled={!editable} aria-label={t(`Remove cargo line ${index + 1}`)} onClick={() => setRemovingCargoIndex(index)}><Trash2 className="size-3.5" aria-hidden="true" /></Button></td>
                 </tr>
               ))}</tbody>
-            </table>
+            </Table>
           </div>
           {!workspace.cargo.length ? <p className="px-3 py-4 text-[12px] text-[var(--md-text)]">{t("No cargo lines yet.")}</p> : null}
           {showChargeableWeight ? <div className="grid gap-2 px-3 py-3 text-[12px] sm:grid-cols-2">
@@ -5446,7 +5447,7 @@ export function BookingDetailWorkspace({
         <Dialog open={Boolean(pendingLifecycle)} onOpenChange={open => { if (!open) setPendingLifecycle(null) }}><DialogContent><DialogHeader><DialogTitle>{t("Change booking status?")}</DialogTitle><DialogDescription>{t("Change this booking to")} {pendingLifecycle ? t(bookingLifecycleLabel(pendingLifecycle)) : ""}. {t("Required operational checks still apply. Financial records remain unavailable while provisional.")}</DialogDescription></DialogHeader><DialogFooter><Button variant="ghost" onClick={() => setPendingLifecycle(null)}>{t("Cancel")}</Button><Button disabled={savingDetails || detailsDirty || !canEditBooking} onClick={() => { const status = pendingLifecycle; setPendingLifecycle(null); if (status) setDraftWorkspace(current => current ? { ...current, booking: { ...current.booking, status } } : current) }}>{t("Confirm status change")}</Button></DialogFooter></DialogContent></Dialog>
         <Dialog open={pendingNavigation && Boolean(saveError)} onOpenChange={open => { if (!open) { pendingNavigationRef.current = null; setPendingNavigation(false) } }}><DialogContent><DialogHeader><DialogTitle>{t("Booking changes are not saved")}</DialogTitle><DialogDescription>{saveError}</DialogDescription></DialogHeader><DialogFooter><Button variant="ghost" onClick={() => { pendingNavigationRef.current = null; setPendingNavigation(false) }}>{t("Keep editing")}</Button><Button variant="outline" onClick={discardDetails}>{t("Discard and leave")}</Button><Button onClick={() => void saveDetails()}>{t("Retry save")}</Button></DialogFooter></DialogContent></Dialog>
         <Dialog open={Boolean(latestSavedReview)} onOpenChange={open => { if (!open) setLatestSavedReview(null) }}><DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{t("Review saved updates")}</DialogTitle><DialogDescription>{t("Your edits are retained. Continuing keeps your changes and incorporates other saved updates. Any conflicting values below will use your edit.")}</DialogDescription></DialogHeader>
-          {latestSavedReview && draftBooking ? <div className="overflow-x-auto"><table className="w-full text-left text-[12px]"><thead><tr><th className="p-2">{t("Field")}</th><th className="p-2">{t("Saved")}</th><th className="p-2">{t("Your edit")}</th></tr></thead><tbody>{bookingDraftConflicts({ booking: loadedRecord.booking, workspace: loadedRecord.workspace }, { booking: bookingWorkspaceRecord(latestSavedReview).booking, workspace: latestSavedReview }, { booking: draftBooking, workspace: draftWorkspace }).map(item => <tr key={item.field}><td className="p-2">{item.field}</td><td className="break-words p-2" data-i18n-skip>{item.saved}</td><td className="break-words p-2" data-i18n-skip>{item.draft}</td></tr>)}</tbody></table></div> : null}
+          {latestSavedReview && draftBooking ? <div className="overflow-x-auto"><Table className="w-full text-left text-[12px]"><thead><tr><th className="p-2">{t("Field")}</th><th className="p-2">{t("Saved")}</th><th className="p-2">{t("Your edit")}</th></tr></thead><tbody>{bookingDraftConflicts({ booking: loadedRecord.booking, workspace: loadedRecord.workspace }, { booking: bookingWorkspaceRecord(latestSavedReview).booking, workspace: latestSavedReview }, { booking: draftBooking, workspace: draftWorkspace }).map(item => <tr key={item.field}><td className="p-2">{item.field}</td><td className="break-words p-2" data-i18n-skip>{item.saved}</td><td className="break-words p-2" data-i18n-skip>{item.draft}</td></tr>)}</tbody></Table></div> : null}
           <DialogFooter><Button variant="ghost" onClick={() => setLatestSavedReview(null)}>{t("Cancel")}</Button><Button disabled={savingDetails} onClick={() => { if (!latestSavedReview || !draftBooking || !draftWorkspace) return; const fresh = bookingWorkspaceRecord(latestSavedReview); setDraftBooking(rebaseBookingDraft(fresh.booking, loadedRecord.booking, draftBooking)); setDraftWorkspace(rebaseBookingDraft(latestSavedReview, loadedRecord.workspace!, draftWorkspace)); setRecord(fresh); setLatestSavedReview(null); failedSaveFingerprintRef.current = null; setSaveError(null) }}>{t("Keep my edits and retry")}</Button></DialogFooter></DialogContent>
         </Dialog>
         <BookingDetailHeader

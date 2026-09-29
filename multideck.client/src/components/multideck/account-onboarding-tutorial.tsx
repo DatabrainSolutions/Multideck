@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowRight, Check, Copy, Microphone as Mic, CirclePlay as Play, Sparkles } from "@/components/icons/hugeicons"
@@ -113,7 +114,7 @@ export function AccountOnboardingTutorial({ stage, busy, onStage }: { stage: num
           <div className="md-onboarding-stream-answer" aria-hidden={streaming}>{answer}</div>
           <span className="sr-only" role="status">{phase === "ready" ? t(lesson.response) : t("Dexter is preparing an example reply.")}</span>
           {phase === "ready" ? <motion.div initial={reduced ? false : { opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={reduceMotion(reduced, mdMotion.fast)}>
-            {stage === 1 ? <div className="md-dexter-markdown__table-wrap md-onboarding-results"><div className="md-dexter-markdown__table-scroll"><table className="md-dexter-markdown__table"><caption>{t("Example results")}</caption><thead><tr>{["Shipment", "Route", "Arrival"].map((label) => <th key={label} scope="col">{t(label)}</th>)}</tr></thead><tbody><tr><td>MD-10042</td><td>Shanghai → Felixstowe</td><td><span>{t("This week")}</span></td></tr><tr><td>MD-10043</td><td>Rotterdam → Hull</td><td><span>{t("This week")}</span></td></tr></tbody></table></div></div> : null}
+            {stage === 1 ? <div className="md-dexter-markdown__table-wrap md-onboarding-results"><div className="md-dexter-markdown__table-scroll"><Table className="md-dexter-markdown__table"><caption>{t("Example results")}</caption><thead><tr>{["Shipment", "Route", "Arrival"].map((label) => <th key={label} scope="col">{t(label)}</th>)}</tr></thead><tbody><tr><td>MD-10042</td><td>Shanghai → Felixstowe</td><td><span>{t("This week")}</span></td></tr><tr><td>MD-10043</td><td>Rotterdam → Hull</td><td><span>{t("This week")}</span></td></tr></tbody></Table></div></div> : null}
             {stage === 2 ? <div className="md-onboarding-proposal"><div><small>{t("Proposed task")}</small><strong>{t("Check the example shipment")}</strong><span>{t("Assigned to you · Due tomorrow")}</span></div><Button disabled={busy} onClick={() => void next()}>{t(busy ? "Saving…" : "Approve practice task")}<Check className="size-4" /></Button></div> : <Button className="md-onboarding-practice-next" disabled={busy} onClick={() => void next()}>{t(stage === 0 ? "Let’s find something" : "Let’s try an action")}<ArrowRight className="size-4" /></Button>}
           </motion.div> : null}
         </div> : <>

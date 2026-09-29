@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import { TicketAttachmentList } from "@/components/multideck/ticket-attachments"
 import type { TicketAttachment } from "@/lib/ticket-attachments"
 import { DexterApiError, previewDexterDocument } from "@/lib/dexter-api"
@@ -531,7 +532,7 @@ function DexterMarkdownTable({
     return (
       <div className="md-dexter-markdown__table-wrap my-4 w-full max-w-[1120px] overflow-hidden rounded-[var(--md-radius-lg)]">
         <div className="md-dexter-markdown__table-scroll md-scrollbar">
-          <table className="md-dexter-markdown__table">{children}</table>
+          <Table className="md-dexter-markdown__table">{children}</Table>
         </div>
       </div>
     )
@@ -564,7 +565,7 @@ function DexterMarkdownTable({
       )}
     >
       <div className="md-dexter-markdown__table-scroll md-scrollbar">
-        <table className="md-dexter-markdown__table">
+        <Table className="md-dexter-markdown__table">
           <thead>
             <tr>
               {columns.map((column, index) => (
@@ -613,7 +614,7 @@ function DexterMarkdownTable({
               </tr>
             ))}
           </tbody>
-        </table>
+        </Table>
       </div>
 
       <div className="md-dexter-markdown__records" role="list">
