@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import {
   useCallback,
   useId,
@@ -2943,7 +2944,7 @@ function LedgerTab({
           </div>
         ) : null}
         {visibleAccounts.length > 0 && <div className="max-h-[70vh] overflow-auto overscroll-none" tabIndex={0} role="region" aria-label={t("Chart of accounts")}>
-          <table className="w-full min-w-[1160px] table-fixed text-[13px]">
+          <Table className="w-full min-w-[1160px] table-fixed text-[13px]">
             <caption className="sr-only">{t("Chart of accounts")}</caption>
             <colgroup><col className="w-[11%]" /><col className="w-[26%]" /><col className="w-[19%]" /><col className="w-[20%]" /><col className="w-[8%]" /><col className="w-[8%]" /><col className="w-[8%]" /></colgroup>
             <thead className="sticky top-0 z-10 bg-[var(--md-surface-soft)] text-[var(--md-text)] shadow-[var(--md-stroke-bottom)]">
@@ -2964,7 +2965,7 @@ function LedgerTab({
                 <td className="px-3 py-2"><Button type="button" size="sm" variant="ghost" disabled={Boolean(row.id) && row.isActive === false} aria-label={`${t(!row.id ? "Remove" : row.isActive === false ? "Disabled" : "Disable")} ${text(row.code)} ${text(row.name)}`} onClick={() => removeRow("nominalAccounts", row)}>{t(!row.id ? "Remove" : row.isActive === false ? "Disabled" : "Disable")}</Button></td>
               </tr>)}
             </tbody>
-          </table>
+          </Table>
         </div>}
       </div>
     </FinancePanel>
@@ -3696,7 +3697,7 @@ function NominalAccountMappingTable({
     </div>
     {!connections.length ? <div className="px-4 pb-4 text-[13px] text-[var(--md-subtle)]">{t("Connect an accounts system in Integrations to start mapping.")}</div> : null}
     <div className="max-h-[70vh] overflow-auto overscroll-none" tabIndex={0} role="region" aria-label={t("Nominal code mapping table")}>
-      <table className="w-full min-w-[720px] text-left text-[13px]">
+      <Table className="w-full min-w-[720px] text-left text-[13px]">
         <caption className="sr-only">{t("Nominal code mappings by accounts system")}</caption>
         <thead className="sticky top-0 z-10 bg-[var(--md-surface-soft)] text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-stroke-bottom)]"><tr>
           <th scope="col" className="min-w-28 px-4 py-2">{t("Multideck code")}</th>
@@ -3724,7 +3725,7 @@ function NominalAccountMappingTable({
             </td>
           })}
         </tr>)}</tbody>
-      </table>
+      </Table>
       {!visible.length ? <p className="px-4 py-8 text-center text-[13px] text-[var(--md-subtle)]">{t("No nominal codes match your search.")}</p> : null}
     </div>
   </FinancePanel>

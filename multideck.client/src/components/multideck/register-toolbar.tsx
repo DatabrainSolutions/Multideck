@@ -40,6 +40,7 @@ export function RegisterViewSwitch<T extends string>({
   value,
   onChange,
   counts,
+  labels,
   ariaLabel,
   compact = false,
 }: {
@@ -48,6 +49,7 @@ export function RegisterViewSwitch<T extends string>({
   onChange: (value: T) => void
   /** Shown beside the label. Omit an entry to leave that segment bare. */
   counts?: Partial<Record<T, number | undefined>>
+  labels?: Partial<Record<T, string>>
   ariaLabel: string
   /** Keeps dense operational registers on one toolbar row at desktop widths. */
   compact?: boolean
@@ -66,7 +68,7 @@ export function RegisterViewSwitch<T extends string>({
         const reservesCountSpace = compact ? count !== undefined : counts !== undefined
         return (
           <>
-            <span>{t(option)}</span>
+            <span>{t(labels?.[option] ?? option)}</span>
             {reservesCountSpace ? (
               <span
                 data-i18n-skip

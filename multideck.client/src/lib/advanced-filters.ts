@@ -19,9 +19,11 @@ export type FilterOperator =
   | "on"
   | "before"
   | "after"
+  | "greater-than"
+  | "less-than"
   | "between"
 
-export type FilterFieldKind = "text" | "date" | "select"
+export type FilterFieldKind = "text" | "date" | "select" | "number"
 
 export type FilterFieldOption = {
   value: string
@@ -76,8 +78,18 @@ export const selectFilterOperators: Array<{ value: FilterOperator; label: string
   { value: "is-not-empty", label: "is not empty" },
 ]
 
+export const numberFilterOperators: Array<{ value: FilterOperator; label: string }> = [
+  { value: "is", label: "is" },
+  { value: "is-not", label: "is not" },
+  { value: "greater-than", label: "is greater than" },
+  { value: "less-than", label: "is less than" },
+  { value: "between", label: "is between" },
+  { value: "is-empty", label: "is empty" },
+  { value: "is-not-empty", label: "is not empty" },
+]
+
 export function filterOperatorsForKind(kind: FilterFieldKind = "text") {
-  return kind === "date" ? dateFilterOperators : kind === "select" ? selectFilterOperators : textFilterOperators
+  return kind === "date" ? dateFilterOperators : kind === "select" ? selectFilterOperators : kind === "number" ? numberFilterOperators : textFilterOperators
 }
 
 export function filterOperatorNeedsValue(operator: FilterOperator) {
@@ -89,7 +101,7 @@ export function filterOperatorNeedsRange(operator: FilterOperator) {
 }
 
 export function defaultFilterOperator(kind: FilterFieldKind = "text"): FilterOperator {
-  return kind === "date" ? "on" : kind === "select" ? "is" : "contains"
+  return kind === "date" ? "on" : kind === "select" || kind === "number" ? "is" : "contains"
 }
 
 let idCounter = 0
@@ -169,16 +181,31 @@ function matchesDateCondition(values: string[], condition: FilterCondition) {
   return start === null || days.some((day) => day === start)
 }
 
-function matchesCondition<Row>(row: Row, condition: FilterCondition, getValue: FilterValueGetter<Row>) {
+function matchesNumberCondition(values: string[], condition: FilterCondition) {
+  const numbers = values.filter((value) => value.trim() !== "").map(Number).filter(Number.isFinite)
+  const first = condition.value.trim() === "" ? null : Number(condition.value)
+  const second = !condition.valueTo?.trim() ? null : Number(condition.valueTo)
+  if (!numbers.length || (first !== null && !Number.isFinite(first)) || (second !== null && !Number.isFinite(second))) return false
+  if (condition.operator === "between") {
+    if (first === null && second === null) return true
+    return numbers.some((number) => (first === null || number >= first) && (second === null || number <= second))
+  }
+  if (first === null) return true
+  if (condition.operator === "greater-than") return numbers.some((number) => number > first)
+  if (condition.operator === "less-than") return numbers.some((number) => number < first)
+  if (condition.operator === "is-not") return numbers.every((number) => number !== first)
+  return numbers.some((number) => number === first)
+}
+
+function matchesCondition<Row>(row: Row, condition: FilterCondition, getValue: FilterValueGetter<Row>, getKind?: (field: string) => FilterFieldKind) {
   const values = toValueList(row, condition.field, getValue)
   const filled = values.filter((value) => value.trim() && value.trim() !== "–")
 
   if (condition.operator === "is-empty") return filled.length === 0
   if (condition.operator === "is-not-empty") return filled.length > 0
 
-  if (condition.operator === "on" || condition.operator === "before" || condition.operator === "after" || condition.operator === "between") {
-    return matchesDateCondition(filled, condition)
-  }
+  if (getKind?.(condition.field) === "number") return matchesNumberCondition(filled, condition)
+  if (condition.operator === "on" || condition.operator === "before" || condition.operator === "after" || condition.operator === "between") return matchesDateCondition(filled, condition)
 
   const query = normalizeText(condition.value)
   if (!query) return true
@@ -193,7 +220,7 @@ function matchesCondition<Row>(row: Row, condition: FilterCondition, getValue: F
   return normalized.some((value) => value.includes(query))
 }
 
-export function matchesFilterQuery<Row>(row: Row, query: FilterQuery, getValue: FilterValueGetter<Row>) {
+export function matchesFilterQuery<Row>(row: Row, query: FilterQuery, getValue: FilterValueGetter<Row>, getKind?: (field: string) => FilterFieldKind) {
   const groups = query.groups
     .map((group) => ({ ...group, conditions: group.conditions.filter(filterConditionIsActive) }))
     .filter((group) => group.conditions.length > 0)
@@ -201,7 +228,7 @@ export function matchesFilterQuery<Row>(row: Row, query: FilterQuery, getValue: 
   if (!groups.length) return true
 
   const groupResults = groups.map((group) => {
-    const results = group.conditions.map((condition) => matchesCondition(row, condition, getValue))
+    const results = group.conditions.map((condition) => matchesCondition(row, condition, getValue, getKind))
     return group.match === "all" ? results.every(Boolean) : results.some(Boolean)
   })
 

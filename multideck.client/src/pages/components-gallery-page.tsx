@@ -3597,6 +3597,15 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "table" ? (
+        <div className="w-full max-w-[920px] max-h-[360px] overflow-auto">
+          <Table aria-label="Customer balances preview" className="min-w-[1000px]">
+            <thead><tr>{["Company", "Balance due", "Overdue", "Credit limit", "Payment terms", "Account status"].map(label => <th key={label}>{label}</th>)}</tr></thead>
+            <tbody>{Array.from({ length: 12 }, (_, index) => <tr key={index}><td>Example customer {index + 1}</td><td>£1,240.00</td><td>£240.00</td><td>£5,000.00</td><td>30 days</td><td>Active</td></tr>)}</tbody>
+          </Table>
+        </div>
+      ) : null}
+
       {id === "data-table" || id === "table-export" ? (
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <DataTable

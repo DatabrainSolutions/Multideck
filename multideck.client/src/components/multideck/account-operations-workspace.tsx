@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Check,
@@ -536,7 +537,7 @@ function Contacts({ account, onOpenContact }: { account: ApiCustomerDetail; onOp
         </div>
       ) : contacts.length ? (
         <div className="overflow-x-auto rounded-[var(--md-radius-lg)] shadow-[var(--md-shadow-line)]">
-          <table className="w-full min-w-[640px] text-start text-[12px]">
+          <Table className="w-full min-w-[640px] text-start text-[12px]">
             <thead className="bg-[var(--md-surface-soft)] text-[10.5px] text-[var(--md-subtle)]">
               <tr>
                 <th className="px-3 py-2 text-start font-medium">
@@ -595,7 +596,7 @@ function Contacts({ account, onOpenContact }: { account: ApiCustomerDetail; onOp
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         </div>
       ) : (
         <p className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 py-6 text-center text-[12px] text-[var(--md-subtle)]">

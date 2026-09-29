@@ -364,7 +364,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
         { id: "owner", label: "Owner", width: 160, minWidth: 130, resizable: true, defaultHidden: true, sortValue: (account) => account.ownerName, cell: (account) => account.ownerName || t("Unassigned") },
         { id: "relationship", label: "Relationship", kind: "status", width: 160, minWidth: 130, resizable: true, defaultHidden: true, sortValue: (account) => account.relationshipStatus || account.status, cell: (account) => <StatusPill tone="neutral">{humanize(account.relationshipStatus || account.status)}</StatusPill> },
         { id: "contacts", label: "Contacts", kind: "number", width: 100, minWidth: 88, defaultHidden: true, sortValue: (account) => account.contactCount, cell: (account) => account.contactCount },
-        openColumn,
+        { ...openColumn, fixedEnd: true, kind: "actions", align: "center", resizable: false, headerClassName: "px-2", cellClassName: "[&>svg]:mx-auto" },
       )
       return financialColumns
     }
@@ -580,7 +580,6 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
         pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setAccountPageSize, error: state === "error" }}
         compactToolbar
         fillToolbarSpace={customerAccounts}
-        viewportScrollRail={customerAccounts}
         toolbarTabs={organisationType === "company" ? <RegisterViewSwitch options={companyTabs} value={view} onChange={changeView} counts={{ [view]: summary.accounts }} ariaLabel="Company view" compact /> : undefined}
         toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${viewNoun}`} placeholder={`Search ${viewNoun}…`} className={customerAccounts ? "sm:w-full sm:max-w-none sm:flex-1" : "sm:w-[180px]"} />}
         toolbarFilters={<>

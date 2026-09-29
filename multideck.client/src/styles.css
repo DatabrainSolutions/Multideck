@@ -3,7 +3,7 @@
    below `base`, so the preflight reset silently wins over any padding declared
    in it. Declaring a dedicated layer up front pins the dashboard's styles above
    `base` and `utilities` without disturbing the existing layer order. */
-@layer theme, base, components, utilities, md-dashboard;
+@layer theme, base, md-table-base, components, utilities, md-dashboard;
 
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -6993,4 +6993,48 @@ html.md-summon-picking {
 .contact-compose-dialog > section { border: 0; box-shadow: none; background: transparent; }
 @media (prefers-reduced-motion: reduce) {
   .contact-compose-dialog[data-state] { animation: none; }
+}
+
+/* Shared register design, including reports and editable detail tables. */
+@layer md-table-base {
+  .md-standard-table table {
+    border-collapse: collapse;
+    color: var(--md-ink);
+    font-size: 13px;
+  }
+  .md-standard-table thead {
+    background: var(--md-surface-soft);
+  }
+  .md-standard-table th {
+    height: 40px;
+    padding: 8px 12px;
+    background: var(--md-surface-soft);
+    color: var(--md-text);
+    font-size: 12px;
+    font-weight: 500;
+    text-align: start;
+    white-space: nowrap;
+  }
+  .md-standard-table td {
+    padding: 8px;
+    vertical-align: middle;
+  }
+  .md-standard-table tr {
+    border-bottom: 1px solid var(--md-line);
+  }
+  .md-standard-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .md-standard-table tbody tr:hover {
+    background: var(--md-hover);
+  }
+  .md-standard-table th:has([data-table-viewport-scroll-rail]) {
+    height: 12px;
+    padding: 0;
+  }
+}
+@media print {
+  [data-table-sticky-header], [data-table-scroll-rail-row], [role="separator"][aria-orientation="vertical"] { display: none !important; }
+  .md-standard-table { overflow: visible; box-shadow: none; }
+  .md-standard-table [data-slot="table-container"] { overflow: visible; }
 }
