@@ -1,5 +1,5 @@
 import { Table } from "@/components/ui/table"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { BadgeCheck, ChartLine, CreditCard, FileText, LoaderCircle, ReceiptText, RefreshCw } from "@/components/icons/hugeicons"
 import { InlineNotice } from "@/components/multideck/inline-notice"
 import { SettingsPageHeader, SettingsPanel } from "@/components/multideck/settings-components"
@@ -13,10 +13,10 @@ import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getFinanceDocuments, getFinanceDraftOptions, type FinanceDocument, type FinanceDraftOptions } from "@/lib/finance-subledger-api"
 import {
   approveSupplierInvoiceMatch, approveSupplierPurchaseOrder, createSupplierPurchaseOrder, getAgedFinanceWorklist,
-  generateFinanceMatchProposal, getCollectionActions, getCustomerStatement, getFinanceMatchProposals, getFinanceOperationEntities, getFinancePaymentBanks, getJobProfitability,
+  generateFinanceMatchProposal, getCollectionActions, getCustomerStatement, getFinanceMatchProposals, getFinanceOperationEntities, getFinancePaymentBanks, getJobProfitability, getStatementCustomers,
   getPaymentRuns, getRemittanceAdvice, getSupplierInvoiceMatchSuggestions, getSupplierPurchaseOrders,
   preparePaymentRun, recordCollectionAction, rejectFinanceMatchProposal, reviewPaymentRun,
-  type AgedFinanceItem, type CollectionAction, type CustomerStatement, type FinanceOperationEntity,
+  type AgedFinanceItem, type CollectionAction, type CustomerStatement, type CustomerStatementMode, type FinanceOperationEntity,
   type FinanceMatchProposal, type FinanceWorklist, type JobProfitability, type MatchSuggestions, type PaymentRun, type RemittanceAdvice, type SupplierPurchaseOrder,
 } from "@/lib/finance-operations-api"
 import { toast } from "sonner"
@@ -58,7 +58,7 @@ export function FinanceDailyPage({ route, navigate, currentUser }: { route: Fina
 
   const refresh = () => setVersion((value) => value + 1)
   const labels: Record<FinanceDailyRoute, { title: string; description: string; icon: typeof FileText }> = {
-    "/finance/receivables/statements": { title: "Customer statements", description: "Prepare a source-backed open-item statement for a customer and review it before printing or sharing.", icon: FileText },
+    "/finance/receivables/statements": { title: "Customer statements", description: "Prepare and review an Open or All customer statement before printing or sharing.", icon: FileText },
     "/finance/receivables/collections": { title: "Collections worklist", description: "Prioritise overdue customer invoices from recorded due dates and balances, then record each follow-up.", icon: CreditCard },
     "/finance/payables/payment-runs": { title: "Payment runs & remittances", description: "Group approved supplier invoices into a payment run, then prepare remittance advice from approved allocations.", icon: CreditCard },
     "/finance/payables/purchase-orders": { title: "Supplier purchase orders", description: "Record supplier commitments separately from customer warehouse purchase orders.", icon: ReceiptText },
@@ -75,7 +75,7 @@ export function FinanceDailyPage({ route, navigate, currentUser }: { route: Fina
     "/finance/management/profitability": [{ label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }],
   }
   return <>
-    <SettingsPageHeader title={t(selected.title)} description={t(selected.description)} icon={selected.icon} actions={<Button type="button" variant="outline" onClick={refresh}><RefreshCw className="size-4" />{t("Refresh")}</Button>} />
+    <SettingsPageHeader title={t(selected.title)} description={route === "/finance/receivables/statements" ? undefined : t(selected.description)} icon={route === "/finance/receivables/statements" ? undefined : selected.icon} actions={<Button type="button" variant="outline" onClick={refresh}><RefreshCw className="size-4" />{t("Refresh")}</Button>} />
     <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
       <nav aria-label={t("Continue Accounts workflow")} className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs"><span className="text-[var(--md-subtle)]">{t("Continue with")}</span>{workflowLinks[route].map((link) => <button key={link.route} type="button" className="font-medium text-[var(--md-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]" onClick={() => navigate(link.route)}>{t(link.label)}</button>)}</nav>
       {error ? <InlineNotice tone="error">{t(error)}</InlineNotice> : null}
@@ -115,23 +115,49 @@ function useWorklist(entityId: string, ledger: "receivables" | "payables", versi
 
 function StatementsWorkspace({ entityId, format, navigate, version }: { entityId: string; format: (value: number, code?: string) => string; navigate: (path: string) => void; version: number }) {
   const { t } = useLanguage()
-  const { data, error, loading } = useWorklist(entityId, "receivables", version)
-  const customers = useMemo(() => [...new Map([...(data?.items ?? []), ...(data?.offsets ?? [])].map((item) => [item.partyId, item.partyName])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [data])
+  const [customers, setCustomers] = useState<Array<{ id: string; name: string }>>([])
+  const [customerError, setCustomerError] = useState("")
+  const [loading, setLoading] = useState(true)
   const [customerId, setCustomerId] = useState("")
+  const [mode, setMode] = useState<CustomerStatementMode>("open")
   const [statement, setStatement] = useState<CustomerStatement | null>(null)
   const [busy, setBusy] = useState(false)
-  useEffect(() => { setCustomerId(""); setStatement(null) }, [entityId])
-  const prepare = async () => { if (!customerId) return; setBusy(true); try { setStatement(await getCustomerStatement(entityId, customerId)) } catch (cause) { toast.error(t(errorText(cause))) } finally { setBusy(false) } }
+  const requestId = useRef(0)
+  useEffect(() => {
+    let active = true
+    requestId.current += 1
+    setCustomerId(""); setStatement(null); setCustomers([]); setCustomerError(""); setLoading(true)
+    getStatementCustomers(entityId).then(({ customers: found }) => { if (active) setCustomers(found) }).catch((cause) => { if (active) setCustomerError(errorText(cause)) }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false; requestId.current += 1 }
+  }, [entityId, version])
+  const chooseMode = (next: CustomerStatementMode) => { requestId.current += 1; setMode(next); setStatement(null) }
+  const chooseCustomer = (next: string) => { requestId.current += 1; setCustomerId(next); setStatement(null) }
+  const prepare = async () => {
+    if (!customerId || busy) return
+    const currentRequest = ++requestId.current
+    setBusy(true); setStatement(null)
+    try {
+      const prepared = await getCustomerStatement(entityId, customerId, mode)
+      if (requestId.current === currentRequest) setStatement(prepared)
+    } catch (cause) {
+      if (requestId.current === currentRequest) toast.error(t(errorText(cause)))
+    } finally { setBusy(false) }
+  }
   return <>
-    {error && <InlineNotice tone="error">{t(error)}</InlineNotice>}
-    <SettingsPanel title={t("Open-item statement")} description={t("Balances are current at generation time. Review invoices, credits and unapplied receipts before sharing; this page does not send a statement.")}>
-      <div className="flex flex-wrap items-end gap-3 px-5 py-4"><div className="w-full max-w-sm"><label htmlFor="statement-customer" className="mb-2 block text-xs font-medium">{t("Customer")}</label><Select value={customerId} onValueChange={(value) => { setCustomerId(value); setStatement(null) }}><SelectTrigger id="statement-customer"><SelectValue placeholder={t("Choose customer")} /></SelectTrigger><SelectContent>{customers.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select></div><Button type="button" disabled={!customerId || busy} onClick={() => void prepare()}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : <FileText className="size-4" />}{t("Prepare statement")}</Button>{statement && <Button type="button" variant="outline" onClick={() => window.print()}>{t("Print reviewed statement")}</Button>}</div>
-      {loading ? <p className="px-5 pb-5 text-sm text-[var(--md-subtle)]">{t("Loading customer balances…")}</p> : !customers.length ? <p className="px-5 pb-5 text-sm text-[var(--md-subtle)]">{t("No customers have an open balance.")}</p> : null}
+    {customerError && <InlineNotice tone="error">{t(customerError)}</InlineNotice>}
+    <SettingsPanel title={t("Customer statement")} description={t("Choose a customer and the items to include, then review the preview before printing. Preparing a statement does not send it.")}>
+      <div className="flex flex-wrap items-end gap-4 px-5 py-4">
+        <div className="w-full max-w-sm"><label htmlFor="statement-customer" className="mb-2 block text-xs font-medium">{t("Customer")}</label><Select value={customerId} onValueChange={chooseCustomer}><SelectTrigger id="statement-customer"><SelectValue placeholder={t("Choose customer")} /></SelectTrigger><SelectContent>{customers.length ? customers.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>) : <p role="status" className="px-3 py-2 text-sm text-[var(--md-subtle)]">{t(loading ? "Loading customers…" : customerError ? "Customer list unavailable. Try Refresh." : "No customers are available for this company.")}</p>}</SelectContent></Select></div>
+        <fieldset className="flex items-center gap-3"><legend className="mb-2 text-xs font-medium">{t("Items")}</legend>{(["open", "all"] as const).map((choice) => <label key={choice} className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-sm"><input type="radio" name="statement-mode" value={choice} checked={mode === choice} onChange={() => chooseMode(choice)} className="accent-[var(--md-accent)]" />{t(choice === "open" ? "Open" : "All")}</label>)}</fieldset>
+        <Button type="button" disabled={!customerId || busy || loading || Boolean(customerError)} onClick={() => void prepare()}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : <FileText className="size-4" />}{t("Prepare statement")}</Button>
+        {statement && <Button type="button" variant="outline" onClick={() => window.print()}>{t("Print reviewed statement")}</Button>}
+      </div>
+      {loading ? <p className="px-5 pb-5 text-sm text-[var(--md-subtle)]">{t("Loading customers…")}</p> : !customerError && !customers.length ? <p className="px-5 pb-5 text-sm text-[var(--md-subtle)]">{t("No customers are available for this company.")}</p> : null}
     </SettingsPanel>
-    {statement && <section className="finance-print-sheet"><SettingsPanel title={`${statement.customerName} · ${t(statement.title)}`} description={`${statement.legalEntity} · ${statement.generatedAt.slice(0, 16).replace("T", " ")} UTC`}>
+    {statement && <section className="finance-print-sheet" aria-label={t("Statement preview")}><SettingsPanel title={`${t("Preview")} · ${statement.customerName}`} description={`${statement.legalEntity} · ${t(statement.mode === "open" ? "Open" : "All")} · ${t("Prepared")} ${statement.generatedAt.slice(0, 16).replace("T", " ")} UTC`}>
       <p className="px-5 py-3 text-xs text-[var(--md-subtle)]">{t(statement.basis)}</p>
-      <div className="overflow-x-auto"><Table className="w-full min-w-[600px] text-sm"><thead><tr className="border-b border-[var(--md-line)] text-xs"><th className="px-5 py-3 text-start">{t("Document")}</th><th className="px-5 py-3 text-start">{t("Date / due")}</th><th className="px-5 py-3 text-end">{t("Original")}</th><th className="px-5 py-3 text-end">{t("Outstanding")}</th></tr></thead><tbody className="divide-y divide-[var(--md-line)]">{statement.lines.map((line) => <tr key={line.id}><td className="px-5 py-3"><button type="button" className="text-[var(--md-accent)] hover:underline" onClick={() => navigate(line.type === "customer_receipt" ? "/finance/receivables/cash" : `/finance/receivables/documents/${line.id}`)} data-i18n-skip>{line.number ?? "Unnumbered"}</button><span className="ms-2 text-xs text-[var(--md-subtle)]">{t(line.type === "credit_note" ? "Credit" : line.type === "customer_receipt" ? "Unapplied receipt" : "Invoice")}</span></td><td className="px-5 py-3" data-i18n-skip>{line.documentDate} · {line.dueDate ?? "—"}</td><td className="px-5 py-3 text-end tabular-nums" data-i18n-skip>{format(line.originalAmount, line.currency)}</td><td className="px-5 py-3 text-end tabular-nums" data-i18n-skip>{format(line.outstanding, line.currency)}</td></tr>)}</tbody></Table></div>
-      <div className="flex flex-wrap justify-end gap-5 border-t border-[var(--md-line)] px-5 py-4 text-sm font-medium">{Object.entries(statement.totals).map(([code, amount]) => <span key={code} data-i18n-skip>{code} {format(amount, code)}</span>)}</div>
+      {statement.lines.length ? <div className="overflow-x-auto"><Table className="w-full min-w-[600px] text-sm"><thead><tr className="border-b border-[var(--md-line)] text-xs"><th scope="col" className="px-5 py-3 text-start">{t("Document")}</th><th scope="col" className="px-5 py-3 text-start">{t("Date / due")}</th><th scope="col" className="px-5 py-3 text-end">{t("Transaction")}</th><th scope="col" className="px-5 py-3 text-end">{t("Outstanding")}</th></tr></thead><tbody className="divide-y divide-[var(--md-line)]">{statement.lines.map((line) => <tr key={line.id}><td className="px-5 py-3"><button type="button" className="text-[var(--md-accent)] hover:underline focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]" onClick={() => navigate(line.type === "customer_receipt" ? "/finance/receivables/cash" : `/finance/receivables/documents/${line.id}`)} data-i18n-skip>{line.number ?? "Unnumbered"}</button><span className="ms-2 text-xs text-[var(--md-subtle)]">{t(line.type === "credit_note" ? "Credit" : line.type === "customer_receipt" ? "Receipt" : "Invoice")}</span></td><td className="px-5 py-3" data-i18n-skip>{line.documentDate} · {line.dueDate ?? "—"}</td><td className="px-5 py-3 text-end tabular-nums" data-i18n-skip>{format(line.originalAmount, line.currency)}</td><td className="px-5 py-3 text-end tabular-nums" data-i18n-skip>{format(line.outstanding, line.currency)}</td></tr>)}</tbody></Table></div> : <p className="px-5 py-8 text-center text-sm text-[var(--md-subtle)]">{t(statement.mode === "open" ? "This customer has no open items." : "This customer has no eligible ledger activity.")}</p>}
+      <div className="flex flex-wrap justify-end gap-5 border-t border-[var(--md-line)] px-5 py-4 text-sm font-medium">{Object.entries(statement.totals).map(([code, amount]) => <span key={code} data-i18n-skip>{code}{statement.mode === "all" ? ` · ${t("Activity total")} ${format(statement.transactionTotals[code] ?? 0, code)}` : ""} · {t("Net amount due")} {format(amount, code)}</span>)}</div>
     </SettingsPanel></section>}
     <style>{`@media print { body:has(.finance-print-sheet) * { visibility: hidden !important; } body:has(.finance-print-sheet) .finance-print-sheet, body:has(.finance-print-sheet) .finance-print-sheet * { visibility: visible !important; } body:has(.finance-print-sheet) .finance-print-sheet { position: absolute; inset: 0; width: 100%; } }`}</style>
   </>

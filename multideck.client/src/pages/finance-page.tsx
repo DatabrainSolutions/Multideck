@@ -571,6 +571,10 @@ function LedgerPage({ route, currentUser, navigate }: { route: FinanceLedgerRout
   const normalizedSearch = search.trim().toLowerCase()
   const isSalesLedger = route === "/finance/receivables"
   const isReceivablesApprovals = route === "/finance/receivables/approvals"
+  const isCustomerReceipts = route === "/finance/receivables/cash"
+  const isCreditControl = route === "/finance/receivables/credit-control"
+  const hasCompactHeader = isSalesLedger || isReceivablesApprovals || isCustomerReceipts || isCreditControl
+  const hasAdvancedSearch = isSalesLedger || isCustomerReceipts || isCreditControl
   const scopedDocuments = useMemo(() => documents.filter((document) => {
     if (routeConfig.scope === "approvals") return document.FINDoc_StatusCode === "awaiting_approval"
     if (routeConfig.scope === "credit_control") return ["approved", "submitted"].includes(document.FINDoc_StatusCode) && Number(document.FINDoc_OutstandingAmount) > 0 && Boolean(document.FINDoc_DueDate && document.FINDoc_DueDate < today())
@@ -581,20 +585,24 @@ function LedgerPage({ route, currentUser, navigate }: { route: FinanceLedgerRout
   const matchesCashSearch = useCallback((item: FinanceCashTransaction) => (!normalizedSearch || [item.FINCash_Number, item.partyName, item.FINCash_Reference, item.FINCash_TypeCode].some((value) => value?.toLowerCase().includes(normalizedSearch))) && (!status || item.FINCash_StatusCode === status), [normalizedSearch, status])
   const filteredDocuments = scopedDocuments.filter((document) => matchesDocumentSearch(document)
     && (!isSalesLedger || isInSelectedDateRange(document.FINDoc_DocumentDate, dateRange))
-    && (!isSalesLedger || matchesFilterQuery(document, documentFilter, financeDocumentFilterValue, financeDocumentFilterKind)))
+    && (!hasAdvancedSearch || matchesFilterQuery(document, documentFilter, financeDocumentFilterValue, financeDocumentFilterKind)))
   const filteredCash = scopedCash.filter((item) => matchesCashSearch(item)
     && (!isSalesLedger || isInSelectedDateRange(item.FINCash_TransactionDate, dateRange))
-    && (!isSalesLedger || matchesFilterQuery(item, cashFilter, financeCashFilterValue, financeCashFilterKind)))
+    && (!hasAdvancedSearch || matchesFilterQuery(item, cashFilter, financeCashFilterValue, financeCashFilterKind)))
   const countAdvancedMatches = useCallback((query: FilterQuery) => mode === "documents"
-    ? scopedDocuments.filter((document) => matchesDocumentSearch(document) && isInSelectedDateRange(document.FINDoc_DocumentDate, dateRange) && matchesFilterQuery(document, query, financeDocumentFilterValue, financeDocumentFilterKind)).length
-    : scopedCash.filter((item) => matchesCashSearch(item) && isInSelectedDateRange(item.FINCash_TransactionDate, dateRange) && matchesFilterQuery(item, query, financeCashFilterValue, financeCashFilterKind)).length,
-  [mode, scopedDocuments, scopedCash, matchesDocumentSearch, matchesCashSearch, dateRange])
+    ? scopedDocuments.filter((document) => matchesDocumentSearch(document) && (!isSalesLedger || isInSelectedDateRange(document.FINDoc_DocumentDate, dateRange)) && matchesFilterQuery(document, query, financeDocumentFilterValue, financeDocumentFilterKind)).length
+    : scopedCash.filter((item) => matchesCashSearch(item) && (!isSalesLedger || isInSelectedDateRange(item.FINCash_TransactionDate, dateRange)) && matchesFilterQuery(item, query, financeCashFilterValue, financeCashFilterKind)).length,
+  [mode, scopedDocuments, scopedCash, matchesDocumentSearch, matchesCashSearch, dateRange, isSalesLedger])
   const documentFilterFields = useMemo<FilterFieldOption[]>(() => [
     { value: "any", label: "Any document field", placeholder: "Reference, customer or job" },
     { value: "reference", label: "Reference", placeholder: "Enter a reference" },
     { value: "party", label: "Customer", placeholder: "Enter a customer" },
     { value: "type", label: "Document type", kind: "select", options: Object.entries(documentLabels).filter(([key]) => key === "sl_invoice" || key === "credit_note").map(([value, label]) => ({ value, label })) },
     { value: "source", label: "Source", placeholder: "Job reference or Ad hoc" },
+    ...(isCreditControl ? [
+      { value: "documentDate", label: "Document date", kind: "date" as const },
+      { value: "dueDate", label: "Due date", kind: "date" as const },
+    ] : []),
     { value: "currency", label: "Currency", kind: "select", options: financeFilterOptions(scopedDocuments.map((row) => row.FINDoc_CurrencyCodeSnapshot)) },
     { value: "gross", label: "Gross amount (record currency)", kind: "number" },
     { value: "outstanding", label: "Outstanding (record currency)", kind: "number" },
@@ -602,12 +610,13 @@ function LedgerPage({ route, currentUser, navigate }: { route: FinanceLedgerRout
     { value: "ledger", label: "Ledger", kind: "select", options: financeFilterOptions(scopedDocuments.map((row) => row.FINDoc_NativePostingStatusCode)) },
     { value: "mirror", label: "Mirror", kind: "select", options: financeFilterOptions(scopedDocuments.map((row) => row.FINDoc_ExportStatusCode)) },
     { value: "tax", label: "Tax status", kind: "select", options: financeFilterOptions(scopedDocuments.map((row) => row.FINDoc_TaxStatus)) },
-  ], [scopedDocuments])
+  ], [scopedDocuments, isCreditControl])
   const cashFilterFields = useMemo<FilterFieldOption[]>(() => [
     { value: "any", label: "Any cash field", placeholder: "Reference, customer or bank reference" },
     { value: "reference", label: "Reference", placeholder: "Enter a reference" },
     { value: "party", label: "Customer", placeholder: "Enter a customer" },
     { value: "bankReference", label: "Bank reference", placeholder: "Enter a bank reference" },
+    ...(isCustomerReceipts ? [{ value: "date", label: "Transaction date", kind: "date" as const }] : []),
     { value: "type", label: "Entry type", kind: "select", options: [{ value: "customer_receipt", label: "Customer receipt" }] },
     { value: "currency", label: "Currency", kind: "select", options: financeFilterOptions(scopedCash.map((row) => row.FINCash_CurrencyCodeSnapshot)) },
     { value: "amount", label: "Amount (record currency)", kind: "number" },
@@ -615,7 +624,7 @@ function LedgerPage({ route, currentUser, navigate }: { route: FinanceLedgerRout
     { value: "status", label: "Status", kind: "select", options: financeFilterOptions(scopedCash.map((row) => row.FINCash_StatusCode)) },
     { value: "ledger", label: "Ledger", kind: "select", options: financeFilterOptions(scopedCash.map((row) => row.FINCash_NativePostingStatusCode)) },
     { value: "mirror", label: "Mirror", kind: "select", options: financeFilterOptions(scopedCash.map((row) => row.FINCash_ExportStatusCode)) },
-  ], [scopedCash])
+  ], [scopedCash, isCustomerReceipts])
   const canApprove = hasPermission(currentUser, "Finance.ReviewAndPost")
   const openDocument = useCallback((document: FinanceDocument) => {
     const documentLedger = document.FINDoc_TypeCode === "sl_invoice" || document.FINDoc_TypeCode === "credit_note" ? "receivables" : "payables"
@@ -711,27 +720,27 @@ function LedgerPage({ route, currentUser, navigate }: { route: FinanceLedgerRout
   const toolbarSearch = isSalesLedger ? <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">{periodSummary}{quickRangeActions}{datePicker}{searchField}</div> : searchField
   const toolbarFilters = <>
     <RegisterFacetSelect label={t("Status")} allLabel={t("All statuses")} value={status} options={statuses} onChange={setStatus} />
-    {isSalesLedger ? <AdvancedFilterPopover
-      key={mode}
+    {hasAdvancedSearch ? <AdvancedFilterPopover
+      key={`${route}-${mode}`}
       label="Advanced search"
       title="Advanced search"
       fields={mode === "documents" ? documentFilterFields : cashFilterFields}
       value={mode === "documents" ? documentFilter : cashFilter}
       onChange={mode === "documents" ? setDocumentFilter : setCashFilter}
-      normalizeQuery={(query) => withoutLedgerDateConditions(query, mode)}
-      storageKey={`finance-sales-ledger-${mode}`}
+      normalizeQuery={isSalesLedger ? (query) => withoutLedgerDateConditions(query, mode) : undefined}
+      storageKey={isSalesLedger ? `finance-sales-ledger-${mode}` : `finance-${route}-${mode}`}
       itemLabel={mode === "documents" ? "documents" : "cash entries"}
       totalCount={mode === "documents"
-        ? scopedDocuments.filter((document) => matchesDocumentSearch(document) && isInSelectedDateRange(document.FINDoc_DocumentDate, dateRange)).length
-        : scopedCash.filter((item) => matchesCashSearch(item) && isInSelectedDateRange(item.FINCash_TransactionDate, dateRange)).length}
+        ? scopedDocuments.filter((document) => matchesDocumentSearch(document) && (!isSalesLedger || isInSelectedDateRange(document.FINDoc_DocumentDate, dateRange))).length
+        : scopedCash.filter((item) => matchesCashSearch(item) && (!isSalesLedger || isInSelectedDateRange(item.FINCash_TransactionDate, dateRange))).length}
       countMatches={countAdvancedMatches}
     /> : null}
   </>
   const toolbarOptions = <RegisterRefreshButton pending={revalidating} onRefresh={() => void load(true)} />
-  const filtersActive = Boolean(search.trim() || status || (isSalesLedger && countActiveFilterConditions(mode === "documents" ? documentFilter : cashFilter)))
+  const filtersActive = Boolean(search.trim() || status || (hasAdvancedSearch && countActiveFilterConditions(mode === "documents" ? documentFilter : cashFilter)))
   const emptyState = <div className="grid min-h-48 place-items-center px-6 py-10 text-center"><div><EmptyStateIllustration variant="documents" /><p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t(filtersActive ? "No matching records" : isSalesLedger && (dateRange.start || dateRange.end) ? "No records in this date range" : mode === "documents" ? "No finance documents yet" : "No receipts or payments yet")}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t(filtersActive ? "Try adjusting your search or filters." : isSalesLedger ? "Choose another date range to see more records." : "Use the contextual New action to prepare the first reviewed draft.")}</p></div></div>
 
-  return <><SettingsPageHeader title={t(title)} titleClassName={isSalesLedger || isReceivablesApprovals ? "translate-y-[20%]" : undefined} description={isSalesLedger || isReceivablesApprovals ? undefined : t(description)} icon={isSalesLedger || isReceivablesApprovals ? undefined : routeConfig.initialMode === "cash" ? Wallet : ChartNoAxesCombined} actions={isSalesLedger || isReceivablesApprovals ? undefined : <Button type="button" variant="outline" onClick={() => navigate("/finance/administration")}>{t("Finance setup")}</Button>} /><div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">{error ? <Notice tone="danger">{error}</Notice> : null}{nativeLedgerUpdateRequired ? <Notice tone="danger"><div><p className="font-medium">{t("Native ledger update required")}</p><p className="mt-1">{t("These records came from an older finance service. They remain visible, but native posting status and financial reports must not be relied on until the latest finance migration and Edge Function are deployed.")}</p></div></Notice> : null}{!isSalesLedger && !isReceivablesApprovals ? <div className="md-kpi-scope"><KpiStrip kpis={kpis.map((item) => ({ ...item, label: t(item.label), detail: t(item.detail) }))} density="compact" spark={false} /></div> : null}{loading ? <div className="grid min-h-64 place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div> : mode === "documents" ? <DataTable clientPagination exportConfig={{ fileName: "finance-documents", register: { dateLabel: "Document date", dateValue: (document) => document.FINDoc_DocumentDate, loadAllRows: async () => filteredDocuments, busy: loading || revalidating || Boolean(error) } }} columns={documentColumns} rows={filteredDocuments} getRowKey={(row) => row.FINDoc_ID} storageKey={`finance-${route}-documents`} ariaLabel={t(`${title} register`)} minimumWidth={1310} toolbarTabs={toolbarTabs} toolbarSearch={toolbarSearch} toolbarFilters={toolbarFilters} toolbarOptions={toolbarOptions} emptyState={emptyState} /> : <DataTable clientPagination exportConfig={{ fileName: "finance-cash", register: { dateLabel: "Transaction date", dateValue: (item) => item.FINCash_TransactionDate, loadAllRows: async () => filteredCash, busy: loading || revalidating || Boolean(error) } }} columns={cashColumns} rows={filteredCash} getRowKey={(row) => row.FINCash_ID} storageKey={`finance-${route}-cash`} ariaLabel={t(`${title} register`)} minimumWidth={1110} toolbarTabs={toolbarTabs} toolbarSearch={toolbarSearch} toolbarFilters={toolbarFilters} toolbarOptions={toolbarOptions} emptyState={emptyState} />}</div><DocumentDraftDialog type={creationType && ["sl_invoice", "credit_note", "pl_invoice", "debit_note"].includes(creationType) ? creationType as FinanceDocumentType : null} options={options} loading={optionsLoading} onClose={() => setCreationType(null)} onCreated={async () => { await load(true) }} /><CashDraftDialog type={creationType === "customer_receipt" || creationType === "supplier_payment" ? creationType : null} options={options} loading={optionsLoading} onClose={() => setCreationType(null)} onCreated={async () => { await load(true) }} /></>
+  return <><SettingsPageHeader title={t(title)} titleClassName={isCustomerReceipts ? "translate-y-[50%]" : hasCompactHeader ? "translate-y-[20%]" : undefined} description={hasCompactHeader ? undefined : t(description)} icon={hasCompactHeader ? undefined : routeConfig.initialMode === "cash" ? Wallet : ChartNoAxesCombined} actions={hasCompactHeader ? undefined : <Button type="button" variant="outline" onClick={() => navigate("/finance/administration")}>{t("Finance setup")}</Button>} /><div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">{error ? <Notice tone="danger">{error}</Notice> : null}{nativeLedgerUpdateRequired ? <Notice tone="danger"><div><p className="font-medium">{t("Native ledger update required")}</p><p className="mt-1">{t("These records came from an older finance service. They remain visible, but native posting status and financial reports must not be relied on until the latest finance migration and Edge Function are deployed.")}</p></div></Notice> : null}{!hasCompactHeader ? <div className="md-kpi-scope"><KpiStrip kpis={kpis.map((item) => ({ ...item, label: t(item.label), detail: t(item.detail) }))} density="compact" spark={false} /></div> : null}{loading ? <div className="grid min-h-64 place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div> : mode === "documents" ? <DataTable clientPagination exportConfig={{ fileName: "finance-documents", register: { dateLabel: "Document date", dateValue: (document) => document.FINDoc_DocumentDate, loadAllRows: async () => filteredDocuments, busy: loading || revalidating || Boolean(error) } }} columns={documentColumns} rows={filteredDocuments} getRowKey={(row) => row.FINDoc_ID} storageKey={`finance-${route}-documents`} ariaLabel={t(`${title} register`)} minimumWidth={1310} toolbarTabs={toolbarTabs} toolbarSearch={toolbarSearch} toolbarFilters={toolbarFilters} toolbarOptions={toolbarOptions} emptyState={emptyState} /> : <DataTable clientPagination exportConfig={{ fileName: "finance-cash", register: { dateLabel: "Transaction date", dateValue: (item) => item.FINCash_TransactionDate, loadAllRows: async () => filteredCash, busy: loading || revalidating || Boolean(error) } }} columns={cashColumns} rows={filteredCash} getRowKey={(row) => row.FINCash_ID} storageKey={`finance-${route}-cash`} ariaLabel={t(`${title} register`)} minimumWidth={1110} toolbarTabs={toolbarTabs} toolbarSearch={toolbarSearch} toolbarFilters={toolbarFilters} toolbarOptions={toolbarOptions} emptyState={emptyState} />}</div><DocumentDraftDialog type={creationType && ["sl_invoice", "credit_note", "pl_invoice", "debit_note"].includes(creationType) ? creationType as FinanceDocumentType : null} options={options} loading={optionsLoading} onClose={() => setCreationType(null)} onCreated={async () => { await load(true) }} /><CashDraftDialog type={creationType === "customer_receipt" || creationType === "supplier_payment" ? creationType : null} options={options} loading={optionsLoading} onClose={() => setCreationType(null)} onCreated={async () => { await load(true) }} /></>
 }
 
 function FinanceSetupPage({ navigate }: { navigate: (path: string) => void }) {

@@ -286,17 +286,43 @@ async function paymentRuns(admin: any, current: any, entityId: string) {
   return runs.map((run) => ({ ...run, items: items.filter((item) => item.FINPayRunItem_RunID === run.FINPayRun_ID) }))
 }
 
-async function statement(admin: any, current: any, entityId: string, customerId: string) {
+async function statementCustomers(admin: any, current: any, entityId: string) {
+  await requirePermission(admin, current.User_ID, "Finance.Receivables.View")
+  await entity(admin, current, entityId)
+  const customerTypes = await rows(admin, "Org_Types", "OrgType_ID", (query) => query.ilike("OrgType_Name", "customer").order("OrgType_ID"))
+  if (!customerTypes.length) return { customers: [] }
+  const profiles = await rows(admin, "CRM_AccountProfiles", "CRMAccount_OrgID", (query) => query.eq("CRMAccount_CompanyID", current.Company_ID).eq("CRMAccount_IsDeleted", false).order("CRMAccount_OrgID"))
+  if (!profiles.length) return { customers: [] }
+  const customerLinks = await rows(admin, "Org_Master_Type", "Org_ID", (query) => query.in("OrgType_ID", customerTypes.map((type) => type.OrgType_ID)).in("Org_ID", profiles.map((profile) => profile.CRMAccount_OrgID)).order("Org_ID"))
+  const partyNames = await names(admin, customerLinks.map((link) => link.Org_ID))
+  return { customers: [...partyNames].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)) }
+}
+
+async function statement(admin: any, current: any, entityId: string, customerId: string, mode: string) {
   await requirePermission(admin, current.User_ID, "Finance.Receivables.View")
   const selectedEntity = await entity(admin, current, entityId)
   if (!uuid(customerId)) throw new HttpError(400, "Choose a customer.")
-  const { data: customerProfile, error: profileError } = await admin.from("CRM_AccountProfiles").select("CRMAccount_OrgID").eq("CRMAccount_CompanyID", current.Company_ID).eq("CRMAccount_OrgID", customerId).maybeSingle()
+  if (mode !== "open" && mode !== "all") throw new HttpError(400, "Choose Open or All for this statement.")
+  const { data: customerProfile, error: profileError } = await admin.from("CRM_AccountProfiles").select("CRMAccount_OrgID").eq("CRMAccount_CompanyID", current.Company_ID).eq("CRMAccount_OrgID", customerId).eq("CRMAccount_IsDeleted", false).maybeSingle()
   if (profileError) fail(profileError, "Customer account could not be checked.")
   if (!customerProfile) throw new HttpError(404, "Customer not found in this workspace.")
-  const [all, cash] = await Promise.all([documents(admin, entityId, "receivables"), unappliedCash(admin, entityId, "receivables")])
-  const found = all.filter((document) => document.FINDoc_PartyOrgID === customerId && money(document.FINDoc_OutstandingAmount) !== 0)
-  if (found.some((document) => !Number.isFinite(money(document.FINDoc_OutstandingAmount)) || (document.FINDoc_TypeCode === "sl_invoice" && money(document.FINDoc_OutstandingAmount) < 0) || (document.FINDoc_TypeCode === "credit_note" && money(document.FINDoc_OutstandingAmount) > 0))) throw new HttpError(409, "A customer balance has the wrong polarity. Correct the ledger before preparing a statement.")
-  const customerCash = cash.filter((payment) => payment.FINCash_PartyOrgID === customerId)
+  const customerTypes = await rows(admin, "Org_Types", "OrgType_ID", (query) => query.ilike("OrgType_Name", "customer").order("OrgType_ID"))
+  const { data: customerType, error: typeError } = customerTypes.length ? await admin.from("Org_Master_Type").select("Org_ID").eq("Org_ID", customerId).in("OrgType_ID", customerTypes.map((type) => type.OrgType_ID)).maybeSingle() : { data: null, error: null }
+  if (typeError) fail(typeError, "Customer type could not be checked.")
+  if (!customerType) throw new HttpError(404, "This account is not a customer.")
+  const [found, customerCash] = await Promise.all([
+    rows(admin, "FIN_Documents", "FINDoc_ID,FINDoc_Number,FINDoc_TypeCode,FINDoc_DocumentDate,FINDoc_DueDate,FINDoc_CurrencyCodeSnapshot,FINDoc_GrossAmount,FINDoc_OutstandingAmount,FINDoc_UpdatedAt", (query) => {
+      let result = query.eq("FINDoc_LegalEntityID", entityId).eq("FINDoc_PartyOrgID", customerId).in("FINDoc_TypeCode", ["sl_invoice", "credit_note"]).in("FINDoc_StatusCode", ["approved", "submitted"])
+      if (mode === "open") result = result.neq("FINDoc_OutstandingAmount", 0)
+      return result.order("FINDoc_DocumentDate").order("FINDoc_ID")
+    }),
+    rows(admin, "FIN_CashTransactions", "FINCash_ID,FINCash_Number,FINCash_TransactionDate,FINCash_CurrencyCodeSnapshot,FINCash_Amount,FINCash_UnallocatedAmount,FINCash_UpdatedAt", (query) => {
+      let result = query.eq("FINCash_LegalEntityID", entityId).eq("FINCash_PartyOrgID", customerId).eq("FINCash_TypeCode", "customer_receipt").in("FINCash_StatusCode", ["approved", "submitted"])
+      if (mode === "open") result = result.gt("FINCash_UnallocatedAmount", 0)
+      return result.order("FINCash_TransactionDate").order("FINCash_ID")
+    }),
+  ])
+  if (found.some((document) => !Number.isFinite(money(document.FINDoc_GrossAmount)) || !Number.isFinite(money(document.FINDoc_OutstandingAmount)) || (document.FINDoc_TypeCode === "sl_invoice" && (money(document.FINDoc_GrossAmount) <= 0 || money(document.FINDoc_OutstandingAmount) < 0)) || (document.FINDoc_TypeCode === "credit_note" && (money(document.FINDoc_GrossAmount) >= 0 || money(document.FINDoc_OutstandingAmount) > 0))) || customerCash.some((payment) => !Number.isFinite(money(payment.FINCash_Amount)) || !Number.isFinite(money(payment.FINCash_UnallocatedAmount)) || money(payment.FINCash_Amount) <= 0 || money(payment.FINCash_UnallocatedAmount) < 0 || money(payment.FINCash_UnallocatedAmount) > money(payment.FINCash_Amount))) throw new HttpError(409, "A customer balance or transaction amount is invalid. Correct the ledger before preparing a statement.")
   const partyNames = await names(admin, [customerId])
   if (!partyNames.has(customerId)) throw new HttpError(404, "Customer not found.")
   const lines = [...found.map((document) => ({
@@ -313,8 +339,12 @@ async function statement(admin: any, current: any, entityId: string, customerId:
     evidence: { sourceTable: "FIN_CashTransactions", sourceId: payment.FINCash_ID, observedAt: payment.FINCash_UpdatedAt },
   }))].sort((a, b) => a.documentDate.localeCompare(b.documentDate) || a.id.localeCompare(b.id))
   const totals: Record<string, number> = {}
-  for (const line of lines) totals[line.currency] = (totals[line.currency] ?? 0) + line.outstanding
-  return { title: "Open-item customer statement", generatedAt: new Date().toISOString(), legalEntity: selectedEntity.LegalEntity_Name, customerId, customerName: partyNames.get(customerId), lines, totals, basis: "Current outstanding invoices and credits, less unapplied approved receipts. Cash already allocated to an invoice is reflected in that invoice's balance. This is not a historical transaction statement." }
+  const transactionTotals: Record<string, number> = {}
+  for (const line of lines) {
+    totals[line.currency] = (totals[line.currency] ?? 0) + line.outstanding
+    transactionTotals[line.currency] = (transactionTotals[line.currency] ?? 0) + line.originalAmount
+  }
+  return { title: "Customer statement", mode, generatedAt: new Date().toISOString(), legalEntity: selectedEntity.LegalEntity_Name, customerId, customerName: partyNames.get(customerId), lines, totals, transactionTotals, basis: mode === "open" ? "Current unpaid invoices and unused credits or receipts. Totals show the net amount due in each currency." : "Eligible invoices, credits and receipts, including settled items. Outstanding amounts and net amounts due reflect current balances at preparation time." }
 }
 
 async function remittance(admin: any, current: any, id: string) {
@@ -414,7 +444,8 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && parts[0] === "match-proposals" && parts[2] === "reject") return json(request, await reviewMatchProposal(admin, current, parts[1], clean((await body<any>(request)).reason)))
     if (request.method === "GET" && parts[0] === "collections") return json(request, await collectionActions(admin, current, params.get("entityId") ?? ""))
     if (request.method === "POST" && parts[0] === "collections") return json(request, await createCollectionAction(admin, current, await body<any>(request)), 201)
-    if (request.method === "GET" && parts[0] === "statement") return json(request, await statement(admin, current, params.get("entityId") ?? "", params.get("customerId") ?? ""))
+    if (request.method === "GET" && parts[0] === "statement-customers") return json(request, await statementCustomers(admin, current, params.get("entityId") ?? ""))
+    if (request.method === "GET" && parts[0] === "statement") return json(request, await statement(admin, current, params.get("entityId") ?? "", params.get("customerId") ?? "", params.get("mode") ?? ""))
     if (request.method === "GET" && parts[0] === "payment-runs") return json(request, await paymentRuns(admin, current, params.get("entityId") ?? ""))
     if (request.method === "POST" && parts[0] === "payment-runs" && parts.length === 1) return json(request, await preparePaymentRun(admin, current, await body<any>(request)), 201)
     if (request.method === "GET" && parts[0] === "payment-runs" && parts[2] === "remittance") return json(request, await remittance(admin, current, parts[1]))

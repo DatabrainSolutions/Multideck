@@ -92,6 +92,7 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925104200_finance_approval_dexter_parity.sql',
       '20260926095252_finance_approval_decision_entity_lock.sql',
       '20260928090000_finance_director_dashboard.sql',
+      '20260928120000_finance_customer_register_requires_customer_type.sql',
     ]
     const laterMigrations = readdirSync(new URL('migrations/', root))
       .filter(name => name >= '20260925070431' && name.endsWith('.sql')
