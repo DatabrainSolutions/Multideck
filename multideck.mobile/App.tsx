@@ -41,7 +41,7 @@ export type RootStackParams = {
 }
 
 const Stack = createNativeStackNavigator<RootStackParams>()
-
+{/* whenClicked is a property not an event, per se. */}
 export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceConfiguration | null>(null)
   const [client, setClient] = useState<SupabaseClient | null>(null)
