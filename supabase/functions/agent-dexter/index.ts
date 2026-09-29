@@ -9,6 +9,7 @@ import { contactTransferReview } from "./contact-transfer-review.ts"
 import { createDeferredWork, resolveDeferredWork, deferredWorkTool, type DeferredWork } from "./deferred-work.ts"
 import { requestDeadline } from "./request-deadline.ts"
 import { durableEventStream } from "./durable-event-stream.ts"
+import { createOpenAIEventStream } from "./openai-event-stream.ts"
 import { recordResponseMessageCost } from "./response-message-cost.ts"
 import { continueProviderHistory, recordProviderEvent, type ProviderHistory } from "./provider-history.ts"
 import { supersedeApprovals } from "./supersede-approvals.ts"
@@ -3084,11 +3085,14 @@ function extractReasoningSummary(response: JsonObject) {
 
 function providerErrorDiagnostics(response?: JsonObject) {
   const error = isObject(response?.error) ? response.error : {}
+  const incomplete = isObject(response?.incomplete_details) ? response.incomplete_details : {}
   return {
+    status: cleanString(response?.status, 80) || "unknown",
     type: cleanString(error.type, 80) || "unknown",
     code: cleanString(error.code, 120) || "unknown",
     param: cleanString(error.param, 120) || "unknown",
     message: cleanString(error.message, 500) || "unknown",
+    incompleteReason: cleanString(incomplete.reason, 120) || "unknown",
   }
 }
 
@@ -3158,60 +3162,38 @@ async function requestOpenAIStream(
 
     const reader = upstream.body.getReader()
     const decoder = new TextDecoder()
-    let buffer = ""
-    let completed: JsonObject | undefined
-
-    const processEvent = (eventBlock: string) => {
-      const data = eventBlock
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n")
-      if (!data || data === "[DONE]") return
-
-      let event: unknown
-      try {
-        event = JSON.parse(data)
-      } catch {
-        return
-      }
-      if (!isObject(event)) return
-
+    let terminalResponse: JsonObject | undefined
+    let terminalType = "stream_incomplete"
+    const events = createOpenAIEventStream(event => {
       if (event.type === "response.output_text.delta") {
         const delta = sanitiseStreamDelta(event.delta)
         if (delta) onDelta("answer", delta)
       } else if (event.type === "response.reasoning_summary_text.delta") {
         const delta = sanitiseStreamDelta(event.delta)
         if (delta) onDelta("reasoning", delta)
-      } else if (event.type === "response.completed" && isObject(event.response)) {
-        completed = event.response
+      } else if (["response.completed", "response.failed", "response.incomplete"].includes(String(event.type)) && isObject(event.response)) {
+        terminalType = String(event.type)
+        terminalResponse = event.response
       }
-    }
+    })
 
     while (true) {
       const { value, done } = await reader.read()
-      buffer += decoder.decode(value, { stream: !done }).replaceAll("\r\n", "\n")
-
-      let boundary = buffer.indexOf("\n\n")
-      while (boundary >= 0) {
-        processEvent(buffer.slice(0, boundary))
-        buffer = buffer.slice(boundary + 2)
-        boundary = buffer.indexOf("\n\n")
-      }
-
+      events.push(decoder.decode(value, { stream: !done }))
       if (done) break
     }
-    if (buffer.trim()) processEvent(buffer)
+    events.finish()
 
-    const trustedUsage = completed ? readTokenUsage(completed) : { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+    const completed = terminalType === "response.completed" ? terminalResponse : undefined
+    const trustedUsage = terminalResponse ? readTokenUsage(terminalResponse) : { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
     await settleModelEgress(gateway, {
       reservationId, outcome: completed ? "succeeded" : "failed", providerRequestId: requestId,
       inputUnits: trustedUsage.inputTokens, outputUnits: trustedUsage.outputTokens,
       responseUsage: body.model === "gpt-6-luna" && completed && isObject(completed.usage) ? completed.usage : undefined,
-      errorCode: completed ? null : "stream_incomplete",
+      errorCode: completed ? null : terminalType.replace("response.", ""),
     })
     settled = true
-    return { response: completed, status: upstream.status, requestId }
+    return { response: terminalResponse, status: completed ? upstream.status : 502, requestId }
   } catch (error) {
     if (!settled && reservationId) await settleModelEgress(gateway, { reservationId, outcome: "failed", errorCode: error instanceof Error ? error.name : "stream_failed" })
     settled = true
@@ -3506,6 +3488,8 @@ async function runStreamedAgent(
     }
 
     if (openAIResult.status < 200 || openAIResult.status >= 300 || !openAIResult.response) {
+      const providerError = isObject(openAIResult.response?.error) ? openAIResult.response.error : {}
+      const creditsExhausted = ["credit_balance_exhausted", "insufficient_quota"].includes(String(providerError.code))
       console.error(
         "Dexter OpenAI stream rejected",
         openAIResult.status,
@@ -3516,9 +3500,11 @@ async function runStreamedAgent(
       if (partial) return partial
       emit({
         type: "error",
-        code: "dexter_provider_error",
+        code: creditsExhausted ? "dexter_provider_credits_exhausted" : "dexter_provider_error",
         retrySafe: round === 0,
-        message: "Dexter could not complete this request. Try again in a moment.",
+        message: creditsExhausted
+          ? "Dexter's AI account has run out of credits. Ask your Multideck administrator to restore the balance, then retry."
+          : "Dexter could not complete this request. Try again in a moment.",
       })
       return null
     }
