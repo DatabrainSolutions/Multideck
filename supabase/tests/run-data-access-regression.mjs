@@ -15,6 +15,9 @@ for (const command of ['initdb', 'pg_ctl', 'psql']) {
   assert.equal(spawnSync(join(bin, command), ['--version']).status, 0, `${command} must be available in ${bin}`)
 }
 const tests = [
+  'admin-dashboard-postgres.test.mjs',
+  'admin-dashboard-model.test.mjs',
+  'admin-dashboard-lifecycle.test.mjs',
   'charge-catalogue-postgres.test.mjs',
   'nominal-classification-postgres.test.mjs',
   'nominal-structure-postgres.test.mjs',
@@ -78,6 +81,7 @@ const tests = [
   'finance-export-atomic-postgres.test.mjs',
   'erpnext-webhook-receipt-postgres.test.mjs',
   'operational-shared-access-postgres.test.mjs',
+  'customer-quote-intelligence-postgres.test.mjs',
   'customs-consistent-workspace-read-postgres.test.mjs',
   'customs-draft-insert-visibility-postgres.test.mjs',
   'notification-permissions-db.test.mjs',

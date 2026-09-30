@@ -1,3 +1,4 @@
+import { useCommercialWorkflow, hasCommercialAttempt } from "@/lib/workspace-usage"
 import { Table } from "@/components/ui/table"
 import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
@@ -4701,6 +4702,8 @@ export function BookingDetailWorkspace({
   const navigationDirtyRef = useRef(detailsDirty || savingDetails)
   navigationDirtyRef.current = detailsDirty || savingDetails
   const canEditBooking = hasPermission(currentUser, "Bookings.Write")
+  const creationAnalytics = useCommercialWorkflow("booking_create", canEditBooking && (record?.workspace?.booking.status?.toLowerCase() === "provisional" || hasCommercialAttempt("booking_create", record?.workspace?.booking.jobId)), record?.workspace?.booking.jobId)
+  useEffect(() => { if (activeTab === "Details") creationAnalytics.step("details"); else if (activeTab === "Finance") creationAnalytics.step("pricing") }, [activeTab, record?.workspace?.booking.jobId])
   const draftFingerprint = JSON.stringify([draftBooking, draftWorkspace])
 
   useEffect(() => {
@@ -5255,6 +5258,7 @@ export function BookingDetailWorkspace({
     const incompleteCargoIndex = draftWorkspace.cargo.findIndex((line) => !line.description?.trim())
     if (incompleteCargoIndex >= 0) {
       setWeightValidation(current => ({ attempt: (current?.attempt ?? 0) + 1, index: incompleteCargoIndex, field: "description" }))
+      creationAnalytics.failed()
       setSaveError(t(`Add a description to cargo line ${incompleteCargoIndex + 1}, or remove that line. Your edits are not saved yet.`))
       return
     }
@@ -5262,6 +5266,7 @@ export function BookingDetailWorkspace({
     const invalidWeightIndex = workspace.cargo.findIndex(line => bookingChargeableWeightError(line.chargeableWeightKg))
     const invalidOverride = bookingChargeableWeightError(recordText(asRecord(workspace.booking.editableDetails), "chargeableWeightKg"))
     if (invalidWeightIndex >= 0 || invalidOverride) {
+      creationAnalytics.failed()
       setSaveError(t("Review the chargeable weight. Your edits are not saved yet."))
       setWeightValidation(current => ({ attempt: (current?.attempt ?? 0) + 1, index: invalidWeightIndex >= 0 ? invalidWeightIndex : null }))
       return
@@ -5269,6 +5274,7 @@ export function BookingDetailWorkspace({
     const allocationIssue = analyseCargoAllocations(workspace.cargo, workspace.containers, workspace.routes, workspace.cargoAllocationState?.allocations ?? []).issues[0]
     if (allocationIssue) {
       setAllocationValidationAttempt(attempt => attempt + 1)
+      creationAnalytics.failed()
       setSaveError(t(allocationIssue.message))
       return
     }
@@ -5359,6 +5365,7 @@ export function BookingDetailWorkspace({
       }
       if (generation !== saveGenerationRef.current) return
       const savedRecord = bookingWorkspaceRecord(savedWorkspace)
+      if (!["draft", "provisional", "cancelled", "canceled", "voided"].includes(savedWorkspace.booking.status.toLowerCase())) creationAnalytics.complete(savedWorkspace.booking.jobId)
       const currentDraft = latestDraftRef.current
       const nextBooking = rebaseBookingDraft(savedRecord.booking, draftBooking, currentDraft.draftBooking ?? draftBooking)
       const nextWorkspace = rebaseBookingDraft(savedWorkspace, draftWorkspace, currentDraft.draftWorkspace ?? draftWorkspace)
@@ -5377,6 +5384,7 @@ export function BookingDetailWorkspace({
       if (generation !== saveGenerationRef.current) return
       // Stop automatic retries after transport/concurrency failure; keep the complete latest draft.
       failedSaveFingerprintRef.current = JSON.stringify([latestDraftRef.current.draftBooking, latestDraftRef.current.draftWorkspace])
+      creationAnalytics.failed()
       setSaveError(reason instanceof Error ? reason.message : t("Your edits are not saved. Try again."))
     } finally {
       if (generation === saveGenerationRef.current) { saveInFlightRef.current = false; setSavingDetails(false) }

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
+  QUOTE_INTELLIGENCE_ALGORITHM_VERSION,
+  quotePricingContext,
   applyQuoteIntelligenceAdjustment,
   buildQuoteIntelligence,
   type IntelligenceJobEvidence,
@@ -102,7 +104,8 @@ function quoteEvidence(value: unknown): IntelligenceQuoteEvidence {
     sell: number(row.sell),
     profit: number(row.profit),
     marginPct: nullableNumber(row.marginPct),
-    fxComplete: row.fxComplete !== false,
+    fxComplete: row.fxComplete === true,
+    pricingContext: quotePricingContext(clean(row.incoterm), isObject(row.shipmentFacts) ? row.shipmentFacts : {}),
     activityCodes: Array.isArray(row.activityCodes) ? row.activityCodes.map((item) => clean(item, 80)).filter(Boolean) : [],
   }
 }
@@ -135,7 +138,7 @@ function rateEvidence(value: unknown): IntelligenceRateEvidence {
     shipmentType: clean(row.shipmentType, 80),
     effectiveAt: clean(row.effectiveAt, 80) || new Date(0).toISOString(),
     amount: number(row.amount),
-    fxComplete: row.fxComplete !== false,
+    fxComplete: row.fxComplete === true,
   }
 }
 
@@ -153,6 +156,7 @@ export function snapshotFromRow(value: unknown): QuoteIntelligenceSnapshot | nul
   if (!isObject(value) || !isObject(value.CusQuoteIntelligence_DeterministicJSON)) return null
   const row = value as unknown as IntelligenceRow
   const deterministic = row.CusQuoteIntelligence_DeterministicJSON as QuoteIntelligenceDeterministic
+  if (deterministic.algorithmVersion !== QUOTE_INTELLIGENCE_ALGORITHM_VERSION || !deterministic.scope) return null
   const rawAi = isObject(row.CusQuoteIntelligence_AIJSON) ? row.CusQuoteIntelligence_AIJSON : null
   const aiMatches = Boolean(rawAi && clean(rawAi.inputFingerprint, 128) === deterministic.inputFingerprint)
   const adjustment = aiMatches ? Number(rawAi?.adjustmentPoints) || 0 : 0
@@ -233,6 +237,8 @@ export async function refreshQuoteIntelligence(admin: Db, companyId: string, quo
     deadline: evidence.target.deadline,
     cost: evidence.target.cost,
     sell: evidence.target.sell,
+    pricingContext: evidence.target.pricingContext,
+    fxComplete: evidence.target.fxComplete,
     activityCodes: evidence.target.activityCodes,
   })
   const evidenceFingerprint = await sha256({
@@ -240,7 +246,7 @@ export async function refreshQuoteIntelligence(admin: Db, companyId: string, quo
     jobs: evidence.jobs,
     rates: evidence.rates,
   })
-  const inputFingerprint = await sha256({ targetFingerprint, evidenceFingerprint })
+  const inputFingerprint = await sha256({ algorithmVersion: QUOTE_INTELLIGENCE_ALGORITHM_VERSION, targetFingerprint, evidenceFingerprint })
   const deterministic = buildQuoteIntelligence(evidence, { input: inputFingerprint, evidence: evidenceFingerprint })
   const calculatedAt = new Date().toISOString()
   const { data: saved, error: saveError } = await admin.rpc("quote_intelligence_publish_snapshot", {

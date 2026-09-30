@@ -25,6 +25,7 @@ const KpiCell = memo(function KpiCell({
   markerId,
   onSelect,
   onOpen,
+  animated,
 }: {
   kpi: DashboardKpi
   index: number
@@ -36,9 +37,10 @@ const KpiCell = memo(function KpiCell({
   markerId?: string
   onSelect?: () => void
   onOpen?: () => void
+  animated: boolean
 }) {
   const { t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
+  const shouldReduceMotion = useReducedMotion() || !animated
   // Neutral metrics still need a legible subject glyph. `--md-subtle` is
   // appropriate for supporting copy, but becomes too faint once the corner
   // icon's resting opacity is applied on a dark surface.
@@ -57,21 +59,37 @@ const KpiCell = memo(function KpiCell({
           pointer. */}
       {Icon ? (
         <span className="md-kpi-cell-icon" aria-hidden="true">
-          <Icon className={compact ? "size-[13px]" : "size-[15px]"} strokeWidth={1.5} />
+          <Icon
+            className={compact ? "size-[13px]" : "size-[15px]"}
+            strokeWidth={1.5}
+          />
         </span>
       ) : null}
       <span className="md-kpi-cell-copy">
         <span className="md-kpi-cell-label">{kpi.label}</span>
         <span className="md-kpi-cell-figure">
-          <CountUpValue value={kpi.value} className="md-kpi-cell-value" />
+          {animated ? (
+            <CountUpValue value={kpi.value} className="md-kpi-cell-value" />
+          ) : (
+            <span className="md-kpi-cell-value" dir="ltr">
+              {kpi.value}
+            </span>
+          )}
           {/* Which way the metric moved, as its own chip beside the figure.
               Drawn only from a real earlier reading – a tile with nothing to
               compare against shows the figure alone rather than an arrow that
               means nothing. */}
           {kpi.delta && !compact ? (
-            <span className="md-kpi-cell-delta" data-direction={kpi.delta.direction}>
+            <span
+              className="md-kpi-cell-delta"
+              data-direction={kpi.delta.direction}
+            >
               <span aria-hidden="true" className="md-kpi-cell-delta-arrow">
-                {kpi.delta.direction === "up" ? "↗" : kpi.delta.direction === "down" ? "↘" : "→"}
+                {kpi.delta.direction === "up"
+                  ? "↗"
+                  : kpi.delta.direction === "down"
+                    ? "↘"
+                    : "→"}
               </span>
               {kpi.delta.text}
             </span>
@@ -85,16 +103,32 @@ const KpiCell = memo(function KpiCell({
               product. */}
           <span className={compact ? "sr-only" : "md-kpi-cell-detail"}>
             {kpi.detail}
-            {kpi.delta ? <span className="md-kpi-cell-detail-caption"> · {t(kpi.delta.caption)}</span> : null}
+            {kpi.delta ? (
+              <span className="md-kpi-cell-detail-caption">
+                {" "}
+                · {t(kpi.delta.caption)}
+              </span>
+            ) : null}
           </span>
         </span>
       </span>
       {spark && kpi.series?.length ? (
         <span className="md-kpi-cell-spark">
           {sparkKind === "bars" ? (
-            <MiniBarChart values={kpi.series} tone={kpi.tone} height={34} animated={!shouldReduceMotion} />
+            <MiniBarChart
+              values={kpi.series}
+              tone={kpi.tone}
+              height={34}
+              animated={!shouldReduceMotion}
+            />
           ) : (
-            <MiniAreaChart values={kpi.series} tone={kpi.tone} width={76} height={38} animated={!shouldReduceMotion} />
+            <MiniAreaChart
+              values={kpi.series}
+              tone={kpi.tone}
+              width={76}
+              height={38}
+              animated={!shouldReduceMotion}
+            />
           )}
         </span>
       ) : null}
@@ -125,7 +159,11 @@ const KpiCell = memo(function KpiCell({
       style={{ ["--md-kpi-accent" as string]: accent }}
       initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.036) }}
+      transition={
+        shouldReduceMotion
+          ? { duration: 0 }
+          : { ...mdMotion.enter, delay: staggerRamp(index, 0.036) }
+      }
     >
       {interactive ? (
         <motion.button
@@ -141,13 +179,22 @@ const KpiCell = memo(function KpiCell({
           {body}
         </motion.button>
       ) : (
-        <div className="md-kpi-cell-button" data-has-icon={Icon ? "true" : undefined} data-static="true">
+        <div
+          className="md-kpi-cell-button"
+          data-has-icon={Icon ? "true" : undefined}
+          data-static="true"
+        >
           {body}
         </div>
       )}
 
       {onOpen ? (
-        <button type="button" className="md-kpi-cell-expand" aria-label={`${t("Open")} ${kpi.label}`} onClick={onOpen}>
+        <button
+          type="button"
+          className="md-kpi-cell-expand"
+          aria-label={`${t("Open")} ${kpi.label}`}
+          onClick={onOpen}
+        >
           <Maximize2 className="size-3" strokeWidth={1.4} />
         </button>
       ) : null}
@@ -163,6 +210,7 @@ export function KpiStrip({
   columns = 4,
   density = "comfortable",
   spark = true,
+  animated = true,
   sparkKind = "area",
   markerId,
   className,
@@ -184,6 +232,8 @@ export function KpiStrip({
    * already on screen. Two drawings of one series is one drawing too many.
    */
   spark?: boolean
+  /** Disable count ramps and entry motion on a measured analytics readout. */
+  animated?: boolean
   /**
    * `bars` draws the period as discrete ticks instead of a curve. Use it where
    * the cards sit above a full-size plot: a second smooth line reads as the
@@ -200,7 +250,11 @@ export function KpiStrip({
   const compact = density === "compact"
 
   return (
-    <div className={cn("md-kpi-strip", className)} data-columns={columns} data-density={compact ? "compact" : undefined}>
+    <div
+      className={cn("md-kpi-strip", className)}
+      data-columns={columns}
+      data-density={compact ? "compact" : undefined}
+    >
       {kpis.map((kpi, index) => (
         <KpiCell
           // Keyed by slot so a range change animates the numbers inside a stable
@@ -210,11 +264,17 @@ export function KpiStrip({
           index={index}
           compact={compact}
           spark={spark}
+          animated={animated}
           sparkKind={sparkKind}
           markerId={markerId}
           selected={selectedLabel === kpi.label}
           onSelect={onSelect ? () => onSelect(kpi.label) : undefined}
-          onOpen={onOpenDrilldown ? () => onOpenDrilldown(makeDashboardDrilldownId("metric", kpi.label)) : undefined}
+          onOpen={
+            onOpenDrilldown
+              ? () =>
+                  onOpenDrilldown(makeDashboardDrilldownId("metric", kpi.label))
+              : undefined
+          }
         />
       ))}
     </div>

@@ -46,6 +46,8 @@ export function DashboardModeChart({
   subtitle,
   series,
   labels,
+  formatValue,
+  animated = true,
   height = 176,
   className,
 }: {
@@ -54,23 +56,40 @@ export function DashboardModeChart({
   series: ModeSeries[]
   /** One label per point; only a subset is drawn once the column is narrow. */
   labels: string[]
+  /** Units for non-count series, such as hours. */
+  formatValue?: (value: number) => string
+  /** Keep measured data immediately readable without drawing/ramping it on entry. */
+  animated?: boolean
   height?: number
   className?: string
 }) {
   const { t, direction } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
+  const formatted = formatValue ?? ((value: number) => value.toLocaleString())
+  const shouldReduceMotion = useReducedMotion() || !animated
   const rawId = useId().replace(/[^a-z0-9]/gi, "")
   const [containerRef, width] = useElementWidth<HTMLDivElement>()
 
   const box = useMemo<ChartBox>(
-    () => ({ width, height, padTop: 12, padBottom: 22, padStart: 26, padEnd: 8 }),
+    () => ({
+      width,
+      height,
+      padTop: 12,
+      padBottom: 22,
+      padStart: 26,
+      padEnd: 8,
+    }),
     [width, height],
   )
 
   // One scale across every series, otherwise two modes with different volumes
   // would each fill the panel and look identical.
   const scale = useMemo(
-    () => getChartScale(series.flatMap((entry) => entry.values), true, gridCount),
+    () =>
+      getChartScale(
+        series.flatMap((entry) => entry.values),
+        true,
+        gridCount,
+      ),
     [series],
   )
   const gridValues = useMemo(() => getGridValues(scale, gridCount), [scale])
@@ -93,7 +112,8 @@ export function DashboardModeChart({
     if (!ready) return []
     return series.map((entry) => {
       const points = entry.values.map(
-        (value, index) => [projectX(index, total, box), projectY(value, scale, box)] as const,
+        (value, index) =>
+          [projectX(index, total, box), projectY(value, scale, box)] as const,
       )
       const line = buildSmoothPath(points)
       return { ...entry, line, area: closeAreaPath(line, box) }
@@ -127,7 +147,10 @@ export function DashboardModeChart({
   useEffect(() => {
     if (activeIndex === null) return
     const index = Math.min(activeIndex, total - 1)
-    if (index < 0) { setActiveIndex(null); return }
+    if (index < 0) {
+      setActiveIndex(null)
+      return
+    }
     if (index !== activeIndex) setActiveIndex(index)
     moveCrosshair(index, false)
   }, [activeIndex, moveCrosshair, total])
@@ -137,10 +160,16 @@ export function DashboardModeChart({
       if (!ready) return
 
       const bounds = event.currentTarget.getBoundingClientRect()
-      const offset = direction === "rtl" ? bounds.right - event.clientX : event.clientX - bounds.left
+      const offset =
+        direction === "rtl"
+          ? bounds.right - event.clientX
+          : event.clientX - bounds.left
       const plot = box.width - box.padStart - box.padEnd
       const ratio = (offset - box.padStart) / Math.max(plot, 1)
-      const index = Math.min(Math.max(Math.round(ratio * (total - 1)), 0), total - 1)
+      const index = Math.min(
+        Math.max(Math.round(ratio * (total - 1)), 0),
+        total - 1,
+      )
 
       setActiveIndex((current) => {
         if (current === index) return current
@@ -162,11 +191,12 @@ export function DashboardModeChart({
 
       setActiveIndex((current) => {
         const base = current ?? total - 1
-        const next = event.key === "Home"
-          ? 0
-          : event.key === "End"
-            ? total - 1
-            : Math.min(Math.max(base + step, 0), total - 1)
+        const next =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? total - 1
+              : Math.min(Math.max(base + step, 0), total - 1)
         moveCrosshair(next, current !== null)
         return next
       })
@@ -175,11 +205,15 @@ export function DashboardModeChart({
   )
 
   const activeLabel = activeIndex === null ? null : labels[activeIndex]
-  const activeSeries = activeIndex === null
-    ? []
-    : paths.map((entry) => ({ ...entry, value: entry.values[activeIndex] ?? 0 }))
+  const activeSeries =
+    activeIndex === null
+      ? []
+      : paths.map((entry) => ({
+          ...entry,
+          value: entry.values[activeIndex] ?? 0,
+        }))
   const chartSummary = series
-    .map((entry) => `${entry.label}: ${entry.values.join(", ")}`)
+    .map((entry) => `${entry.label}: ${entry.values.map(formatted).join(", ")}`)
     .join(". ")
 
   return (
@@ -189,16 +223,22 @@ export function DashboardModeChart({
         {subtitle ? <p className="md-panel-meta">{subtitle}</p> : null}
       </div>
 
-      <div ref={containerRef} className="md-mode-chart-canvas" style={{ height }}>
+      <div
+        ref={containerRef}
+        className="md-mode-chart-canvas"
+        style={{ height }}
+      >
         {ready ? (
           <svg
             width={box.width}
             height={box.height}
             role="img"
             tabIndex={0}
-            aria-label={activeIndex === null
-              ? chartSummary
-              : `${activeLabel}. ${activeSeries.map((entry) => `${entry.label} ${entry.value}`).join(", ")}`}
+            aria-label={
+              activeIndex === null
+                ? chartSummary
+                : `${activeLabel}. ${activeSeries.map((entry) => `${entry.label} ${formatted(entry.value)}`).join(", ")}`
+            }
             className="block touch-pan-y outline-none"
             onPointerMove={handlePointerMove}
             onPointerLeave={() => setActiveIndex(null)}
@@ -214,7 +254,14 @@ export function DashboardModeChart({
           >
             <defs>
               {paths.map((entry) => (
-                <linearGradient key={entry.key} id={`md-mode-${rawId}-${entry.key}`} x1="0" x2="0" y1="0" y2="1">
+                <linearGradient
+                  key={entry.key}
+                  id={`md-mode-${rawId}-${entry.key}`}
+                  x1="0"
+                  x2="0"
+                  y1="0"
+                  y2="1"
+                >
                   <stop offset="0%" stopColor={entry.color} stopOpacity="0.2" />
                   <stop offset="100%" stopColor={entry.color} stopOpacity="0" />
                 </linearGradient>
@@ -222,7 +269,8 @@ export function DashboardModeChart({
             </defs>
 
             {gridValues.map((value, index) => {
-              const y = box.padTop + plotHeight - (index / gridCount) * plotHeight
+              const y =
+                box.padTop + plotHeight - (index / gridCount) * plotHeight
               return (
                 <g key={value}>
                   <line
@@ -235,8 +283,14 @@ export function DashboardModeChart({
                     strokeDasharray={index === 0 ? undefined : "2 5"}
                     shapeRendering={index === 0 ? "crispEdges" : undefined}
                   />
-                  <text x={box.padStart - 7} y={y} textAnchor="end" dominantBaseline="middle" className="md-area-chart-axis">
-                    {value}
+                  <text
+                    x={box.padStart - 7}
+                    y={y}
+                    textAnchor="end"
+                    dominantBaseline="middle"
+                    className="md-area-chart-axis"
+                  >
+                    {formatted(value)}
                   </text>
                 </g>
               )
@@ -250,7 +304,9 @@ export function DashboardModeChart({
                   initial={shouldReduceMotion ? false : { opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={
-                    shouldReduceMotion ? { duration: 0 } : { ...mdMotion.morph, delay: staggerRamp(index, 0.06) }
+                    shouldReduceMotion
+                      ? { duration: 0 }
+                      : { ...mdMotion.morph, delay: staggerRamp(index, 0.06) }
                   }
                 />
                 <motion.path
@@ -260,7 +316,9 @@ export function DashboardModeChart({
                   strokeWidth={2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  initial={shouldReduceMotion ? false : { pathLength: 0, opacity: 0 }}
+                  initial={
+                    shouldReduceMotion ? false : { pathLength: 0, opacity: 0 }
+                  }
                   animate={{ pathLength: 1, opacity: 1 }}
                   transition={
                     shouldReduceMotion
@@ -286,7 +344,12 @@ export function DashboardModeChart({
               />
               {activeSeries.map((entry) => (
                 <g key={entry.key}>
-                  <circle cy={projectY(entry.value, scale, box)} r={5.5} fill={entry.color} opacity={0.15} />
+                  <circle
+                    cy={projectY(entry.value, scale, box)}
+                    r={5.5}
+                    fill={entry.color}
+                    opacity={0.15}
+                  />
                   <circle
                     cy={projectY(entry.value, scale, box)}
                     r={3.25}
@@ -299,12 +362,22 @@ export function DashboardModeChart({
             </motion.g>
 
             {labels.map((label, index) =>
-              (index % labelStride === 0 && (index === 0 || total - 1 - index >= labelStride)) || index === total - 1 ? (
+              (index % labelStride === 0 &&
+                (index === 0 || total - 1 - index >= labelStride)) ||
+              index === total - 1 ? (
                 <text
                   key={`${label}-${index}`}
                   x={projectX(index, total, box)}
                   y={box.height - 6}
-                  textAnchor={total === 1 ? "middle" : index === 0 ? "start" : index === total - 1 ? "end" : "middle"}
+                  textAnchor={
+                    total === 1
+                      ? "middle"
+                      : index === 0
+                        ? "start"
+                        : index === total - 1
+                          ? "end"
+                          : "middle"
+                  }
                   className={cn(
                     "md-area-chart-axis",
                     index === total - 1 && "md-area-chart-axis-current",
@@ -322,7 +395,10 @@ export function DashboardModeChart({
           aria-hidden="true"
           className="md-area-chart-tooltip pointer-events-none absolute top-2 start-0"
           style={{ x: tooltipX }}
-          animate={{ opacity: activeIndex === null ? 0 : 1, y: activeIndex === null ? -4 : 0 }}
+          animate={{
+            opacity: activeIndex === null ? 0 : 1,
+            y: activeIndex === null ? -4 : 0,
+          }}
           transition={mdMotion.fast}
         >
           {activeLabel ? (
@@ -331,9 +407,12 @@ export function DashboardModeChart({
               <ul className="md-mode-chart-tooltip-values">
                 {activeSeries.map((entry) => (
                   <li key={entry.key}>
-                    <span className="md-mode-chart-tooltip-swatch" style={{ background: entry.color }} />
+                    <span
+                      className="md-mode-chart-tooltip-swatch"
+                      style={{ background: entry.color }}
+                    />
                     <span>{t(entry.label)}</span>
-                    <strong>{entry.value}</strong>
+                    <strong>{formatted(entry.value)}</strong>
                   </li>
                 ))}
               </ul>
@@ -345,7 +424,11 @@ export function DashboardModeChart({
       <ul className="md-mode-chart-legend">
         {series.map((entry) => (
           <li key={entry.key}>
-            <span className="md-mode-chart-swatch" style={{ background: entry.color }} aria-hidden="true" />
+            <span
+              className="md-mode-chart-swatch"
+              style={{ background: entry.color }}
+              aria-hidden="true"
+            />
             {t(entry.label)}
           </li>
         ))}

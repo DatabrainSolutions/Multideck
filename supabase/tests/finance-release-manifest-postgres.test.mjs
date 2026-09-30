@@ -93,6 +93,9 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260926095252_finance_approval_decision_entity_lock.sql',
       '20260928090000_finance_director_dashboard.sql',
       '20260928120000_finance_customer_register_requires_customer_type.sql',
+      '20260929220000_customer_quote_intelligence.sql',
+      '20260929221500_quote_intelligence_complete_unchanged.sql',
+      '20260929230000_admin_dashboard_and_usage.sql',
     ]
     const laterMigrations = readdirSync(new URL('migrations/', root))
       .filter(name => name >= '20260925070431' && name.endsWith('.sql')
@@ -135,6 +138,9 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
     const authenticatedWatchReaders = new Set([
       'multideck_dexter_can_read_finance_reconciliation_watch(uuid)',
       'multideck_dexter_list_watches()',
+      // Actor-derived ingestion and Admin-only reporting have their own denial fixture.
+      'multideck_admin_record_usage(jsonb)',
+      'multideck_admin_dashboard(date,date)',
     ])
     for (const access of newFunctions) {
       assert.equal(access.anon_execute, false, `${access.signature} must deny anonymous execution`)

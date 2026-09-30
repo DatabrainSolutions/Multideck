@@ -2,7 +2,7 @@ import type { SignatureSelection } from "./email-signatures"
 import { authenticatedAccessChangedEvent, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
 import { invalidateRegisterPages } from "@/lib/application-data-api"
 import { captureAuthenticatedScope, invalidateCachedCrmResources, readCachedCrmResource } from "@/lib/crm-read-cache"
-import { intelligenceFromRealtimeRow } from "@/lib/quote-intelligence-snapshot"
+import { CURRENT_QUOTE_INTELLIGENCE_ALGORITHM_VERSION, intelligenceFromRealtimeRow } from "@/lib/quote-intelligence-snapshot"
 import { createQuoteSaveQueue } from "@/lib/quote-save-queue"
 
 export type QuoteSourceOption = {
@@ -220,7 +220,7 @@ export type QuoteWorkflowCustomerResponse = {
 
 export type QuoteIntelligenceState = "ready" | "building_baseline" | "updating" | "rules_only" | "unavailable"
 export type QuoteIntelligenceMetricState = "ready" | "insufficient_evidence" | "missing_input"
-export type QuoteIntelligenceCohort = "customer_lane_mode_shipment" | "customer_mode" | "tenant_lane_mode" | "tenant_mode" | "tenant_history"
+export type QuoteIntelligenceCohort = "customer_lane_mode_shipment" | "customer_mode" | "customer_history" | "tenant_lane_mode" | "tenant_mode" | "tenant_history"
 
 export type QuoteIntelligenceMetric<T> = {
   status: QuoteIntelligenceMetricState
@@ -229,6 +229,7 @@ export type QuoteIntelligenceMetric<T> = {
   cohort: QuoteIntelligenceCohort
   confidence: number
   reasonCode: string
+  sourceQuoteIds?: string[]
 }
 
 export type QuoteIntelligenceRecentQuote = {
@@ -251,6 +252,7 @@ export type QuoteIntelligenceSnapshot = {
   inputFingerprint: string
   evidenceFingerprint: string
   aiEligible: boolean
+  scope: { customerId: string | null; quoteId: string; windowMonths: number; excludedCurrentQuote: true; historyLimit: number; pricingRule: string }
   calculatedAt: string | null
   aiGeneratedAt: string | null
   aiNextEligibleAt: string | null
@@ -572,8 +574,13 @@ export async function refreshQuoteIntelligence(reference: string, revision?: str
   const session = await getSupabaseSession()
   if (!session?.user) throw new Error("Sign in again to refresh quote intelligence.")
   const canonicalReference = reference.trim().toUpperCase()
-  return readCachedCrmResource(session.user.id, `quote-intelligence:${canonicalReference}:${revision ?? "current"}`, () =>
-    invoke<QuoteIntelligenceSnapshot>({ action: "intelligence", reference: canonicalReference }, "Quote intelligence could not be refreshed."),
+  return readCachedCrmResource(session.user.id, `quote-intelligence:${canonicalReference}:${revision ?? "current"}`, async () => {
+    const snapshot = await invoke<QuoteIntelligenceSnapshot>({ action: "intelligence", reference: canonicalReference }, "Quote intelligence could not be refreshed.")
+    if (snapshot.algorithmVersion !== CURRENT_QUOTE_INTELLIGENCE_ALGORITHM_VERSION || !snapshot.scope?.quoteId || !snapshot.metrics || !Array.isArray(snapshot.recentQuotes)) {
+      throw new Error("Customer insights are temporarily unavailable. Try again.")
+    }
+    return snapshot
+  },
     {}, revision ? 60_000 : 0,
   )
 }

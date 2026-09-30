@@ -58,6 +58,7 @@ const staticLeafLabels: Record<string, string> = {
   "/crm/settings": "CRM settings",
   "/customers": "Customers",
   "/suppliers": "Supplier accounts",
+  "/finance/dashboard": "Dashboard",
   "/finance/receivables": "Sales ledger",
   "/finance/receivables/approvals": "Receivables approvals",
   "/finance/receivables/cash": "Customer receipts & allocation",

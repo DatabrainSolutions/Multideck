@@ -197,7 +197,16 @@ Overview:
 - The page keeps one live indicator, on live bookings. Continuous ambient motion anywhere else is decoration.
 - AI content should feel assistive and specific.
 
-Finance dashboard (Admin, Finance Director only):
+Admin dashboard (active Administrator or Company Admin only):
+
+- The world booking destination heat map anchors Overview, beside customer volume rankings that open their real accounts.
+- One quiet readout band carries six metrics. Use spacing and dividers rather than six elevated cards.
+- Use chart forms for their question: connected cohort stages for conversion, proportional category areas for loss reasons, a daily calendar for measured usage patterns, and shared axes for trends. Do not stack progress bars through every panel.
+- Link pointer and keyboard inspection to the same readout. No-coverage activity days differ from measured zero days. Source restrictions show access requirements, never fabricated zero activity.
+- Panels take their content height. Currency and cohort definitions, historical estimates and source coverage stay beside the affected figures.
+- Motion is subtle feedback, gated to pointer input and reduced motion; do not animate data for decoration.
+
+Finance dashboard (Finance, Finance Director only):
 
 - Periods are whole closed months ending last month, compared with the equal period before. Half a month against a full one would read as a fall every time.
 - Two rows of pairs on one grid: the monthly chart beside the P&L, the forecast beside cash and working capital. The statement panels set each row's height and the charts grow into it, so paired panels share both edges and no panel carries empty surface.

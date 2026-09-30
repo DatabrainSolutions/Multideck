@@ -1,5 +1,7 @@
 import type { QuoteIntelligenceSnapshot } from "./quote-workflow-api"
 
+export const CURRENT_QUOTE_INTELLIGENCE_ALGORITHM_VERSION = "quote-intelligence-2026-09-29-v2"
+
 function clamp(value: number, minimum = 0, maximum = 100) {
   return Math.min(maximum, Math.max(minimum, value))
 }
@@ -17,6 +19,11 @@ export function intelligenceFromRealtimeRow(row: Record<string, unknown>): Quote
     || !["ready", "building_baseline", "updating", "rules_only", "unavailable"].includes(String(shape.state))
     || typeof shape.aiEligible !== "boolean" || !Array.isArray(shape.recentQuotes)
     || !shape.metrics || typeof shape.metrics !== "object" || Array.isArray(shape.metrics)) return null
+  if (shape.algorithmVersion !== CURRENT_QUOTE_INTELLIGENCE_ALGORITHM_VERSION
+    || !shape.scope || typeof shape.scope !== "object" || Array.isArray(shape.scope)) return null
+  const scope = shape.scope as Record<string, unknown>
+  if (typeof scope.quoteId !== "string" || (scope.customerId !== null && typeof scope.customerId !== "string")
+    || scope.excludedCurrentQuote !== true) return null
   const metrics = shape.metrics as Record<string, unknown>
   for (const key of ["historicalWinRate", "wonPriceBand", "suggestedPitch", "marginHeadroom", "priceConfidence", "aiWinLikelihood", "aiTemperature"]) {
     const metric = metrics[key]
@@ -24,7 +31,7 @@ export function intelligenceFromRealtimeRow(row: Record<string, unknown>): Quote
     const record = metric as Record<string, unknown>
     if (!["ready", "insufficient_evidence", "missing_input"].includes(String(record.status))
       || typeof record.evidenceCount !== "number" || typeof record.confidence !== "number"
-      || typeof record.cohort !== "string" || typeof record.reasonCode !== "string") return null
+      || !["customer_lane_mode_shipment", "customer_mode", "customer_history"].includes(String(record.cohort)) || typeof record.reasonCode !== "string") return null
     const value = record.value
     if (value !== null && (!value || typeof value !== "object" || Array.isArray(value))) return null
   }
@@ -33,7 +40,7 @@ export function intelligenceFromRealtimeRow(row: Record<string, unknown>): Quote
     ? row.CusQuoteIntelligence_AIJSON as Record<string, unknown>
     : null
   const aiMatches = rawAi?.inputFingerprint === snapshot.inputFingerprint
-  const adjustment = aiMatches ? clamp(Number(rawAi?.adjustmentPoints) || 0, -8, 8) : 0
+  const adjustment = 0
   const likelihood = snapshot.metrics.aiWinLikelihood
   const temperature = snapshot.metrics.aiTemperature
   const baseLikelihood = likelihood.value?.basePct ?? null

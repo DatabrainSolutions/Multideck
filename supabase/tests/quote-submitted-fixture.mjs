@@ -67,9 +67,14 @@ const panelModule={exports:{}}
 const panelCode=transformSync(`export function renderSelectedPanel(state,activeTab,variant='cargowise'){
  const {viewingSubmittedVersion,viewedVersionWorkspace,presentedVersion,presentedQuote}=state;
  const activeQuote=presentedQuote;
- const intelligence={summary:'CURRENT INTELLIGENCE'};
+ const CURRENT_QUOTE_INTELLIGENCE_ALGORITHM_VERSION='quote-intelligence-2026-09-29-v2';
+ const currentQuoteId='master-id';
+ const savedQuote={customer:'CURRENT CUSTOMER'};
+ const retryIntelligence=()=>{};
+ const intelligence={summary:'CURRENT INTELLIGENCE',algorithmVersion:CURRENT_QUOTE_INTELLIGENCE_ALGORITHM_VERSION,scope:{quoteId:currentQuoteId,customerId:'current-customer'}};
  const intelligenceUnavailable=true;
- const workspace={quote:{reference:'JQ20020'}};
+ const intelligenceError="Refresh failed";
+ const workspace={quote:{reference:'JQ20020',customerId:'current-customer'}};
  ${source.slice(panelBodyStart,panelEnd)}
  return 'Draft panel';
 }`,{loader:'tsx',jsx:'automatic',format:'cjs'}).code
@@ -86,8 +91,9 @@ const lockedDetails = props => {
 }
 const sharedOverview = props => {
  if ('intelligence' in props) {
-  assert.equal(props.intelligence,null)
-  assert.equal(props.intelligenceUnavailable,false)
+  assert.equal(props.intelligence.summary,'CURRENT INTELLIGENCE')
+  assert.equal(props.intelligenceQuote.customer,'CURRENT CUSTOMER')
+  assert.equal(props.intelligenceUnavailable,true)
   assert.equal(props.savedVersion,true)
  }
  return React.createElement('section',{'data-shared-quote-overview':true},'Quote overview ',JSON.stringify(props.quote))

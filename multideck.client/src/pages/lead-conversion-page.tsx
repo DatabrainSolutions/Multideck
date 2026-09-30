@@ -1,3 +1,4 @@
+import { useCommercialWorkflow } from "@/lib/workspace-usage"
 import { useEffect, useMemo, useState } from "react"
 import {
   ArrowLeft,
@@ -220,6 +221,8 @@ export function LeadConversionPage({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [createdDeal, setCreatedDeal] = useState<ApiDeal | null>(null)
+  const analytics = useCommercialWorkflow("lead_convert", true, leadId)
+  useEffect(() => { analytics.step(activeStep === 0 ? "details" : "review") }, [activeStep])
 
   useEffect(() => {
     let active = true
@@ -254,6 +257,7 @@ export function LeadConversionPage({
     if (!data) return
     const nextMissing = missingForStep(activeStep, data)
     if (nextMissing.length) {
+      analytics.failed()
       setError(t("Complete the required fields before continuing."))
       return
     }
@@ -265,6 +269,7 @@ export function LeadConversionPage({
     if (!data || !lead) return
     const allMissing = [0, 1, 2].flatMap((step) => missingForStep(step, data))
     if (allMissing.length) {
+      analytics.failed()
       setError(t("Complete the required fields before creating the deal."))
       setActiveStep([0, 1, 2].find((step) => missingForStep(step, data).length > 0) ?? 0)
       return
@@ -295,11 +300,14 @@ export function LeadConversionPage({
     setError(null)
     try {
       const result = await convertLeadToDeal(lead.id, payload)
+      if (!result.wasAlreadyConverted) analytics.complete(lead.id)
+      else analytics.cancel()
       setCreatedDeal(result)
       toast.success(result.wasAlreadyConverted ? t("Deal already exists") : t("Deal created"), {
         description: result.name,
       })
     } catch (cause) {
+      analytics.failed()
       setError(cause instanceof Error ? cause.message : t("This lead could not be converted."))
     } finally {
       setSaving(false)

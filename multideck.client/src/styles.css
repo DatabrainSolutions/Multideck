@@ -11,6 +11,7 @@
 @import "./feature-workspaces.css";
 @import "./dashboard.css";
 @import "./finance-dashboard.css";
+@import "./admin-dashboard.css";
 @import "./responsive.css";
 
 @custom-variant dark (&:is(.dark *));

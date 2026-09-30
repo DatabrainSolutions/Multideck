@@ -1,3 +1,4 @@
+import { useCommercialWorkflow } from "@/lib/workspace-usage"
 import { workspaceStorageKey } from "@/lib/workspace-environment"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -22,6 +23,7 @@ export function BookingOpenPage({ navigate, initialMode, onCancel, returnFocus }
   returnFocus?: () => void
 }) {
   const { t } = useLanguage()
+  const analytics = useCommercialWorkflow("booking_create", true)
   const pending = useRef<ReturnType<typeof openBookingWorkflow> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -37,9 +39,11 @@ export function BookingOpenPage({ navigate, initialMode, onCancel, returnFocus }
     void pending.current.then((result) => {
       if (cancelled) return
       window.sessionStorage.removeItem(requestStorageKey)
+      analytics.bind(result.jobId)
       navigate(result.route || `/bookings/${result.bookingReference.toLowerCase()}`)
     }).catch((reason) => {
       if (cancelled) return
+      analytics.failed()
       setError(reason instanceof Error ? reason.message : t("The new booking could not be opened."))
     })
     return () => { cancelled = true }
@@ -51,7 +55,7 @@ export function BookingOpenPage({ navigate, initialMode, onCancel, returnFocus }
   }
 
   const creating = Boolean(requestedDirection) && !error
-  const cancel = onCancel ?? (() => navigate(initialMode === "road" ? "/road-control" : "/bookings"))
+  const cancel = () => { analytics.cancel(); (onCancel ?? (() => navigate(initialMode === "road" ? "/road-control" : "/bookings")))() }
 
   return (
     <Dialog open onOpenChange={open => { if (!open && !creating) cancel() }}>

@@ -1,3 +1,4 @@
+import { useCommercialWorkflow } from "@/lib/workspace-usage"
 import { AddressSearch } from "@/components/multideck/address-search"
 import { addressFieldLabel } from "@/lib/country-address-format"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
@@ -946,6 +947,8 @@ function FollowUpRecordDialog({
 }) {
   const { t } = useLanguage()
   const dialogOpen = Boolean(kind && (opportunity || open))
+  const leadAnalytics = useCommercialWorkflow("lead_create", dialogOpen && kind === "lead")
+  useEffect(() => { if (dialogOpen && kind === "lead") leadAnalytics.step("details") }, [dialogOpen, kind])
   const restoreDialogFocus = useDialogReturnFocus(dialogOpen)
   const [personName, setPersonName] = useState("")
   const [companyName, setCompanyName] = useState("")
@@ -1015,7 +1018,7 @@ function FollowUpRecordDialog({
     setError(null)
     try {
       if (kind === "lead") {
-        await createFollowUpLead({
+        const createdLead = await createFollowUpLead({
           email,
           personName,
           companyName,
@@ -1029,6 +1032,7 @@ function FollowUpRecordDialog({
             countryCode: countryCode || null,
           },
         })
+        leadAnalytics.complete(createdLead.id)
       } else if (kind === "contact") {
         if (!accountId) throw new Error(t("Choose the account this contact belongs to."))
         const name = personNameParts(personName)
@@ -1054,6 +1058,7 @@ function FollowUpRecordDialog({
       onCreated()
       onClose()
     } catch (submitError) {
+      if (kind === "lead") leadAnalytics.failed()
       setError(submitError instanceof Error ? submitError.message : t("This CRM record could not be created."))
     } finally {
       setSubmitting(false)
@@ -1062,13 +1067,13 @@ function FollowUpRecordDialog({
 
   const title = kind === "lead" ? t(opportunity ? "Create lead" : "New lead") : kind === "contact" ? t("Create contact") : t("Create account")
   return (
-    <Dialog open={dialogOpen} onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
+    <Dialog open={dialogOpen} onOpenChange={(nextOpen) => { if (!nextOpen) { leadAnalytics.cancel(); onClose() } }}>
       <DialogContent onCloseAutoFocus={restoreDialogFocus} className="max-h-[calc(100vh-2rem)] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
         <DialogHeader className="text-start">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{t(opportunity ? "Review the details found in the email before adding them to CRM." : "New sales opportunity")}</DialogDescription>
         </DialogHeader>
-        <form className="grid gap-4" onSubmit={submit}>
+        <form className="grid gap-4" onSubmit={submit} onInvalid={() => leadAnalytics.failed()}>
           {kind !== "contact" ? (
             <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
               {kind === "account" ? t("Account name") : t("Company")}
@@ -1141,7 +1146,7 @@ function FollowUpRecordDialog({
           ) : null}
           {error ? <p role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] text-[var(--md-red)]" dir="auto">{t(error)}</p> : null}
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
+            <Button type="button" variant="ghost" onClick={() => { leadAnalytics.cancel(); onClose() }}>{t("Cancel")}</Button>
             <Button type="submit" disabled={submitting || !email.trim() || !personName.trim() || (kind === "lead" && Boolean(countryCode) && !/^[A-Z]{2}$/.test(countryCode)) || (kind === "contact" && !accountId) || (kind !== "contact" && !companyName.trim())}>
               {submitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {submitting ? t("Creating…") : title}

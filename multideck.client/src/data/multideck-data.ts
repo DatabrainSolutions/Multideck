@@ -8,6 +8,8 @@ import sidebarNavigationSearchSource from "@/lib/sidebar-navigation-search.ts?ra
 import appBreadcrumbsSource from "@/components/multideck/app-breadcrumbs.tsx?raw"
 import appBreadcrumbsStyles from "@/components/multideck/app-breadcrumbs.css?raw"
 import dashboardModeChartSource from "@/components/multideck/dashboard-mode-chart.tsx?raw"
+import dashboardWorldMapSource from "@/components/multideck/dashboard-world-map.tsx?raw"
+import dashboardAnalyticsChartsSource from "@/components/multideck/dashboard-analytics-charts.tsx?raw"
 import commandInputSource from "@/components/multideck/command-input.tsx?raw"
 import globalSearchSource from "@/lib/global-search.ts?raw"
 import crmDealActionsSource from "@/components/multideck/crm-deal-actions.tsx?raw"
@@ -1613,7 +1615,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Feedback",
     description: "The product's one waiting state: twenty-five cells lit as a travelling square spiral.",
     details: "Use it for every wait long enough to need a mark – a route still downloading, a register still fetching rows, a panel still resolving a document list. One object across the whole product means a wait never looks like a different feature loading. It animates only opacity and transform, so it can sit inside the box the loaded content will occupy without moving anything around it, and it reserves its own size so rows arriving cannot shift the page. `size=\"sm\"` fits a 32px toolbar; `decorative` drops the status role where the surrounding block already announces the wait in words. Reduced-motion mode holds the centre cell lit instead of cycling.",
-    foundOn: [{ label: "Warehouse pricing", route: "/warehouse/pricing" }, { label: "Account Warehouse tab", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000004?tab=warehouse" }, { label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Warehouse pricing", route: "/warehouse/pricing" }, { label: "Account Warehouse tab", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000004?tab=warehouse" }, { label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Finance administration", route: "/finance/administration" }, { label: "Support tickets", route: "/settings?tab=support" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Every route", route: "/" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Quote insights", route: "/quotes/jq20035" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `const spiralOrder = [
   0, 1, 2, 3, 4,
   15, 16, 17, 18, 5,
@@ -2347,12 +2349,52 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `const items = dashboardPriorityQueue(bookings, quotes)\n\n<DashboardPriorityQueue\n  items={items}\n  operatorName={operatorName}\n  onOpenItem={(item) =>\n    navigate(item.bookingId ? getBookingDetailPath(item.bookingId) : \`/quotes/\${item.quoteReference}\`)\n  }\n  onHandOverToDexter={(item) => {\n    rememberDexterTaskHandoff(buildTaskPrompt(item))\n    navigate("/agent-dexter")\n  }}\n/>`,
   },
   {
+    id: "cohort-journey",
+    name: "Cohort Journey",
+    category: "Data",
+    description: "An ordered conversion cohort on a shared baseline, with linked stage inspection.",
+    details: "Use for outcomes to date of one starting cohort. Point height is the share reaching each stage. Pointer and arrow-key inspection share the stage count and drop-off readout. State what begins the cohort and disclose that incomplete outcomes may progress. Inconsistent stages show their counts without a misleading shape.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=cohort-journey" }],
+    componentCode: dashboardAnalyticsChartsSource,
+    usageCode: `<CohortJourney stages={[{ label: "Quotes sent", value: 120 }, { label: "Customer decision", value: 76 }, { label: "Accepted", value: 42 }, { label: "Booking placed", value: 35 }]} note="Quotes first sent in the period, with outcomes to date." />`,
+  },
+  {
+    id: "loss-reason-map",
+    name: "Loss Reason Map",
+    category: "Data",
+    description: "Recorded loss categories shown by proportional area and a linked accessible legend.",
+    details: "Area encodes category count, not progress towards a target. Small areas retain complete labels and counts in the legend. Selecting a legend item or inspecting its area shares one readout; arrow keys inspect every category. Supply the complete category distribution for an honest share.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=loss-reason-map" }],
+    componentCode: dashboardAnalyticsChartsSource,
+    usageCode: `<LossReasonMap reasons={[{ label: "Price", count: 24 }, { label: "Customer: Timing", count: 12 }, { label: "No response", count: 8 }]} />`,
+  },
+  {
+    id: "usage-calendar",
+    name: "Usage Calendar",
+    category: "Data",
+    description: "Complete UTC days arranged in weeks to reveal workspace activity patterns.",
+    details: "Colour shows measured active time against the largest day in the selected period. No-coverage days remain outlined and distinct from measured zero activity. Arrow keys inspect dates (left/right by week, up/down by day); Home and End reach the boundaries. Time is an activity estimate, not productivity.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=usage-calendar" }],
+    componentCode: dashboardAnalyticsChartsSource,
+    usageCode: `<UsageCalendar measuredFrom="2026-09-01T00:00:00Z" days={dailyUsage.map(day => ({ day: day.date, activeSeconds: day.activeSeconds, idleSeconds: day.idleSeconds }))} />`,
+  },
+  {
+    id: "world-booking-map",
+    name: "World Booking Map",
+    category: "Data",
+    description: "Booking destinations on an offline world heat map with linked country selection.",
+    details: "Use for country-level booking volume. Country colour shares one scale; pointer inspection and keyboard-accessible country buttons share the same readout. Keep missing destinations visible. Small countries remain accessible in the list even where the map scale has no outline. No animation changes the quantities or geography.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=world-booking-map" }],
+    componentCode: dashboardWorldMapSource,
+    usageCode: `<DashboardWorldMap values={[{ code: "GB", count: 42 }, { code: "US", count: 28 }, { code: "CN", count: 61 }, { code: null, count: 3 }]} />`,
+  },
+  {
     id: "series-chart",
     name: "Series Chart",
     category: "Data",
     description: "Several measured series on one shared time axis, with pointer and keyboard inspection.",
     details: "Use for trends that need a common baseline. All series share the same count scale. Supply at least two time points; show a single-period summary when only one observation exists, and keep accessible tabular source detail nearby. Arrow keys, Home and End inspect points. Supports reduced motion and the current theme.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM dashboard", route: "/crm" }, { label: "Components", route: "/components?component=series-chart" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM dashboard", route: "/crm" }, { label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=series-chart" }],
     componentCode: dashboardModeChartSource,
     usageCode: `<DashboardModeChart
   title="Weekly sales outcomes"
@@ -2380,7 +2422,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "A categorical breakdown shown as aligned figures, segmented bars, ranked bars or columns.",
     details: "Use for a categorical split in a side column. Prefer this over a ring or a funnel there: both carry a fixed aspect ratio, so beside a tall table they stretch and leave a band of empty surface under the drawing, and comparing lengths on a shared baseline is easier than comparing arc angles. Use `segmented` when the categories are parts of one quantity, `ranked` when the order is the point, and `columns` for a compact stage-by-stage comparison. Use `figures` for exact financial amounts and margin tiles with miniature proportion bars. Ranked and column bars scale against the largest category, not the total, so a long tail still has visible length.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=breakdown-panel" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Finance dashboard", route: "/finance/dashboard" }, { label: "Components", route: "/components?component=breakdown-panel" }],
     componentCode: breakdownPanelSource,
     usageCode: `<DashboardBreakdownPanel
   title="Shipping modes"
@@ -2397,7 +2439,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "Months as columns, one series or two side by side, with the reported period in full colour and the month in progress drawn lighter.",
     details: "Use for money over time where the reader compares one month with the next and, with two series, the gap inside a month: revenue against costs, cash in against cash out. Put the second series in the neutral so the eye goes to the first and reads the gap. `emphasis` marks the months the rest of the page reports on, so a period reads inside its year without a second chart; `partialIndex` marks the month still in progress so it is never read as a fall. On arrival the columns rise in time order; after that a change of data morphs every column at once from where it stands. Zero is always on the scale, so a loss hangs below the baseline on the same scale as a profit above it. A visually hidden table carries every value.",
-    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=column-chart" }],
+    foundOn: [{ label: "Finance dashboard", route: "/finance/dashboard" }, { label: "Components", route: "/components?component=column-chart" }],
     componentCode: `export function DashboardColumnChart({ labels, series, emphasis, partialIndex, formatValue, formatAxis, tooltipExtra, ariaLabel }) {
   const [containerRef, width] = useElementWidth()
   const scale = getChartScale([0, ...series.flatMap((entry) => entry.values)], true, 4)
@@ -2439,7 +2481,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "Recorded months as a solid line, continued as a dashed projection inside a likely range over a shaded forecast zone.",
     details: "Use where a figure is carried forward from real history. The join between fact and estimate is always visible: the recorded line ends, the projection starts from its last point, and the forecast zone is shaded behind it. The arrival makes the same point: the recorded line draws itself up to today, and only then do the projection, its range and the end labels appear. End labels are nudged apart only when they would collide. Keep to two or three series on one money scale; the tooltip gives each projected value with its range, and a hidden table carries all of it.",
-    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=forecast-chart" }],
+    foundOn: [{ label: "Finance dashboard", route: "/finance/dashboard" }, { label: "Components", route: "/components?component=forecast-chart" }],
     componentCode: `export function DashboardForecastChart({ labels, series, formatValue, formatAxis, ariaLabel }) {
   const history = series[0].actual.length
 
@@ -2477,7 +2519,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Finance",
     description: "A condensed P&L with aligned amount and margin tiles for one reporting period.",
     details: "Read revenue, costs and results in calculation order. Amounts sit at the right edge in compact rounded tiles with miniature bars showing their relative size; margins remain separate figures. Gross and net profit have a separating rule, and negative results retain a minus sign and red text. Largest overheads use the same treatment.",
-    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=profit-loss-panel" }],
+    foundOn: [{ label: "Finance dashboard", route: "/finance/dashboard" }, { label: "Components", route: "/components?component=profit-loss-panel" }],
     componentCode: profitLossPanelSource,
     usageCode: `<FinanceProfitLossPanel
   title="Profit and loss"
@@ -2494,7 +2536,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Finance",
     description: "A compact cash statement with aligned amount tiles and miniature bars showing when receivables and payables are due.",
     details: "Cash at bank leads, followed by what customers owe and what the business owes. Each ledger shows its total and overdue amount, then dated buckets with exact figures and small bars proportional to the positive balance. Credit balances remain labelled in the figures and reduce the total without becoming overdue bars. Empty balances and missing bank connections have explicit states. The layout matches the profit and loss panel, and motion respects reduced-motion preferences.",
-    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=working-capital-panel" }],
+    foundOn: [{ label: "Finance dashboard", route: "/finance/dashboard" }, { label: "Components", route: "/components?component=working-capital-panel" }],
     componentCode: workingCapitalPanelSource,
     usageCode: `<FinanceWorkingCapitalPanel
   title="Cash and working capital"

@@ -681,6 +681,7 @@ export const sidebarAreas: SidebarArea[] = [
     label: "Finance",
     icon: ChartNoAxesCombined,
     destinations: [
+      { id: "finance-dashboard", label: "Dashboard", icon: LayoutDashboard, route: "/finance/dashboard" },
       {
         id: "finance-receivables",
         label: "Customers & receivables",

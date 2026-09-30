@@ -1,3 +1,5 @@
+import { useCommercialWorkflow, hasCommercialAttempt } from "@/lib/workspace-usage"
+import { CURRENT_QUOTE_INTELLIGENCE_ALGORITHM_VERSION } from "@/lib/quote-intelligence-snapshot"
 import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { EmailSignatureControl } from "@/components/multideck/email-signature-control"
 import type { SignatureSelection } from "@/lib/email-signatures"
@@ -72,6 +74,7 @@ import {
   type QuoteChargeParty,
   type UnifiedQuoteChargeRow,
 } from "@/components/multideck/unified-quote-charges-workspace"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
@@ -1428,6 +1431,7 @@ function quoteIntelligenceCohortLabel(cohort: QuoteIntelligenceSnapshot["metrics
   return ({
     customer_lane_mode_shipment: "Customer, lane, mode and shipment type",
     customer_mode: "Customer and mode",
+    customer_history: "This customer’s quote history",
     tenant_lane_mode: "Workspace lane and mode",
     tenant_mode: "Workspace mode",
     tenant_history: "Workspace history",
@@ -1545,10 +1549,24 @@ function QuoteOverviewSignals({
   )
 }
 
+function quoteIntelligenceReason(reason: string) {
+  return ({
+    select_customer: "Select a customer first",
+    add_service_and_cargo_details: "Record service and cargo details to compare prices",
+    verify_quote_currency_conversion: "Verify the quote currency conversion",
+    add_quote_costs: "Add verified quote costs",
+    needs_five_comparable_customer_wins: "Needs five comparable wins for this customer",
+    cost_at_or_above_customer_won_median: "Current cost meets or exceeds the customer’s won median",
+    needs_ten_resolved_customer_quotes: "Needs ten resolved quotes for this customer",
+    quote_already_resolved: "Outcome already recorded; no estimate needed",
+    no_resolved_quotes: "No recorded wins or losses for this customer",
+  } as Record<string, string>)[reason] ?? "Building baseline"
+}
+
 function ClientPricingIntelligence({ intelligence, unavailable = false, savedVersion = false }: { intelligence: QuoteIntelligenceSnapshot | null; unavailable?: boolean; savedVersion?: boolean }) {
   const { t, language } = useLanguage()
   if (!intelligence) {
-    const labels = ["Historical win rate", "Won price band", "Suggested pitch", "AI win likelihood", "Price confidence", "Margin headroom"]
+    const labels = ["Historical win rate", "Won price band", "Suggested pitch", "Customer win baseline", "Price confidence", "Margin headroom"]
     return (
       <div className="grid h-full gap-1.5 sm:grid-cols-3" aria-label={t(savedVersion ? "Intelligence not recorded in this version" : unavailable ? "Intelligence temporarily unavailable" : "Loading quote intelligence")} aria-busy={!unavailable && !savedVersion} aria-live="polite">
         {labels.map((label, index) => (
@@ -1556,15 +1574,14 @@ function ClientPricingIntelligence({ intelligence, unavailable = false, savedVer
             {unavailable || savedVersion ? (
               <div className="relative flex h-full flex-col justify-between text-white">
                 <p className="text-[9.5px] font-medium uppercase tracking-[0.02em] text-white/65">{t(label)}</p>
-                <p className="text-[24px] font-medium">–</p>
-                <p className="text-[9.5px] text-white/72">{t(savedVersion ? "Not recorded in this version" : "Try again after the next quote update")}</p>
+                <p className="text-[24px] font-medium">{t("No data")}</p>
+                <p className="text-[9.5px] text-white/72">{t(savedVersion ? "Not recorded in this version" : "Use Retry insights to load this customer’s history")}</p>
               </div>
             ) : (
               <>
-                <span className="absolute inset-0 bg-[linear-gradient(110deg,transparent_20%,rgba(255,255,255,0.08)_45%,transparent_70%)] motion-safe:animate-pulse" />
-                <span className="relative block h-2.5 w-24 rounded-[var(--md-radius-sm)] bg-white/12" />
-                <span className="relative mt-3 block h-7 w-28 rounded-[var(--md-radius-md)] bg-white/14" />
-                <span className="relative mt-4 block h-2 w-32 rounded-[var(--md-radius-sm)] bg-white/10" />
+                <p className="relative text-[9.5px] font-medium uppercase text-white/65">{t(label)}</p>
+                <p className="relative mt-3 text-[24px] font-medium text-white">{t("No data")}</p>
+                <div className="relative mt-1 flex items-center gap-3 text-[11px] text-white/78"><DotGridLoader decorative size="sm" /><span>{t("Loading customer insights")}</span></div>
               </>
             )}
           </div>
@@ -1581,7 +1598,7 @@ function ClientPricingIntelligence({ intelligence, unavailable = false, savedVer
   const confidence = intelligence.metrics.priceConfidence
   const headroom = intelligence.metrics.marginHeadroom
   const historicalValue = historical.value
-  const baseline = t("Building baseline")
+  const baseline = t("No data")
   const refreshed = intelligence.calculatedAt ? new Date(intelligence.calculatedAt).toLocaleString(language) : t("Not yet")
   const cohortDetail = (metric: { cohort: typeof historical.cohort; evidenceCount: number }) =>
     `${t(quoteIntelligenceCohortLabel(metric.cohort))} · ${metric.evidenceCount} ${t("evidence records")} · ${intelligence.algorithmVersion} · ${t("Refreshed")} ${refreshed}`
@@ -1589,37 +1606,37 @@ function ClientPricingIntelligence({ intelligence, unavailable = false, savedVer
     {
       key: "historicalWinRate", label: "Historical win rate",
       value: historicalValue?.ratePct === null || historicalValue?.ratePct === undefined ? baseline : `${historicalValue.ratePct}%`,
-      detail: historicalValue ? `${historicalValue.wins} ${t("won")} / ${historicalValue.losses} ${t("lost")} / ${historicalValue.pending} ${t("pending")}${historicalValue.lowEvidence ? ` · ${t("Low evidence")}` : ""}` : t("No resolved quotes yet"),
-      infoTitle: "Observed quote outcomes", infoDetail: cohortDetail(historical), valueSize: "text-[clamp(30px,2.4vw,36px)]", icon: null,
+      detail: historicalValue ? `${historicalValue.wins} ${t("won")} / ${historicalValue.losses} ${t("lost")} / ${historicalValue.pending} ${t("pending")}${historicalValue.lowEvidence ? ` · ${t("Low evidence")}` : ""}` : t(quoteIntelligenceReason(historical.reasonCode)),
+      infoTitle: "Observed quote outcomes", infoDetail: `${cohortDetail(historical)}. ${t("Won divided by won plus lost; pending quotes are excluded from the rate. The current quote is excluded from all history.")}`, valueSize: "text-[clamp(30px,2.4vw,36px)]", icon: null,
     },
     {
       key: "wonPriceBand", label: "Won price band",
       value: band.value ? `${moneyWhole(band.value.low, currency)}–${moneyWhole(band.value.high, currency)}` : baseline,
-      detail: band.value?.averageMarginPct === null || band.value?.averageMarginPct === undefined ? t("Needs five priced wins") : `${band.value.averageMarginPct}% ${t("average won margin")}`,
-      infoTitle: "Won pricing evidence", infoDetail: cohortDetail(band), valueSize: "text-[clamp(20px,1.45vw,22px)]", icon: null,
+      detail: !band.value ? t(quoteIntelligenceReason(band.reasonCode)) : `${band.value.averageMarginPct}% ${t("average won margin")}`,
+      infoTitle: "Won pricing evidence", infoDetail: `${cohortDetail(band)}. ${t(intelligence.scope.pricingRule)} ${t("Middle 50% of observed won prices; unusually high or low prices are excluded.")}`, valueSize: "text-[clamp(16px,1.35vw,21px)]", icon: null,
     },
     {
       key: "suggestedPitch", label: "Suggested pitch",
-      value: pitch.value ? money(pitch.value.amount, currency) : pitch.status === "missing_input" ? t("Add quote costs") : baseline,
-      detail: pitch.value ? `${money(pitch.value.cost, currency)} ${t("cost")} / ${money(pitch.value.profit, currency)} ${t("profit")}` : t("Needs cost and real pricing evidence"),
-      infoTitle: "Evidence-based pitch", infoDetail: cohortDetail(pitch), valueSize: "text-[clamp(28px,2.2vw,34px)]", icon: null,
+      value: pitch.value ? money(pitch.value.amount, currency) : baseline,
+      detail: pitch.value ? `${money(pitch.value.cost, currency)} ${t("cost")} / ${money(pitch.value.profit, currency)} ${t("profit")}` : t(quoteIntelligenceReason(pitch.reasonCode)),
+      infoTitle: "Evidence-based pitch", infoDetail: `${cohortDetail(pitch)}. ${t("Median selling price of comparable customer wins. Review current carrier costs and service coverage before quoting.")}`, valueSize: "text-[clamp(28px,2.2vw,34px)]", icon: null,
     },
     {
-      key: "aiWinLikelihood", label: "AI win likelihood",
+      key: "aiWinLikelihood", label: "Customer win baseline",
       value: likelihood.value ? `${likelihood.value.finalPct}%` : baseline,
-      detail: likelihood.value ? intelligence.ai?.status === "applied" ? `${t("Luna refinement")} ${likelihood.value.adjustmentPoints >= 0 ? "+" : ""}${likelihood.value.adjustmentPoints}` : t("Rules-only estimate") : t("Needs five resolved quotes"),
-      infoTitle: "Win likelihood evidence", infoDetail: [intelligence.ai?.cardExplanations.aiWinLikelihood, cohortDetail(likelihood)].filter(Boolean).join(" · "), valueSize: "text-[clamp(28px,2.2vw,34px)]", icon: ChartAnalysis,
+      detail: likelihood.value ? `${likelihood.evidenceCount} ${t("resolved customer quotes")}` : t(quoteIntelligenceReason(likelihood.reasonCode)),
+      infoTitle: "Win likelihood evidence", infoDetail: `${cohortDetail(likelihood)}. ${t("Smoothed customer outcome rate, not a calibrated prediction for this quote. No AI adjustment is applied.")}`, valueSize: "text-[clamp(28px,2.2vw,34px)]", icon: ChartAnalysis,
     },
     {
       key: "priceConfidence", label: "Price confidence",
       value: confidence.value ? `${confidence.value.score}%` : baseline,
-      detail: confidence.value ? t("Sample, recency, spread and price position") : t("Needs five price observations"),
-      infoTitle: "How this is scored", infoDetail: cohortDetail(confidence), valueSize: "text-[clamp(28px,2.2vw,34px)]", icon: Gauge,
+      detail: confidence.value ? `${confidence.evidenceCount} ${t("comparable customer wins")}` : t(quoteIntelligenceReason(confidence.reasonCode)),
+      infoTitle: "How this is scored", infoDetail: `${cohortDetail(confidence)}. ${t("Evidence quality from sample size, age and price spread; this is not a probability of winning.")}`, valueSize: "text-[clamp(28px,2.2vw,34px)]", icon: Gauge,
     },
     {
       key: "marginHeadroom", label: "Margin headroom",
-      value: headroom.value ? moneyWhole(headroom.value.amount, currency) : headroom.status === "missing_input" ? t("Add quote costs") : baseline,
-      detail: headroom.value ? t("Suggested sell above carrier cost") : t("Needs an evidence-backed pitch"),
+      value: headroom.value ? moneyWhole(headroom.value.amount, currency) : baseline,
+      detail: headroom.value ? t("Suggested sell above carrier cost") : t(quoteIntelligenceReason(headroom.reasonCode)),
       infoTitle: "Deterministic margin view", infoDetail: cohortDetail(headroom), valueSize: "text-[clamp(26px,2vw,32px)]", icon: BrainCircuit,
     },
   ]
@@ -1652,11 +1669,11 @@ function ClientPricingIntelligence({ intelligence, unavailable = false, savedVer
                 {AiMetricIcon ? <AiMetricIcon className="size-3 shrink-0 text-white/85" strokeWidth={1.5} /> : null}
                 <span className="truncate">{t(label)}</span>
               </p>
-              <p dir="auto" className={cn("mt-1 whitespace-nowrap font-medium leading-[1.08] tracking-[-0.035em] tabular-nums text-white", valueSize)}>{value}</p>
+              <p dir="auto" className={cn("mt-1 break-words font-medium leading-[1.15] tracking-[-0.035em] tabular-nums text-white", valueSize)}>{value}</p>
             </div>
             <p className="relative z-10 mt-2 flex min-w-0 items-center gap-1.5 text-[9.5px] text-white/78">
               <span className="size-1.5 shrink-0 rounded-full bg-white/80" />
-              <span className="truncate">{t(detail)}</span>
+              <span className="leading-4">{t(detail)}</span>
             </p>
           </div>
         ))}
@@ -1671,6 +1688,7 @@ function RecentQuotesSummary({ quote, intelligence, unavailable = false, savedVe
   const dateFormatter = useMemo(() => new Intl.DateTimeFormat(language, { day: "2-digit", month: "short" }), [language])
   const snapshotLabel = intelligence?.state === "ready" ? "Live evidence" : intelligence?.state === "updating" ? "Updating" : intelligence?.state === "rules_only" ? "Rules-only" : "Building baseline"
   const columns = useMemo<DataTableColumn<QuoteIntelligenceRecentQuote>[]>(() => [
+    { id: "reference", label: "Quote", width: 86, minWidth: 76, kind: "identity", cell: (row) => <span data-i18n-skip className="font-medium text-[var(--md-ink)]">{row.reference}</span> },
     { id: "date", label: "Date", width: 76, minWidth: 68, kind: "date", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-subtle)]">{dateFormatter.format(new Date(row.date))}</span> },
     { id: "lane", label: "Origin → destination", width: 116, minWidth: 106, kind: "identity", cellTitle: (row) => row.lane, cell: (row) => <span data-i18n-skip dir="ltr" className="block truncate font-medium text-[var(--md-ink)]">{row.lane}</span> },
     { id: "mode", label: "Mode", width: 68, minWidth: 62, kind: "attribute", cell: (row) => <StatusPill kind="attribute" tone="blue" className="h-4 px-1.5 text-[9px]">{t(row.mode)}</StatusPill> },
@@ -1685,18 +1703,20 @@ function RecentQuotesSummary({ quote, intelligence, unavailable = false, savedVe
     <Surface padding="none" className="h-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-white dark:bg-[var(--md-surface)]">
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 bg-white px-2.5 py-1.5 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)] dark:bg-[var(--md-surface)]">
         <div className="min-w-0">
-          <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Last five quotes")}</p>
+          <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Last five customer quotes")}</p>
           <p className="truncate text-[9.5px] text-[var(--md-subtle)]">
-            {intelligence ? t(quoteIntelligenceCohortLabel(intelligence.metrics.historicalWinRate.cohort)) : t(savedVersion ? "Saved quote version" : unavailable ? "Intelligence temporarily unavailable" : "Loading real quote history")}
+            {intelligence ? t("This customer only · Current quote excluded") : t(savedVersion ? "Saved quote version" : unavailable ? "Intelligence temporarily unavailable" : "Loading real quote history")}
           </p>
         </div>
         {intelligence ? <StatusPill tone={intelligence.state === "ready" ? "green" : "amber"}>{t(snapshotLabel)}</StatusPill> : null}
       </div>
-      {rows.length ? (
+      {!intelligence && !unavailable && !savedVersion ? (
+        <div className="grid min-h-36 place-items-center"><DotGridLoader label="Loading customer history" /></div>
+      ) : rows.length ? (
         <DataTable ariaLabel="Recent quotes" columns={columns} rows={rows} getRowKey={(row) => row.id} minimumWidth={630} showToolbar={false} showColumnManager={false} className="h-[calc(100%-2.5rem)] rounded-none bg-white shadow-none dark:bg-[var(--md-surface)]" tableClassName="text-[9.5px]" />
       ) : (
         <div className="grid min-h-36 place-items-center px-4 text-center">
-          <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t(savedVersion ? "History was not recorded in this version" : unavailable ? "Intelligence temporarily unavailable" : "No comparable quotes yet")}</p><p className="mt-1 text-[10.5px] text-[var(--md-text)]">{t(savedVersion ? "This overview shows the information saved when the quote was submitted." : unavailable ? "Your quote is saved. Intelligence will retry after the next quote update." : "Comparable quotes will appear as history builds.")}</p></div>
+          <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("No data")}</p><p className="mt-1 text-[10.5px] text-[var(--md-text)]">{t(savedVersion ? "This overview shows the information saved when the quote was submitted." : unavailable ? "Your quote is saved. Use Retry insights to load customer history." : "Previous quotes for this customer will appear as history builds.")}</p></div>
         </div>
       )}
     </Surface>
@@ -2497,7 +2517,7 @@ function CargoWiseActionStrip({ actions }: { actions: Array<{ label: string; ico
   )
 }
 
-function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavailable = false, savedVersion = false }: { quote: QuoteRecord; intelligence: QuoteIntelligenceSnapshot | null; intelligenceUnavailable?: boolean; savedVersion?: boolean }) {
+function QuoteCargoWiseOverviewPanel({ quote, intelligenceQuote = quote, intelligence, intelligenceUnavailable = false, intelligenceError = "", savedVersion = false, onRetryIntelligence }: { quote: QuoteRecord; intelligenceQuote?: QuoteRecord; intelligence: QuoteIntelligenceSnapshot | null; intelligenceUnavailable?: boolean; intelligenceError?: string; savedVersion?: boolean; onRetryIntelligence: () => void }) {
   const { t } = useLanguage()
   const currency = quote.currency || ""
   const displayMoney = (value: number) => currency ? money(value, currency) : value.toFixed(2)
@@ -2505,7 +2525,7 @@ function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavaila
 
   return (
     <div className="md-quote-cargowise-overview grid gap-2">
-      <QuoteOverviewSignals quote={quote} intelligence={intelligence} intelligenceUnavailable={intelligenceUnavailable} savedVersion={savedVersion} compact />
+      <QuoteOverviewSignals quote={quote} intelligence={savedVersion ? null : intelligence} intelligenceUnavailable={intelligenceUnavailable} savedVersion={savedVersion} compact />
 
       <div className="md-quote-cargowise-primary-grid grid min-w-0 gap-2">
         <CargoWiseGroup title="Quote header" compact>
@@ -2544,9 +2564,17 @@ function QuoteCargoWiseOverviewPanel({ quote, intelligence, intelligenceUnavaila
         </CargoWiseGroup>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <div className="min-w-0">
+          <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Current customer insights")} · {intelligenceQuote.customer}</p>
+          <p className="mt-0.5 text-[10.5px] text-[var(--md-text)]">{t("Current quote inputs · Last 24 months · Up to 250 customer quotes · This quote excluded")}{savedVersion ? ` · ${t("Separate from the saved version above")}` : ""}</p>
+        </div>
+        <Button variant="outline" size="sm" disabled={!intelligence && !intelligenceUnavailable} onClick={onRetryIntelligence}>{t(intelligenceUnavailable ? "Retry insights" : "Refresh insights")}</Button>
+      </div>
+      {intelligenceUnavailable ? <p role="status" className="px-1 text-[11px] text-[var(--md-text)]">{t(intelligenceError || "Customer insights could not be refreshed. Try again.")}{intelligence ? ` ${t("The figures below are the last saved calculation.")}` : ""}</p> : null}
       <div className="md-quote-cargowise-intelligence-grid grid min-w-0 gap-2">
-        <ClientPricingIntelligence intelligence={intelligence} unavailable={intelligenceUnavailable} savedVersion={savedVersion} />
-        <RecentQuotesSummary quote={quote} intelligence={intelligence} unavailable={intelligenceUnavailable} savedVersion={savedVersion} />
+        <ClientPricingIntelligence intelligence={intelligence} unavailable={intelligenceUnavailable} />
+        <RecentQuotesSummary quote={intelligenceQuote} intelligence={intelligence} unavailable={intelligenceUnavailable} />
       </div>
     </div>
   )
@@ -5435,25 +5463,30 @@ function quoteCustomerResponseDocuments(workspace: QuoteWorkflowWorkspace | null
 }
 
 function QuoteCustomerResponseTooltip({ response }: { response: NonNullable<QuoteWorkflowWorkspace["customerResponse"]> }) {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const [open, setOpen] = useState(false)
+  const [pointerMotion, setPointerMotion] = useState(false)
+  const reduceMotion = useReducedMotion()
+  const motionDuration = reduceMotion || !pointerMotion ? 0 : 0.16
   const accepted = response.decision === "accepted"
   const declined = response.decision === "declined"
   const title = accepted ? "Customer accepted the quote" : declined ? "Customer declined the quote" : "Customer asked for changes"
   const declineReason = quoteCustomerDeclineReasons.find((reason) => reason.code === response.declineReasonCode)?.label
-  const meta = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(response.respondedAt))
+  const meta = new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(response.respondedAt))
+  const responseColour = accepted ? "var(--md-status-green-ink)" : declined ? "var(--md-red)" : "var(--md-amber)"
+  const accessibleSummary = [t(title), declineReason ? t(declineReason) : null, response.message, response.attachment ? t("Attachment in Documents") : null, meta].filter(Boolean).join(". ")
   return (
-    <Tooltip open={open}>
+    <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
         <button
           type="button"
           aria-label={t(title)}
           aria-expanded={open}
-          onPointerEnter={() => setOpen(true)}
-          onPointerLeave={() => setOpen(false)}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setOpen(false)}
-          onClick={() => setOpen(true)}
+          onPointerEnter={(event) => setPointerMotion(event.pointerType === "mouse" && window.matchMedia("(hover: hover) and (pointer: fine)").matches)}
+          onPointerDown={() => setPointerMotion(false)}
+          onFocus={(event) => setPointerMotion(!event.currentTarget.matches(":focus-visible"))}
+          onKeyDown={() => setPointerMotion(false)}
+          onClick={(event) => { event.preventDefault(); setOpen(true) }}
           className={cn(
             "grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] transition-[background,color,transform] duration-150 hover:bg-[var(--md-field-bg-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100",
             accepted && "text-[var(--md-status-green-ink)]",
@@ -5464,19 +5497,36 @@ function QuoteCustomerResponseTooltip({ response }: { response: NonNullable<Quot
           <MessageSquareText className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
         </button>
       </TooltipTrigger>
-      <TooltipContent
-        side="bottom"
-        align="start"
-        sideOffset={6}
-        style={{ borderTop: "2px solid var(--md-accent)" }}
-        className="block w-[min(320px,calc(100vw-24px))] max-w-none rounded-[var(--md-radius-lg)] bg-[var(--md-sidebar-bg)] p-3 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none [&>svg:last-child]:hidden"
-      >
-        <p className="text-[12px] font-medium leading-5">{t(title)}</p>
-        <time dateTime={response.respondedAt} className="mt-0.5 block text-[10.5px] leading-4 text-[var(--md-subtle)] tabular-nums">{meta}</time>
-        {declineReason ? <p className="mt-2 text-[12px] leading-[1.55] text-[var(--md-text)]"><span className="font-medium">{t("Main reason")}: </span>{t(declineReason)}</p> : null}
-        {response.message ? <p className="mt-2 whitespace-pre-wrap break-words text-pretty text-[12px] leading-[1.55] text-[var(--md-text)]" data-i18n-skip dir="auto">{response.message}</p> : null}
-        {response.attachment ? <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--md-subtle)]"><FileText className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Customer attachment available in Documents")}</p> : null}
-      </TooltipContent>
+      <AnimatePresence custom={motionDuration}>
+        {open ? (
+          <TooltipContent
+            forceMount
+            asChild
+            showArrow={false}
+            side="bottom"
+            align="start"
+            sideOffset={6}
+            collisionPadding={12}
+            aria-label={accessibleSummary}
+            onEscapeKeyDown={() => setPointerMotion(false)}
+            className="relative isolate block w-[min(288px,calc(100vw-24px))] max-w-none overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3.5 text-[var(--md-ink)] shadow-[var(--md-shadow-popover)] dark:bg-[var(--md-surface-tint)] data-[state=delayed-open]:animate-none data-open:animate-none data-closed:animate-none"
+          >
+            <motion.div
+              initial={{ opacity: motionDuration ? 0 : 1, scale: motionDuration ? 0.97 : 1 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit="closed"
+              variants={{ closed: (duration: number) => ({ opacity: 0, scale: duration ? 0.97 : 1, pointerEvents: "none", transition: { duration } }) }}
+              transition={{ duration: motionDuration, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <span aria-hidden="true" className="pointer-events-none absolute inset-x-[-15%] bottom-[-75%] -z-10 h-[150%] rounded-[50%] opacity-[0.14] blur-xl dark:opacity-[0.18]" style={{ backgroundColor: responseColour }} />
+              {declineReason ? <p className="text-[14px] font-medium leading-5 text-[var(--md-ink)]">{t(declineReason)}</p> : null}
+              {response.message ? <p className={cn("whitespace-pre-wrap break-words text-pretty text-[13px] leading-5 text-[var(--md-text)]", declineReason && "mt-1.5")} data-i18n-skip dir="auto">{response.message}</p> : null}
+              {response.attachment ? <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-4 text-[var(--md-text)]"><FileText className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />{t("Attachment in Documents")}</p> : null}
+              <time dateTime={response.respondedAt} className="mt-3 block text-[11px] leading-4 text-[var(--md-subtle)] tabular-nums" data-i18n-skip>{meta}</time>
+            </motion.div>
+          </TooltipContent>
+        ) : null}
+      </AnimatePresence>
     </Tooltip>
   )
 }
@@ -5577,7 +5627,12 @@ export function QuoteDetailPage({
   const [workspace, setWorkspace] = useState<QuoteWorkflowWorkspace | null>(null)
   const [intelligence, setIntelligence] = useState<QuoteIntelligenceSnapshot | null>(null)
   const [intelligenceUnavailable, setIntelligenceUnavailable] = useState(false)
+  const [intelligenceError, setIntelligenceError] = useState("")
   const [currentQuoteId, setCurrentQuoteId] = useState<string | null>(null)
+  const creatingQuoteAttempt = useRef(isNewQuote)
+  const createAnalytics = useCommercialWorkflow("quote_create", creatingQuoteAttempt.current || hasCommercialAttempt("quote_create", currentQuoteId), currentQuoteId ?? undefined)
+  const sendAnalytics = useCommercialWorkflow("quote_send", issueDialogOpen)
+  useEffect(() => { createAnalytics.step(activeTab === "charges" ? "pricing" : activeTab === "details" ? "details" : "review") }, [activeTab])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
@@ -5705,6 +5760,7 @@ export function QuoteDetailPage({
           // Strict Mode replays effects in development. Both passes must await
           // the same creation, never allocate a second master Quote reference.
           const openedQuote = await (openingQuoteRef.current ??= openQuoteWorkflow())
+          createAnalytics.bind(openedQuote.quoteId)
           const openedWorkspace = await getQuoteWorkflow(openedQuote.reference)
           if (!cancelled) {
             const openedQuoteRecord = quoteRecordFromWorkspace(openedWorkspace, null)
@@ -5791,15 +5847,16 @@ export function QuoteDetailPage({
       }
     })
     const calculatedAt = intelligence?.calculatedAt ? new Date(intelligence.calculatedAt).getTime() : 0
-    const needsRefresh = !calculatedAt || Date.now() - calculatedAt > 15 * 60_000
+    const needsRefresh = intelligence?.algorithmVersion !== CURRENT_QUOTE_INTELLIGENCE_ALGORITHM_VERSION || intelligence.scope?.customerId !== workspace?.quote.customerId || !calculatedAt || Date.now() - calculatedAt > 15 * 60_000
     if (needsRefresh) {
+      const request = ++intelligenceRequestRef.current
       void refreshQuoteIntelligence(reference)
         .then((next) => {
-          if (!active) return
+          if (!active || request !== intelligenceRequestRef.current) return
           setIntelligence(next)
           setIntelligenceUnavailable(false)
         })
-        .catch(() => { if (active) setIntelligenceUnavailable(true) })
+        .catch((error) => { if (active && request === intelligenceRequestRef.current) { setIntelligenceUnavailable(true); setIntelligenceError(error instanceof Error ? error.message : "Customer insights could not be refreshed.") } })
     }
     return () => {
       active = false
@@ -5808,6 +5865,24 @@ export function QuoteDetailPage({
   // The subscription belongs to the immutable quote ID. A save may return its
   // internal reference alias; that must not restart the initial refresh.
   }, [currentQuoteId])
+
+  const retryIntelligence = () => {
+    const reference = workspace?.quote.reference
+    if (!reference) return
+    const generation = quoteRequestGenerationRef.current
+    const request = ++intelligenceRequestRef.current
+    setIntelligenceUnavailable(false)
+    setIntelligenceError("")
+    setIntelligence(null)
+    void refreshQuoteIntelligence(reference).then((next) => {
+      if (generation === quoteRequestGenerationRef.current && request === intelligenceRequestRef.current) {
+        setIntelligence(next)
+        setIntelligenceUnavailable(false)
+      }
+    }).catch((error) => {
+      if (generation === quoteRequestGenerationRef.current && request === intelligenceRequestRef.current) { setIntelligenceUnavailable(true); setIntelligenceError(error instanceof Error ? error.message : "Customer insights could not be refreshed.") }
+    })
+  }
 
   const currentVersion = workspace?.versions.find((version) => version.CusQuoteVersion_IsCurrent) ?? null
   const currentVersionIsSubmitted = Boolean(currentVersion?.CusQuoteVersion_IsSubmitted)
@@ -6149,6 +6224,8 @@ export function QuoteDetailPage({
     try {
       const payload = quoteSavePayload(quoteSnapshot, chargeSnapshot, lookups)
       const result = await saveQuoteWorkflow(currentQuoteId, payload, currentVersion?.CusQuoteVersion_ID)
+      createAnalytics.complete(result.quoteId)
+      creatingQuoteAttempt.current = false
       if (!isCurrent()) return
       setWorkflowError("")
       readinessRequestRef.current += 1
@@ -6479,8 +6556,10 @@ export function QuoteDetailPage({
     try {
       result = await issueQuoteWorkflow(currentQuoteId, resolvedIssueRecipient, issueDeliveryMode, issueMailboxId, issueEmailSubject, issueEmailBody, issueExpiryPreset, issueSignature, issueTrackOpens)
       if (!result.delivered) throw new Error("The email provider has not confirmed delivery. Nothing was marked as sent.")
+      sendAnalytics.complete(currentQuoteId)
     } catch (error) {
       const message = error instanceof Error ? error.message : "The quote could not be sent."
+      sendAnalytics.failed()
       setIssueEmailError(message)
       setWorkflowError(message)
       toast.error(t("Quote was not sent"), { description: t(message) })
@@ -6526,7 +6605,7 @@ export function QuoteDetailPage({
       const overview = variant === "ai"
         ? <QuoteAiOverviewPanel quote={activeQuote} />
         : variant === "cargowise"
-          ? <QuoteCargoWiseOverviewPanel quote={activeQuote} intelligence={viewingSubmittedVersion ? null : intelligence} intelligenceUnavailable={!viewingSubmittedVersion && intelligenceUnavailable} savedVersion={viewingSubmittedVersion} />
+          ? <QuoteCargoWiseOverviewPanel quote={activeQuote} intelligenceQuote={savedQuote} intelligence={intelligence?.algorithmVersion === CURRENT_QUOTE_INTELLIGENCE_ALGORITHM_VERSION && intelligence.scope?.quoteId === currentQuoteId && intelligence.scope.customerId === workspace?.quote.customerId ? intelligence : null} intelligenceUnavailable={intelligenceUnavailable} intelligenceError={intelligenceError} savedVersion={viewingSubmittedVersion} onRetryIntelligence={retryIntelligence} />
           : <QuoteOverviewPanel quote={activeQuote} />
       return overview
     }
@@ -7068,7 +7147,7 @@ export function QuoteDetailPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={issueDialogOpen} onOpenChange={(open) => { if (!issuing && !issueRefining) setIssueDialogOpen(open) }}>
+      <Dialog open={issueDialogOpen} onOpenChange={(open) => { if (!issuing && !issueRefining) { if (!open) sendAnalytics.cancel(); setIssueDialogOpen(open) } }}>
         <DialogContent
           dir={direction}
           className="max-h-[calc(100dvh-24px)] overflow-y-auto rounded-[var(--md-radius-2xl)] sm:max-w-none"
@@ -7343,7 +7422,7 @@ export function QuoteDetailPage({
             </section>
           </div>
           <DialogFooter>
-            <Button type="button" variant="ghost" disabled={issuing || issueRefining} onClick={() => setIssueDialogOpen(false)}>{t("Cancel")}</Button>
+            <Button type="button" variant="ghost" disabled={issuing || issueRefining} onClick={() => { sendAnalytics.cancel(); setIssueDialogOpen(false) }}>{t("Cancel")}</Button>
             <Button
               type="button"
               disabled={!issueReadiness?.ready || issueReadinessLoading || !resolvedIssueRecipient || !issueMailboxId || !issueEmailSubject.trim() || !issueEmailBody.trim() || !issueEmailPreviewHtml || issuing || issueDraftLoading || issuePreviewLoading || issueRefining}

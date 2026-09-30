@@ -170,6 +170,8 @@ import { ScreeningListFreshness, ScreeningMatchList, ScreeningMatchRow, Screenin
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
 import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
+import { DashboardWorldMap } from "@/components/multideck/dashboard-world-map"
+import { CohortJourney, LossReasonMap, UsageCalendar } from "@/components/multideck/dashboard-analytics-charts"
 import { DashboardModeChart } from "@/components/multideck/dashboard-mode-chart"
 import { DashboardPerformancePanel } from "@/components/multideck/dashboard-performance-panel"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
@@ -417,7 +419,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Chart components",
     helper: "Graphs, KPI boxes, report visuals",
-    ids: ["metric-card", "series-chart", "performance-panel", "breakdown-panel", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
+    ids: ["metric-card", "series-chart", "world-booking-map", "cohort-journey", "loss-reason-map", "usage-calendar", "performance-panel", "breakdown-panel", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
   },
   {
     label: "Button & control components",
@@ -3803,6 +3805,16 @@ function ComponentPreview({ id }: { id: string }) {
             onOpenItem={(item) => toast.success(`${item.reference} opened`)}
             onHandOverToDexter={(item) => toast.success(`${item.reference} handed over to Dexter`)}
           />
+        </div>
+      ) : null}
+
+      {id === "cohort-journey" ? <div className="grid gap-6"><CohortJourney stages={[{ label: "Quotes sent", value: 120 }, { label: "Customer decision", value: 76 }, { label: "Accepted", value: 42 }, { label: "Booking placed", value: 35 }]} note="Quotes first sent in the period, with outcomes to date." /><CohortJourney stages={[{ label: "Leads created", value: 20 }, { label: "Converted", value: 12 }]} note="Created leads, with outcomes to date." /><CohortJourney stages={[]} note="No cohort." /></div> : null}
+      {id === "loss-reason-map" ? <div className="grid gap-6"><LossReasonMap reasons={[{ label: "Price", count: 24 }, { label: "Customer: Timing", count: 12 }, { label: "No response", count: 8 }, { label: "Service", count: 3 }]} /><LossReasonMap reasons={[]} /></div> : null}
+      {id === "usage-calendar" ? <div className="grid gap-6"><UsageCalendar measuredFrom="2026-09-04T00:00:00Z" days={Array.from({ length: 30 }, (_, i) => ({ day: `2026-09-${String(i + 1).padStart(2, "0")}`, activeSeconds: (i % 7 < 5 ? 1800 + i * 600 : 0), idleSeconds: i * 120 }))} /><UsageCalendar days={[]} /></div> : null}
+      {id === "world-booking-map" ? (
+        <div className="w-full max-w-[800px] grid gap-6">
+          <DashboardWorldMap values={[{ code: "GB", count: 42 }, { code: "US", count: 28 }, { code: "CN", count: 61 }, { code: "DE", count: 23 }, { code: "SG", count: 12 }, { code: null, count: 3 }]} />
+          <DashboardWorldMap values={[]} />
         </div>
       ) : null}
 

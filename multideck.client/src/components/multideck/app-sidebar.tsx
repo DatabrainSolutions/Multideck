@@ -1060,15 +1060,15 @@ export function AppSidebar({
 
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
-      return sidebarAreas.filter((area) => area.id !== "administration" || canOpenAdmin || canManageSignatures || canViewFinanceDashboard).map((area) => {
+      return sidebarAreas.filter((area) => area.id !== "administration" || canOpenAdmin || canManageSignatures).map((area) => {
         if (area.id === "administration") {
-          if (!canOpenAdmin) return { ...area, destinations: [...(canViewFinanceDashboard ? [area.destinations[0]] : []), ...(canManageSignatures ? [adminEmailSignaturesDestination] : [])] }
-          return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "admin-dashboard" || canViewFinanceDashboard) }
+          if (!canOpenAdmin) return { ...area, destinations: canManageSignatures ? [adminEmailSignaturesDestination] : [] }
+          return area
         }
         if (area.id === "documents-service") {
           return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
         }
-        if (area.id === "finance") return { ...area, destinations: area.destinations.filter(destination => destination.id !== "finance-mileage" || canPayMileage) }
+        if (area.id === "finance") return { ...area, destinations: area.destinations.filter(destination => (destination.id !== "finance-mileage" || canPayMileage) && (destination.id !== "finance-dashboard" || canViewFinanceDashboard)) }
         if (area.id !== "sales-crm") return area
         return {
           ...area,

@@ -111,7 +111,7 @@ export function FinanceDirectorDashboardPage({ load = getFinanceDirectorDashboar
   const window_ = useMemo(() => periodWindow(period), [period])
   const requestRef = useRef(0)
 
-  useEffect(() => { document.title = `${t("Dashboard")} · Admin · Multideck` }, [t])
+  useEffect(() => { document.title = `${t("Dashboard")} · Finance · Multideck` }, [t])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -243,7 +243,7 @@ export function FinanceDirectorDashboardPage({ load = getFinanceDirectorDashboar
   const entityOptions = response?.legalEntities ?? []
   const header = (
     <SettingsPageHeader
-      title={t("Admin dashboard")}
+      title={t("Finance dashboard")}
       description={dashboard
         ? `${dashboard.legalEntity} · ${t("posted results in")} ${dashboard.currency}`
         : t("Revenue, profit, cash and what comes next, from the posted ledger.")}
@@ -286,7 +286,7 @@ export function FinanceDirectorDashboardPage({ load = getFinanceDirectorDashboar
         {header}
         <InlineNotice
           tone="error"
-          title={error.status === 403 ? t("You do not have access to the Admin dashboard.") : t("The Admin dashboard could not be loaded.")}
+          title={error.status === 403 ? t("You do not have access to the Finance dashboard.") : t("The Finance dashboard could not be loaded.")}
           action={error.status === 403 ? undefined : <Button type="button" size="sm" variant="outline" onClick={() => setAttempt((value) => value + 1)}>{t("Retry")}</Button>}
         >
           {error.status === 403

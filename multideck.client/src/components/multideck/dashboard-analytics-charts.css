@@ -1,0 +1,192 @@
+.md-cohort-journey,
+.md-loss-map,
+.md-usage-calendar {
+  padding: 0 20px 16px;
+  min-width: 0;
+}
+.md-cohort-journey svg,
+.md-loss-map svg {
+  width: 100%;
+  display: block;
+  overflow: visible;
+}
+.md-cohort-journey svg text {
+  font-size: 9px;
+  fill: var(--md-subtle);
+}
+.md-analytics-grid-line {
+  stroke: var(--md-line);
+  stroke-width: 1;
+}
+.md-cohort-area {
+  fill: var(--md-accent-a10);
+}
+.md-cohort-line {
+  fill: none;
+  stroke: var(--md-accent);
+  stroke-width: 2;
+}
+.md-cohort-point {
+  fill: var(--md-accent);
+  stroke: var(--md-surface);
+  stroke-width: 2;
+}
+.md-cohort-stages {
+  display: grid;
+  gap: 8px;
+  margin-top: 2px;
+}
+.md-cohort-stages button {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  text-align: left;
+  padding: 10px 0;
+  border-top: 2px solid var(--md-line);
+}
+.md-cohort-stages button[aria-pressed="true"] {
+  border-color: var(--md-accent);
+}
+.md-cohort-stages span {
+  font-size: 11px;
+  color: var(--md-text);
+}
+.md-cohort-stages strong {
+  font-weight: 500;
+  font-size: 24px;
+  color: var(--md-ink);
+  font-variant-numeric: tabular-nums;
+}
+.md-analytics-readout,
+.md-analytics-note,
+.md-analytics-empty {
+  font-size: 11.5px;
+  color: var(--md-subtle);
+  line-height: 1.55;
+}
+.md-analytics-readout {
+  min-height: 35px;
+  padding: 10px 0 5px;
+}
+.md-analytics-readout strong {
+  font-weight: 500;
+  color: var(--md-ink);
+}
+.md-analytics-note {
+  margin: 8px 0 0;
+}
+.md-analytics-empty {
+  padding: 20px;
+  min-height: 150px;
+}
+.md-loss-map svg text {
+  fill: var(--md-ink);
+  font-size: 12px;
+  pointer-events: none;
+}
+.md-loss-map svg g[data-selected="true"] rect {
+  stroke: var(--md-accent);
+  stroke-width: 1.5;
+}
+.md-loss-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+  padding-top: 10px;
+}
+.md-loss-legend button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  text-align: left;
+  border-bottom: 1px solid var(--md-line);
+  font-size: 11.5px;
+  color: var(--md-text);
+}
+.md-loss-legend button[aria-pressed="true"] {
+  color: var(--md-accent);
+}
+.md-loss-legend strong {
+  font-weight: 500;
+}
+.md-usage-calendar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+}
+.md-usage-calendar-scroll {
+  display: flex;
+  gap: 12px;
+  overflow: auto;
+  padding: 4px;
+}
+.md-usage-calendar-labels {
+  display: grid;
+  grid-template-rows: repeat(7, 22px);
+  gap: 5px;
+  flex: 0 0 12px;
+  color: var(--md-subtle);
+  font-size: 10px;
+  align-items: center;
+}
+.md-usage-calendar-days {
+  display: grid;
+  grid-template-rows: repeat(7, 22px);
+  gap: 5px;
+}
+.md-usage-calendar-days button {
+  border-radius: 4px;
+  width: 22px;
+  height: 22px;
+}
+.md-usage-calendar-days button[data-measured="false"] {
+  border: 1px dashed var(--md-line);
+}
+.md-usage-calendar-days button[aria-pressed="true"] {
+  outline: 1px solid var(--md-ink);
+  outline-offset: 2px;
+}
+.md-usage-calendar-detail {
+  display: grid;
+  gap: 8px;
+  min-width: 100px;
+}
+.md-usage-calendar-detail > span,
+.md-usage-calendar-detail small {
+  font-size: 11.5px;
+  color: var(--md-subtle);
+}
+.md-usage-calendar-detail strong {
+  font-size: 30px;
+  color: var(--md-ink);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.md-usage-calendar > .md-analytics-note {
+  grid-column: 1 / -1;
+}
+.md-cohort-stages button:focus-visible,
+.md-loss-legend button:focus-visible,
+.md-usage-calendar-days button:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: 3px;
+}
+@media (max-width: 500px) {
+  .md-usage-calendar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .md-usage-calendar-detail {
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+  }
+  .md-usage-calendar-detail small {
+    grid-column: 1 / -1;
+  }
+  .md-cohort-stages strong {
+    font-size: 20px;
+  }
+}
