@@ -39,7 +39,9 @@ export type WarehouseInventoryBalance = {
   facilityId: string
   facilityCode: string
   facilityName: string
+  customerOrgId: string | null
   customerName: string | null
+  itemId: string
   sku: string
   itemDescription: string
   locationId: string | null
@@ -48,7 +50,9 @@ export type WarehouseInventoryBalance = {
   handlingUnitCode: string | null
   lotNumber: string | null
   batchNumber: string | null
+  expiryDate: string | null
   inventoryStatusCode: string
+  inventoryStatusName: string | null
   customsStatusCode: string
   uomCode: string
   onHandQuantity: number
@@ -104,16 +108,13 @@ export type WarehouseHandlingUnit = {
   }[]
 }
 
-export type WarehouseHandlingUnitReference = {
-  locations: { id: string; facilityId: string; code: string; statusCode: string; typeCode: string }[]
-}
-
 export type WarehouseInventoryException = {
   id: string
   facilityId: string
   typeCode: string
   statusCode: string
   severityCode: string
+  balanceId: string | null
   title: string
   description: string | null
   expectedLocationId: string | null
@@ -223,6 +224,12 @@ function query(values: Record<string, string | number | boolean | undefined>) {
   return encoded ? `?${encoded}` : ""
 }
 
+const listLimit = 50
+
+export function sameScan(first: string | null | undefined, second: string) {
+  return Boolean(first && second.trim() && first.trim().toLowerCase() === second.trim().toLowerCase())
+}
+
 function requestId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
@@ -265,14 +272,34 @@ export function createWarehouseMobileApi(client: SupabaseClient, workspace: Work
     return response.json() as Promise<T>
   }
 
+  async function page<T>(path: string): Promise<T[]> {
+    const result = await request<unknown>(path)
+    if (!result || typeof result !== "object" || !Array.isArray((result as { rows?: unknown }).rows)) {
+      throw new WarehouseMobileError("Warehouse data is still being prepared. Try again shortly.")
+    }
+    return (result as WarehousePage<T>).rows
+  }
+
+  const listLocations = (facilityId: string, search = "") => page<WarehouseLocation>(`/facilities/${facilityId}/locations${query({ search: search.trim(), limit: listLimit })}`)
+  const listHandlingUnits = (options: { facilityId: string; search?: string }) => page<WarehouseHandlingUnit>(`/handling-units${query({ facilityId: options.facilityId, search: options.search?.trim(), limit: listLimit })}`)
+
   return {
-    listFacilities: () => request<WarehouseFacility[]>("/facilities"),
-    listLocations: (facilityId: string, search = "") => request<WarehouseLocation[]>(`/facilities/${facilityId}/locations${query({ search })}`),
-    listInventory: (options: { facilityId?: string; search?: string } = {}) => request<WarehouseInventoryBalance[]>(`/inventory${query(options)}`),
-    listItems: (options: { facilityId?: string; search?: string } = {}) => request<WarehouseItem[]>(`/items${query(options)}`),
-    listHandlingUnits: (options: { facilityId?: string; search?: string } = {}) => request<WarehouseHandlingUnit[]>(`/handling-units${query(options)}`),
-    getHandlingUnitReference: (facilityId?: string) => request<WarehouseHandlingUnitReference>(`/handling-units/reference${query({ facilityId })}`),
-    listExceptions: (options: { facilityId?: string; search?: string } = {}) => request<WarehouseInventoryException[]>(`/inventory/exceptions${query({ ...options, openOnly: true })}`),
+    listFacilities: () => page<WarehouseFacility>(`/facilities${query({ limit: listLimit })}`),
+    listLocations,
+    /** Resolves a scanned location code or barcode to exactly one location in the warehouse. */
+    findLocation: async (facilityId: string, scan: string) => {
+      if (!scan.trim()) return null
+      return (await listLocations(facilityId, scan)).find((location) => sameScan(location.code, scan) || sameScan(location.barcode, scan)) ?? null
+    },
+    listInventory: (options: { facilityId: string; search?: string; itemId?: string }) => page<WarehouseInventoryBalance>(`/inventory${query({ facilityId: options.facilityId, itemId: options.itemId, search: options.search?.trim(), limit: listLimit })}`),
+    listItems: (options: { facilityId: string; search?: string }) => page<WarehouseItem>(`/items${query({ facilityId: options.facilityId, search: options.search?.trim(), limit: listLimit })}`),
+    listHandlingUnits,
+    /** Resolves a scanned pallet code or SSCC to exactly one open pallet in the warehouse. */
+    findHandlingUnit: async (facilityId: string, scan: string) => {
+      if (!scan.trim()) return null
+      return (await listHandlingUnits({ facilityId, search: scan })).find((unit) => sameScan(unit.code, scan) || sameScan(unit.sscc, scan)) ?? null
+    },
+    listExceptions: (options: { facilityId: string; search?: string }) => page<WarehouseInventoryException>(`/inventory/exceptions${query({ facilityId: options.facilityId, search: options.search?.trim(), openOnly: true, limit: listLimit })}`),
     reportLocationEmpty: (input: { facilityId: string; locationId: string; notes: string }) => request<WarehouseInventoryActionResult>("/inventory/actions/report_empty", "POST", { requestId: requestId(), ...input }),
     resolveLocationDataError: (input: { facilityId: string; exceptionId: string; notes: string }) => request<WarehouseInventoryActionResult>("/inventory/actions/resolve_location_exception", "POST", { requestId: requestId(), resolution: "data_error", actualLocationId: null, ...input }),
     moveHandlingUnit: (input: { facilityId: string; handlingUnitId: string; targetLocationId: string; actualSourceLocationId: string | null; overrideReason: string | null; notes: string | null }) => request<WarehouseInventoryActionResult>("/inventory/actions/move_hu", "POST", { requestId: requestId(), reasonCode: "mobile_relocation", ...input }),

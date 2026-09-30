@@ -1,41 +1,41 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { StyleSheet, Text } from "react-native"
 import { Field } from "@/components/FormControls"
 import { DataCard, ErrorState, LoadingState, MetricRow, ScanField, SuccessState, WarehouseButton, WarehouseScreen, WarningState } from "@/components/WarehouseUI"
 import { colors, spacing, type } from "@/theme/tokens"
-import type { WarehouseFacility, WarehouseInventoryBalance, WarehouseLocation, WarehouseMobileApi } from "@/warehouse/api"
+import { sameScan, type WarehouseFacility, type WarehouseInventoryBalance, type WarehouseLocation, type WarehouseMobileApi } from "@/warehouse/api"
 import { wt } from "@/warehouse/i18n"
 
 export function LocationCheckScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
-  const [locations, setLocations] = useState<WarehouseLocation[]>([])
+  const [matches, setMatches] = useState<WarehouseLocation[]>([])
   const [query, setQuery] = useState("")
   const [selected, setSelected] = useState<WarehouseLocation | null>(null)
   const [stock, setStock] = useState<WarehouseInventoryBalance[]>([])
   const [notes, setNotes] = useState("")
   const [confirming, setConfirming] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const retryLoad = useRef<() => void>(() => {})
 
-  const loadLocations = useCallback(async () => {
-    setLoading(true); setError(null); setSelected(null); setQuery("")
-    retryLoad.current = () => { void loadLocations() }
-    try { setLocations(await api.listLocations(facility.id)) } catch (loadError) { setError(loadError instanceof Error ? loadError.message : wt("serviceError")) } finally { setLoading(false) }
-  }, [api, facility.id])
-
-  useEffect(() => { void loadLocations() }, [loadLocations])
-
-  const matches = useMemo(() => {
-    const term = query.trim().toLowerCase()
-    if (!term) return []
-    return locations.filter((location) => location.code.toLowerCase().includes(term) || location.barcode?.toLowerCase().includes(term)).slice(0, 12)
-  }, [locations, query])
+  async function search() {
+    const term = query.trim()
+    if (!term) return
+    setLoading(true); setError(null); setSelected(null); setSuccess(null); setMatches([])
+    retryLoad.current = () => { void search() }
+    try {
+      const rows = await api.listLocations(facility.id, term)
+      const exact = rows.find((row) => sameScan(row.code, term) || sameScan(row.barcode, term))
+      if (exact) { setLoading(false); return void chooseLocation(exact) }
+      setMatches(rows.slice(0, 12))
+      if (!rows.length) setError(wt("locationNotFound"))
+    } catch (loadError) { setError(loadError instanceof Error ? loadError.message : wt("serviceError")) } finally { setLoading(false) }
+  }
 
   async function chooseLocation(location: WarehouseLocation) {
-    setSelected(location); setQuery(location.code); setConfirming(false); setSuccess(null); setError(null); setActionError(null); setLoading(true)
+    setSelected(location); setQuery(location.code); setMatches([]); setConfirming(false); setSuccess(null); setError(null); setActionError(null); setLoading(true)
     retryLoad.current = () => { void chooseLocation(location) }
     try {
       const balances = await api.listInventory({ facilityId: facility.id, search: location.code })
@@ -53,7 +53,8 @@ export function LocationCheckScreen({ api, facility, onBack }: { api: WarehouseM
   }
 
   return <WarehouseScreen title={wt("locationCheck")} subtitle={wt("locationCheckDetail")} onBack={onBack}>
-    <ScanField value={query} onChangeText={(value) => { setQuery(value); setSelected(null); setConfirming(false); setActionError(null) }} onSubmit={() => { const exact = matches.find((row) => row.code.toLowerCase() === query.trim().toLowerCase() || row.barcode?.toLowerCase() === query.trim().toLowerCase()); if (exact) void chooseLocation(exact) }} autoFocus />
+    <ScanField value={query} onChangeText={(value) => { setQuery(value); setSelected(null); setConfirming(false); setActionError(null) }} onSubmit={() => void search()} autoFocus />
+    {!selected && !loading ? <WarehouseButton label={wt("search")} tone="secondary" disabled={!query.trim()} onPress={() => void search()} /> : null}
     {!selected ? matches.map((location) => <DataCard key={location.id} title={location.code} meta={[location.zoneName, location.aisle, location.bay, location.level].filter(Boolean).join(" · ")} status={location.statusName || location.statusCode} onPress={() => void chooseLocation(location)} />) : null}
     {loading ? <LoadingState /> : null}
     {error ? <ErrorState message={error} onRetry={retryLoad.current} /> : null}

@@ -20,6 +20,7 @@ import { colors, spacing, type } from "@/theme/tokens"
 import { createWarehouseMobileApi } from "@/warehouse/api"
 import type { WarehouseFacility } from "@/warehouse/api"
 import { WarehouseShellProvider } from "@/components/WarehouseShell"
+import { forgetFacility, loadRememberedFacilityId, rememberFacility } from "@/warehouse/facilityMemory"
 
 export type RootStackParams = {
   Workspace: undefined
@@ -47,6 +48,7 @@ export default function App() {
   const [client, setClient] = useState<SupabaseClient | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [facility, setFacility] = useState<WarehouseFacility | null>(null)
+  const [rememberedFacilityId, setRememberedFacilityId] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => registerAuthAutoRefresh(), [])
@@ -72,8 +74,9 @@ export default function App() {
       }
 
       const restoredClient = createWorkspaceClient(refreshedWorkspace)
-      const { data } = await restoredClient.auth.getSession()
+      const [{ data }, facilityId] = await Promise.all([restoredClient.auth.getSession(), loadRememberedFacilityId(refreshedWorkspace.workspace.slug)])
       if (!active) return
+      setRememberedFacilityId(facilityId)
 
       setWorkspace(refreshedWorkspace)
       setClient(restoredClient)
@@ -103,7 +106,21 @@ export default function App() {
     setFacility(null)
   }, [])
 
+  const selectFacility = useCallback((next: WarehouseFacility) => {
+    setFacility(next)
+    setRememberedFacilityId(next.id)
+    if (workspace) void rememberFacility(workspace.workspace.slug, next.id)
+  }, [workspace])
+
+  const changeWarehouse = useCallback(() => {
+    setFacility(null)
+    setRememberedFacilityId(null)
+    if (workspace) void forgetFacility(workspace.workspace.slug)
+  }, [workspace])
+
   const changeWorkspace = useCallback(async () => {
+    if (workspace) await forgetFacility(workspace.workspace.slug)
+    setRememberedFacilityId(null)
     await releaseWorkspaceClient()
     await forgetWorkspace()
     setSession(null)
@@ -113,9 +130,12 @@ export default function App() {
   }, [])
 
   const signOut = useCallback(async () => {
+    // Handhelds are often shared between shifts; the next person chooses their own warehouse.
     setFacility(null)
+    setRememberedFacilityId(null)
+    if (workspace) await forgetFacility(workspace.workspace.slug)
     if (client) await client.auth.signOut()
-  }, [client])
+  }, [client, workspace])
 
   const navigationTheme = useMemo(() => ({
     ...DefaultTheme,
@@ -149,7 +169,7 @@ export default function App() {
         email={session?.user.email ?? ""}
         facility={facility}
         workspaceName={workspace?.workspace.name ?? ""}
-        onChangeWarehouse={() => setFacility(null)}
+        onChangeWarehouse={changeWarehouse}
         onChangeWorkspace={changeWorkspace}
         onSignOut={signOut}
       >
@@ -165,7 +185,7 @@ export default function App() {
             </Stack.Screen>
           ) : warehouseApi && !facility ? (
             <Stack.Screen name="WarehouseSelect">
-              {() => <WarehouseSelectScreen api={warehouseApi} onSelect={setFacility} />}
+              {() => <WarehouseSelectScreen api={warehouseApi} rememberedFacilityId={rememberedFacilityId} onSelect={selectFacility} />}
             </Stack.Screen>
           ) : warehouseApi && facility ? (
             <Stack.Group>

@@ -3,26 +3,22 @@ import { StyleSheet, Text } from "react-native"
 import { Field } from "@/components/FormControls"
 import { DataCard, EmptyState, ErrorState, LoadingState, MetricRow, ScanField, SuccessState, WarehouseButton, WarehouseScreen, WarningState } from "@/components/WarehouseUI"
 import { colors, spacing, type } from "@/theme/tokens"
-import type { WarehouseFacility, WarehouseLocation, WarehouseMobileApi, WarehouseOrder, WarehouseTask } from "@/warehouse/api"
+import { sameScan, type WarehouseFacility, type WarehouseLocation, type WarehouseMobileApi, type WarehouseOrder, type WarehouseTask } from "@/warehouse/api"
 import { wt } from "@/warehouse/i18n"
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : wt("serviceError")
 }
 
-function sameCode(first: string | null | undefined, second: string) {
-  return Boolean(first && first.trim().toLowerCase() === second.trim().toLowerCase())
+async function matchesTaskLocation(api: WarehouseMobileApi, facilityId: string, task: WarehouseTask, scan: string) {
+  if (sameScan(task.sourceLocationCode, scan)) return true
+  if (!task.sourceLocationId) return false
+  // A scanned location barcode can differ from its printed code.
+  return (await api.findLocation(facilityId, scan))?.id === task.sourceLocationId
 }
 
-function exactLocation(locations: WarehouseLocation[], code: string) {
-  return locations.find((location) => sameCode(location.code, code) || sameCode(location.barcode, code))
-}
-
-function matchesTaskLocation(taskLocationId: string | null, taskLocationCode: string | null, locations: WarehouseLocation[], scan: string) {
-  if (sameCode(taskLocationCode, scan)) return true
-  const taskLocation = taskLocationId ? locations.find((location) => location.id === taskLocationId) : null
-  return Boolean(taskLocation && (sameCode(taskLocation.code, scan) || sameCode(taskLocation.barcode, scan)))
-}
+const receivingLocationTypes = ["dock", "staging"]
+const nonStorageLocationTypes = ["dock", "staging", "quarantine", "investigation"]
 
 function remainingTaskQuantity(task: WarehouseTask) {
   return Math.max(0, Number(task.quantity) - Number(task.completedQuantity))
@@ -58,7 +54,8 @@ export function ReceiveScreen({ api, facility, onBack }: { api: WarehouseMobileA
         api.listLocations(facility.id),
       ])
       setOrders(orderPage.rows.filter((order) => order.lines.some((line) => Number(line.remainingQuantity) > 0)))
-      setLocations(locationRows.filter((location) => location.isActive && location.statusCode === "available" && ["dock", "staging"].includes(location.typeCode)))
+      // First page only: these are quick picks. Any scanned location is resolved exactly on submit.
+      setLocations(locationRows.filter((location) => location.isActive && location.statusCode === "available" && receivingLocationTypes.includes(location.typeCode)))
     } catch (loadError) {
       setError(message(loadError))
     } finally {
@@ -97,8 +94,11 @@ export function ReceiveScreen({ api, facility, onBack }: { api: WarehouseMobileA
 
   async function receive() {
     if (!selected) return
-    const location = exactLocation(locations, locationCode)
-    if (!location || location.facilityId !== facility.id) return setError(wt("receivingLocationNotFound"))
+    setBusy(true); setError(null)
+    let location: WarehouseLocation | null
+    try { location = await api.findLocation(facility.id, locationCode) } catch (lookupError) { setBusy(false); return setError(message(lookupError)) }
+    setBusy(false)
+    if (!location || location.facilityId !== facility.id || !location.isActive || location.statusCode !== "available" || !receivingLocationTypes.includes(location.typeCode)) return setError(wt("receivingLocationNotFound"))
     const postedRows = rows.map((row) => ({ ...row, quantityNumber: Number(row.quantity), damagedNumber: Number(row.damagedQuantity), missingNumber: Number(row.missingQuantity) }))
     if (!postedRows.some((row) => row.quantityNumber > 0) || postedRows.some((row) => !Number.isFinite(row.quantityNumber) || row.quantityNumber < 0 || row.damagedNumber < 0 || row.damagedNumber > row.quantityNumber || row.missingNumber < 0 || (row.missingNumber > 0 && row.quantityNumber <= 0) || row.quantityNumber + row.missingNumber > row.remainingQuantity)) {
       return setError(wt("checkReceiptQuantities"))
@@ -160,7 +160,6 @@ export function ReceiveScreen({ api, facility, onBack }: { api: WarehouseMobileA
 function WarehouseTaskQueueScreen({ api, facility, onBack, typeCode }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void; typeCode: "putaway" | "pick" }) {
   const [tasks, setTasks] = useState<WarehouseTask[]>([])
   const [selected, setSelected] = useState<WarehouseTask | null>(null)
-  const [locations, setLocations] = useState<WarehouseLocation[]>([])
   const [sourceCode, setSourceCode] = useState("")
   const [itemCode, setItemCode] = useState("")
   const [targetCode, setTargetCode] = useState("")
@@ -174,12 +173,8 @@ function WarehouseTaskQueueScreen({ api, facility, onBack, typeCode }: { api: Wa
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const [page, locationRows] = await Promise.all([
-        api.listTasks({ facilityId: facility.id, type: typeCode, status: "open", limit: 50, offset: 0 }),
-        api.listLocations(facility.id),
-      ])
+      const page = await api.listTasks({ facilityId: facility.id, type: typeCode, status: "open", limit: 50, offset: 0 })
       setTasks(page.rows)
-      setLocations(locationRows)
     } catch (loadError) {
       setError(message(loadError))
     } finally {
@@ -208,15 +203,15 @@ function WarehouseTaskQueueScreen({ api, facility, onBack, typeCode }: { api: Wa
 
   async function confirm() {
     if (!selected) return
-    if (!sourceCode.trim() || !matchesTaskLocation(selected.sourceLocationId, selected.sourceLocationCode, locations, sourceCode)) return setError(wt("sourceScanMismatch"))
     if (typeCode === "pick" && !itemCode.trim()) return setError(wt("scanItemFirst"))
     const numericQuantity = Number(quantity)
     if (!Number.isFinite(numericQuantity) || numericQuantity <= 0 || numericQuantity > remainingTaskQuantity(selected)) return setError(wt("checkTaskQuantity"))
-    const target = typeCode === "putaway" ? exactLocation(locations, targetCode) : null
-    if (typeCode === "putaway" && (!target || target.facilityId !== facility.id || !target.isActive || target.statusCode !== "available" || ["dock", "staging", "quarantine", "investigation"].includes(target.typeCode))) return setError(wt("destinationNotFound"))
 
     setBusy(true); setError(null)
     try {
+      if (!sourceCode.trim() || !(await matchesTaskLocation(api, facility.id, selected, sourceCode))) return setError(wt("sourceScanMismatch"))
+      const target = typeCode === "putaway" ? await api.findLocation(facility.id, targetCode) : null
+      if (typeCode === "putaway" && (!target || target.facilityId !== facility.id || !target.isActive || target.statusCode !== "available" || nonStorageLocationTypes.includes(target.typeCode))) return setError(wt("destinationNotFound"))
       await api.confirmTask(selected.id, {
         quantity: numericQuantity,
         ...(target ? { targetLocationId: target.id, scannedTargetLocationCode: targetCode.trim() } : {}),

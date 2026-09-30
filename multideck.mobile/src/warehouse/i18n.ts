@@ -98,6 +98,7 @@ const copy = {
     quantity: "Quantity",
     receivingLocation: "Receiving or staging location",
     receivingLocationHelp: "Scan the dock or staging location where the received stock is physically waiting.",
+    locationNotFound: "No location in this warehouse matches that scan.",
     receivingLocationNotFound: "The receiving location was not found in this warehouse.",
     receivedQuantity: "Received quantity",
     damagedQuantity: "Damaged quantity",
