@@ -188,7 +188,7 @@ export default function App() {
               <Stack.Screen name="LocationCheck">{({ navigation, route }) => <LocationCheckScreen api={warehouseApi} facility={facility} initialScan={route.params?.scan} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="StockEnquiry">{({ navigation, route }) => <StockEnquiryScreen api={warehouseApi} facility={facility} initialSearch={route.params?.search} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="StockItems">{({ navigation }) => <StockItemsScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="Pallets">{({ navigation, route }) => <PalletsScreen api={warehouseApi} facility={facility} initialSearch={route.params?.search} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Pallets">{({ navigation, route }) => <PalletsScreen api={warehouseApi} facility={facility} initialSearch={route.params?.search} onBack={() => navigation.goBack()} onMovePallet={(palletCode) => navigation.navigate("PalletMove", { palletCode })} />}</Stack.Screen>
               <Stack.Screen name="PalletMove">{({ navigation, route }) => <PalletMoveScreen api={warehouseApi} facility={facility} initialPalletCode={route.params?.palletCode} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="Consolidation">{({ navigation }) => <ConsolidationScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="Exceptions">{({ navigation }) => <ExceptionsScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>

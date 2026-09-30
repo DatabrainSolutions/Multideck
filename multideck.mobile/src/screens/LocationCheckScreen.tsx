@@ -5,6 +5,7 @@ import { DataCard, ErrorState, LoadingState, MetricRow, ScanField, SuccessState,
 import { colors, spacing, type } from "@/theme/tokens"
 import { sameScan, type WarehouseFacility, type WarehouseInventoryBalance, type WarehouseLocation, type WarehouseMobileApi } from "@/warehouse/api"
 import { wt } from "@/warehouse/i18n"
+import { StockLineActions } from "@/screens/StockLineActions"
 
 export function LocationCheckScreen({ api, facility, initialScan, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; initialScan?: string; onBack: () => void }) {
   const [matches, setMatches] = useState<WarehouseLocation[]>([])
@@ -19,6 +20,7 @@ export function LocationCheckScreen({ api, facility, initialScan, onBack }: { ap
   const [actionError, setActionError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const retryLoad = useRef<() => void>(() => {})
+  const [selectedBalance, setSelectedBalance] = useState<WarehouseInventoryBalance | null>(null)
 
   useEffect(() => { if (initialScan) { setQuery(initialScan); void search(initialScan) } }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -54,6 +56,12 @@ export function LocationCheckScreen({ api, facility, initialScan, onBack }: { ap
     } catch (reportError) { setActionError(reportError instanceof Error ? reportError.message : wt("serviceError")) } finally { setBusy(false) }
   }
 
+  if (selectedBalance) {
+    return <WarehouseScreen title={wt("stockLine")} onBack={() => setSelectedBalance(null)}>
+      <StockLineActions api={api} facility={facility} balance={selectedBalance} onClose={() => setSelectedBalance(null)} onDone={(summary) => { setSelectedBalance(null); if (selected) void chooseLocation(selected).then(() => setSuccess(summary)) }} />
+    </WarehouseScreen>
+  }
+
   return <WarehouseScreen title={wt("locationCheck")} subtitle={wt("locationCheckDetail")} onBack={onBack}>
     <ScanField value={query} onChangeText={(value) => { setQuery(value); setSelected(null); setConfirming(false); setActionError(null) }} onSubmit={(text) => void search(text)} label={wt("scanLocationLabel")} placeholder={wt("scanLocationPlaceholder")} autoFocus />
     {!selected && !loading ? <WarehouseButton label={wt("search")} tone="secondary" disabled={!query.trim()} onPress={() => void search()} /> : null}
@@ -65,7 +73,7 @@ export function LocationCheckScreen({ api, facility, initialScan, onBack }: { ap
       <DataCard title={selected.code} meta={`${selected.typeName || selected.typeCode} · ${selected.zoneName || "—"}`} status={selected.statusName || selected.statusCode}>
         <MetricRow values={[{ label: wt("contents"), value: String(stock.length) }, { label: wt("onHand"), value: String(stock.reduce((total, row) => total + Number(row.onHandQuantity), 0)) }, { label: wt("held"), value: String(stock.reduce((total, row) => total + Number(row.heldQuantity), 0)) }]} />
       </DataCard>
-      {stock.map((row) => <DataCard key={row.id} title={row.sku} meta={`${row.itemDescription} · ${row.handlingUnitCode || "—"}`} status={row.inventoryStatusCode}><Text style={styles.detail}>{row.onHandQuantity} {row.uomCode} · {row.customerName || "—"}</Text></DataCard>)}
+      {stock.map((row) => <DataCard key={row.id} title={row.sku} meta={`${row.itemDescription} · ${row.handlingUnitCode || "—"}`} status={row.inventoryStatusName || row.inventoryStatusCode} onPress={() => setSelectedBalance(row)}><Text style={styles.detail}>{row.onHandQuantity} {row.uomCode} · {row.customerName || "—"}</Text></DataCard>)}
       {actionError ? <WarningState message={actionError} /> : null}
       {stock.length > 0 && !success ? confirming ? <>
         <WarningState message={wt("emptyWarning")} />

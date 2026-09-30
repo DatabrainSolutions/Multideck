@@ -172,6 +172,20 @@ export function ActionTile({ label, detail, icon, code, onPress, disabled = fals
   )
 }
 
+/** Two to four mutually exclusive actions; one selected segment, never a row of chips. */
+export function SegmentedChoice<Value extends string>({ options, value, onChange, label }: { options: { value: Value; label: string }[]; value: Value; onChange: (value: Value) => void; label: string }) {
+  return (
+    <View accessibilityLabel={label} accessibilityRole="radiogroup" style={styles.segmented}>
+      {options.map((option) => {
+        const selected = option.value === value
+        return <Pressable key={option.value} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => onChange(option.value)} style={({ pressed }) => [styles.segment, selected && styles.segmentSelected, pressed && !selected && styles.menuButtonPressed]}>
+          <Text numberOfLines={1} style={[styles.segmentText, selected && styles.segmentTextSelected]}>{option.label}</Text>
+        </Pressable>
+      })}
+    </View>
+  )
+}
+
 /** A work queue with its live count; the count is the reason to open it. */
 export function QueueTile({ label, count, detail, onPress }: { label: string; count: string; detail?: string; onPress: () => void }) {
   const idle = count === "0"
@@ -275,6 +289,12 @@ const styles = StyleSheet.create({
   quantityShell: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xl, flex: 1, flexDirection: "row", height: 62, paddingHorizontal: spacing.lg, ...shadow.surface },
   quantityInput: { color: colors.ink, flex: 1, fontSize: 22, fontWeight: "500", textAlign: "center" },
   quantityUom: { color: colors.subtle, fontSize: type.label },
+  // Track radius 14 with a 4px inset gives segments 10.
+  segmented: { backgroundColor: colors.field, borderRadius: radius.xl, flexDirection: "row", gap: 4, marginVertical: spacing.md, padding: 4 },
+  segment: { alignItems: "center", borderRadius: radius.lg, flex: 1, justifyContent: "center", minHeight: 48, paddingHorizontal: spacing.sm },
+  segmentSelected: { backgroundColor: colors.surface, ...shadow.surface },
+  segmentText: { color: colors.text, fontSize: type.body, fontWeight: "500" },
+  segmentTextSelected: { color: colors.ink },
   queueTile: { backgroundColor: colors.surface, borderRadius: radius.xxl, flex: 1, minHeight: 116, padding: spacing.lg, ...shadow.surface },
   queueCount: { color: colors.accent, fontSize: 30, fontWeight: "500", letterSpacing: -0.5 },
   queueCountIdle: { color: colors.subtle },
