@@ -11,6 +11,7 @@ const restorationMigration = readFileSync(new URL('../migrations/20260921154733_
 const editorMigration = readFileSync(new URL('../migrations/20260921154737_booking_operational_charge_editor.sql', import.meta.url), 'utf8')
 const customerReadbackMigration = readFileSync(new URL('../migrations/20260922114402_booking_quote_charge_customer_readback.sql', import.meta.url), 'utf8')
 const sourceMigration = readFileSync(new URL('../migrations/20260921154738_booking_charge_source_and_bulk_guards.sql', import.meta.url), 'utf8')
+const acceptanceChargeSourceMigration = readFileSync(new URL('../migrations/20260929103059_quote_acceptance_charge_source_line.sql', import.meta.url), 'utf8')
 const reviewMigration = readFileSync(new URL('../migrations/20260921154739_booking_quote_charge_review.sql', import.meta.url), 'utf8')
 const activationMigration = readFileSync(new URL('../migrations/20260921154740_booking_charge_editor_activation.sql', import.meta.url), 'utf8')
 const releaseDefinitions = process.env.BOOKING_CHARGE_RELEASE_DEFINITIONS ? JSON.parse(readFileSync(process.env.BOOKING_CHARGE_RELEASE_DEFINITIONS, 'utf8')) : []
@@ -316,6 +317,16 @@ test('private charge provenance: PostgreSQL authorisation, matching, stale snaps
       ${sourceFunctions}
       ${effectiveReleaseFunction}
       ${sourceMigration}
+      ${acceptanceChargeSourceMigration}
+      ${acceptanceChargeSourceMigration}
+      do $$begin
+       if (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='booking_api' and p.proname in ('convert_accepted_quote_before_sync_review_20260904','release_provisional_quote_charges')
+           and pg_get_functiondef(p.oid) like '%"JobCostingLine_SourceID", "JobCostingLine_SourceLineID", "JobCostingLine_SourceMetadataJSON"%'
+           and pg_get_functiondef(p.oid) like '%nullif(charge->>''id'', '''')::uuid, jsonb_build_object(''quoteCharge'',charge)%')<>2 then
+         raise exception 'Accepted Quote charge source line identity missing from a Booking copy path';
+       end if;
+      end$$;
       alter table public."CusQuote_Versions" add column "CusQuoteVersion_Number" integer default 1;
       ${reviewMigration}
       do $$declare actor uuid; auth_id uuid; company uuid; office uuid; entity uuid; job uuid:=gen_random_uuid(); quote uuid:=gen_random_uuid();

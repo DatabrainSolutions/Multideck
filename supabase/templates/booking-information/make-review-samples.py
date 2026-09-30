@@ -31,6 +31,20 @@ ROUTES = {
     },
 }
 
+MODE_DETAILS = {
+    "air": "Carrier: Example Air · Booking ref: AIR-BOOK-01 · Flight: EX123 · MAWB: 123-45678901 · HAWB: HAWB-001",
+    "sea": "Carrier: Example Shipping · Booking ref: SEA-BOOK-01 · Vessel: Example Star · Voyage: 042E · MBL: MBL-001 · HBL: HBL-001",
+    "road": "Carrier: Example Haulage · Booking ref: ROAD-BOOK-01 · Vehicle: EX12 ABC · Trailer: TR-45 · CMR: CMR-001",
+    "rail": "Carrier: Example Rail · Booking ref: RAIL-BOOK-01 · Rail service: EX-R1 · CIM / SMGS: CIM-001",
+}
+SHIPMENT_TYPES = {"air": "AIR", "sea": "FCL", "road": "FTL", "rail": "FULL_WAGON"}
+EQUIPMENT = {
+    "air": {"kind": "ULD", "number": "AKE12345EX", "type": "AKE"},
+    "sea": {"kind": "Container", "number": "EXAU1234567", "type": "40HC"},
+    "road": {"kind": "Vehicle", "number": "EX12 ABC", "type": "Articulated"},
+    "rail": {"kind": "Wagon", "number": "EX-WGN-123", "type": "Covered"},
+}
+
 for mode, directions in ROUTES.items():
     for direction, legs in directions.items():
         route = [
@@ -40,6 +54,7 @@ for mode, directions in ROUTES.items():
                 "destination": destination,
                 "plannedDepartureAt": f"2026-10-{8 + index:02d}T09:00:00Z",
                 "plannedArrivalAt": f"2026-10-{9 + index:02d}T14:00:00Z",
+                "details": MODE_DETAILS[mode],
             }
             for index, (origin, destination) in enumerate(legs)
         ]
@@ -49,6 +64,9 @@ for mode, directions in ROUTES.items():
             "bookingConfirmation": {
                 "bookingReference": f"DEMO-{mode.upper()}-{direction.upper()}",
                 "direction": direction.title() if direction != "cross-trade" else "Cross-trade",
+                "mode": mode.title() if mode != "sea" else "Sea",
+                "shipmentType": SHIPMENT_TYPES[mode],
+                "incoterm": "FCA Sample Place",
                 "customerReference": f"PO-{mode.upper()}-001",
                 "preparedBy": "Demo Operator",
                 "provisional": False,
@@ -61,6 +79,8 @@ for mode, directions in ROUTES.items():
                     "remarks": "Collect during normal opening hours.",
                 },
                 "mainTransport": route,
+                "equipment": [EQUIPMENT[mode]],
+                "hasEquipment": True,
                 "delivery": {
                     "address": "2 Sample Street, Destination City",
                     "plannedAtLabel": "12 Oct 2026",

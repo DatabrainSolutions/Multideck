@@ -26,6 +26,36 @@ test("desktop and mobile controls share one read, one connection and the same st
   assert.equal(disconnected, 1)
 })
 
+test("only a newly arrived unread notification is announced, never old rows or first-load history", async () => {
+  let feed = [notification]
+  const announced = []
+  const store = createNotificationStore({
+    load: async () => feed,
+    connect: () => () => {},
+    onError: assert.fail,
+    onNew: (item) => announced.push(item.id),
+  })
+  const stop = store.subscribe(() => {})
+  await flush()
+  assert.deepEqual(announced, [])
+
+  const newer = { ...notification, id: "new", createdAt: "2026-09-04" }
+  feed = [newer, notification]
+  await store.refresh()
+  assert.deepEqual(announced, ["new"])
+  await store.refresh()
+  assert.deepEqual(announced, ["new"])
+
+  feed = [newer, notification, { ...notification, id: "older", createdAt: "2026-09-02" }]
+  await store.refresh()
+  assert.deepEqual(announced, ["new"])
+
+  feed = [{ ...newer, status: "read" }, ...feed.slice(1)]
+  await store.refresh()
+  assert.deepEqual(announced, ["new"])
+  stop()
+})
+
 test("events during a read produce a single trailing read and never publish stale rows", async () => {
   let resolveRead, changed, reads = 0
   const store = createNotificationStore({

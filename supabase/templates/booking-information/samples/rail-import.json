@@ -8,6 +8,9 @@
   "bookingConfirmation": {
     "bookingReference": "DEMO-RAIL-IMPORT",
     "direction": "Import",
+    "mode": "Rail",
+    "shipmentType": "FULL_WAGON",
+    "incoterm": "FCA Sample Place",
     "customerReference": "PO-RAIL-001",
     "preparedBy": "Demo Operator",
     "provisional": false,
@@ -35,9 +38,18 @@
         "origin": "Warsaw terminal",
         "destination": "Birmingham terminal",
         "plannedDepartureAt": "2026-10-08T09:00:00Z",
-        "plannedArrivalAt": "2026-10-09T14:00:00Z"
+        "plannedArrivalAt": "2026-10-09T14:00:00Z",
+        "details": "Carrier: Example Rail · Booking ref: RAIL-BOOK-01 · Rail service: EX-R1 · CIM / SMGS: CIM-001"
       }
     ],
+    "equipment": [
+      {
+        "kind": "Wagon",
+        "number": "EX-WGN-123",
+        "type": "Covered"
+      }
+    ],
+    "hasEquipment": true,
     "delivery": {
       "address": "2 Sample Street, Destination City",
       "plannedAtLabel": "12 Oct 2026",

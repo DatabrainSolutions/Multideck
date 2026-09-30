@@ -49,7 +49,7 @@ export function CargoAllocationEditor({ cargo, equipment, routes, allocations, l
   return <section ref={root} tabIndex={-1} aria-label={t('Cargo allocation')} className="@container grid min-w-0 gap-4 outline-offset-2">
     <div className="flex flex-wrap items-start justify-between gap-3">
       {supportingInfo ? <div className="flex items-center gap-1 text-[12px] text-[var(--md-text)]">
-        <p>{t('Blank quantities are unknown. Container totals and VGM stay unchanged.')}</p>{supportingInfo}
+        <p>{t('To split a cargo line, choose the other container and enter the packages in each allocation.')}</p>{supportingInfo}
       </div> : <div className="max-w-2xl text-[12px] leading-relaxed text-[var(--md-text)]">
         <p>{t('Assign goods to equipment for the whole journey or a specific leg. Successive legs are balanced separately.')}</p>
         <p>{t('Blank quantities remain unknown. Allocations do not change container totals, VGM or the accepted Quote.')}</p>
@@ -74,7 +74,7 @@ export function CargoAllocationEditor({ cargo, equipment, routes, allocations, l
         ['containerId', 'Equipment', equipmentOptions, line.containerId],
         ['routeId', 'Routing scope', routeOptions, line.routeId ?? 'whole-journey'],
       ] as const
-      return <fieldset key={line.id} className="grid min-w-0 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2">
+      return <fieldset key={line.id} data-allocation-id={line.id} className="grid min-w-0 gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-2">
         <legend className="px-1 text-[12px] font-medium">{t('Allocation')} {index + 1}</legend>
         <div className="grid min-w-0 gap-3 @[40rem]:grid-cols-3">
           {selectorFields.map(([field, label, options, value]) => {
@@ -82,7 +82,7 @@ export function CargoAllocationEditor({ cargo, equipment, routes, allocations, l
             return <div key={field} className="grid min-w-0 content-start gap-1">
               <label htmlFor={editable ? controlId : undefined} className="text-[12px] text-[var(--md-text)]">{t(label)}</label>
               {editable ? <Select value={value} onValueChange={next => patch(line.id, { [field]: next === 'whole-journey' ? null : next })}>
-                <SelectTrigger id={controlId} aria-invalid={Boolean(errorFor(field)) || undefined} aria-describedby={errorFor(field) ? `${controlId}-error` : undefined} className={controlClass}
+                <SelectTrigger id={controlId} data-allocation-field={field} aria-invalid={Boolean(errorFor(field)) || undefined} aria-describedby={errorFor(field) ? `${controlId}-error` : undefined} className={controlClass}
                   ref={element => { if (field === 'cargoId' && element && pendingFocus.current === line.id) { pendingFocus.current = null;element.focus() } }}>
                   <SelectValue placeholder={t('Choose')} />
                 </SelectTrigger>
@@ -107,8 +107,9 @@ export function CargoAllocationEditor({ cargo, equipment, routes, allocations, l
           })}
         </div>
         <details className="min-w-0">
-          <summary className="min-h-8 cursor-pointer py-1 text-[12px] font-medium outline-offset-2">{t('Allocation notes')}</summary>
-          {editable ? <><label className="sr-only" htmlFor={`${prefix}-${line.id}-notes`}>{t('Allocation notes')} {index + 1}</label>
+          <summary className="min-h-8 cursor-pointer py-1 text-[12px] font-medium outline-offset-2">{t('Handling for this equipment / notes')}</summary>
+          <p className="text-[12px] leading-relaxed text-[var(--md-text)]">{t('Record requirements for this cargo in this equipment only. Other allocations and the accepted Quote are unchanged.')}</p>
+          {editable ? <><label className="sr-only" htmlFor={`${prefix}-${line.id}-notes`}>{t('Handling for this equipment / notes')} {index + 1}</label>
             <Textarea id={`${prefix}-${line.id}-notes`} value={line.notes ?? ''} className={`${controlClass} mt-1`} aria-invalid={Boolean(errorFor('notes')) || undefined}
               aria-describedby={errorFor('notes') ? `${prefix}-${line.id}-notes-error` : undefined} onChange={event => patch(line.id, { notes: event.target.value })} />
             {errorFor('notes') ? <p id={`${prefix}-${line.id}-notes-error`} className="text-[12px] text-[var(--md-status-red-ink)]">{t(errorFor('notes')!)}</p> : null}

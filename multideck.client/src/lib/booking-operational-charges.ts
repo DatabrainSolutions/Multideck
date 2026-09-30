@@ -8,7 +8,10 @@ export type BookingQuoteChargeReview = {
   items: { key: string; kind: QuoteChargeDecision | "preserve"; before: Snapshot | null; proposed: Snapshot | null;
     beforeNotes: Snapshot | null; proposedNotes: Snapshot | null; blockedReason: string | null }[]
 }
-export type OperationalChargeLine = { id: string; values: BookingPlanningCharge | null; snapshot: Snapshot; blockedReason: string | null }
+export type OperationalChargeLine = {
+  id: string; values: BookingPlanningCharge | null; snapshot: Snapshot; blockedReason: string | null
+  historicalSell: { amount: number; currency: string } | null
+}
 export type OperationalChargeWorkspace = { supported: false } | {
   supported: true; jobId: string; editable: boolean; blockedReason: string | null; baseCurrency: string | null
   bookingUpdatedAt: string; currencies: QuoteChargeCurrency[]; parties: QuoteChargeParty[]; lines: OperationalChargeLine[]
@@ -64,12 +67,17 @@ export function readOperationalCharges(input: unknown, jobId: string): Operation
     const line = object(item), snapshot = object(line.snapshot)
     if (typeof line.id !== "string" || !uuid.test(line.id) || snapshot.JobCostingLine_ID !== line.id || snapshot.Job_ID !== jobId
       || (line.blockedReason !== null && typeof line.blockedReason !== "string")) throw new Error("Charge identity could not be confirmed.")
+    const rawValues = object(line.values)
+    const historicalSell = typeof rawValues.sell === "number" && Number.isFinite(rawValues.sell) && rawValues.sell >= 0
+      && typeof rawValues.sellCurrency === "string" && /^[A-Z]{3}$/.test(rawValues.sellCurrency)
+      ? { amount: rawValues.sell, currency: rawValues.sellCurrency } : null
     let values: BookingPlanningCharge | null = null
-    try { if (baseCurrency) values = readBookingChargeRows([line.values], baseCurrency)[0] } catch {
-      if (!line.blockedReason) throw new Error("Editable charge values could not be confirmed.")
+    let blockedReason = line.blockedReason as string | null
+    try { if (baseCurrency) values = readBookingChargeRows([rawValues], baseCurrency)[0] } catch {
+      blockedReason ??= "Historical charge values need review before this line can be edited."
     }
     if (values && values.id !== line.id) throw new Error("Charge identity mismatch.")
-    return { id: line.id, values, snapshot, blockedReason: line.blockedReason as string | null }
+    return { id: line.id, values, snapshot, blockedReason, historicalSell }
   })
   if (new Set(lines.map(line => line.id)).size !== lines.length || (value.editable && (!baseCurrency || value.blockedReason !== null
     || !currencies.some(currency => currency.code === baseCurrency)))) throw new Error("Charge editing is not ready.")

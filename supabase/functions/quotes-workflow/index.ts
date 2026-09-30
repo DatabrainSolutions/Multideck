@@ -560,6 +560,8 @@ async function quotePdfDataset(
       billedToAddress: printable(payer.address || quote.customerAddress || quote.billingAddress, ""),
       billedToContact: printable(payer.contact || quote.contactName, ""),
       billedToEmail: printable(payer.email || facts.payerEmail || quote.contactEmail, ""),
+      senderName: printable(context.operator.displayName),
+      senderEmail: printable(context.operator.email),
     },
     journey: [
       { label: "Collection point", value: printable(quote.collectionAddress) },

@@ -9,6 +9,9 @@ const bin = process.env.PG_TEST_BIN || '/opt/homebrew/opt/postgresql@17/bin'
 const available = spawnSync(join(bin, 'initdb'), ['--version']).status === 0
 const migration = readFileSync(new URL('../migrations/20260924133000_booking_confirmation_scope_and_snapshot.sql', import.meta.url), 'utf8')
 const partiesMigration = readFileSync(new URL('../migrations/20260928132500_booking_confirmation_parties.sql', import.meta.url), 'utf8')
+const equipmentModeMigration = readFileSync(new URL('../migrations/20260929095630_booking_confirmation_equipment_mode.sql', import.meta.url), 'utf8')
+const shipmentTypeMigration = readFileSync(new URL('../migrations/20260929130600_booking_confirmation_shipment_type_source.sql', import.meta.url), 'utf8')
+const templateChoicesMigration = readFileSync(new URL('../migrations/20260929144212_booking_confirmation_template_choices.sql', import.meta.url), 'utf8')
 const detailMigration = readFileSync(new URL('../migrations/20260901100000_booking_detail_editing.sql', import.meta.url), 'utf8')
 const originalDetailSave = detailMigration.slice(
   detailMigration.indexOf('create or replace function booking_api.save_booking_detail_fields('),
@@ -38,8 +41,11 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
       create table public."cmp_Users_Offices" ("User_ID" uuid, "Office_ID" uuid);
       create table public."Org_Master" ("Org_id" uuid, "Org_Name" text);
       create table public."Job_Header" ("Job_ID" uuid, "Job_OrgOfficeID" uuid, "Job_OfficeID" uuid,
-        "Job_Status" text, "Job_Direction" text, "Job_Customer" uuid, "Job_IsDeleted" boolean default false,
-        "Job_EditableDetailsJSON" jsonb default '{}'::jsonb, "Job_BookingReference" text,
+        "Job_Status" text, "Job_Direction" text, "Job_TransportModeSummary" text,
+        "Job_IncotermsCode" text, "Job_IncotermsLocation" text,
+        "Job_Customer" uuid, "Job_IsDeleted" boolean default false,
+        "Job_EditableDetailsJSON" jsonb default '{}'::jsonb, "Job_SourceSnapshotJSON" jsonb,
+        "Job_BookingReference" text,
         "Job_SourceQuoteVersionID" uuid, "Job_CollectionAddress" text, "Job_DeliveryAddress" text,
         "Job_CustomerReference" text, "Job_ReadyDate" date, "Job_RequiredDeliveryDate" date,
         "Job_UpdatedAt" timestamptz, "Job_UpdatedBy" uuid);
@@ -55,14 +61,22 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
         "JobRoute_DestinationNameSnapshot" text, "JobRoute_DestinationUNLocode" text,
         "JobRoute_PlannedPickupAt" timestamptz, "JobRoute_PlannedDepartureAt" timestamptz,
         "JobRoute_PlannedArrivalAt" timestamptz, "JobRoute_PlannedDeliveryAt" timestamptz,
-        "JobRoute_CarrierBookingReference" text, "JobRoute_FlightNumber" text, "JobRoute_Vessel" text,
-        "JobRoute_VoyageNumber" text, "JobRoute_RailService" text, "JobRoute_RouteJSON" jsonb);
+        "JobRoute_Carrier" uuid, "JobRoute_CarrierBookingReference" text,
+        "JobRoute_MasterTransportReference" text, "JobRoute_HouseTransportReference" text,
+        "JobRoute_ServiceLevel" text, "JobRoute_TransportMeansName" text,
+        "JobRoute_FlightNumber" text, "JobRoute_Vessel" text, "JobRoute_VoyageNumber" text,
+        "JobRoute_VehicleRegistration" text, "JobRoute_TrailerNumber" text,
+        "JobRoute_RailService" text, "JobRoute_RouteJSON" jsonb);
+      create table public."Job_Containers" ("JobContainers_ID" uuid, "Job_ID" uuid,
+        "JobContainer_EquipmentKind" text, "JobContainer_Number" text,
+        "JobContainer_TypeCodeSnapshot" text, "JobContainer_CreatedAt" timestamptz default now(),
+        "JobContainer_IsDeleted" boolean default false);
       create table public."Job_Costing_Lines" ("JobCostingLine_ID" uuid, "Job_ID" uuid, "JobCostingLine_Number" integer,
         "JobCostingLine_Description" text, "JobCostingLine_RevenueAmountCurrency" numeric,
         "JobCostingLine_CostAmountCurrency" numeric, "JobCostingLine_DomainCode" text,
         "JobCostingLine_ShowToCustomer" boolean, "JobCostingLine_SourceTable" text,
         "JobCostingLine_SourceMetadataJSON" jsonb);
-      create table public."DOCB_DocumentTemplates" ("DOCBT_ID" uuid, "DOCBT_Code" text);
+      create table public."DOCB_DocumentTemplates" ("DOCBT_ID" uuid, "DOCBT_Code" text, "DOCBT_Name" text default 'Booking information');
       create table public."DOCB_RenderJobs" ("DOCBRJ_ID" uuid, "DOCBRJ_TemplateID" uuid,
         "DOCBRJ_JobID" uuid, "DOCBRJ_CreatedBy" uuid, "DOCBRJ_StatusCode" text,
         "DOCBRJ_OutputFormatCode" text, "DOCBRJ_InputSnapshotJSON" jsonb,
@@ -87,6 +101,10 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
     sql(originalDetailSave)
     sql(migration)
     sql(partiesMigration)
+    sql(equipmentModeMigration)
+    sql(shipmentTypeMigration)
+    sql(templateChoicesMigration.slice(templateChoicesMigration.indexOf('create or replace function document_api.is_booking_confirmation_template_code'), templateChoicesMigration.indexOf('-- A manager may copy')))
+    sql(templateChoicesMigration.slice(templateChoicesMigration.indexOf('create or replace function document_api.prepare_booking_confirmation')))
     const result = sql(`
       insert into public."cmp_Users" values
         ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','active','Lee','Wright'),
@@ -96,22 +114,35 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
       insert into public."cmp_Users_Offices" values ('10000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001');
       insert into public."Org_Master" values ('50000000-0000-4000-8000-000000000001','Demo Customer');
       insert into public."Job_Header" ("Job_ID","Job_OrgOfficeID","Job_OfficeID","Job_Status","Job_Customer",
-        "Job_IsDeleted","Job_EditableDetailsJSON","Job_BookingReference","Job_SourceQuoteVersionID",
+        "Job_IsDeleted","Job_EditableDetailsJSON","Job_SourceSnapshotJSON","Job_BookingReference","Job_SourceQuoteVersionID",
         "Job_CollectionAddress","Job_DeliveryAddress","Job_CustomerReference","Job_ReadyDate","Job_RequiredDeliveryDate")
       values ('60000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001',null,
         'open','50000000-0000-4000-8000-000000000001',false,
         '{"scopeCollection":true,"scopeMainTransport":true,"scopeDelivery":false,"collectionRemarks":"Open 8 to 5","specialInstructions":"Use gate 2"}',
+        '{"acceptedSnapshot":{"quote":{"shipmentType":"AIR"}}}',
         'JE-TEST','70000000-0000-4000-8000-000000000001','Factory','Customer onward journey',
         'PO-1','2026-09-24','2026-09-30');
+      update public."Job_Header" set "Job_TransportModeSummary"='AIR',
+        "Job_IncotermsCode"='FCA', "Job_IncotermsLocation"='London'
+        where "Job_ID"='60000000-0000-4000-8000-000000000001';
       insert into public."Job_Cargo" values ('80000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001',1,false,
         'Widgets','{"marksAndNumbers":"BOX-1"}',null,2,'Cartons',100,1);
       update public."Job_Header" set "Job_Direction"='export' where "Job_ID"='60000000-0000-4000-8000-000000000001';
       insert into public."Job_Parties" values
         ('81000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','consignor','Demo Shipper','Factory Road',true,1),
         ('81000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001','consignee','Demo Receiver','Harbour Street',true,1);
-      insert into public."Job_Routing" values ('90000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001',1,
-        'air','London','GBLHR','New York','USJFK',null,'2026-09-24T12:00:00Z','2026-09-25T12:00:00Z',null,
-        'REF', 'FL1', null, null, null, '{"carrierNotes":"Private rate and carrier note"}');
+      insert into public."Job_Routing" ("JobRoute_ID","Job_ID","JobRoute_OrderNo","JobRoute_ModeCode",
+        "JobRoute_OriginNameSnapshot","JobRoute_OriginUNLocode","JobRoute_DestinationNameSnapshot",
+        "JobRoute_DestinationUNLocode","JobRoute_PlannedDepartureAt","JobRoute_PlannedArrivalAt",
+        "JobRoute_CarrierBookingReference","JobRoute_MasterTransportReference",
+        "JobRoute_HouseTransportReference","JobRoute_FlightNumber","JobRoute_RouteJSON")
+      values ('90000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001',1,
+        'air','London','GBLHR','New York','USJFK','2026-09-24T12:00:00Z','2026-09-25T12:00:00Z',
+        'REF','123-45678901','HAWB-001','FL1','{"carrierNotes":"Private rate and carrier note"}');
+      insert into public."Job_Containers" ("JobContainers_ID","Job_ID","JobContainer_EquipmentKind",
+        "JobContainer_Number","JobContainer_TypeCodeSnapshot") values
+        ('91000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','uld','AKE12345EX','AKE'),
+        ('91000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001','container','STALE-SEA','40HC');
       insert into public."Job_Costing_Lines" values
         ('a0000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001',1,'Accepted Quote freight',150,100,'freight',true,'quote',
           '{"quoteCharge":{"sellCurrency":"GBP"}}'),
@@ -119,7 +150,7 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
           '{"bookingCharge":{"sellCurrency":"GBP"}}'),
         ('a0000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001',3,'Private cost',100,100,'freight',false,null,
           '{"bookingCharge":{"sellCurrency":"GBP"}}');
-      insert into public."DOCB_DocumentTemplates" values ('b0000000-0000-4000-8000-000000000001','JOB_CONFIRMATION');
+      insert into public."DOCB_DocumentTemplates" ("DOCBT_ID","DOCBT_Code") values ('b0000000-0000-4000-8000-000000000001','JOB_CONFIRMATION');
       insert into public."DOCB_RenderJobs" values ('c0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000001',
         '60000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','rendering','pdf','{}','{}');
       do $check$ declare review jsonb; snapshot jsonb; changed jsonb; listing jsonb; begin
@@ -144,12 +175,41 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
           or review->>'customerReference'<>'PO-1' or review#>>'{collection,plannedAt}'<>'2026-09-24'
           or review#>>'{collection,plannedAtLabel}'<>'24 Sep 2026'
           or review->>'direction'<>'Export'
+          or review->>'mode'<>'Air' or review->>'shipmentType'<>'AIR'
+          or review->>'incoterm'<>'FCA London'
+          or review#>>'{mainTransport,0,details}' not like '%MAWB: 123-45678901%'
+          or review#>>'{mainTransport,0,details}' not like '%HAWB: HAWB-001%'
+          or review#>>'{equipment,0,number}'<>'AKE12345EX'
+          or jsonb_array_length(review->'equipment')<>1
           or review#>>'{shipper,name}'<>'Demo Shipper'
           or review#>>'{consignee,address}'<>'Harbour Street' then
           raise exception 'Review failed customer pricing, scope or marks'; end if;
         if review::text like '%Private rate%' or review::text like '%Private cost%'
           or review::text like '%Customer onward%' or review::text like '%CostAmount%' then
           raise exception 'Review included private information'; end if;
+        update public."Job_Routing" set "JobRoute_ModeCode"='sea', "JobRoute_Vessel"='Example Star',
+          "JobRoute_VoyageNumber"='42E', "JobRoute_FlightNumber"='STALE-FLIGHT'
+          where "JobRoute_ID"='90000000-0000-4000-8000-000000000001';
+        changed:=document_api.booking_confirmation_review('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
+        if changed#>>'{mainTransport,0,details}' not like '%Vessel: Example Star%'
+          or changed#>>'{mainTransport,0,details}' like '%STALE-FLIGHT%'
+          or changed#>>'{equipment,1,number}'<>'STALE-SEA'
+          or jsonb_array_length(changed->'equipment')<>2 then
+          raise exception 'Sea mapping included stale air fields'; end if;
+        update public."Job_Routing" set "JobRoute_ModeCode"='road', "JobRoute_VehicleRegistration"='EX12 ABC',
+          "JobRoute_TrailerNumber"='TR-45' where "JobRoute_ID"='90000000-0000-4000-8000-000000000001';
+        changed:=document_api.booking_confirmation_review('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
+        if changed#>>'{mainTransport,0,details}' not like '%Vehicle: EX12 ABC%'
+          or changed#>>'{mainTransport,0,details}' like '%Vessel: Example Star%' then
+          raise exception 'Road mapping included stale sea fields'; end if;
+        update public."Job_Routing" set "JobRoute_ModeCode"='rail', "JobRoute_RailService"='EX-R1'
+          where "JobRoute_ID"='90000000-0000-4000-8000-000000000001';
+        changed:=document_api.booking_confirmation_review('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
+        if changed#>>'{mainTransport,0,details}' not like '%Rail service: EX-R1%'
+          or changed#>>'{mainTransport,0,details}' like '%Vehicle: EX12 ABC%' then
+          raise exception 'Rail mapping included stale road fields'; end if;
+        update public."Job_Routing" set "JobRoute_ModeCode"='air', "JobRoute_FlightNumber"='FL1'
+          where "JobRoute_ID"='90000000-0000-4000-8000-000000000001';
         begin perform document_api.booking_confirmation_review('30000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001');
           raise exception 'Foreign tenant read allowed'; exception when insufficient_privilege then null; end;
         begin perform document_api.booking_confirmation_review('30000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001');
@@ -177,8 +237,18 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
           'd0000000-0000-4000-8000-000000000002','private','path2','v2.pdf','application/pdf',10,'sha');
         if (select count(*) from public."DOCB_GeneratedDocuments" where "DOCBGD_VersionNo" in (1,2) and "DOCBGD_IsCurrentVersion")<>2 then
           raise exception 'Document versions were not retained'; end if;
+        insert into public."DOCB_DocumentTemplates" ("DOCBT_ID","DOCBT_Code","DOCBT_Name") values
+          ('b0000000-0000-4000-8000-000000000002','JOB_CONFIRMATION_LAYOUT_2','Booking confirmation · layout 2');
+        insert into public."DOCB_RenderJobs" values ('c0000000-0000-4000-8000-000000000004','b0000000-0000-4000-8000-000000000002',
+          '60000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','rendering','pdf','{}','{}');
+        perform document_api.prepare_booking_confirmation('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000004',changed->>'reviewToken',false);
+        perform document_api.complete_job_render('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000004',
+          'd0000000-0000-4000-8000-000000000004','private','path4','layout2.pdf','application/pdf',10,'sha');
+        if (select "DOCBGD_VersionNo" from public."DOCB_GeneratedDocuments" where "DOCBGD_ID"='d0000000-0000-4000-8000-000000000004')<>3 then
+          raise exception 'Booking variant did not join the same document version sequence'; end if;
         listing:=booking_api.workspace_documents('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
-        if jsonb_array_length(listing)<>2 then raise exception 'Documents listing lost versions'; end if;
+        if jsonb_array_length(listing)<>3 or listing#>>'{0,metadata,templateCode}'<>'JOB_CONFIRMATION_LAYOUT_2' then
+          raise exception 'Documents listing lost a Booking layout or version'; end if;
         update public."Job_Header" set "Job_Status"='draft' where "Job_ID"='60000000-0000-4000-8000-000000000001';
         review:=document_api.booking_confirmation_review('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
         if (review->>'provisional')::boolean is not true or (review->>'priceAvailable')::boolean is not false then

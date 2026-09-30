@@ -8,6 +8,9 @@
   "bookingConfirmation": {
     "bookingReference": "DEMO-SEA-IMPORT",
     "direction": "Import",
+    "mode": "Sea",
+    "shipmentType": "FCL",
+    "incoterm": "FCA Sample Place",
     "customerReference": "PO-SEA-001",
     "preparedBy": "Demo Operator",
     "provisional": false,
@@ -35,9 +38,18 @@
         "origin": "Shanghai",
         "destination": "Felixstowe",
         "plannedDepartureAt": "2026-10-08T09:00:00Z",
-        "plannedArrivalAt": "2026-10-09T14:00:00Z"
+        "plannedArrivalAt": "2026-10-09T14:00:00Z",
+        "details": "Carrier: Example Shipping · Booking ref: SEA-BOOK-01 · Vessel: Example Star · Voyage: 042E · MBL: MBL-001 · HBL: HBL-001"
       }
     ],
+    "equipment": [
+      {
+        "kind": "Container",
+        "number": "EXAU1234567",
+        "type": "40HC"
+      }
+    ],
+    "hasEquipment": true,
     "delivery": {
       "address": "2 Sample Street, Destination City",
       "plannedAtLabel": "12 Oct 2026",

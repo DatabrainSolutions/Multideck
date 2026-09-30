@@ -5,7 +5,7 @@ import { planningChargeReadback } from "@/lib/booking-charge-readback"
 import { planningAuditChanges } from "@/lib/booking-planning-audit"
 import { bookingOwnerLabel } from "@/lib/booking-owner"
 import { getBookingAttachmentAccess, getBookingConfirmationReview, getBookingQuoteDocumentAccess, type BookingConfirmationReview } from "@/lib/booking-workflow-api"
-import { getGeneratedDocumentDownload, renderDocument } from "@/lib/document-builder-api"
+import { getDocumentBuilderWorkspace, getGeneratedDocumentDownload, isBookingConfirmationTemplateCode, renderDocument, type DocumentTemplateSummary } from "@/lib/document-builder-api"
 import { hasPermission } from "@/lib/auth-user"
 import "@/quotes-transfer.css"
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
@@ -102,8 +102,8 @@ import { AnimatedList } from "./animated-list"
 import { setLiveJobStarred, type LiveBooking } from "@/lib/application-data-api"
 import { bookingCargoOtherHandling, bookingCargoHandlingSummary, bookingCargoSafetyConflict, bookingCargoRequirementLabels } from "@/lib/booking-cargo-handling"
 import { bookingChargeableWeightSummary, bookingChargeableWeightError } from "@/lib/booking-chargeable-weight"
-import { analyseCargoAllocations, bookingCargoAllocationPayload, containerPackageSummary, newBookingCargoAllocation, quickCargoAssignmentElsewhere } from "@/lib/booking-cargo-allocations"
-import { CargoAllocationEditor } from "./cargo-allocation-editor"
+import { analyseCargoAllocations, bookingCargoAllocationPayload, cargoPackageSplitSummary, containerPackageSummary, newBookingCargoAllocation, quickCargoAssignmentElsewhere } from "@/lib/booking-cargo-allocations"
+import { BookingCargoLoadPlanSheet } from "./booking-cargo-load-plan-sheet"
 import { BookingCustomerPanel } from "./booking-customer-panel"
 import { BookingRouteMilestones } from "./booking-route-milestones"
 import { BookingDangerousGoodsEditor } from "./booking-dangerous-goods"
@@ -143,6 +143,7 @@ import { bookingRouteCutoffFields, routeCutoffInputValue, changeRouteCutoff } fr
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { changeBookingRouteMode, routeSharedReferenceFields } from "@/lib/booking-route-mode-change"
 import { bookingRecordAvailability } from "@/lib/booking-record-availability"
+import { customsCargoForSave, customsCargoRows, customsCountry, customsPartiesForSave, customsReceivingFields, customsRegistration } from "@/lib/booking-customs-source"
 
 export type Booking = (typeof bookings)[number]
 export type OperatorJob = (typeof operatorJobs)[number]
@@ -165,15 +166,6 @@ const bookingIncotermOptions = ["EXW", "FCA", "FOB", "CIF", "DAP", "DDP"] as con
 const bookingOtherHandlingOptions = ["General merchandise", "Oversized", "Fragile", "Food grade"] as const
 const bookingCustomsIncludedOptions = ["Yes", "No"] as const
 const bookingProgressOptions = ["0%", "20%", "40%", "60%", "80%", "100%"] as const
-
-const bookingEquipmentOptionsByMode: Record<string, readonly string[]> = {
-  ocean: ["20GP", "40GP", "40HC", "45HC", "Reefer", "Open top", "Flat rack", "Other"],
-  sea: ["20GP", "40GP", "40HC", "45HC", "Reefer", "Open top", "Flat rack", "Other"],
-  air: ["ULD", "Air pallet", "Carton", "Loose", "Other"],
-  road: ["Curtainsider", "Box trailer", "Refrigerated trailer", "Flatbed", "Pallet", "Other"],
-  rail: ["20GP", "40GP", "40HC", "Rail wagon", "Other"],
-  multimodal: ["20GP", "40GP", "40HC", "45HC", "ULD", "Air pallet", "Pallet", "Other"],
-}
 
 function bookingTabSlug(tab: BookingDetailTab) {
   return tab.toLowerCase().replaceAll(" ", "-")
@@ -2668,6 +2660,7 @@ function BookingContainerDetails({
   onChange,
   onRemove,
   onAllocationsChange,
+  onOpenCargoLoadPlan,
 }: {
   containers: BookingWorkflowContainer[]
   cargo: BookingWorkflowCargo[]
@@ -2680,6 +2673,7 @@ function BookingContainerDetails({
   onChange: (index: number, field: BookingContainerDraftField, value: string) => void
   onRemove: (index: number) => void
   onAllocationsChange: (lines: BookingCargoAllocation[]) => void
+  onOpenCargoLoadPlan: (cargoId: string) => void
 }) {
   const { t } = useLanguage()
   const kinds = equipmentKinds ?? bookingEquipmentKindChoices({ mode, stage: "booking", hasContainers: containers.some((item) => bookingEquipmentPresentation(item.equipmentKind).key === "container") })
@@ -2815,7 +2809,7 @@ function BookingContainerDetails({
                   {allocations && cargo.length ? <div className="col-span-full grid min-w-0 gap-2 py-2">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <h4 className="text-[12px] font-medium text-[var(--md-ink)]">{t("Cargo in this equipment")}</h4>
-                      <span className="text-[11px] text-[var(--md-text)]">{t("Select any number of cargo lines; quantities can be added below.")}</span>
+                      <span className="text-[11px] text-[var(--md-text)]">{t("Select cargo here; split quantities and container-specific handling below.")}</span>
                     </div>
                     {!container.id ? <p className="text-[11px] text-[var(--md-text)]">{t("Save this equipment before assigning cargo.")}</p> : null}
                     <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -2827,20 +2821,21 @@ function BookingContainerDetails({
                         const otherEquipmentIndex = containers.findIndex(item => item.id === assignedElsewhere?.containerId)
                         const otherEquipment = containers[otherEquipmentIndex]
                         const otherEquipmentLabel = otherEquipment ? `${t(bookingEquipmentPresentation(otherEquipment.equipmentKind).label)} ${otherEquipmentIndex + 1}` : t("another equipment item")
-                        const disabled = !editable || !container.id || !line.id || Boolean(assignedElsewhere) || (legScoped && !linked) || allocations.length >= 1000 && !linked
+                        const disabled = !editable || !container.id || !line.id || (legScoped && !linked) || allocations.length >= 1000 && !linked
                         return <label key={line.id || cargoIndex} htmlFor={controlId} className="flex min-w-0 items-start gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2 py-2 text-[12px] shadow-[var(--md-shadow-line)]">
                           <Checkbox id={controlId} checked={Boolean(linked)} disabled={disabled || Boolean(linked?.routeId)}
                             onCheckedChange={checked => {
                               if (!editable || !container.id || !line.id || !allocations) return
                               if (checked === true) {
-                                if (linked || legScoped || assignedElsewhere || allocations.length >= 1000) return
+                                if (linked || legScoped || allocations.length >= 1000) return
+                                if (assignedElsewhere) { onOpenCargoLoadPlan(line.id);return }
                                 onAllocationsChange([...allocations, { ...newBookingCargoAllocation(), cargoId: line.id, containerId: container.id }])
                               } else if (linked && !linked.routeId) {
                                 if (linked.packageQuantity != null || linked.grossWeightKg != null || linked.volumeCbm != null || linked.notes?.trim()) setRemovingAllocation(linked)
                                 else onAllocationsChange(allocations.filter(allocation => allocation.id !== linked.id))
                               }
                             }} aria-label={`${linked ? t("Remove") : t("Assign")} ${t("Cargo")} ${cargoIndex + 1} ${line.description || t("No description")}`} aria-describedby={assignedElsewhere ? `${controlId}-reason` : undefined} />
-                          <span className="min-w-0 break-words" data-i18n-skip>{cargoIndex + 1}. {line.description || t("No description")}{assignedElsewhere ? <span id={`${controlId}-reason`} className="block text-[11px] text-[var(--md-text)]">{t("Already assigned to")} {otherEquipmentLabel}</span> : legScoped ? <span className="block text-[11px] text-[var(--md-text)]">{t("Leg-specific — manage below")}</span> : null}</span>
+                          <span className="min-w-0 break-words" data-i18n-skip>{cargoIndex + 1}. {line.description || t("No description")}{assignedElsewhere ? <span id={`${controlId}-reason`} className="block text-[11px] text-[var(--md-text)]">{t("Also in")} {otherEquipmentLabel} · {t("enter each container's quantity below")}</span> : legScoped ? <span className="block text-[11px] text-[var(--md-text)]">{t("Leg-specific — manage below")}</span> : null}</span>
                         </label>
                       })}
                     </div>
@@ -2934,7 +2929,6 @@ function BookingRecordDetails({
   renderDangerousGoods,
   renderSecurityEvidence,
   renderMilestones,
-  allocationEditor,
   onAllocationsChange,
   allocationValidationAttempt = 0,
   weightValidation,
@@ -2963,7 +2957,6 @@ function BookingRecordDetails({
   renderDangerousGoods?: (cargo: BookingWorkflowCargo, renderHandling?: (entry: ReactNode, records: ReactNode, unsaved: boolean) => ReactNode) => ReactNode
   renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
   renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
-  allocationEditor?: ReactNode
   onAllocationsChange: (lines: BookingCargoAllocation[]) => void
   allocationValidationAttempt?: number
   weightValidation?: { attempt: number; index: number | null; field?: "description" }
@@ -3008,10 +3001,13 @@ function BookingRecordDetails({
     applyPartyChange(role, field, value)
   }
 
-  const allocationSectionRef = useRef<HTMLDivElement>(null)
+  const [loadPlanCargoId, setLoadPlanCargoId] = useState<string | null>(null)
+  const loadPlanTriggerRef = useRef<HTMLButtonElement | null>(null)
   const goodsDescriptionRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (allocationValidationAttempt) allocationSectionRef.current?.focus()
+    if (!allocationValidationAttempt || !workspace.cargoAllocationState) return
+    const firstIssue = analyseCargoAllocations(workspace.cargo, workspace.containers, workspace.routes, workspace.cargoAllocationState.allocations).issues[0]
+    if (firstIssue) setLoadPlanCargoId(workspace.cargoAllocationState.allocations.find(line => line.id === firstIssue.id)?.cargoId ?? null)
   }, [allocationValidationAttempt])
   const [selectedCargoIndex, setSelectedCargoIndex] = useState<number | null>(null)
   const [removingCargoIndex, setRemovingCargoIndex] = useState<number | null>(null)
@@ -3077,7 +3073,6 @@ function BookingRecordDetails({
     "origin",
     "destination",
     "shipmentType",
-    "container",
     "departureDate",
     "arrivalDate",
     "vessel",
@@ -3224,7 +3219,6 @@ function BookingRecordDetails({
   }
 
   const cargoLineEditor = selectedCargoIndex !== null && cargo ? <div className="grid min-w-0 gap-3 p-3">
-    {allocationEditor && cargo.id ? <p className="text-[12px] text-[var(--md-text)]">{t("To place this cargo, open a container below and select this line. Add quantities only when known.")}</p> : null}
     <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
       <BookingCargoWiseAmountField label="Cargo line value" amount={cargoValue("declaredValue")} currency={cargoValue("declaredValueCurrency")} currencies={currencyOptions} editable={editable} onAmountChange={(nextAmount) => onCargoChange(cargoIndex, "declaredValue", nextAmount)} onCurrencyChange={(nextCurrency) => onCargoChange(cargoIndex, "declaredValueCurrency", nextCurrency)} />
       <BookingCargoWiseField label="Commodity" value={cargoValue("commodity", value(facts, "commodity"))} options={commodityOptions} searchable placeholder="Search commodities" {...editCargo(cargoIndex, "commodity")} />
@@ -3419,7 +3413,10 @@ function BookingRecordDetails({
                   <div className="flex min-h-9 flex-wrap gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] p-1.5 shadow-[var(--md-shadow-line)]" aria-label={t("Requested equipment")}>
                     {workspace.containers.map((item, index) => <span key={item.id || index} className="rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] px-2 py-1 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" data-i18n-skip>{item.number || `${t(bookingEquipmentPresentation(item.equipmentKind).label)} ${index + 1}`} · {item.type || t("Type not recorded")}</span>)}
                   </div>
-                </div> : <BookingCargoWiseField label="Equipment / load" value={record.booking.container} options={bookingEquipmentOptionsByMode[modeKey] ?? bookingEquipmentOptionsByMode.multimodal} placeholder="Choose equipment" {...editField("container")} />}
+                </div> : <div className="min-w-0 text-[12px]">
+                  <p className="mb-1 text-[var(--md-text)]">{t("Requested equipment")}</p>
+                  <p className="flex min-h-8 items-center text-[var(--md-subtle)]">{t("None recorded · Add equipment below if needed")}</p>
+                </div>}
                 {fieldPolicy.hblMode ? <BookingCargoWiseField label="HBL mode" value={detailValue("hblMode", value(facts, "hblMode"))} options={bookingHblModeOptions} placeholder="Choose HBL mode" allowCustom={false} {...editDetail("hblMode")} /> : null}
                 <BookingCargoWiseField label="Incoterms" value={incotermCode} options={bookingIncotermOptions} placeholder="Choose Incoterm" allowCustom={false} editable={editable} onChange={(nextCode) => onDetailChange("incoterms", [nextCode, incotermLocation].filter(Boolean).join(" "))} />
                 <BookingCargoWiseField label="Planned departure (UTC)" value={plannedDeparture} inputType="date" editable={editable && !departureParts.invalid} onChange={(nextDate) => {
@@ -3575,16 +3572,28 @@ function BookingRecordDetails({
               <thead className="bg-[var(--md-surface-soft)] text-[var(--md-text)]"><tr>
                 {["Goods description", "Packages", "Gross weight (kg)", ...(showChargeableWeight ? ["Chargeable weight (kg)"] : []), "Volume (CBM)", "Handling", "Equipment", "Actions"].map((label) => <th key={label} scope="col" className="px-3 py-2 font-medium">{t(label)}</th>)}
               </tr></thead>
-              {workspace.cargo.map((line, index) => (
+              {workspace.cargo.map((line, index) => {
+                const lineAllocations = workspace.cargoAllocationState?.allocations.filter(allocation => allocation.cargoId === line.id && !allocation.archived) ?? []
+                const packageSplit = cargoPackageSplitSummary(line, lineAllocations.filter(allocation => !allocation.routeId))
+                const splitQuantities = lineAllocations.length > 1 && lineAllocations.every(allocation => !allocation.routeId && allocation.packageQuantity != null)
+                  ? lineAllocations.map(allocation => cargoPackageSplitSummary(line, [allocation]).knownAllocated).join(" + ") : ""
+                const canOpenLoadPlan = Boolean(line.id) && Boolean(workspace.cargoAllocationState)
+                  && (lineAllocations.length > 0 || editable && workspace.containers.some(container => container.id))
+                return (
                 <tbody key={line.id || `draft-${index}`}>
                 <tr className={cn(selectedCargoIndex === index && "bg-[var(--md-surface-soft)]")}>
-                  <td className="px-3 py-1.5"><Button variant="ghost" size="sm" aria-expanded={selectedCargoIndex === index} aria-controls={selectedCargoIndex === index ? `booking-cargo-line-${index}` : undefined} onClick={() => setSelectedCargoIndex(current => current === index ? null : index)} className="h-auto justify-start gap-2 whitespace-normal text-left"><ChevronDown className={cn("size-3.5 shrink-0 transition-transform", selectedCargoIndex !== index && "-rotate-90")} aria-hidden="true" />{index + 1}. {line.description || t("New cargo line")}</Button></td>
+                  <td className="px-3 py-1.5"><div className="grid justify-items-start gap-1">
+                    <Button variant="ghost" size="sm" aria-expanded={selectedCargoIndex === index} aria-controls={selectedCargoIndex === index ? `booking-cargo-line-${index}` : undefined} onClick={() => setSelectedCargoIndex(current => current === index ? null : index)} className="h-auto justify-start gap-2 whitespace-normal text-left"><ChevronDown className={cn("size-3.5 shrink-0 transition-transform", selectedCargoIndex !== index && "-rotate-90")} aria-hidden="true" />{index + 1}. {line.description || t("New cargo line")}</Button>
+                    {canOpenLoadPlan ? <Button type="button" variant="ghost" size="sm" className="h-auto min-h-7 justify-start px-2 text-[12px] text-[var(--md-accent)]" aria-label={`${t("Open load plan for cargo")} ${index + 1}: ${line.description || t("New cargo line")}`} onClick={(event) => { loadPlanTriggerRef.current = event.currentTarget;setLoadPlanCargoId(line.id!) }}>
+                      {splitQuantities ? `${splitQuantities} ${line.packageType || t("packages")} ${t("in")} ${lineAllocations.length} ${t("containers")}` : lineAllocations.length > 1 && packageSplit.total ? `${packageSplit.knownAllocated} ${t("of")} ${packageSplit.total} ${line.packageType || t("packages")} ${t("allocated")}` : t(!editable ? "View load plan" : lineAllocations.length ? "Split cargo" : "Plan load")}
+                    </Button> : null}
+                  </div></td>
                   <td className="px-3 py-1.5">{line.packageQuantity ?? line.pieces ?? "–"} {line.packageType}</td>
                   <td className="px-3 py-1.5">{line.grossWeightKg ?? "–"}</td>
                   {showChargeableWeight ? <td data-i18n-skip className="px-3 py-1.5">{line.chargeableWeightKg == null || String(line.chargeableWeightKg).trim() === "" ? "–" : line.chargeableWeightKg}</td> : null}
                   <td className="px-3 py-1.5">{line.volumeCbm ?? "–"}</td>
                   <td className="px-3 py-1.5"><span className="text-[var(--md-text)]" data-i18n-skip>{bookingCargoRequirementLabels(line).join(" · ") || "–"}</span></td>
-                  <td className="px-3 py-1.5"><span className="text-[var(--md-text)]" data-i18n-skip>{workspace.cargoAllocationState?.allocations.filter(allocation => allocation.cargoId === line.id).map(allocation => {
+                  <td className="px-3 py-1.5"><span className="text-[var(--md-text)]" data-i18n-skip>{lineAllocations.map(allocation => {
                     const equipmentIndex = workspace.containers.findIndex(item => item.id === allocation.containerId)
                     const equipment = workspace.containers[equipmentIndex]
                     const routeIndex = workspace.routes.findIndex(route => route.id === allocation.routeId)
@@ -3595,7 +3604,7 @@ function BookingRecordDetails({
                 </tr>
                 {selectedCargoIndex === index ? <tr><td colSpan={showChargeableWeight ? 8 : 7} className="bg-[var(--md-surface-soft)] p-0 align-top"><div id={`booking-cargo-line-${index}`} className="min-w-0">{cargoLineEditor}</div></td></tr> : null}
                 </tbody>
-              ))}
+              )})}
             </table>
           </div>
           {!workspace.cargo.length ? <p className="px-3 py-4 text-[12px] text-[var(--md-text)]">{t("No cargo lines yet.")}</p> : null}
@@ -3621,7 +3630,7 @@ function BookingRecordDetails({
             <DialogFooter><Button variant="outline" onClick={() => setRemovingCargoIndex(null)}>{t("Cancel")}</Button><Button onClick={() => { if (removingCargoIndex !== null) onCargoRemove(removingCargoIndex); setRemovingCargoIndex(null); setSelectedCargoIndex(0) }}>{t("Remove line")}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
-      {equipmentKinds.length > 0 || workspace.containers.length > 0 ? (
+      {equipmentKinds.length > 0 || workspace.containers.length > 0 || Boolean(workspace.cargoAllocationState?.allocations.length) || Boolean(workspace.cargoAllocationState?.legacyUnquantifiedLinks.length) ? (
         <BookingContainerDetails
           containers={workspace.containers}
           cargo={workspace.cargo}
@@ -3634,11 +3643,16 @@ function BookingRecordDetails({
           onChange={onContainerChange}
           onRemove={onContainerRemove}
           onAllocationsChange={onAllocationsChange}
+          onOpenCargoLoadPlan={setLoadPlanCargoId}
         />
       ) : null}
-
-      {allocationEditor && (equipmentKinds.length > 0 || workspace.containers.length > 0 || workspace.cargoAllocationState?.allocations.length || workspace.cargoAllocationState?.legacyUnquantifiedLinks.length)
-        ? <div ref={allocationSectionRef} tabIndex={-1} aria-label={t("Review cargo allocations")} className="min-w-0 focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]"><BookingCargoWiseGroup title="Cargo allocation">{allocationEditor}</BookingCargoWiseGroup></div> : null}
+      {loadPlanCargoId && workspace.cargoAllocationState ? (() => {
+        const index = workspace.cargo.findIndex(line => line.id === loadPlanCargoId)
+        return index < 0 ? null : <BookingCargoLoadPlanSheet key={loadPlanCargoId} cargo={workspace.cargo[index]} cargoIndex={index}
+          cargoLines={workspace.cargo} equipment={workspace.containers} routes={workspace.routes}
+          allocations={workspace.cargoAllocationState.allocations} editable={editable} validationAttempt={allocationValidationAttempt}
+          onClose={() => { setLoadPlanCargoId(null);requestAnimationFrame(() => loadPlanTriggerRef.current?.focus()) }} onSave={onAllocationsChange} />
+      })() : null}
       </div>
       <BookingCargoWiseGroup
         title="Customer terms"
@@ -3698,6 +3712,8 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
   const [downloading, setDownloading] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [review, setReview] = useState<BookingConfirmationReview | null>(null)
+  const [confirmationTemplates, setConfirmationTemplates] = useState<DocumentTemplateSummary[]>([])
+  const [confirmationTemplateCode, setConfirmationTemplateCode] = useState("JOB_CONFIRMATION")
   const [reviewError, setReviewError] = useState<string | null>(null)
   const [reviewLoading, setReviewLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -3728,11 +3744,19 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
     if (!record.workspace || blocked || !canGenerate) return
     setReviewOpen(true)
     setReview(null)
+    setConfirmationTemplates([])
+    setConfirmationTemplateCode("JOB_CONFIRMATION")
     setReviewError(null)
     setConfirmPrices(false)
     setReviewLoading(true)
     try {
-      const next = await getBookingConfirmationReview(record.workspace.booking.jobId)
+      const [next, documentWorkspace] = await Promise.all([
+        getBookingConfirmationReview(record.workspace.booking.jobId),
+        getDocumentBuilderWorkspace(),
+      ])
+      const availableTemplates = documentWorkspace.templates.filter(template => template.status === "published" && isBookingConfirmationTemplateCode(template.code) && template.outputFormats.includes("pdf"))
+      if (!availableTemplates.some(template => template.code === "JOB_CONFIRMATION")) throw new Error(t("The published Booking confirmation template is unavailable."))
+      setConfirmationTemplates(availableTemplates)
       setReview(next)
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : t("Booking information could not be reviewed.")
@@ -3741,12 +3765,12 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
     } finally { setReviewLoading(false) }
   }
   async function generateConfirmation() {
-    if (!record.workspace || !review || generating || !canGenerate || blocked) return
+    if (!record.workspace || !review || generating || !canGenerate || blocked || !confirmationTemplates.some(template => template.code === confirmationTemplateCode)) return
     setGenerating(true)
     setReviewError(null)
     try {
       const result = await renderDocument({
-        templateCode: "JOB_CONFIRMATION",
+        templateCode: confirmationTemplateCode,
         targetType: "Job_Header",
         jobNumber: String(record.workspace.booking.jobNumber),
         outputFormat: "pdf",
@@ -3938,6 +3962,12 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
             {reviewLoading ? <div className="grid place-items-center py-8"><DotGridLoader label={t("Loading Booking information…")} /></div> : null}
             {reviewError ? <p role="alert" className="rounded-[var(--md-radius-md)] bg-[var(--md-status-red-bg)] p-3 text-[12px] text-[var(--md-status-red-ink)]">{reviewError}</p> : null}
             {review ? <div className="grid gap-4 text-[12px] text-[var(--md-ink)]">
+              <label className="grid gap-1.5 font-medium">{t("Booking confirmation layout")}
+                <Select value={confirmationTemplateCode} onValueChange={setConfirmationTemplateCode}>
+                  <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] font-normal shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
+                  <SelectContent>{confirmationTemplates.map(template => <SelectItem key={template.id} value={template.code}>{t(template.name)}</SelectItem>)}</SelectContent>
+                </Select>
+              </label>
               <div className="grid gap-1"><p className="font-medium" data-i18n-skip>{review.bookingReference} · {review.customer?.name}</p>
                 <p>{review.provisional ? t("Provisional—not confirmed") : t("Booking information")}</p>
                 <p>{t("Prepared by")} <span data-i18n-skip>{review.preparedBy}</span></p>
@@ -3965,7 +3995,7 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
             </div> : null}
             <DialogFooter>
               <Button variant="ghost" disabled={generating} onClick={() => setReviewOpen(false)}>{t("Cancel")}</Button>
-              <Button disabled={!review || generating || blocked} onClick={() => void generateConfirmation()}>{t(generating ? "Saving PDF…" : confirmPrices ? "Save PDF with reviewed prices" : "Save PDF — price to be confirmed")}</Button>
+              <Button disabled={!review || generating || blocked || !confirmationTemplates.some(template => template.code === confirmationTemplateCode)} onClick={() => void generateConfirmation()}>{t(generating ? "Saving PDF…" : confirmPrices ? "Save PDF with reviewed prices" : "Save PDF — price to be confirmed")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -4014,9 +4044,10 @@ function BookingCustomsSourceEditor({
   const mainRouteIndex = Math.max(workspace.routes.findIndex((leg) => leg.isMainCarriage), 0)
   const route = workspace.routes[mainRouteIndex] ?? {}
   const container = workspace.containers[0] ?? {}
-  const exporter = workspace.parties.find((party) => ["exporter", "shipper", "consignor"].includes(party.role.toLowerCase()))
-  const importer = workspace.parties.find((party) => ["importer", "consignee"].includes(party.role.toLowerCase()))
-  const cargo = workspace.cargo[0] ?? {}
+  const shipper = workspace.parties.find((party) => party.role.toLowerCase() === "shipper")
+  const consignor = workspace.parties.find((party) => party.role.toLowerCase() === "consignor")
+  const consignee = workspace.parties.find((party) => party.role.toLowerCase() === "consignee")
+  const exporter = consignor ?? shipper
   const [form, setForm] = useState(() => ({
     direction: String(booking.direction ?? "unknown"),
     mode: String(booking.mode ?? ""),
@@ -4028,18 +4059,9 @@ function BookingCustomsSourceEditor({
     freightChargeCurrency: String(booking.freightChargeCurrency ?? ""),
     exporterName: String(exporter?.name ?? ""),
     exporterAddress: String(exporter?.address ?? ""),
-    exporterCountry: String(exporter?.countryCode ?? ""),
-    exporterIdentifier: String(exporter?.identifierValue ?? ""),
-    importerName: String(importer?.name ?? ""),
-    importerAddress: String(importer?.address ?? ""),
-    importerCountry: String(importer?.countryCode ?? ""),
-    importerIdentifier: String(importer?.identifierValue ?? ""),
-    goodsDescription: String(cargo.description ?? ""),
-    packageQuantity: cargo.packageQuantity == null ? String(cargo.pieces ?? "") : String(cargo.packageQuantity),
-    packageType: String(cargo.packageType ?? ""),
-    grossWeightKg: cargo.grossWeightKg == null ? "" : String(cargo.grossWeightKg),
-    netWeightKg: cargo.netWeightKg == null ? "" : String(cargo.netWeightKg),
-    hsCode: String(cargo.hsCode ?? ""),
+    exporterCountry: customsCountry(exporter),
+    exporterIdentifier: customsRegistration(exporter),
+    ...customsReceivingFields(workspace.parties, String(booking.direction ?? "unknown")),
     transportReference: String(
       String(booking.mode ?? "").toLowerCase() === "air" ? route.flightNumber ?? ""
         : String(booking.mode ?? "").toLowerCase() === "sea" ? route.voyageNumber ?? route.masterTransportReference ?? route.transportMeansName ?? ""
@@ -4048,6 +4070,7 @@ function BookingCustomsSourceEditor({
     ),
     containerNumber: String(container.number ?? ""),
   }))
+  const [cargoRows, setCargoRows] = useState(() => customsCargoRows(workspace.cargo))
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState<"commercial_invoice" | "packing_list" | null>(null)
   const [attachmentPreview, setAttachmentPreview] = useState<{ id: string; name: string; url?: string; mimeType?: string; error?: string } | null>(null)
@@ -4096,7 +4119,9 @@ function BookingCustomsSourceEditor({
           <select
             className="h-9 min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-2.5 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
             value={form[key]}
-            onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
+            onChange={(event) => setForm((current) => key === "direction"
+              ? { ...current, direction: event.target.value, ...customsReceivingFields(workspace.parties, event.target.value) }
+              : { ...current, [key]: event.target.value })}
           >
             <option value="">{t("Choose")}</option>
             {options.map((option) => (
@@ -4115,11 +4140,22 @@ function BookingCustomsSourceEditor({
     )
   }
 
+  const cargoColumns = [
+    { key: "description", label: "Goods description", width: "w-[210px]" },
+    { key: "packageQuantity", label: "Packages", width: "w-[100px]" },
+    { key: "packageType", label: "Pack type", width: "w-[120px]" },
+    { key: "grossWeightKg", label: "Gross kg", width: "w-[105px]" },
+    { key: "netWeightKg", label: "Net kg", width: "w-[105px]" },
+    { key: "hsCode", label: "Commodity code", width: "w-[130px]" },
+    { key: "countryOfOrigin", label: "Origin country", width: "w-[105px]" },
+    { key: "declaredValue", label: "Goods value", width: "w-[105px]" },
+    { key: "declaredValueCurrency", label: "Currency", width: "w-[85px]" },
+  ] as const
+
   async function saveSourceData() {
     if (saving) return false
     setSaving(true)
     try {
-      const otherParties = workspace.parties.filter((party) => !["exporter", "shipper", "consignor", "importer", "consignee"].includes(party.role.toLowerCase()))
       const mode = form.mode.toLowerCase()
       const updatedRoute = {
         ...route,
@@ -4158,17 +4194,8 @@ function BookingCustomsSourceEditor({
         ...(workspace.routes.length
           ? { routes: workspace.routes.map((leg, index) => index === mainRouteIndex ? updatedRoute : leg) }
           : { route: updatedRoute }),
-        parties: [
-          ...otherParties,
-          { ...exporter, role: "consignor", sequence: 10, name: form.exporterName, address: form.exporterAddress, countryCode: form.exporterCountry.toUpperCase(), identifierType: "eori", identifierValue: form.exporterIdentifier, isPrimary: true },
-          { ...importer, role: "consignee", sequence: 20, name: form.importerName, address: form.importerAddress, countryCode: form.importerCountry.toUpperCase(), identifierType: form.direction === "import" ? "eori" : importer?.identifierType ?? "eori", identifierValue: form.importerIdentifier, isPrimary: true },
-        ],
-        cargo: workspace.cargo.length || [form.goodsDescription, form.packageQuantity, form.packageType, form.grossWeightKg, form.netWeightKg, form.hsCode].some((value) => value.trim())
-          ? [
-              { ...cargo, lineNumber: 1, description: form.goodsDescription, pieces: form.packageQuantity || null, packageQuantity: form.packageQuantity || null, packageType: form.packageType, grossWeightKg: form.grossWeightKg || null, netWeightKg: form.netWeightKg || null, hsCode: form.hsCode },
-              ...workspace.cargo.slice(1),
-            ]
-          : [],
+        parties: customsPartiesForSave(workspace.parties, form),
+        cargo: customsCargoForSave(workspace.cargo, cargoRows),
         containers: mode === "sea"
           ? [{ ...container, number: form.containerNumber, status: container.status ?? "planned" }, ...workspace.containers.slice(1)]
           : workspace.containers,
@@ -4220,13 +4247,11 @@ function BookingCustomsSourceEditor({
     if (issue.key === "importer_address") return field("importerAddress", "Importer full address")
     if (issue.key === "importer_identifier") return field("importerIdentifier", "Importer EORI or VAT number")
     if (issue.key === "importer_country") return field("importerCountry", "Importer / consignee country code")
-    if (issue.key === "goods_description") return field("goodsDescription", "Goods description")
-    if (issue.key === "packages") return <div className="grid gap-3 sm:grid-cols-2">{field("packageQuantity", "Pieces / packages")}{field("packageType", "Package type")}</div>
-    if (issue.key === "gross_weight") return field("grossWeightKg", "Gross weight (kg)")
-    if (issue.key === "commodity_code" || issue.key === "net_weight") {
-      if (workspace.cargo.length > 1) return <p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Review every cargo line in Booking Details. Each line needs a commodity code and net weight before Customs handover.")}</p>
-      return issue.key === "commodity_code" ? field("hsCode", "Commodity code") : field("netWeightKg", "Net weight (kg)")
-    }
+    if (["goods_description", "packages", "gross_weight", "commodity_code", "net_weight"].includes(issue.key)) return (
+      <Button type="button" size="sm" onClick={() => { onViewChange("source"); requestAnimationFrame(() => document.getElementById("booking-customs-cargo")?.scrollIntoView({ block: "start" })) }}>
+        {t("Review cargo lines")}
+      </Button>
+    )
     if (issue.key === "commercial_invoice") return (
       <Button asChild variant="outline" className="h-9 rounded-[var(--md-radius-lg)] px-3 text-[12px]">
         <label>{t(uploading === "commercial_invoice" ? "Attaching invoice..." : "Attach commercial invoice")}<input className="sr-only" type="file" aria-label={t("Attach commercial invoice")} accept=".pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx" disabled={Boolean(uploading)} onChange={(event) => { void attachDocument("commercial_invoice", event.target.files?.[0]); event.currentTarget.value = "" }} /></label>
@@ -4251,15 +4276,17 @@ function BookingCustomsSourceEditor({
         emptyTitle="Ready for Customs handoff"
         headline="Ready to hand off to Customs?"
         issues={readiness?.missing ?? []}
+        fixActionLabel={(issue) => issue.key === "exporter_eori" ? "Enter EORI" : issue.key === "commercial_invoice" ? "Attach invoice" : "Fix"}
         onBack={() => onViewChange("source")}
         percent={readinessPercent}
         renderFix={(issue, close) => {
-          if (workspace.cargo.length > 1 && (issue.key === "commodity_code" || issue.key === "net_weight")) {
-            return <>{fixFields(issue)}<div className="mt-3 flex justify-end"><Button type="button" size="sm" onClick={close}>{t("Close")}</Button></div></>
+          if (["goods_description", "packages", "gross_weight", "commodity_code", "net_weight"].includes(issue.key)) {
+            return <>{fixFields(issue)}</>
           }
           if (issue.key === "customs_department" || issue.key === "customs_operator") {
             return <><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Set the Customs team for this booking office.")}</p><div className="mt-3 flex justify-end"><Button type="button" size="sm" onClick={() => { close(); navigate("/admin/users") }}>{t("Open team settings")}</Button></div></>
           }
+          if (issue.key === "commercial_invoice") return fixFields(issue)
           const fields = fixFields(issue)
           return <><h3 className="mb-3 text-[12px] font-medium text-[var(--md-ink)]">{t(issue.section ?? "Booking")}</h3>{fields}<div className="mt-3 flex justify-end pt-3"><Button type="button" size="sm" disabled={saving || Boolean(uploading)} onClick={() => { void saveSourceData().then((saved) => { if (saved) close() }) }}>{t(saving ? "Saving..." : "Confirm")}</Button></div></>
         }}
@@ -4294,18 +4321,34 @@ function BookingCustomsSourceEditor({
             <div className="grid gap-3 sm:grid-cols-2">{field("exporterName", "Name")}{field("exporterCountry", "Country code")}{field("exporterAddress", "Full address")}{field("exporterIdentifier", "EORI")}</div>
           </div>
           <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">
-            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Importer")}</p>
-            <div className="grid gap-3 sm:grid-cols-2">{field("importerName", "Name")}{field("importerCountry", "Country code")}{field("importerAddress", "Full address")}{field("importerIdentifier", "EORI or VAT number")}</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">{t(form.direction === "import" ? "Importer" : "Consignee / receiver")}</p>
+              {form.direction === "import" && consignee ? <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => setForm((current) => ({
+                ...current, importerName: String(consignee.name ?? ""), importerAddress: String(consignee.address ?? ""), importerCountry: customsCountry(consignee), importerIdentifier: "",
+              }))}>{t("Use consignee details")}</Button> : null}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">{field("importerName", "Name")}{field("importerCountry", "Country code")}{field("importerAddress", "Full address")}{form.direction === "import" ? <>{field("importerIdentifierType", "Registration type", ["EORI", "VAT"])}{field("importerIdentifier", "Registration number")}</> : null}</div>
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <div className="xl:col-span-2">{field("goodsDescription", "Goods description")}</div>
-          {field("packageQuantity", "Pieces / packages")}
-          {field("packageType", "Package type")}
-          {field("grossWeightKg", "Gross weight (kg)")}
-          {field("netWeightKg", "Net weight (kg)")}
-          {field("hsCode", "Commodity code")}
-        </div>
+        <section id="booking-customs-cargo" aria-label={t("Cargo lines for Customs")} className="min-w-0 scroll-mt-6">
+          <h3 className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Cargo lines")} · {cargoRows.length}</h3>
+          {cargoRows.length ? <div className="max-w-full overflow-x-auto rounded-[var(--md-radius-lg)] shadow-[var(--md-shadow-line)]" role="region" aria-label={t("Scroll cargo lines horizontally")} tabIndex={0}>
+            <table className="w-full min-w-[1180px] table-fixed border-collapse text-start">
+              <thead className="bg-[var(--md-surface-tint)] text-[11px] text-[var(--md-text)]">
+                <tr><th scope="col" className="w-11 px-2 py-2 text-start">#</th>{cargoColumns.map((column) => <th key={column.key} scope="col" className={`${column.width} px-1 py-2 text-start font-medium`}>{t(column.label)}</th>)}</tr>
+              </thead>
+              <tbody>{cargoRows.map((row, index) => <tr key={workspace.cargo[index]?.id ?? index} className="shadow-[var(--md-stroke-top)]">
+                <th scope="row" className="px-2 text-start text-[12px] font-medium text-[var(--md-text)]">{workspace.cargo[index]?.lineNumber ?? index + 1}</th>
+                {cargoColumns.map((column) => <td key={column.key} className="min-w-0 px-1 py-1.5">
+                  <label className="block min-w-0"><span className="sr-only">{t(`Cargo line ${index + 1} ${column.label}`)}</span>
+                    <Input className="h-8 text-[12px]" value={row[column.key]} title={row[column.key]} inputMode={["packageQuantity", "grossWeightKg", "netWeightKg", "declaredValue"].includes(column.key) ? "decimal" : undefined}
+                      onChange={(event) => setCargoRows((current) => current.map((item, position) => position === index ? { ...item, [column.key]: event.target.value } : item))} />
+                  </label>
+                </td>)}
+              </tr>)}</tbody>
+            </table>
+          </div> : <p className="text-[12px] text-[var(--md-subtle)]">{t("No cargo lines yet. Add goods in Booking Details before the Customs handover.")}</p>}
+        </section>
         <section aria-label={t("Attached Customs documents")} className="grid min-w-0 gap-2">
           {attachments.length ? attachments.map(document => (
             <div key={document.id} className="flex min-w-0 flex-wrap items-center gap-3 py-2 shadow-[var(--md-stroke-top)]">
@@ -4894,7 +4937,6 @@ function BookingDetailTabPage({
   renderDangerousGoods,
   renderSecurityEvidence,
   renderMilestones,
-  allocationEditor,
   onAllocationsChange,
   allocationValidationAttempt,
   weightValidation,
@@ -4935,7 +4977,6 @@ function BookingDetailTabPage({
   renderDangerousGoods?: (cargo: BookingWorkflowCargo, renderHandling?: (entry: ReactNode, records: ReactNode, unsaved: boolean) => ReactNode) => ReactNode
   renderSecurityEvidence?: (cargo: BookingWorkflowCargo) => ReactNode
   renderMilestones?: (route: BookingWorkflowRoute) => ReactNode
-  allocationEditor?: ReactNode
   onAllocationsChange: (lines: BookingCargoAllocation[]) => void
   allocationValidationAttempt?: number
   weightValidation?: { attempt: number; index: number | null; field?: "description" }
@@ -4969,7 +5010,7 @@ function BookingDetailTabPage({
   record: BookingDetailRecord
   workspace: BookingWorkflowWorkspace
 }) {
-  if (activeTab === "Details") return <BookingRecordDetails weightValidation={weightValidation} renderDangerousGoods={renderDangerousGoods} renderSecurityEvidence={renderSecurityEvidence} renderMilestones={renderMilestones} allocationEditor={allocationEditor} onAllocationsChange={onAllocationsChange} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
+  if (activeTab === "Details") return <BookingRecordDetails weightValidation={weightValidation} renderDangerousGoods={renderDangerousGoods} renderSecurityEvidence={renderSecurityEvidence} renderMilestones={renderMilestones} onAllocationsChange={onAllocationsChange} allocationValidationAttempt={allocationValidationAttempt} currentUser={currentUser} editable={editable} locationDirectory={locationDirectory} lookups={bookingLookups} onCargoChange={onCargoChange} onCargoAdd={onCargoAdd} onCargoRemove={onCargoRemove} onBookingChange={onBookingChange} onContainerAdd={onContainerAdd} onContainerChange={onContainerChange} onContainerRemove={onContainerRemove} onDetailChange={onDetailChange} onPartyChange={onPartyChange} onOrganisationSelect={onOrganisationSelect} onLocationSelect={onLocationSelect} onRouteAdd={onRouteAdd} onRouteChange={onRouteChange} onRouteLocationSelect={onRouteLocationSelect} onRouteOrganisationSelect={onRouteOrganisationSelect} onRouteRemove={onRouteRemove} record={record} workspace={workspace} />
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} blocked={documentBlocked} canGenerate={canGenerateDocument} onWorkspaceSaved={onWorkspaceSaved} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace customsError={customsError} navigate={navigate} onWorkspaceSaved={onWorkspaceSaved} onViewChange={onCustomsViewChange} readiness={customsReadiness} record={record} view={customsView} />
   if (activeTab === "Finance") return planningCharges ?? <BookingFinanceWorkspace record={record} />
@@ -5127,7 +5168,8 @@ export function BookingDetailWorkspace({
   currentUser?: AuthUserSummary | null
 }) {
   const { t } = useLanguage()
-  const [activeTab, setActiveTab] = useState<BookingDetailTab>("Overview")
+  const [activeTab, setActiveTab] = useState<BookingDetailTab>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "documents" ? "Documents" : "Overview")
   const [record, setRecord] = useState<BookingDetailRecord | null>(null)
   const [draftBooking, setDraftBooking] = useState<LiveBooking | null>(null)
   const [draftWorkspace, setDraftWorkspace] = useState<BookingWorkflowWorkspace | null>(null)
@@ -5266,7 +5308,7 @@ export function BookingDetailWorkspace({
     failedSaveFingerprintRef.current = null
     setSavingDetails(false)
     setSaveError(null)
-    setActiveTab("Overview")
+    setActiveTab(new URLSearchParams(window.location.search).get("tab") === "documents" ? "Documents" : "Overview")
     setCustomsView("source")
     setRecord(null)
     setDraftBooking(null)
@@ -6075,6 +6117,15 @@ export function BookingDetailWorkspace({
             {loadedRecord.workspace.provisionalCancellation.requiresFinanceReview ? <span className="text-[var(--md-amber)]">{t("Existing financial records require Finance review before cancellation or reopening.")}</span> : null}
           </div>
         ) : null}
+        {loadedRecord.workspace?.provisionalCancellation?.reviewPricesAndDates && !loadedRecord.workspace.provisionalCancellation.cancelled ? (
+          <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-status-amber-bg)] px-3 py-2 text-[12px] text-[var(--md-status-amber-ink)] shadow-[var(--md-shadow-line)]">
+            <span>{t("This Booking was reopened. Review the retained charges and planned dates before progressing; earlier prices may no longer be current.")}</span>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => changeActiveTab("Finance")}>{t("Review charges")}</Button>
+              <Button variant="outline" size="sm" onClick={() => changeActiveTab("Details")}>{t("Review dates")}</Button>
+            </div>
+          </div>
+        ) : null}
         {saveError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-status-red-bg)] px-3 py-2 text-[12px] text-[var(--md-status-red-ink)]">
           <span>{saveError}</span><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => changeActiveTab("Details")}>{t("Review details")}</Button><Button variant="ghost" size="sm" disabled={loadingLatest || savingDetails} onClick={() => void reviewLatestSaved()}>{t(loadingLatest ? "Loading…" : "Review saved updates")}</Button></div>
         </div> : null}
@@ -6165,17 +6216,6 @@ export function BookingDetailWorkspace({
               if (savingDetails || applyingQuoteSync) return
               setDraftWorkspace(current => current?.cargoAllocationState ? { ...current, cargoAllocationState: { ...current.cargoAllocationState, allocations } } : current)
             }}
-            allocationEditor={draftWorkspace && (draftWorkspace.cargoAllocationState || draftWorkspace.containers.length) ? <CargoAllocationEditor
-              cargo={draftWorkspace.cargo} equipment={draftWorkspace.containers} routes={draftWorkspace.routes}
-              allocations={draftWorkspace.cargoAllocationState?.allocations}
-              legacyLinks={draftWorkspace.cargoAllocationState?.legacyUnquantifiedLinks}
-              supportingInfo={<BookingDetailsInfo label="About cargo allocation">{t("Assign goods to equipment for the whole journey or a specific leg. Successive legs are balanced separately. Allocations record packages, weight and volume; they do not change container totals, VGM or the accepted quote.")}</BookingDetailsInfo>}
-              editable={canEditBooking && !savingDetails && !applyingQuoteSync} validationAttempt={allocationValidationAttempt}
-              onChange={allocations => {
-                if (savingDetails || applyingQuoteSync) return
-                setDraftWorkspace(current => current?.cargoAllocationState ? { ...current, cargoAllocationState: { ...current.cargoAllocationState, allocations } } : current)
-              }}
-            /> : undefined}
             activeTab={activeTab}
             planningCharges={loadedRecord.workspace?.provisionalCancellation?.planningEditorSupported &&
               (bookingLifecycle(loadedRecord.workspace.booking.status) === "draft" || loadedRecord.workspace.provisionalCancellation.cancelled) ?

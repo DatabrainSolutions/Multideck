@@ -28,6 +28,33 @@ function cargoMeasure(cargo: BookingWorkflowCargo, field: AllocationMeasure) {
     ? cargo.pieces : cargo[field]
 }
 
+export function cargoPackageQuantityText(value: string | number | null) {
+  const parsed = decimal(value, 6, true)
+  return parsed === null ? '' : parsed === undefined ? String(value) : decimalText(parsed, 6)
+}
+
+/** Package-only progress for a cargo-first load plan. Unknown quantities stay unknown. */
+export function cargoPackageSplitSummary(cargo: BookingWorkflowCargo, lines: readonly BookingCargoAllocation[]) {
+  const total = decimal(cargoMeasure(cargo, 'packageQuantity'), 6, true)
+  const quantities = lines.map(line => decimal(line.packageQuantity, 6))
+  const knownAllocated = quantities.reduce<bigint>((sum, value) => sum + (value ?? 0n), 0n)
+  const unknownCount = quantities.filter(value => value == null).length
+  const invalid = total === undefined || quantities.some(value => value === undefined)
+  const remaining = total == null || invalid ? null : total - knownAllocated
+  return {
+    total: total == null ? null : decimalText(total, 6),
+    knownAllocated: decimalText(knownAllocated, 6),
+    remaining: remaining == null ? null : decimalText(remaining, 6),
+    unknownCount,
+    invalid,
+    over: remaining != null && remaining < 0n,
+    complete: remaining === 0n && unknownCount === 0,
+    percent: total != null && total > 0n && !invalid
+      ? Number((knownAllocated * 100n) / total > 100n ? 100n : (knownAllocated * 100n) / total)
+      : 0,
+  }
+}
+
 export function newBookingCargoAllocation(): BookingCargoAllocation {
   return { id: crypto.randomUUID(), cargoId: '', containerId: '', routeId: null,
     packageQuantity: null, grossWeightKg: null, volumeCbm: null, notes: null, archived: false }

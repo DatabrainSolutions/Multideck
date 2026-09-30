@@ -7,7 +7,6 @@ import { freightFieldPolicy, freightModeKey, freightShipmentAllowed } from "@/li
 import { freightPackageTypeOptions } from "@/lib/freight-package-types"
 import { quoteWorkspaceFromVersion } from "@/lib/quote-version-presentation"
 import { quoteWorkspaceRoute } from "@/lib/quote-workspace-readiness"
-import { QuoteSubmittedDetails } from "@/components/multideck/quote-details/quote-submitted-details"
 import { discardQuoteDraft } from "@/lib/quote-workflow-api"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
@@ -300,6 +299,7 @@ type QuoteCharge = {
   department: string
   internalNotes?: string
   additionalDetail?: string
+  showToCustomer?: boolean
 }
 
 type SavedPartyAddress = {
@@ -1876,12 +1876,14 @@ function UnifiedQuoteChargesPanel({
   editable,
   onRowsChange,
   lookups,
+  savedValues = false,
 }: {
   quote: QuoteRecord
   charges: QuoteCharge[]
   editable: boolean
   onRowsChange: (charges: QuoteCharge[]) => void
   lookups: QuoteWorkflowSources | null
+  savedValues?: boolean
 }) {
   const [financeCurrencies, setFinanceCurrencies] = useState<QuoteChargeCurrency[] | null>(null)
   const [financeRates, setFinanceRates] = useState<ApiFinanceExchangeRate[] | null>(null)
@@ -1891,10 +1893,11 @@ function UnifiedQuoteChargesPanel({
   useEffect(() => {
     let cancelled = false
     setChargeCatalogueError("")
+    if (savedValues) return
     void getQuoteChargeCatalogue().then(result => { if (!cancelled) setLiveChargeCatalogue(result) })
       .catch(error => { if (!cancelled) setChargeCatalogueError(error instanceof Error ? error.message : "Charge codes could not be loaded.") })
     return () => { cancelled = true }
-  }, [])
+  }, [savedValues])
   const chargeChoices = useMemo(() => liveChargeCatalogue
     ? availableChargeChoices(liveChargeCatalogue, "quote", quote.direction ?? "", quote.mode)
     : [], [liveChargeCatalogue, quote.direction, quote.mode])
@@ -1903,6 +1906,7 @@ function UnifiedQuoteChargesPanel({
     let cancelled = false
     setFinanceCurrencies(null)
     setFinanceRates(null)
+    if (savedValues) return
 
     void Promise.allSettled([
       listFinanceCurrencies(),
@@ -1934,13 +1938,14 @@ function UnifiedQuoteChargesPanel({
     return () => {
       cancelled = true
     }
-  }, [quote.currency])
+  }, [quote.currency, savedValues])
 
   const parties = useMemo(() => quoteChargeParties(quote, charges, lookups), [quote, charges, lookups])
 
   const currencies = financeCurrencies ?? quoteChargeCurrencyDefinitions
 
   const exchangeRates = useMemo<QuoteChargeExchangeRate[]>(() => {
+    if (savedValues) return []
     const jobRates = (quote.jobRoes ?? []).map((rate) => ({
       currency: rate.currency,
       baseCurrency: quote.currency,
@@ -2009,7 +2014,7 @@ function UnifiedQuoteChargesPanel({
       ...supplementalRates,
       { currency: quote.currency, baseCurrency: quote.currency, costRoe: 1, sellRoe: 1, provider: "FIN job ROE", source: "job", status: "current" },
     ]
-  }, [currencies, financeRates, quote.currency, quote.jobRoes])
+  }, [currencies, financeRates, quote.currency, quote.jobRoes, savedValues])
 
   const rows = useMemo<UnifiedQuoteChargeRow[]>(() => charges.map((charge, index) => {
     return {
@@ -2017,7 +2022,7 @@ function UnifiedQuoteChargesPanel({
       code: charge.code,
       description: charge.description,
       supplierId: quoteChargeSupplierIdentity(charge, index),
-      customerId: charge.customerId ?? (quote.customer.trim() ? uuidOrNull(quote.customerId) ?? "customer-current" : null),
+      customerId: charge.customerId ?? (!savedValues && quote.customer.trim() ? uuidOrNull(quote.customerId) ?? "customer-current" : null),
       cost: charge.costAmount,
       costCurrency: charge.costCurrency,
       sell: charge.sellAmount,
@@ -2031,8 +2036,11 @@ function UnifiedQuoteChargesPanel({
       baseCost: charge.localCost,
       baseSell: charge.localSell,
       profit: charge.localSell - charge.localCost,
+      showToCustomer: charge.showToCustomer,
+      customerNotes: charge.additionalDetail,
+      internalNotes: charge.internalNotes,
     }
-  }), [charges, quote.customer, quote.customerId])
+  }), [charges, quote.customer, quote.customerId, savedValues])
 
   function updateCharges(nextRows: UnifiedQuoteChargeRow[]) {
     onRowsChange(nextRows.map((row) => {
@@ -2082,6 +2090,7 @@ function UnifiedQuoteChargesPanel({
       exchangeRates={exchangeRates}
       baseCurrency={quote.currency}
       readOnly={!editable}
+      savedValues={savedValues}
       storageKey={`quote-${quote.id}-charges`}
     /></>
   )
@@ -4948,10 +4957,10 @@ function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace, version = 
     description: line.description,
     creditor: line.sourceLabel || "",
     supplierId: line.supplierId,
-    costCurrency: (line.costCurrency || "GBP") as QuoteCurrency,
+    costCurrency: (line.costCurrency || (version?.CusQuoteVersion_IsSubmitted ? "" : "GBP")) as QuoteCurrency,
     costAmount: line.costAmount,
     localCost: line.costLocal,
-    sellCurrency: (line.sellCurrency || "GBP") as QuoteCurrency,
+    sellCurrency: (line.sellCurrency || (version?.CusQuoteVersion_IsSubmitted ? "" : "GBP")) as QuoteCurrency,
     sellAmount: line.sellAmount,
     localSell: line.sellLocal,
     costExchange: line.costRoe,
@@ -4963,6 +4972,7 @@ function quoteChargesFromWorkspace(workspace: QuoteWorkflowWorkspace, version = 
     department: "",
     internalNotes: line.internalNotes ?? "",
     additionalDetail: line.customerNotes ?? "",
+    showToCustomer: line.showToCustomer,
   }))
 }
 
@@ -5304,12 +5314,14 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       name: quote.shipperName ?? "",
       address: quote.shipperAddress ?? "",
       contact: quote.shipperContact ?? "",
+      email: quote.shipperEmail ?? "",
     },
     consignee: {
       orgId: quote.consigneeOrgId ?? "",
       name: quote.consigneeName ?? "",
       address: quote.consigneeAddress ?? "",
-      contact: "",
+      contact: quote.consigneeContact ?? "",
+      email: quote.consigneeEmail ?? "",
     },
     charges: mappedCharges,
   }
@@ -5368,7 +5380,8 @@ function quoteCustomerResponseDocuments(workspace: QuoteWorkflowWorkspace | null
         kind: "pdf" as const,
         mimeType: document.mimeType,
         fileSize: formatDocumentSize(document.fileSizeBytes),
-        url: document.url || undefined,
+        url: document.expiresAt && Date.parse(document.expiresAt) > Date.now()
+          ? document.url || undefined : undefined,
         reference: document.versionNumber > 1 ? `${workspace.quote.reference} · V${document.versionNumber}` : workspace.quote.reference,
         accent: "teal" as const,
       },
@@ -5444,8 +5457,14 @@ function QuoteCustomerResponseTooltip({ response }: { response: NonNullable<Quot
   )
 }
 
-function shouldShowQuoteCustomerResponse(response: QuoteWorkflowWorkspace["customerResponse"]) {
+function shouldShowQuoteCustomerResponse(
+  response: QuoteWorkflowWorkspace["customerResponse"],
+  lifecycle: string,
+  latestIssueCreatedAt?: string,
+) {
   if (!response) return false
+  if (lifecycle === "accepted" && response.decision !== "accepted") return false
+  if (latestIssueCreatedAt && Date.parse(response.respondedAt) < Date.parse(latestIssueCreatedAt)) return false
   if (response.decision !== "accepted") return true
   return Boolean(response.message?.trim() || response.attachment)
 }
@@ -5538,6 +5557,23 @@ export function QuoteDetailPage({
   const [dexterOpen, setDexterOpen] = useState(false)
   const [lookups, setLookups] = useState<QuoteWorkflowSources | null>(null)
   const [workspace, setWorkspace] = useState<QuoteWorkflowWorkspace | null>(null)
+  // Generated PDFs are durable; their private preview links are not. Refresh
+  // access only while the Documents tab is open, before the short link expires.
+  useEffect(() => {
+    if (activeTab !== "documents" || !workspace?.documents.length) return
+    const reference = workspace.quote.reference
+    const expiry = Math.min(...workspace.documents.map((document) => document.expiresAt ? Date.parse(document.expiresAt) : Date.now() + 60_000))
+    const delay = Math.max(0, Number.isFinite(expiry) ? expiry - Date.now() - 30_000 : 0)
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void getQuoteWorkflow(reference, { fresh: true }).then((fresh) => {
+        if (!cancelled) setWorkspace((current) => current?.quote.id === fresh.quote.id ? { ...current, documents: fresh.documents } : current)
+      }).catch(() => {
+        if (!cancelled) toast.error(t("The PDF preview could not be refreshed. Reload the quote to try again."))
+      })
+    }, delay)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [activeTab, workspace?.quote.id, workspace?.quote.reference, workspace?.documents, t])
   const [intelligence, setIntelligence] = useState<QuoteIntelligenceSnapshot | null>(null)
   const [intelligenceUnavailable, setIntelligenceUnavailable] = useState(false)
   const [currentQuoteId, setCurrentQuoteId] = useState<string | null>(null)
@@ -6029,7 +6065,11 @@ export function QuoteDetailPage({
       if (isDirty) {
         await saveQuoteWorkflow(sourceQuoteId, quoteSavePayload(sourceQuote, sourceCharges, sources), currentVersion?.CusQuoteVersion_ID)
       }
-      const nextQuote = newCustomerMasterQuote(sourceQuote, customerChange.patch, sourceQuoteId, sourceReference)
+      const nextQuote = {
+        ...newCustomerMasterQuote(sourceQuote, customerChange.patch, sourceQuoteId, sourceReference),
+        salesOwnerId: currentUser?.internalUserId ?? "",
+        salesRep: currentUser?.name ?? "",
+      }
       const result = await saveQuoteWorkflow(null, quoteSavePayload(nextQuote, [], sources))
       const loadedWorkspace = await getQuoteWorkflow(result.reference, { fresh: true })
       setLookups(sources)
@@ -6054,7 +6094,11 @@ export function QuoteDetailPage({
     setWorkflowError("")
     try {
       const sources = lookups ?? await getQuoteSources()
-      const nextQuote = newRepeatMasterQuote(savedQuote, sourceQuoteId, sourceReference)
+      const nextQuote = {
+        ...newRepeatMasterQuote(savedQuote, sourceQuoteId, sourceReference),
+        salesOwnerId: currentUser?.internalUserId ?? "",
+        salesRep: currentUser?.name ?? "",
+      }
       const result = await saveQuoteWorkflow(null, quoteSavePayload(nextQuote, [], sources))
       const loadedWorkspace = await getQuoteWorkflow(result.reference, { fresh: true })
       setLookups(sources)
@@ -6479,11 +6523,8 @@ export function QuoteDetailPage({
     if (viewingSubmittedVersion && !viewedVersionWorkspace && ["overview", "details", "charges"].includes(activeTab)) {
       return <Surface><p role="alert">{t("This version’s saved details are unavailable. Check Documents or reload the Quote; current details have not been substituted.")}</p></Surface>
     }
-    if (viewingSubmittedVersion && presentedVersion && ["details", "charges"].includes(activeTab)) {
-      if (activeTab === "details") {
-        return <QuoteDetailsPanelV2 key={presentedVersion.CusQuoteVersion_ID} quote={presentedQuote} editable={false} requireCoreFields={false} validationAttempted={false} lookups={null} onQuoteChange={() => {}} onQuotePatch={() => {}} />
-      }
-      return <QuoteSubmittedDetails key={`${presentedVersion.CusQuoteVersion_ID}:${activeTab}`} version={presentedVersion} reference={workspace?.quote.reference ?? ""} chargesOnly />
+    if (viewingSubmittedVersion && presentedVersion && activeTab === "details") {
+      return <QuoteDetailsPanelV2 key={presentedVersion.CusQuoteVersion_ID} quote={presentedQuote} editable={false} requireCoreFields={false} validationAttempted={false} lookups={null} onQuoteChange={() => {}} onQuotePatch={() => {}} />
     }
     if (activeTab === "overview") {
       const overview = variant === "ai"
@@ -6505,11 +6546,13 @@ export function QuoteDetailPage({
     if (activeTab === "charges") {
       return (
         <UnifiedQuoteChargesPanel
+          key={presentedVersion?.CusQuoteVersion_ID ?? "draft"}
           quote={activeQuote}
           charges={activeCharges}
           editable={workspaceEditable}
           onRowsChange={setDraftCharges}
-          lookups={lookups}
+          lookups={viewingSubmittedVersion ? null : lookups}
+          savedValues={viewingSubmittedVersion}
         />
       )
     }
@@ -6561,7 +6604,7 @@ export function QuoteDetailPage({
           ) : null}
           <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className="min-w-0 max-w-full gap-2">
             <div className="relative">
-              <div className={cn("md-quote-workspace-header grid min-w-0 items-stretch gap-2", (activeTab === "details" || viewingSubmittedVersion) && "md-quote-workspace-header--details")}>
+              <div className={cn("md-quote-workspace-header grid min-w-0 items-stretch gap-2", (activeTab === "details" || (viewingSubmittedVersion && activeTab !== "charges")) && "md-quote-workspace-header--details")}>
                 <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
                 <section
                   className={cn(
@@ -6656,7 +6699,7 @@ export function QuoteDetailPage({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 ) : null}
-                {shouldShowQuoteCustomerResponse(workspace?.customerResponse ?? null) && workspace?.customerResponse ? (
+                {shouldShowQuoteCustomerResponse(workspace?.customerResponse ?? null, lifecycle, workspace?.latestIssue?.createdAt) && workspace?.customerResponse ? (
                   <QuoteCustomerResponseTooltip response={workspace.customerResponse} />
                 ) : null}
                 {lifecycle === "accepted" && workspace?.linkedBooking ? (
@@ -6820,14 +6863,14 @@ export function QuoteDetailPage({
                     <Send data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                     {t(quoteHasAcceptedHistory ? issueReadiness?.ready ? "Resend quote" : "Review to resend" : issueReadiness?.ready ? "Send quote" : "Review to send")}
                   </Button>
-                  {workspace?.latestIssue?.deliveryStatus === "sent" && (workspace.latestIssue.responseControlsEnabled === false || workspace.latestIssue.deliveryMode === "simple") ? (
+                  {workspace?.latestIssue?.deliveryStatus === "sent" && latestSubmittedVersion && lifecycle !== "accepted" ? (
                     <Button
                       type="button"
                       disabled={!currentQuoteId || isDirty || saving || transitioning}
                       className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-status-green-bg)] px-2.5 text-[11px] font-normal text-[var(--md-status-green-ink)] shadow-none hover:bg-[color-mix(in_srgb,var(--md-status-green-bg)_82%,var(--md-green))]"
                       onClick={() => setWinDialogOpen(true)}
                     >
-                      {t("Mark won")}
+                      {t("Accept manually")}
                     </Button>
                   ) : null}
                   {lifecycle !== "accepted" ? <Button
@@ -6877,7 +6920,7 @@ export function QuoteDetailPage({
                   </TabsList>
                 </Surface>
               </div>
-                {activeTab === "details" || viewingSubmittedVersion ? null : (
+                {activeTab === "details" || (viewingSubmittedVersion && activeTab !== "charges") ? null : (
                   <QuoteWorkspaceContext
                     activeTab={activeTab}
                     quote={activeQuote}
@@ -7265,7 +7308,7 @@ export function QuoteDetailPage({
                     </button>
                   ))}
                 </div>
-              </fieldset> : <p className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-start text-[10.5px] leading-4 text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">{t("Simple emails do not include customer response controls. Record the outcome with Mark won or Mark lost in Multideck.")}</p>}
+              </fieldset> : <p className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-start text-[10.5px] leading-4 text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">{t("Simple emails do not include customer response controls. Record acceptance with Accept manually, or use Mark lost in Multideck.")}</p>}
 
               <div className="flex items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><FileText className="size-4" strokeWidth={1.4} aria-hidden="true" /></span>
@@ -7325,8 +7368,8 @@ export function QuoteDetailPage({
       <Dialog open={winDialogOpen} onOpenChange={(open) => { if (!transitioning) setWinDialogOpen(open) }}>
         <DialogContent className="rounded-[var(--md-radius-2xl)] sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>{t("Mark this quote won?")}</DialogTitle>
-            <DialogDescription>{t("This records customer acceptance against the latest submitted version and creates or updates its booking. An unsubmitted working draft is never applied.")}</DialogDescription>
+            <DialogTitle>{t("Accept this quote manually?")}</DialogTitle>
+            <DialogDescription>{t("Use this when the customer accepted outside the response link. This records acceptance against the latest submitted version and creates or updates its booking. An unsubmitted working draft is never applied.")}</DialogDescription>
           </DialogHeader>
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-status-green-bg)] px-3 py-3 text-start shadow-[var(--md-shadow-line)]">
             <p className="text-[12px] font-medium text-[var(--md-status-green-ink)]">{t("Booking source")}: <span data-i18n-skip dir="ltr">{t(latestSubmittedVersionLabel)}</span></p>
@@ -7336,7 +7379,7 @@ export function QuoteDetailPage({
             <Button type="button" variant="ghost" disabled={transitioning} onClick={() => setWinDialogOpen(false)}>{t("Cancel")}</Button>
             <Button type="button" disabled={transitioning || !latestSubmittedVersion} className="bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)] hover:bg-[color-mix(in_srgb,var(--md-status-green-bg)_82%,var(--md-green))]" onClick={() => void markQuoteWon()}>
               {transitioning ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <CheckCircle2 className="size-4" />}
-              {t(transitioning ? "Creating booking…" : "Mark won and create booking")}
+              {t(transitioning ? "Creating booking…" : "Accept and create booking")}
             </Button>
           </DialogFooter>
         </DialogContent>

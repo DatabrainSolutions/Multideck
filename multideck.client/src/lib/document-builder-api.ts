@@ -2,6 +2,7 @@
 import { getSupabaseSession, supabase, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 
 export type DocumentOutputFormat = "pdf" | "docx"
+export const isBookingConfirmationTemplateCode = (code: string) => /^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(code)
 export type DocumentTemplateStatus = "draft" | "published" | "retired"
 export type DocumentRenderStatus = "queued" | "rendering" | "ready" | "failed"
 export type DocumentContentSectionCode = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
@@ -251,6 +252,17 @@ export async function createDocumentStudioTemplate(code: string, name: string): 
   })
   if (error) throw await toFunctionError(error, "The template could not be created.")
   if (!data) throw new Error("The template service returned no record.")
+  return data
+}
+
+export async function duplicateBookingConfirmationTemplate(sourceTemplateId: string, code: string, name: string): Promise<SaveDocumentStudioTemplateResponse> {
+  const client = requireDocumentClient()
+  const { data, error } = await client.functions.invoke<SaveDocumentStudioTemplateResponse>("document-studio", {
+    method: "POST",
+    body: { action: "duplicate-booking", sourceTemplateId, templateCode: code, templateName: name },
+  })
+  if (error) throw await toFunctionError(error, "The Booking template could not be copied.")
+  if (!data) throw new Error("The template service returned no draft.")
   return data
 }
 

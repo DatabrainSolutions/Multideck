@@ -8,6 +8,9 @@
   "bookingConfirmation": {
     "bookingReference": "DEMO-AIR-CROSS-TRADE",
     "direction": "Cross-trade",
+    "mode": "Air",
+    "shipmentType": "AIR",
+    "incoterm": "FCA Sample Place",
     "customerReference": "PO-AIR-001",
     "preparedBy": "Demo Operator",
     "provisional": false,
@@ -35,9 +38,18 @@
         "origin": "Dubai DXB",
         "destination": "Singapore Changi",
         "plannedDepartureAt": "2026-10-08T09:00:00Z",
-        "plannedArrivalAt": "2026-10-09T14:00:00Z"
+        "plannedArrivalAt": "2026-10-09T14:00:00Z",
+        "details": "Carrier: Example Air · Booking ref: AIR-BOOK-01 · Flight: EX123 · MAWB: 123-45678901 · HAWB: HAWB-001"
       }
     ],
+    "equipment": [
+      {
+        "kind": "ULD",
+        "number": "AKE12345EX",
+        "type": "AKE"
+      }
+    ],
+    "hasEquipment": true,
     "delivery": {
       "address": "2 Sample Street, Destination City",
       "plannedAtLabel": "12 Oct 2026",

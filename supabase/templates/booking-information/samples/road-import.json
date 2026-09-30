@@ -8,6 +8,9 @@
   "bookingConfirmation": {
     "bookingReference": "DEMO-ROAD-IMPORT",
     "direction": "Import",
+    "mode": "Road",
+    "shipmentType": "FTL",
+    "incoterm": "FCA Sample Place",
     "customerReference": "PO-ROAD-001",
     "preparedBy": "Demo Operator",
     "provisional": false,
@@ -35,9 +38,18 @@
         "origin": "Lyon",
         "destination": "Birmingham",
         "plannedDepartureAt": "2026-10-08T09:00:00Z",
-        "plannedArrivalAt": "2026-10-09T14:00:00Z"
+        "plannedArrivalAt": "2026-10-09T14:00:00Z",
+        "details": "Carrier: Example Haulage · Booking ref: ROAD-BOOK-01 · Vehicle: EX12 ABC · Trailer: TR-45 · CMR: CMR-001"
       }
     ],
+    "equipment": [
+      {
+        "kind": "Vehicle",
+        "number": "EX12 ABC",
+        "type": "Articulated"
+      }
+    ],
+    "hasEquipment": true,
     "delivery": {
       "address": "2 Sample Street, Destination City",
       "plannedAtLabel": "12 Oct 2026",

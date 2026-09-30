@@ -61,12 +61,15 @@ export async function attemptRevisionWithUnavailableSnapshot() {
 const panelStart=source.indexOf('  function renderActiveWorkspacePanel() {')
 const panelBodyStart=source.indexOf('\n',panelStart)
 const overviewStart=source.indexOf('    if (activeTab === "overview")',panelBodyStart)
-const panelEnd=source.indexOf('    if (activeTab === "details")',overviewStart)
+const panelEnd=source.indexOf('    if (activeTab === "documents")',overviewStart)
 assert.ok(panelStart>=0 && panelEnd>panelBodyStart)
 const panelModule={exports:{}}
 const panelCode=transformSync(`export function renderSelectedPanel(state,activeTab,variant='cargowise'){
- const {viewingSubmittedVersion,viewedVersionWorkspace,presentedVersion,presentedQuote}=state;
+ const {viewingSubmittedVersion,viewedVersionWorkspace,presentedVersion,presentedQuote,activeCharges,workspaceEditable}=state;
+ if (!viewingSubmittedVersion) return 'Draft panel';
  const activeQuote=presentedQuote;
+ const lookups={organisations:[{name:'CURRENT SUPPLIER'}]};
+ const setDraftCharges=()=>{throw new Error('An issued version must not write charges')};
  const intelligence={summary:'CURRENT INTELLIGENCE'};
  const intelligenceUnavailable=true;
  const workspace={quote:{reference:'JQ20020'}};
@@ -92,8 +95,14 @@ const sharedOverview = props => {
  }
  return React.createElement('section',{'data-shared-quote-overview':true},'Quote overview ',JSON.stringify(props.quote))
 }
-new Function('require','module','exports','QuoteSubmittedDetails','QuoteDetailsPanelV2','QuoteCargoWiseOverviewPanel','QuoteAiOverviewPanel','QuoteOverviewPanel','Surface','t',panelCode)(
- require,panelModule,panelModule.exports,QuoteSubmittedDetails,lockedDetails,sharedOverview,sharedOverview,sharedOverview,props=>React.createElement('section',props),value=>value)
+const lockedCharges = props => {
+ assert.equal(props.editable,false)
+ assert.equal(props.lookups,null)
+ assert.equal(props.savedValues,true)
+ return React.createElement('section',{'data-shared-quote-charges':true},'Submitted version ',JSON.stringify(props.charges))
+}
+new Function('require','module','exports','UnifiedQuoteChargesPanel','QuoteDetailsPanelV2','QuoteCargoWiseOverviewPanel','QuoteAiOverviewPanel','QuoteOverviewPanel','Surface','t',panelCode)(
+ require,panelModule,panelModule.exports,lockedCharges,lockedDetails,sharedOverview,sharedOverview,sharedOverview,props=>React.createElement('section',props),value=>value)
 export const renderSelectedPanel=(state,tab,variant)=>renderToStaticMarkup(panelModule.exports.renderSelectedPanel(state,tab,variant))
 
 export const makeVersion = (number, quote = {}) => ({ CusQuoteVersion_ID:`version-${number}`,CusQuoteVersion_Number:number,

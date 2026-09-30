@@ -52,6 +52,17 @@ test('saving a published template keeps the approved version current until revie
     assert.equal(approved.status, 'published')
     assert.equal(sql(`select "DOCBT_CurrentVersionNo" from public."DOCB_DocumentTemplates" where "DOCBT_ID"='${id(10)}'`), '2')
     assert.equal(sql(`select document_api.studio_template_draft_source('${id(101)}','${id(10)}') is null`), 't')
+    sql(`alter table public."DOCB_DocumentTemplates" add column "DOCBT_Name" text default 'Booking confirmation';`)
+    const choices = readFileSync(new URL('../migrations/20260929144212_booking_confirmation_template_choices.sql', import.meta.url), 'utf8')
+    sql(choices.slice(choices.indexOf('create or replace function document_api.is_booking_confirmation_template_code'), choices.indexOf('create or replace function document_api.prepare_booking_confirmation')))
+    assert.equal(sql(`select document_api.is_booking_confirmation_template_code('JOB_CONFIRMATION_LAYOUT_2')`), 't')
+    assert.equal(sql(`select document_api.is_booking_confirmation_template_code('OTHER_TEMPLATE')`), 'f')
+    sql(`update public."DOCB_DocumentTemplates" set "DOCBT_Code"='JOB_CONFIRMATION' where "DOCBT_ID"='${id(10)}';
+      update public."DOCB_TemplateVersions" set "DOCBTV_TemplateSnapshotJSON"=jsonb_set("DOCBTV_TemplateSnapshotJSON",'{source,storedObjectId}','"${id(20)}"') where "DOCBTV_TemplateID"='${id(10)}' and "DOCBTV_VersionNo"=2;`)
+    const publishedSource = JSON.parse(sql(`select document_api.studio_booking_published_source('${id(101)}','${id(10)}')`))
+    assert.equal(publishedSource.code, 'JOB_CONFIRMATION')
+    assert.equal(publishedSource.bucket, 'multideck-template-sources')
+    sql(`do $$begin perform document_api.studio_booking_published_source('${id(102)}','${id(10)}'); raise exception 'Expected denial'; exception when insufficient_privilege then null; end$$;`)
   } finally {
     if (started) run('pg_ctl', ['-D', join(directory, 'data'), '-m', 'immediate', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

@@ -82,7 +82,7 @@ test("latest delivery evidence stays behind a tenant-authorised public RPC", () 
 
 test("accepted quotes remain visible and expose their idempotent From quote booking", () => {
   assert.match(quotePage, /lifecycle === "accepted"[\s\S]*md-status-green-bg/)
-  assert.match(quotePage, /Mark won and create booking/)
+  assert.match(quotePage, /Accept and create booking/)
   assert.match(migration, /multideck_dexter_action_mark_quote_won/)
   assert.match(migration, /quote_api\.transition_quote\([\s\S]*'accepted'/)
   assert.match(bookingPage, /Accepted quote[\s\S]*From quote/)

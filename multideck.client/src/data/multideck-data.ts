@@ -37,6 +37,7 @@ import ticketAttachmentsSource from "@/components/multideck/ticket-attachments.t
 import quoteCargoEditorSource from "@/components/multideck/quote-details/quote-cargo-editor.tsx?raw"
 import cargoHandlingEditorSource from "@/components/multideck/quote-details/cargo-handling-editor.tsx?raw"
 import cargoAllocationEditorSource from "@/components/multideck/cargo-allocation-editor.tsx?raw"
+import bookingCargoLoadPlanSheetSource from "@/components/multideck/booking-cargo-load-plan-sheet.tsx?raw"
 import bookingRouteMilestonesSource from "@/components/multideck/booking-route-milestones.tsx?raw"
 import bookingDangerousGoodsSource from "@/components/multideck/booking-dangerous-goods.tsx?raw"
 import bookingSecurityEvidenceSource from "@/components/multideck/booking-security-evidence.tsx?raw"
@@ -388,10 +389,20 @@ export const galleryComponents = [
     name: "Cargo Allocation Editor",
     category: "Forms",
     description: "Assign saved goods lines to equipment, with separate balances for each routing leg or the whole journey.",
-    details: "Use inside Booking Cargo & equipment. Quantities stay exact, blanks mean unknown, and legacy links remain separate. The parent owns saving, permissions and stale-update protection. Removal requires confirmation; allocations do not overwrite container totals, VGM or accepted Quotes.",
+    details: "Used behind Advanced details in the Booking load-plan sheet. Quantities stay exact, blanks mean unknown, and legacy links remain separate. The parent owns saving, permissions and stale-update protection. Allocations do not overwrite container totals, VGM or accepted Quotes.",
     foundOn: [{ label: "Booking details", route: "/bookings/je0991133" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=cargo-allocation-editor" }],
     componentCode: cargoAllocationEditorSource,
     usageCode: `<CargoAllocationEditor\n  cargo={workspace.cargo}\n  equipment={workspace.containers}\n  routes={workspace.routes}\n  allocations={workspace.cargoAllocationState?.allocations}\n  legacyLinks={workspace.cargoAllocationState?.legacyUnquantifiedLinks}\n  editable={canEdit && !saving}\n  validationAttempt={validationAttempt}\n  onChange={updateDraftAllocations}\n/>`,
+  },
+  {
+    id: "booking-cargo-load-plan-sheet",
+    name: "Booking Cargo Load Plan Sheet",
+    category: "Forms",
+    description: "Split one cargo line across saved containers with an immediate remaining balance.",
+    details: "Opened from a Booking cargo row. Edits remain local until Save load plan; Cancel leaves the Booking unchanged. Used containers cannot be selected twice for the same line. Advanced details retain leg-specific allocations, weights and notes. Container loaded weight and VGM are never inferred from the package split.",
+    foundOn: [{ label: "Booking details", route: "/bookings/je0991153" }, { label: "Components", route: "/components?component=booking-cargo-load-plan-sheet" }],
+    componentCode: bookingCargoLoadPlanSheetSource,
+    usageCode: `<BookingCargoLoadPlanSheet cargo={line} cargoIndex={index} cargoLines={workspace.cargo} equipment={workspace.containers} routes={workspace.routes} allocations={workspace.cargoAllocationState.allocations} editable={canEdit} onClose={closeLoadPlan} onSave={updateDraftAllocations} />`,
   },
   {
     id: "booking-customer-panel",
@@ -1933,10 +1944,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Unified Quote Charges Workspace",
     category: "Operations",
     description: "One configurable quote-charges table for supplier cost, customer sell, both currencies, both exchange rates, base values, and profit.",
-    details: "Shared by Quotes, Provisional planning and operational Booking charges. Operators can search parties, choose currencies, inspect base conversions and use freight calculators. Booking callers supply rowReadOnlyReason to protect financially linked or unverified historical rows without locking unrelated editable lines.",
-    foundOn: [{ label: "Quote charges", route: "/quotes/Q-19158" }, { label: "Booking planning charges (backend capability required)", route: "/bookings/jd0991142" }, { label: "Operational Booking charges (backend capability required)", route: "/bookings/ji0991146" }, { label: "Components", route: "/components?component=unified-quote-charges-workspace" }],
+    details: "Shared by draft and issued Quotes, Provisional planning and operational Booking charges. Issued Quotes keep the same table and selected-line layout with savedValues: stored prices and ROEs are shown without recalculation, edits are blocked, and line notes remain available. Booking callers supply rowReadOnlyReason to protect financially linked or unverified historical rows without locking unrelated editable lines.",
+    foundOn: [{ label: "Quote charges", route: "/quotes/Q-19158" }, { label: "Issued Quote charges", route: "/quotes/jq20032" }, { label: "Booking planning charges (backend capability required)", route: "/bookings/jd0991142" }, { label: "Operational Booking charges (backend capability required)", route: "/bookings/ji0991146" }, { label: "Components", route: "/components?component=unified-quote-charges-workspace" }],
     componentCode: `export function UnifiedQuoteChargesWorkspace({ rows, onRowsChange, currencies, parties, exchangeRates, baseCurrency }) {\n  const resolvedRows = rows.map((row) => resolveChargeRow(row, exchangeRates, baseCurrency))\n\n  return (\n    <div>\n      <DataTable\n        columns={quoteChargeColumns}\n        rows={resolvedRows}\n        storageKey="unified-quote-charges"\n        selectedRowKey={selectedRowId}\n        onRowClick={(row) => setSelectedRowId(row.id)}\n      />\n      <div className="selected-line-layout">\n        <SelectedChargeDetails row={selectedRow} />\n        <ChargeCalculator />\n      </div>\n    </div>\n  )\n}`,
-    usageCode: `<UnifiedQuoteChargesWorkspace\n  rows={chargeRows}\n  onRowsChange={setChargeRows}\n  currencies={currenciesFromSysCurrency}\n  parties={customersAndSuppliers}\n  exchangeRates={jobExchangeRates}\n  baseCurrency="GBP"\n  rowReadOnlyReason={(id) => protectedChargeReasons.get(id)}\n/>`,
+    usageCode: `// Working draft or editable Booking charges\n<UnifiedQuoteChargesWorkspace\n  rows={chargeRows}\n  onRowsChange={setChargeRows}\n  currencies={currenciesFromSysCurrency}\n  parties={customersAndSuppliers}\n  exchangeRates={jobExchangeRates}\n  baseCurrency="GBP"\n  rowReadOnlyReason={(id) => protectedChargeReasons.get(id)}\n/>\n\n// Issued Quote: snapshot rows include stored baseCost, baseSell and ROEs.\n<UnifiedQuoteChargesWorkspace\n  rows={issuedChargeRows}\n  onRowsChange={() => {}}\n  savedValues\n  currencies={currencyDisplayDefinitions}\n  parties={savedQuoteParties}\n  exchangeRates={[]}\n  baseCurrency={issuedCurrency}\n/>`,
   },
   {
     id: "quote-search-builder",

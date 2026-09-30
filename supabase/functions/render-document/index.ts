@@ -156,6 +156,7 @@ Deno.serve(async (request) => {
     context = await authenticateRequest(request)
     const payload = await request.json() as RenderRequest
     const templateCode = payload.templateCode?.trim().toUpperCase() ?? ""
+    const bookingConfirmation = /^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(templateCode)
     const outputFormat = payload.outputFormat?.trim().toLowerCase() ?? ""
     const contentSections = parseContentSections(payload.contentSections)
     const jobNumber = parseJobNumber(payload.jobNumber)
@@ -168,6 +169,9 @@ Deno.serve(async (request) => {
     }
     if (outputFormat !== "pdf" && outputFormat !== "docx") {
       throw new FunctionError(400, "Choose PDF or DOCX.", "Output format validation failed")
+    }
+    if (bookingConfirmation && payload.studioTemplateBase64) {
+      throw new FunctionError(400, "Publish the reviewed Booking template before using it on a Booking.", "Booking generation cannot use an unapproved source override")
     }
 
     const { data, error } = await context.admin
@@ -193,7 +197,7 @@ Deno.serve(async (request) => {
       throw selectionError ?? new Error("Document content selection returned no data")
     }
     prepared = { ...prepared, dataset: selectedDataset as Record<string, unknown> }
-    if (templateCode === "JOB_CONFIRMATION") {
+    if (bookingConfirmation) {
       if (outputFormat !== "pdf" || typeof payload.bookingReviewToken !== "string"
         || !/^[a-f0-9]{32}$/.test(payload.bookingReviewToken)
         || typeof payload.confirmCustomerPrices !== "boolean") {
@@ -246,7 +250,7 @@ Deno.serve(async (request) => {
             ...(studioTemplateBytes ? { template: payload.studioTemplateBase64 } : {}),
             convertTo: prepared.outputFormat,
             lang: prepared.languageCode,
-            ...(templateCode === "JOB_CONFIRMATION" ? { timezone: "UTC" } : {}),
+            ...(bookingConfirmation ? { timezone: "UTC" } : {}),
             reportName: safeReportName(prepared.templateCode, prepared.jobReference),
           }),
           signal: controller.signal,
@@ -276,7 +280,7 @@ Deno.serve(async (request) => {
     const generatedDocumentId = crypto.randomUUID()
     const createdAt = new Date()
     const extension = prepared.outputFormat
-    const fileName = templateCode === "JOB_CONFIRMATION"
+    const fileName = bookingConfirmation
       ? `${safeReportName(prepared.templateCode, prepared.jobReference)}-${createdAt.toISOString().replace(/[-:.TZ]/g, "")}-${generatedDocumentId.slice(0, 8)}.${extension}`
       : `${safeReportName(prepared.templateCode, prepared.jobReference)}.${extension}`
     const environment = (Deno.env.get("MULTIDECK_ENVIRONMENT")?.trim() || "production").replace(/[^a-z0-9_-]/gi, "-")

@@ -93,6 +93,11 @@ export function toClientError(error: unknown) {
   const message = typeof error === "object" && error && "message" in error ? String(error.message) : ""
   if (code === "P0002") return new QuoteResponseError(404, message || "This quote link is invalid.", message)
   if (code === "22023" || code === "23514") return new QuoteResponseError(400, message || "Check the response and try again.", message)
-  if (code === "23505") return new QuoteResponseError(409, "This quote has already received a response.", message)
+  if (code === "23505" && message.includes('customer_responses_response_link_id_key')) {
+    return new QuoteResponseError(409, "This quote has already received a response.", message)
+  }
+  if (code === "23505") {
+    return new QuoteResponseError(500, "The quote response could not be completed. Please try again or contact the freight team.", message)
+  }
   return new QuoteResponseError(500, "The quote response could not be completed.", message || "Unexpected quote response failure")
 }

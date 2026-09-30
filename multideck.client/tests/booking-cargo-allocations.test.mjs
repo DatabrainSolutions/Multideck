@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 
 const source = readFileSync(new URL('../src/lib/booking-cargo-allocations.ts', import.meta.url), 'utf8')
-const { analyseCargoAllocations, remainingForAllocation, bookingCargoAllocationPayload, containerPackageSummary, newBookingCargoAllocation, quickCargoAssignmentElsewhere } =
+const { analyseCargoAllocations, remainingForAllocation, bookingCargoAllocationPayload, cargoPackageSplitSummary, containerPackageSummary, newBookingCargoAllocation, quickCargoAssignmentElsewhere } =
   await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(source)).toString('base64')}`)
 const weightSource = readFileSync(new URL('../src/lib/booking-chargeable-weight.ts', import.meta.url), 'utf8')
 const { bookingChargeableWeightError } = await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(weightSource)).toString('base64')}`)
@@ -47,6 +47,21 @@ test('split cargo: explicit remaining quantities preserve exact decimals and do 
   assert.equal(filled.volumeCbm, '6.125')
   assert.deepEqual(analyse([first, filled]).balances[0].remaining, { packageQuantity: '0', grossWeightKg: '0', volumeCbm: '0' })
   assert.deepEqual({ cargo, equipment, first, second }, before)
+})
+
+test('cargo-first load plan shows exact split progress without assigning weight', () => {
+  const goods = { ...cargo[0], packageQuantity: '40.000000' }
+  const first = line({ packageQuantity: '20.000000', grossWeightKg: '400000.00' })
+  const second = line({ id: id(7), containerId: id(3), packageQuantity: '20.000000', grossWeightKg: '0.00' })
+  assert.deepEqual(cargoPackageSplitSummary(goods, [first, second]), {
+    total: '40', knownAllocated: '40', remaining: '0', unknownCount: 0, invalid: false, over: false, complete: true, percent: 100,
+  })
+  assert.equal(cargoPackageSplitSummary(goods, [first, { ...second, packageQuantity: '15' }]).remaining, '5')
+  assert.equal(cargoPackageSplitSummary(goods, [first, { ...second, packageQuantity: null }]).unknownCount, 1)
+  assert.equal(cargoPackageSplitSummary(goods, [first, { ...second, packageQuantity: '25' }]).over, true)
+  assert.equal(cargoPackageSplitSummary(goods, [first, { ...second, packageQuantity: '20.0000001' }]).invalid, true)
+  assert.equal(first.grossWeightKg, '400000.00')
+  assert.equal(second.grossWeightKg, '0.00')
 })
 
 test('ten cargo lines may link to one container without guessing quantities', () => {

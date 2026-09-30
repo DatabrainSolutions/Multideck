@@ -13,7 +13,7 @@ import {
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
 type StudioRequest = {
-  action?: "component" | "open" | "preview" | "preview-draft" | "draft-source" | "save" | "bootstrap" | "create" | "approve"
+  action?: "component" | "open" | "preview" | "preview-draft" | "draft-source" | "save" | "bootstrap" | "create" | "approve" | "duplicate-booking"
   templateCode?: string
   multideckTemplateId?: string
   templateName?: string
@@ -21,6 +21,7 @@ type StudioRequest = {
   templateLanguageCode?: string
   templateFileName?: string
   templateMimeType?: string
+  sourceTemplateId?: string
   jobNumber?: string
   contentSections?: unknown
   templateBase64?: string
@@ -498,6 +499,41 @@ Deno.serve(async (request) => {
         payload.templateFileName,
         sourceMimeType(payload.templateFileName, payload.templateMimeType),
       ))
+    }
+
+    if (payload.action === "duplicate-booking") {
+      if (!isUuid(payload.sourceTemplateId)
+        || typeof payload.templateCode !== "string"
+        || typeof payload.templateName !== "string") {
+        throw new FunctionError(400, "Choose a Booking template and enter a name.", "Booking template copy request was invalid")
+      }
+      const templateCode = parseTemplateCode(payload.templateCode)
+      const templateName = payload.templateName.trim()
+      if (!/^JOB_CONFIRMATION(?:_[A-Z0-9]+)+$/.test(templateCode)
+        || templateName.length < 2 || templateName.length > 180) {
+        throw new FunctionError(400, "Choose a unique Booking template code and name.", "Booking template copy name or code was invalid")
+      }
+      const { data: source, error: sourceError } = await context.admin
+        .schema("document_api")
+        .rpc("studio_booking_published_source", {
+          caller_auth_user_id: context.userId,
+          requested_template_id: payload.sourceTemplateId,
+        })
+      if (sourceError || !source) throw sourceError ?? new Error("Published Booking template source was unavailable")
+      const { data: sourceBlob, error: downloadError } = await context.admin.storage
+        .from(templateSourcesBucket).download(source.path)
+      if (downloadError || !sourceBlob) throw downloadError ?? new Error("Published Booking template file was unavailable")
+      const templateBytes = new Uint8Array(await sourceBlob.arrayBuffer())
+      if (!templateBytes.byteLength || templateBytes.byteLength > maximumStudioTemplateBytes
+        || templateBytes[0] !== 0x50 || templateBytes[1] !== 0x4b) {
+        throw new FunctionError(400, "The Booking template Word source could not be copied.", "Published Booking template source was not a valid DOCX")
+      }
+      const created = await createTemplate(context, templateCode, templateName,
+        `Booking confirmation layout copied from ${source.name}`, "en")
+      const registration = await saveTemplateToCarbone(context, created.multideckTemplateId,
+        toBase64(templateBytes), templateBytes, `Draft copied from ${source.code}`,
+        `${templateCode.toLowerCase()}.docx`)
+      return jsonResponse(request, { ...registration, templateCode, templateName, status: "draft" })
     }
 
     if (payload.action === "approve") {

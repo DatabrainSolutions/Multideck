@@ -110,13 +110,20 @@ export function BookingOperationalChargesWorkspace({ jobId, reference, blocked, 
   if (workspace?.supported === false) return <>{fallback}</>
   const available = workspace?.supported ? workspace : null
   const readOnly = blocked || loading || saving || needsRefresh || !available?.editable
+  const protectedLines = available?.lines.filter(line => !line.values) ?? []
   const removedCount = available?.lines.filter(line => line.values && !rows.some(row => row.id === line.id)).length ?? 0
+  const newChargeRow = () => ({ id: crypto.randomUUID(), code: "", description: "", cost: 0, sell: 0, costCurrency: available!.baseCurrency!, sellCurrency: available!.baseCurrency!,
+    costRoe: 1, sellRoe: 1, costRoeSource: "manual" as const, sellRoeSource: "manual" as const, quantity: 1, calculationBasis: "fixed", supplierId: null,
+    customerId: null })
   return <section className="grid min-w-0 gap-3" aria-label={t("Booking charges")} aria-busy={loading || saving}>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-[14px] font-medium">{t("Booking charges")}</h2>
       <div className="flex flex-wrap gap-2">
         <Button ref={quoteTrigger} variant="outline" size="sm" disabled={blocked || loading || saving || dirty || needsRefresh} onClick={() => void reviewQuote()}>{t("Review Quote charges")}</Button>
         <Button ref={reloadTrigger} variant="outline" size="sm" disabled={loading || saving || needsRefresh} onClick={() => { dialogTrigger.current = "reload"; dirty ? setDialog("reload") : void reload() }}>{t("Reload charges")}</Button>
+        {available?.baseCurrency && protectedLines.length > 0 && rows.length === 0 && available.editable ? <Button variant="outline" size="sm" disabled={readOnly} onClick={() => {
+          setRows([newChargeRow()]); setDirty(true); setNotice(""); onPendingChange(true)
+        }}>{t("Add Booking charge")}</Button> : null}
         {available?.editable ? <Button ref={saveTrigger} size="sm" disabled={blocked || loading || saving || (!dirty && !needsRefresh)} onClick={() => { dialogTrigger.current = "save"; needsRefresh ? void save() : setDialog("save") }}>
           {saving ? <DotGridLoader size="sm" decorative /> : null}{t(needsRefresh ? "Retry refresh" : "Save charges")}
         </Button> : null}
@@ -126,18 +133,23 @@ export function BookingOperationalChargesWorkspace({ jobId, reference, blocked, 
     {error ? <p role="alert" className="text-[13px] text-[var(--md-status-red-ink)]">{error}</p> : null}
     {available?.blockedReason ? <p className="text-[12px] text-[var(--md-text)]">{t(available.blockedReason)}</p> : null}
     {loading && !available ? <DotGridLoader label="Loading Booking charges" /> : null}
-    {available?.baseCurrency ? <UnifiedQuoteChargesWorkspace rows={rows} readOnly={readOnly}
+    {available?.baseCurrency && (rows.length > 0 || protectedLines.length === 0) ? <UnifiedQuoteChargesWorkspace rows={rows} readOnly={readOnly}
       rowReadOnlyReason={id => available.lines.find(line => line.id === id)?.blockedReason ?? undefined}
       onRowsChange={next => { if (readOnly) return; setRows(next); setDirty(true); setNotice(""); onPendingChange(true) }}
       currencies={available.currencies} parties={available.parties} exchangeRates={[]} baseCurrency={available.baseCurrency}
       storageKey={`booking-${jobId}-operational-charges`}
-      createRow={() => ({ id: crypto.randomUUID(), code: "", description: "", cost: 0, sell: 0, costCurrency: available.baseCurrency!, sellCurrency: available.baseCurrency!,
-        costRoe: 1, sellRoe: 1, costRoeSource: "manual", sellRoeSource: "manual", quantity: 1, calculationBasis: "fixed", supplierId: null,
-        customerId: null })} /> : null}
-    {available?.lines.filter(line => !line.values).map(line => <div key={line.id} className="grid gap-1 py-2 text-[12px]">
-      <span>{String(line.snapshot.JobCostingLine_Description ?? t("Historical charge"))}</span>
-      <span className="text-[var(--md-text)]">{t(line.blockedReason ?? "Historical charge values require review.")}</span>
-    </div>)}
+      createRow={newChargeRow} /> : null}
+    {protectedLines.length > 0 ? <div className="grid gap-1" aria-label={t("Protected charge lines")}>
+      <h3 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Protected charge lines")}</h3>
+      <p className="text-[12px] text-[var(--md-text)]">{t("These recorded lines are visible but cannot be edited until their historical values are reviewed.")}</p>
+      <div className="divide-y divide-[var(--md-line)]">{protectedLines.map(line => <div key={line.id} className="grid gap-1 py-3 text-[12px] sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-6">
+        <span className="font-medium text-[var(--md-ink)]">{String(line.snapshot.JobCostingLine_Description ?? t("Historical charge"))}</span>
+        {line.historicalSell ? <span className="text-[var(--md-ink)]" data-i18n-skip>
+          {t("Recorded customer sell")}: {new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 }).format(line.historicalSell.amount)} {line.historicalSell.currency}
+        </span> : null}
+        <span className="text-[var(--md-text)] sm:col-span-2">{t(line.blockedReason ?? "Historical charge values require review.")}</span>
+      </div>)}</div>
+    </div> : null}
     <Dialog open={dialog !== null} onOpenChange={open => { if (!saving && !open) setDialog(null) }}>
       <DialogContent onCloseAutoFocus={event => { event.preventDefault(); (dialogTrigger.current === "save" ? saveTrigger : reloadTrigger).current?.focus() }}><DialogHeader><DialogTitle>{t(dialog === "reload" ? "Discard unsaved charge edits?" : "Save Booking charges?")}</DialogTitle>
         <DialogDescription>{t(dialog === "reload" ? "Reloading replaces your unsaved entries, not saved charges or their audit history."

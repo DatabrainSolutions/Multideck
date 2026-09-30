@@ -26,7 +26,7 @@ const admin = { from(table) {
   return query
 } }
 const context = {
-  reference: 'JQ20020', operator: { companyId: crypto.randomUUID() }, customerName: 'NEW CUSTOMER NAME',
+  reference: 'JQ20020', operator: { companyId: crypto.randomUUID(), displayName: 'Lee Wright', email: 'lee@jenkar.example' }, customerName: 'NEW CUSTOMER NAME',
   recipient: { name: 'NEW CONTACT', email: 'delivery-override@example.test' },
   quote: { CusQuoteHeader_TermsText: 'NEW TERMS', CusQuoteHeader_CustomerNotes: 'NEW NOTES',
     CusQuoteHeader_ValidTo: '2030-01-01', CusQuoteHeader_ModeCode: 'air',
@@ -150,6 +150,8 @@ test('PDF dataset retains saved terms, parties, routes and all cargo despite lat
   assert.equal(data.customerNotes, quote.customerNotes)
   assert.equal(data.conditions, quote.shipmentFacts.subjectToTerms)
   assert.equal(data.quote.billedToName, 'Original payer')
+  assert.equal(data.quote.senderName, 'Lee Wright')
+  assert.equal(data.quote.senderEmail, 'lee@jenkar.example')
   assert.equal(data.quote.customerEmail, 'original@example.test')
   assert.equal(data.quote.validUntil, '18 Sept 2026')
   assert.equal(data.routes[0].movement, 'GBFXT → CNSHA')
@@ -211,10 +213,26 @@ test('actual HTML renderer escapes source text, keeps all cargo rows and exclude
   assert.match(html, /3 · Cartons/)
   assert.match(html, /Agreed terms on V1/)
   assert.match(html, /Shipment handling<\/div><div class="value">Hazardous; Temperature controlled<\/div>/)
+  assert.match(html, /Contact<\/div><div class="value">Lee Wright<\/div><p>lee@jenkar.example/)
+  assert.doesNotMatch(html, /Contact<\/div><div class="value">Customer ref/)
   assert.doesNotMatch(html, /\{d\.|PRIVATE|HIDDEN CHARGE|NEW TERMS/)
   assert.equal((html.match(/<tr><td>[12]<\/td><td>/g) || []).length, 2)
   assert.equal(quotePdfName('JQ20020', 1), 'JQ20020')
   assert.equal(quotePdfName('JQ20020', 2), 'JQ20020 - V2')
+})
+
+test('saved cargo-line handling flags appear on new PDFs without inferring collection or delivery', async () => {
+  const saved = structuredClone(quote)
+  saved.mode = 'air'
+  saved.shipper = { address: 'Shipper office in another country' }
+  saved.consignee = { address: 'Consignee office in another country' }
+  saved.collectionAddress = ''
+  saved.deliveryAddress = ''
+  saved.shipmentFacts.cargoLines = [{ description: 'Computer parts', handlingDetailsJson: JSON.stringify({ fragile: { tbc: false, details: {} } }) }]
+  const data = await buildDataset(admin, context, { ...version, CusQuoteVersion_SnapshotJSON: { quote: saved } })
+  assert.equal(data.shipment[4].value, 'Fragile')
+  assert.deepEqual([data.journey[0].value, data.journey[3].value], ['–', '–'])
+  assert.doesNotMatch(renderQuotePdfHtml(data), /Shipper office|Consignee office/)
 })
 
 test('rendered shipment handling retains manual flags independently of line flags', async () => {

@@ -113,7 +113,8 @@ test("draft templates stay out of the customer template row", async () => {
   assert.match(migration, /template\."DOCBT_StatusCode" = 'published'/)
   assert.doesNotMatch(page, /Templates in review/)
   assert.doesNotMatch(page, /Carrier review/)
-  assert.match(page, /templates=\{workspace\.templates\.filter\(\(template\) => template\.status === "published"\)\}/)
+  assert.match(page, /const publishedTemplates = workspace\?\.templates\.filter\(\(template\) => template\.status === "published"\) \?\? \[\]/)
+  assert.match(page, /templates=\{publishedTemplates\}/)
 })
 
 test("the full-height documents route owns a constrained page scroll area", async () => {

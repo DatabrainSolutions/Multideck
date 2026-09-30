@@ -1,5 +1,6 @@
--- Include customer-visible Booking parties in the reviewed, immutable confirmation snapshot.
--- The existing function retains its authorization and pricing boundaries.
+-- Exclude numbered equipment retained from an unrelated Booking mode while
+-- allowing equipment on any active route mode in a mixed-mode journey.
+-- The review function retains its authorization, price and snapshot boundaries.
 begin;
 set local lock_timeout = '5s';
 
@@ -106,7 +107,25 @@ begin
   ) order by e."JobContainer_CreatedAt", e."JobContainers_ID"), '[]'::jsonb)
   into equipment from public."Job_Containers" e
   where e."Job_ID" = requested_job_id and not e."JobContainer_IsDeleted"
-    and nullif(btrim(e."JobContainer_Number"), '') is not null;
+    and nullif(btrim(e."JobContainer_Number"), '') is not null
+    and (
+      (lower(e."JobContainer_EquipmentKind") = 'container'
+        and (lower(job."Job_TransportModeSummary") in ('sea', 'ocean', 'rail')
+          or exists (select 1 from public."Job_Routing" er
+            where er."Job_ID" = requested_job_id and lower(er."JobRoute_ModeCode") in ('sea', 'ocean', 'rail'))))
+      or (lower(e."JobContainer_EquipmentKind") = 'wagon'
+        and (lower(job."Job_TransportModeSummary") = 'rail'
+          or exists (select 1 from public."Job_Routing" er
+            where er."Job_ID" = requested_job_id and lower(er."JobRoute_ModeCode") = 'rail')))
+      or (lower(e."JobContainer_EquipmentKind") = 'uld'
+        and (lower(job."Job_TransportModeSummary") = 'air'
+          or exists (select 1 from public."Job_Routing" er
+            where er."Job_ID" = requested_job_id and lower(er."JobRoute_ModeCode") = 'air')))
+      or (lower(e."JobContainer_EquipmentKind") in ('vehicle', 'trailer')
+        and (lower(job."Job_TransportModeSummary") = 'road'
+          or exists (select 1 from public."Job_Routing" er
+            where er."Job_ID" = requested_job_id and lower(er."JobRoute_ModeCode") = 'road')))
+    );
 
   with visible as (
     select c."JobCostingLine_ID" as id, c."JobCostingLine_Number" as line_number,
