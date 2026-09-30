@@ -1,119 +1,130 @@
 import { useState } from "react"
-import { StyleSheet, Text } from "react-native"
+import { StyleSheet, View } from "react-native"
 import { Field } from "@/components/FormControls"
 import { DataCard, ScanField, SuccessState, WarehouseButton, WarehouseScreen, WarningState } from "@/components/WarehouseUI"
-import { colors, spacing, type } from "@/theme/tokens"
+import { spacing } from "@/theme/tokens"
 import type { WarehouseFacility, WarehouseHandlingUnit, WarehouseLocation, WarehouseMobileApi } from "@/warehouse/api"
 import { wt } from "@/warehouse/i18n"
+import { scanFeedback, useScanStep } from "@/warehouse/scanner"
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : wt("serviceError")
 }
 
+function palletSummary(pallet: WarehouseHandlingUnit) {
+  const quantity = pallet.contents.reduce((sum, content) => sum + Number(content.quantity), 0)
+  return [pallet.locationCode ? `${wt("at")} ${pallet.locationCode}` : wt("noLocation"), pallet.customerName, `${quantity} ${wt("units")}`].filter(Boolean).join(" · ")
+}
+
 export function PalletMoveScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
-  const [palletCode, setPalletCode] = useState("")
-  const [sourceCode, setSourceCode] = useState("")
-  const [destinationCode, setDestinationCode] = useState("")
   const [reason, setReason] = useState("")
   const [notes, setNotes] = useState("")
-  const [review, setReview] = useState<{ pallet: WarehouseHandlingUnit; source: WarehouseLocation; destination: WarehouseLocation } | null>(null)
-  const [checking, setChecking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const mismatch = Boolean(review && review.pallet.locationId !== review.source.id)
 
-  function edit(setter: (value: string) => void) {
-    return (value: string) => { setter(value); setReview(null); setSuccess(null) }
-  }
+  const pallet = useScanStep<WarehouseHandlingUnit>(async (scan) => {
+    const unit = await api.findHandlingUnit(facility.id, scan)
+    return unit ? { ok: true, value: unit, note: `${unit.code} · ${palletSummary(unit)}` } : { ok: false, message: wt("palletNotFound") }
+  })
+  const source = useScanStep<WarehouseLocation>(async (scan) => {
+    const location = await api.findLocation(facility.id, scan)
+    if (!location) return { ok: false, message: wt("sourceLocationNotFound") }
+    const expected = pallet.result?.locationId
+    return expected && expected !== location.id
+      ? { ok: true, value: location, warning: true, note: `${wt("systemSays")} ${pallet.result?.locationCode ?? "—"}. ${wt("overrideRequired")}` }
+      : { ok: true, value: location, note: wt("palletWhereExpected") }
+  })
+  const destination = useScanStep<WarehouseLocation>(async (scan) => {
+    const location = await api.findLocation(facility.id, scan)
+    if (!location || (pallet.result && location.facilityId !== pallet.result.facilityId)) return { ok: false, message: wt("destinationNotFound") }
+    if (!location.isActive || location.statusCode !== "available") return { ok: false, message: wt("destinationUnavailable") }
+    if (source.result?.id === location.id) return { ok: false, message: wt("sameLocation") }
+    return { ok: true, value: location, note: `${location.code} · ${location.typeName || location.typeCode}` }
+  })
+  const mismatch = source.status === "warning"
+  const ready = Boolean(pallet.result && source.result && destination.result) && (!mismatch || Boolean(reason.trim()))
 
-  async function check() {
-    setError(null); setSuccess(null); setChecking(true)
-    try {
-      const [pallet, source, destination] = await Promise.all([
-        api.findHandlingUnit(facility.id, palletCode),
-        api.findLocation(facility.id, sourceCode),
-        api.findLocation(facility.id, destinationCode),
-      ])
-      if (!pallet) return setError(wt("palletNotFound"))
-      if (!source) return setError(wt("sourceLocationNotFound"))
-      if (!destination || destination.facilityId !== pallet.facilityId) return setError(wt("destinationNotFound"))
-      setReview({ pallet, source, destination })
-    } catch (lookupError) { setError(message(lookupError)) } finally { setChecking(false) }
+  function clearSuccess<T extends (value: string) => void>(handler: T) {
+    return (value: string) => { setSuccess(null); setError(null); handler(value) }
   }
 
   async function move() {
-    if (!review || (mismatch && !reason.trim())) return
+    if (!pallet.result || !source.result || !destination.result || (mismatch && !reason.trim())) return
     setBusy(true); setError(null)
     try {
-      await api.moveHandlingUnit({ facilityId: facility.id, handlingUnitId: review.pallet.id, targetLocationId: review.destination.id, actualSourceLocationId: review.source.id, overrideReason: mismatch ? reason.trim() : null, notes: notes.trim() || null })
-      setSuccess(wt("moveComplete")); setReview(null); setPalletCode(""); setSourceCode(""); setDestinationCode(""); setReason(""); setNotes("")
-    } catch (actionError) { setError(message(actionError)) } finally { setBusy(false) }
+      await api.moveHandlingUnit({ facilityId: facility.id, handlingUnitId: pallet.result.id, targetLocationId: destination.result.id, actualSourceLocationId: source.result.id, overrideReason: mismatch ? reason.trim() : null, notes: notes.trim() || null })
+      scanFeedback("ok")
+      setSuccess(`${pallet.result.code} ${wt("movedTo")} ${destination.result.code}.`)
+      pallet.reset(); source.reset(); destination.reset(); setReason(""); setNotes("")
+      pallet.focus()
+    } catch (actionError) { scanFeedback("error"); setError(message(actionError)) } finally { setBusy(false) }
   }
 
   return <WarehouseScreen title={wt("moveOverride")} subtitle={wt("moveOverrideDetail")} onBack={onBack}>
     {success ? <SuccessState message={success} /> : null}
-    <ScanField value={palletCode} onChangeText={edit(setPalletCode)} placeholder={wt("palletCode")} autoFocus />
-    <ScanField value={sourceCode} onChangeText={edit(setSourceCode)} placeholder={wt("scannedSource")} />
-    <ScanField value={destinationCode} onChangeText={edit(setDestinationCode)} placeholder={wt("destination")} />
-    {!review ? <WarehouseButton label={wt("reviewMove")} busy={checking} disabled={!palletCode.trim() || !sourceCode.trim() || !destinationCode.trim()} onPress={() => void check()} /> : <>
-      <DataCard title={review.pallet.code} meta={`${review.pallet.locationCode || "—"} → ${review.destination.code}`} status={review.pallet.lifecycleStatusCode}>
-        <Text style={styles.detail}>{review.pallet.customerName || "—"} · {review.pallet.contents.length} {wt("contents").toLowerCase()}</Text>
-      </DataCard>
-      {mismatch ? <><WarningState message={wt("overrideRequired")} /><Field label={wt("overrideReason")} value={reason} onChangeText={setReason} /></> : null}
-      <Field label={wt("investigationNotes")} value={notes} onChangeText={setNotes} />
-      <WarehouseButton label={wt("confirmMove")} disabled={mismatch && !reason.trim()} busy={busy} onPress={() => void move()} />
-    </>}
+    <ScanField ref={pallet.ref} label={`1 · ${wt("palletCode")}`} value={pallet.value} onChangeText={clearSuccess((value) => { pallet.change(value); if (source.value) source.reset(); if (destination.value) destination.reset() })} onSubmit={async (text) => { if (await pallet.submit(text)) source.focus() }} status={pallet.status} message={pallet.message} placeholder={wt("scanPalletPlaceholder")} autoFocus />
+    <ScanField ref={source.ref} label={`2 · ${wt("scannedSource")}`} expected={pallet.result?.locationCode ? `${wt("expected")} ${pallet.result.locationCode}` : null} value={source.value} onChangeText={clearSuccess(source.change)} onSubmit={async (text) => { if (await source.submit(text)) destination.focus() }} status={source.status} message={source.message} placeholder={wt("scanLocationPlaceholder")} />
+    {mismatch ? <Field label={wt("overrideReason")} value={reason} onChangeText={setReason} /> : null}
+    <ScanField ref={destination.ref} label={`3 · ${wt("destination")}`} value={destination.value} onChangeText={clearSuccess(destination.change)} onSubmit={(text) => void destination.submit(text)} status={destination.status} message={destination.message} placeholder={wt("scanLocationPlaceholder")} />
+    <Field label={wt("notesOptional")} value={notes} onChangeText={setNotes} />
     {error ? <WarningState message={error} /> : null}
+    <WarehouseButton label={wt("confirmMove")} disabled={!ready} busy={busy} onPress={() => void move()} />
   </WarehouseScreen>
 }
 
 export function ConsolidationScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
-  const [targetCode, setTargetCode] = useState("")
-  const [sourceCodes, setSourceCodes] = useState("")
+  const [sources, setSources] = useState<WarehouseHandlingUnit[]>([])
   const [notes, setNotes] = useState("")
-  const [review, setReview] = useState<{ target: WarehouseHandlingUnit; sources: WarehouseHandlingUnit[] } | null>(null)
-  const [checking, setChecking] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const sourceValues = sourceCodes.split(/[\n,]+/).map((value) => value.trim()).filter(Boolean)
 
-  async function check() {
-    setError(null); setSuccess(null); setChecking(true)
-    try {
-      const [target, ...sources] = await Promise.all([api.findHandlingUnit(facility.id, targetCode), ...sourceValues.map((code) => api.findHandlingUnit(facility.id, code))])
-      if (!target) return setError(wt("palletNotFound"))
-      const found = sources.filter((unit): unit is WarehouseHandlingUnit => Boolean(unit))
-      if (!sourceValues.length || found.length !== sourceValues.length) return setError(wt("sourcePalletsNotFound"))
-      if (found.some((source) => source.id === target.id)) return setError(wt("targetSourceConflict"))
-      if (found.some((source) => source.facilityId !== target.facilityId || source.customerOrgId !== target.customerOrgId)) return setError(wt("palletScopeMismatch"))
-      setReview({ target, sources: found.filter((unit, index) => found.findIndex((candidate) => candidate.id === unit.id) === index) })
-    } catch (lookupError) { setError(message(lookupError)) } finally { setChecking(false) }
+  const target = useScanStep<WarehouseHandlingUnit>(async (scan) => {
+    const unit = await api.findHandlingUnit(facility.id, scan)
+    return unit ? { ok: true, value: unit, note: `${unit.code} · ${palletSummary(unit)}` } : { ok: false, message: wt("palletNotFound") }
+  })
+  const nextSource = useScanStep<WarehouseHandlingUnit>(async (scan) => {
+    const unit = await api.findHandlingUnit(facility.id, scan)
+    if (!unit) return { ok: false, message: wt("palletNotFound") }
+    if (unit.id === target.result?.id) return { ok: false, message: wt("targetSourceConflict") }
+    if (sources.some((source) => source.id === unit.id)) return { ok: false, message: wt("alreadyAdded") }
+    if (target.result && (unit.facilityId !== target.result.facilityId || unit.customerOrgId !== target.result.customerOrgId)) return { ok: false, message: wt("palletScopeMismatch") }
+    return { ok: true, value: unit }
+  })
+
+  async function addSource(text: string) {
+    const unit = await nextSource.submit(text)
+    if (!unit) return
+    setSources((current) => [...current, unit]); setConfirming(false)
+    nextSource.reset(); nextSource.focus()
   }
 
   async function consolidate() {
-    if (!review) return
+    if (!target.result || !sources.length) return
     setBusy(true); setError(null)
     try {
-      await api.consolidateHandlingUnits({ facilityId: facility.id, targetHandlingUnitId: review.target.id, sourceHandlingUnitIds: review.sources.map((source) => source.id), notes: notes.trim() || null })
-      setSuccess(wt("consolidationComplete")); setReview(null); setTargetCode(""); setSourceCodes(""); setNotes("")
-    } catch (actionError) { setError(message(actionError)) } finally { setBusy(false) }
+      await api.consolidateHandlingUnits({ facilityId: facility.id, targetHandlingUnitId: target.result.id, sourceHandlingUnitIds: sources.map((source) => source.id), notes: notes.trim() || null })
+      scanFeedback("ok")
+      setSuccess(wt("consolidationComplete")); setConfirming(false); setSources([]); setNotes(""); target.reset(); nextSource.reset(); target.focus()
+    } catch (actionError) { scanFeedback("error"); setError(message(actionError)) } finally { setBusy(false) }
   }
 
   return <WarehouseScreen title={wt("consolidation")} subtitle={wt("consolidationDetail")} onBack={onBack}>
     {success ? <SuccessState message={success} /> : null}
-    <ScanField value={targetCode} onChangeText={(value) => { setTargetCode(value); setReview(null) }} placeholder={wt("targetPallet")} autoFocus />
-    <ScanField value={sourceCodes} onChangeText={(value) => { setSourceCodes(value); setReview(null) }} placeholder={wt("sourcePalletsHint")} multiline />
-    {!review ? <WarehouseButton label={wt("reviewConsolidation")} busy={checking} disabled={!targetCode.trim() || !sourceValues.length} onPress={() => void check()} /> : <>
-      <WarningState message={wt("consolidationWarning")} />
-      <DataCard title={review.target.code} meta={`${wt("targetPallet")} · ${review.target.locationCode || "—"}`} status={review.target.lifecycleStatusCode} />
-      {review.sources.map((source) => <DataCard key={source.id} title={source.code} meta={`${wt("sourcePallets")} · ${source.locationCode || "—"}`} status={source.lifecycleStatusCode} />)}
-      <Field label={wt("investigationNotes")} value={notes} onChangeText={setNotes} />
-      <WarehouseButton label={wt("confirmConsolidation")} tone="danger" busy={busy} onPress={() => void consolidate()} />
-    </>}
+    <ScanField ref={target.ref} label={`1 · ${wt("targetPallet")}`} value={target.value} onChangeText={(value) => { setSuccess(null); setSources([]); setConfirming(false); target.change(value) }} onSubmit={async (text) => { if (await target.submit(text)) nextSource.focus() }} status={target.status} message={target.message} placeholder={wt("scanPalletPlaceholder")} autoFocus />
+    <ScanField ref={nextSource.ref} label={`2 · ${wt("sourcePallets")}`} expected={sources.length ? `${sources.length} ${wt("added")}` : null} value={nextSource.value} onChangeText={nextSource.change} onSubmit={(text) => void addSource(text)} status={nextSource.status === "matched" ? "idle" : nextSource.status} message={nextSource.message} placeholder={wt("scanSourcePalletPlaceholder")} editable={Boolean(target.result)} />
+    {sources.map((source) => <DataCard key={source.id} title={source.code} meta={palletSummary(source)}>
+      <View style={styles.cardAction}><WarehouseButton compact tone="secondary" label={wt("remove")} onPress={() => { setSources((current) => current.filter((candidate) => candidate.id !== source.id)); setConfirming(false) }} /></View>
+    </DataCard>)}
     {error ? <WarningState message={error} /> : null}
+    {target.result && sources.length ? confirming ? <>
+      <WarningState message={wt("consolidationWarning")} />
+      <Field label={wt("notesOptional")} value={notes} onChangeText={setNotes} />
+      <WarehouseButton label={`${wt("confirmConsolidation")} ${target.result.code}`} tone="danger" busy={busy} onPress={() => void consolidate()} />
+    </> : <WarehouseButton label={wt("reviewConsolidation")} onPress={() => setConfirming(true)} /> : null}
   </WarehouseScreen>
 }
 
-const styles = StyleSheet.create({ detail: { color: colors.text, fontSize: type.meta, marginTop: spacing.md } })
+const styles = StyleSheet.create({ cardAction: { alignItems: "flex-start", marginTop: spacing.md } })

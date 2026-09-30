@@ -16,16 +16,16 @@ export function StockEnquiryScreen({ api, facility, onBack }: { api: WarehouseMo
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (term = query) => {
     setLoading(true); setError(null)
-    try { setRows(await api.listInventory({ facilityId: facility.id, search: query.trim() })) } catch (loadError) { setError(message(loadError)) } finally { setLoading(false) }
+    try { setRows(await api.listInventory({ facilityId: facility.id, search: term.trim() })) } catch (loadError) { setError(message(loadError)) } finally { setLoading(false) }
   }, [api, facility.id, query])
 
   useEffect(() => { void load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return <WarehouseScreen title={wt("stockEnquiry")} subtitle={wt("stockEnquiryDetail")} onBack={onBack}>
-    <ScanField value={query} onChangeText={setQuery} onSubmit={() => void load()} autoFocus />
-    <WarehouseButton label={wt("search")} onPress={() => void load()} />
+    <ScanField label={wt("stockEnquiryScan")} value={query} onChangeText={setQuery} onSubmit={(text) => void load(text)} autoFocus />
+    <WarehouseButton label={wt("search")} tone="secondary" onPress={() => void load()} />
     {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={() => void load()} /> : rows.length ? rows.map((row) => <DataCard key={row.id} title={row.sku} meta={`${row.itemDescription} · ${row.locationCode || "—"}`} status={row.inventoryStatusCode}>
       <Text style={styles.detail}>{row.customerName || "—"}{row.handlingUnitCode ? ` · ${row.handlingUnitCode}` : ""}</Text>
       <MetricRow values={[{ label: wt("onHand"), value: `${row.onHandQuantity} ${row.uomCode}` }, { label: wt("available"), value: String(row.availableQuantity) }, { label: wt("held"), value: String(row.heldQuantity) }]} />
@@ -38,10 +38,10 @@ export function StockItemsScreen({ api, facility, onBack }: { api: WarehouseMobi
   const [rows, setRows] = useState<WarehouseItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const load = useCallback(async () => { setLoading(true); setError(null); try { setRows(await api.listItems({ facilityId: facility.id, search: query.trim() })) } catch (loadError) { setError(message(loadError)) } finally { setLoading(false) } }, [api, facility.id, query])
+  const load = useCallback(async (term = query) => { setLoading(true); setError(null); try { setRows(await api.listItems({ facilityId: facility.id, search: term.trim() })) } catch (loadError) { setError(message(loadError)) } finally { setLoading(false) } }, [api, facility.id, query])
   useEffect(() => { void load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   return <WarehouseScreen title={wt("stockItems")} subtitle={wt("stockItemsDetail")} onBack={onBack}>
-    <ScanField value={query} onChangeText={setQuery} onSubmit={() => void load()} autoFocus />
+    <ScanField value={query} onChangeText={setQuery} onSubmit={(text) => void load(text)} autoFocus />
     {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={() => void load()} /> : rows.length ? rows.map((row) => <DataCard key={row.id} title={row.sku} meta={row.description} status={row.baseUomCode}>
       <Text style={styles.detail}>{row.customerOrgName || "—"} · {[row.requiresLot && "lot", row.requiresSerial && "serial", row.requiresExpiry && "expiry", row.isDangerousGoods && "DG", row.isBondedEligible && "bonded"].filter(Boolean).join(" · ") || "standard"}</Text>
     </DataCard>) : <EmptyState />}
@@ -53,10 +53,10 @@ export function PalletsScreen({ api, facility, onBack }: { api: WarehouseMobileA
   const [rows, setRows] = useState<WarehouseHandlingUnit[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const load = useCallback(async () => { setLoading(true); setError(null); try { setRows(await api.listHandlingUnits({ facilityId: facility.id, search: query.trim() })) } catch (loadError) { setError(message(loadError)) } finally { setLoading(false) } }, [api, facility.id, query])
+  const load = useCallback(async (term = query) => { setLoading(true); setError(null); try { setRows(await api.listHandlingUnits({ facilityId: facility.id, search: term.trim() })) } catch (loadError) { setError(message(loadError)) } finally { setLoading(false) } }, [api, facility.id, query])
   useEffect(() => { void load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   return <WarehouseScreen title={wt("pallets")} subtitle={wt("palletsDetail")} onBack={onBack}>
-    <ScanField value={query} onChangeText={setQuery} onSubmit={() => void load()} autoFocus />
+    <ScanField value={query} onChangeText={setQuery} onSubmit={(text) => void load(text)} autoFocus />
     {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={() => void load()} /> : rows.length ? rows.map((row) => <DataCard key={row.id} title={row.code} meta={`${row.typeName} · ${row.locationCode || "—"}`} status={row.lifecycleStatusCode}>
       <Text style={styles.detail}>{row.customerName || "—"}</Text>
       <MetricRow values={[{ label: wt("contents"), value: String(row.contents.length) }, { label: wt("onHand"), value: String(row.contents.reduce((sum, content) => sum + Number(content.quantity), 0)) }, { label: wt("status"), value: row.inventoryStatusCode }]} />
@@ -73,7 +73,7 @@ export function ExceptionsScreen({ api, facility, onBack }: { api: WarehouseMobi
   const [notes, setNotes] = useState("")
   const [busy, setBusy] = useState(false)
   const [success, setSuccess] = useState<string | null>(null)
-  const load = useCallback(async () => { setLoading(true); setError(null); try { setRows(await api.listExceptions({ facilityId: facility.id, search: query.trim() })) } catch (loadError) { setError(message(loadError)) } finally { setLoading(false) } }, [api, facility.id, query])
+  const load = useCallback(async (term = query) => { setLoading(true); setError(null); try { setRows(await api.listExceptions({ facilityId: facility.id, search: term.trim() })) } catch (loadError) { setError(message(loadError)) } finally { setLoading(false) } }, [api, facility.id, query])
   useEffect(() => { void load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   async function resolveDataError() {
     if (!selected || !notes.trim()) return
@@ -85,7 +85,7 @@ export function ExceptionsScreen({ api, facility, onBack }: { api: WarehouseMobi
   }
 
   return <WarehouseScreen title={wt("exceptions")} subtitle={wt("exceptionsDetail")} onBack={onBack} actions={<WarehouseButton compact label={wt("refresh")} tone="secondary" onPress={() => void load()} />}>
-    <ScanField value={query} onChangeText={setQuery} onSubmit={() => void load()} />
+    <ScanField value={query} onChangeText={setQuery} onSubmit={(text) => void load(text)} />
     {success ? <SuccessState message={success} /> : null}
     {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={() => void load()} /> : rows.length ? rows.map((row) => <DataCard key={row.id} title={row.title} meta={`${row.expectedLocationCode || "—"} · ${new Date(row.raisedAt).toLocaleString()}`} status={`${row.severityCode} · ${row.statusCode}`} onPress={row.typeCode === "location_empty" ? () => { setSelected(row); setSuccess(null) } : undefined}>
       {row.description ? <Text style={styles.detail}>{row.description}</Text> : null}

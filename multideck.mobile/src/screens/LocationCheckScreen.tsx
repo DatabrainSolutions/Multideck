@@ -20,11 +20,11 @@ export function LocationCheckScreen({ api, facility, onBack }: { api: WarehouseM
   const [success, setSuccess] = useState<string | null>(null)
   const retryLoad = useRef<() => void>(() => {})
 
-  async function search() {
-    const term = query.trim()
+  async function search(text = query) {
+    const term = text.trim()
     if (!term) return
     setLoading(true); setError(null); setSelected(null); setSuccess(null); setMatches([])
-    retryLoad.current = () => { void search() }
+    retryLoad.current = () => { void search(term) }
     try {
       const rows = await api.listLocations(facility.id, term)
       const exact = rows.find((row) => sameScan(row.code, term) || sameScan(row.barcode, term))
@@ -53,7 +53,7 @@ export function LocationCheckScreen({ api, facility, onBack }: { api: WarehouseM
   }
 
   return <WarehouseScreen title={wt("locationCheck")} subtitle={wt("locationCheckDetail")} onBack={onBack}>
-    <ScanField value={query} onChangeText={(value) => { setQuery(value); setSelected(null); setConfirming(false); setActionError(null) }} onSubmit={() => void search()} autoFocus />
+    <ScanField value={query} onChangeText={(value) => { setQuery(value); setSelected(null); setConfirming(false); setActionError(null) }} onSubmit={(text) => void search(text)} label={wt("scanLocationLabel")} placeholder={wt("scanLocationPlaceholder")} autoFocus />
     {!selected && !loading ? <WarehouseButton label={wt("search")} tone="secondary" disabled={!query.trim()} onPress={() => void search()} /> : null}
     {!selected ? matches.map((location) => <DataCard key={location.id} title={location.code} meta={[location.zoneName, location.aisle, location.bay, location.level].filter(Boolean).join(" · ")} status={location.statusName || location.statusCode} onPress={() => void chooseLocation(location)} />) : null}
     {loading ? <LoadingState /> : null}

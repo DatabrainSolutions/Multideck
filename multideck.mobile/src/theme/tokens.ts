@@ -16,6 +16,11 @@ export const colors = {
   accentLift: "#8dd3ca",
   danger: "#b3261e",
   dangerSurface: "#fbeceb",
+  // --md-status-*-ink / -bg: status treatments, kept legible outdoors and under warehouse lighting.
+  success: "#0f5f00",
+  successSurface: "#eaf9e5",
+  warning: "#746a00",
+  warningSurface: "#f7f3cf",
 } as const
 
 export const spacing = {

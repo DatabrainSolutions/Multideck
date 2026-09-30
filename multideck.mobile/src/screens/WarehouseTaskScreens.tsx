@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { StyleSheet, Text } from "react-native"
 import { Field } from "@/components/FormControls"
-import { DataCard, EmptyState, ErrorState, LoadingState, MetricRow, ScanField, SuccessState, WarehouseButton, WarehouseScreen, WarningState } from "@/components/WarehouseUI"
+import { DataCard, EmptyState, ErrorState, LoadingState, MetricRow, QuantityField, ScanField, SuccessState, WarehouseButton, WarehouseScreen, WarningState } from "@/components/WarehouseUI"
+import { scanFeedback, useScanStep } from "@/warehouse/scanner"
 import { colors, spacing, type } from "@/theme/tokens"
 import { sameScan, type WarehouseFacility, type WarehouseLocation, type WarehouseMobileApi, type WarehouseOrder, type WarehouseTask } from "@/warehouse/api"
 import { wt } from "@/warehouse/i18n"
@@ -157,95 +158,140 @@ export function ReceiveScreen({ api, facility, onBack }: { api: WarehouseMobileA
   </WarehouseScreen>
 }
 
+function sortTasks(tasks: WarehouseTask[], typeCode: "putaway" | "pick") {
+  // Picks follow the walk through the racking; putaways keep arrival order.
+  if (typeCode === "putaway") return tasks
+  return [...tasks].sort((first, second) => (first.sourceLocationCode ?? "").localeCompare(second.sourceLocationCode ?? "", undefined, { numeric: true }) || first.createdAt.localeCompare(second.createdAt))
+}
+
+function matchesTaskFilter(task: WarehouseTask, scan: string) {
+  return [task.sourceLocationCode, task.targetLocationCode, task.sku, task.orderNumber, task.lotNumber].some((value) => sameScan(value, scan))
+}
+
 function WarehouseTaskQueueScreen({ api, facility, onBack, typeCode }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void; typeCode: "putaway" | "pick" }) {
   const [tasks, setTasks] = useState<WarehouseTask[]>([])
+  const [total, setTotal] = useState(0)
   const [selected, setSelected] = useState<WarehouseTask | null>(null)
-  const [sourceCode, setSourceCode] = useState("")
-  const [itemCode, setItemCode] = useState("")
-  const [targetCode, setTargetCode] = useState("")
+  const [filter, setFilter] = useState("")
   const [quantity, setQuantity] = useState("")
   const [notes, setNotes] = useState("")
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const isPutaway = typeCode === "putaway"
 
-  const load = useCallback(async () => {
+  const source = useScanStep<true>(async (scan) => {
+    if (!selected) return { ok: false, message: wt("sourceScanMismatch") }
+    return await matchesTaskLocation(api, facility.id, selected, scan)
+      ? { ok: true, value: true }
+      : { ok: false, message: `${wt("wrongLocation")} ${selected.sourceLocationCode ?? "—"}.` }
+  })
+  const target = useScanStep<WarehouseLocation>(async (scan) => {
+    const location = await api.findLocation(facility.id, scan)
+    if (!location) return { ok: false, message: wt("locationNotFound") }
+    if (!location.isActive || location.statusCode !== "available" || nonStorageLocationTypes.includes(location.typeCode)) return { ok: false, message: wt("destinationNotStorage") }
+    const suggested = selected?.targetLocationCode
+    return { ok: true, value: location, note: suggested && !sameScan(suggested, location.code) ? `${location.code} · ${wt("differentFromSuggested")} ${suggested}` : `${location.code} · ${location.typeName || location.typeCode}` }
+  })
+  const item = useScanStep<true>((scan) => sameScan(selected?.sku, scan)
+    ? { ok: true, value: true }
+    : { ok: true, value: true, note: wt("barcodeCheckedOnConfirm"), warning: false })
+
+  const load = useCallback(async (openNext = false) => {
     setLoading(true); setError(null)
     try {
       const page = await api.listTasks({ facilityId: facility.id, type: typeCode, status: "open", limit: 50, offset: 0 })
-      setTasks(page.rows)
+      const ordered = sortTasks(page.rows, typeCode)
+      setTasks(ordered); setTotal(page.total)
+      if (openNext && ordered[0]) openTask(ordered[0])
     } catch (loadError) {
       setError(message(loadError))
     } finally {
       setLoading(false)
     }
-  }, [api, facility.id, typeCode])
+  }, [api, facility.id, typeCode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { void load() }, [load])
 
-  async function chooseTask(task: WarehouseTask) {
-    setLoading(true); setError(null); setSuccess(null)
-    try {
-      const detail = await api.getTask(task.id)
-      setSelected(detail)
-      setSourceCode("")
-      setItemCode("")
-      setTargetCode(detail.targetLocationCode ?? "")
-      setQuantity(String(remainingTaskQuantity(detail)))
-      setNotes("")
-    } catch (loadError) {
-      setError(message(loadError))
-    } finally {
-      setLoading(false)
-    }
+  function openTask(task: WarehouseTask) {
+    setSelected(task)
+    setQuantity(String(remainingTaskQuantity(task)))
+    setNotes(""); setError(null)
+    source.reset(); target.reset(); item.reset()
+    source.focus()
+  }
+
+  function closeTask() {
+    setSelected(null); setError(null); setSuccess(null)
+  }
+
+  function submitFilter(text = filter) {
+    const scan = text.trim()
+    if (!scan) return
+    const found = tasks.filter((task) => matchesTaskFilter(task, scan))
+    if (found.length === 1 && found[0]) { setFilter(""); setSuccess(null); openTask(found[0]); scanFeedback("ok") }
+    else if (!found.length) { setError(wt("noTaskForScan")); scanFeedback("error") }
+  }
+
+  async function submitSource(text: string) {
+    if (await source.submit(text)) (isPutaway ? target : item).focus()
   }
 
   async function confirm() {
     if (!selected) return
-    if (typeCode === "pick" && !itemCode.trim()) return setError(wt("scanItemFirst"))
     const numericQuantity = Number(quantity)
     if (!Number.isFinite(numericQuantity) || numericQuantity <= 0 || numericQuantity > remainingTaskQuantity(selected)) return setError(wt("checkTaskQuantity"))
-
     setBusy(true); setError(null)
     try {
-      if (!sourceCode.trim() || !(await matchesTaskLocation(api, facility.id, selected, sourceCode))) return setError(wt("sourceScanMismatch"))
-      const target = typeCode === "putaway" ? await api.findLocation(facility.id, targetCode) : null
-      if (typeCode === "putaway" && (!target || target.facilityId !== facility.id || !target.isActive || target.statusCode !== "available" || nonStorageLocationTypes.includes(target.typeCode))) return setError(wt("destinationNotFound"))
+      const sourceOk = source.status === "matched" || await source.submit()
+      if (!sourceOk) return setError(wt("sourceScanMismatch"))
+      const location = isPutaway ? target.result ?? await target.submit() : null
+      if (isPutaway && !location) return setError(wt("destinationNotFound"))
+      if (!isPutaway && !item.value.trim()) return setError(wt("scanItemFirst"))
       await api.confirmTask(selected.id, {
         quantity: numericQuantity,
-        ...(target ? { targetLocationId: target.id, scannedTargetLocationCode: targetCode.trim() } : {}),
-        scannedSourceLocationCode: sourceCode.trim(),
-        ...(typeCode === "pick" ? { scannedItemCode: itemCode.trim() } : {}),
+        ...(location ? { targetLocationId: location.id, scannedTargetLocationCode: target.value.trim() } : {}),
+        scannedSourceLocationCode: source.value.trim(),
+        ...(!isPutaway ? { scannedItemCode: item.value.trim() } : {}),
         notes: notes.trim() || null,
       })
-      setSelected(null); setSourceCode(""); setItemCode(""); setTargetCode(""); setQuantity(""); setNotes("")
-      setSuccess(typeCode === "putaway" ? wt("putawayComplete") : wt("pickComplete"))
-      await load()
+      scanFeedback("ok")
+      setSuccess(isPutaway ? wt("putawayComplete") : wt("pickComplete"))
+      setSelected(null)
+      await load(true)
     } catch (actionError) {
+      scanFeedback("error")
       setError(message(actionError))
     } finally {
       setBusy(false)
     }
   }
 
-  const title = typeCode === "putaway" ? wt("putAway") : wt("pick")
-  const subtitle = typeCode === "putaway" ? wt("putawayQueueDetail") : wt("pickQueueDetail")
-  return <WarehouseScreen title={title} subtitle={selected ? (typeCode === "putaway" ? wt("putawayTaskDetail") : wt("pickTaskDetail")) : subtitle} onBack={selected ? () => { setSelected(null); setError(null) } : onBack} actions={<WarehouseButton compact label={wt("refresh")} tone="secondary" onPress={() => void load()} />}>
+  const title = isPutaway ? wt("putAway") : wt("pick")
+  const visibleTasks = filter.trim() ? tasks.filter((task) => [task.sourceLocationCode, task.targetLocationCode, task.sku, task.orderNumber, task.lotNumber, task.customerName].some((value) => value?.toLowerCase().includes(filter.trim().toLowerCase()))) : tasks
+  const position = selected ? tasks.findIndex((task) => task.id === selected.id) : -1
+
+  return <WarehouseScreen title={title} subtitle={selected ? undefined : isPutaway ? wt("putawayQueueDetail") : wt("pickQueueDetail")} onBack={selected ? closeTask : onBack} onRefresh={selected ? undefined : () => void load()} refreshing={loading && tasks.length > 0} actions={selected ? (position >= 0 ? <Text style={styles.position}>{position + 1} / {total}</Text> : null) : <WarehouseButton compact label={wt("refresh")} tone="secondary" onPress={() => void load()} />}>
     {success ? <SuccessState message={success} /> : null}
-    {loading ? <LoadingState /> : error && !selected ? <ErrorState message={error} onRetry={() => void load()} /> : !selected ? tasks.length ? tasks.map((task) => <DataCard key={task.id} title={task.sku || task.orderNumber || title} meta={[task.orderNumber, task.customerName].filter(Boolean).join(" · ")} status={task.statusCode} onPress={() => void chooseTask(task)}>
-      <Text style={styles.route}>{task.sourceLocationCode || "—"} {"→"} {typeCode === "putaway" ? task.targetLocationCode || wt("chooseDestination") : wt("dispatchStage")}</Text>
-      <MetricRow values={[{ label: wt("remaining"), value: `${remainingTaskQuantity(task)} ${task.uomCode}` }, { label: wt("lotNumber"), value: task.lotNumber || "—" }]} />
-    </DataCard>) : <EmptyState message={typeCode === "putaway" ? wt("nothingToPutAway") : wt("nothingToPick")} /> : <>
-      <DataCard title={selected.sku || title} meta={[selected.description, selected.orderNumber, selected.customerName].filter(Boolean).join(" · ")} status={selected.statusCode}>
-        <MetricRow values={[{ label: wt("quantity"), value: `${remainingTaskQuantity(selected)} ${selected.uomCode}` }, { label: wt("lotNumber"), value: selected.lotNumber || "—" }]} />
+    {!selected ? <>
+      <ScanField label={wt("findTask")} value={filter} onChangeText={(value) => { setFilter(value); setError(null) }} onSubmit={submitFilter} placeholder={wt("findTaskPlaceholder")} autoFocus />
+      {error && !loading ? <WarningState message={error} /> : null}
+      {loading && !tasks.length ? <LoadingState /> : visibleTasks.length ? visibleTasks.map((task) => <DataCard key={task.id} title={`${task.sourceLocationCode || "—"} → ${isPutaway ? task.targetLocationCode || wt("chooseDestination") : wt("dispatchStage")}`} meta={[task.sku, task.description].filter(Boolean).join(" · ")} status={`${remainingTaskQuantity(task)} ${task.uomCode}`} onPress={() => { setSuccess(null); openTask(task) }}>
+        <Text style={styles.detail}>{[task.orderNumber, task.customerName, task.lotNumber ? `${wt("lotNumber")} ${task.lotNumber}` : null].filter(Boolean).join(" · ")}</Text>
+      </DataCard>) : !error ? <EmptyState message={isPutaway ? wt("nothingToPutAway") : wt("nothingToPick")} /> : null}
+    </> : <>
+      <DataCard title={selected.sku || title} meta={[selected.description, selected.orderNumber, selected.customerName].filter(Boolean).join(" · ")} status={selected.statusCode === "in_progress" ? wt("inProgress") : null}>
+        <MetricRow values={[{ label: wt("remaining"), value: `${remainingTaskQuantity(selected)} ${selected.uomCode}` }, { label: wt("lotNumber"), value: selected.lotNumber || "—" }]} />
       </DataCard>
-      <ScanField value={sourceCode} onChangeText={setSourceCode} placeholder={`${wt("scanSource")} · ${selected.sourceLocationCode || "—"}`} autoFocus />
-      {typeCode === "pick" ? <ScanField value={itemCode} onChangeText={setItemCode} placeholder={`${wt("scanItem")} · ${selected.sku || "—"}`} /> : <ScanField value={targetCode} onChangeText={setTargetCode} placeholder={wt("scanDestination")} />}
-      <Field label={typeCode === "putaway" ? wt("quantityToPutAway") : wt("quantityToPick")} value={quantity} onChangeText={setQuantity} keyboardType="decimal-pad" suffix={selected.uomCode} />
-      <Field label={wt("notes")} value={notes} onChangeText={setNotes} multiline style={styles.notes} />
+      <ScanField ref={source.ref} label={`1 · ${wt("scanSource")}`} expected={selected.sourceLocationCode} value={source.value} onChangeText={source.change} onSubmit={(text) => void submitSource(text)} status={source.status} message={source.message} placeholder={wt("scanLocationPlaceholder")} autoFocus />
+      {isPutaway
+        ? <ScanField ref={target.ref} label={`2 · ${wt("scanDestination")}`} expected={selected.targetLocationCode ? `${wt("suggested")} ${selected.targetLocationCode}` : null} value={target.value} onChangeText={target.change} onSubmit={(text) => void target.submit(text)} status={target.status} message={target.message} placeholder={wt("scanLocationPlaceholder")} />
+        : <ScanField ref={item.ref} label={`2 · ${wt("scanItem")}`} expected={selected.sku} value={item.value} onChangeText={item.change} onSubmit={(text) => void item.submit(text)} status={item.status === "matched" && item.message ? "idle" : item.status} message={item.message} placeholder={wt("scanItemPlaceholder")} />}
+      <QuantityField label={`3 · ${isPutaway ? wt("quantityToPutAway") : wt("quantityToPick")}`} value={quantity} onChangeText={setQuantity} max={remainingTaskQuantity(selected)} uomCode={selected.uomCode} />
+      <Field label={wt("notesOptional")} value={notes} onChangeText={setNotes} multiline style={styles.notes} />
       {error ? <WarningState message={error} /> : null}
-      <WarehouseButton label={typeCode === "putaway" ? wt("confirmPutaway") : wt("confirmPick")} busy={busy} disabled={!sourceCode.trim() || (typeCode === "pick" ? !itemCode.trim() : !targetCode.trim())} onPress={() => void confirm()} />
+      <WarehouseButton label={isPutaway ? wt("confirmPutaway") : wt("confirmPick")} busy={busy} disabled={!source.value.trim() || (isPutaway ? !target.value.trim() : !item.value.trim())} onPress={() => void confirm()} />
     </>}
   </WarehouseScreen>
 }
@@ -359,6 +405,8 @@ export function ShipScreen({ api, facility, onBack }: { api: WarehouseMobileApi;
 }
 
 const styles = StyleSheet.create({
+  detail: { color: colors.text, fontSize: type.meta, lineHeight: 18, marginTop: spacing.sm, writingDirection: "ltr" },
+  position: { color: colors.subtle, fontSize: type.label, fontWeight: "500" },
   helper: { color: colors.subtle, fontSize: type.meta, lineHeight: 18, marginBottom: spacing.lg, marginTop: -spacing.md },
   notes: { minHeight: 90, textAlignVertical: "top" },
   route: { color: colors.inkSoft, fontSize: type.body, fontWeight: "600", marginTop: spacing.md, writingDirection: "ltr" },
