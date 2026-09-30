@@ -82,6 +82,7 @@ const tests = [
   'customs-draft-insert-visibility-postgres.test.mjs',
   'notification-permissions-db.test.mjs',
   'reporting-workspace-db.test.mjs',
+  'warehouse-report-sources-postgres.test.mjs',
   'dexter-actor-context-postgres.test.mjs',
   'dexter-voice-postgres.test.mjs',
   'dexter-approval-role-postgres.test.mjs',
