@@ -86,6 +86,7 @@ export const warehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-goods-out", label: "Goods out", icon: PackageMinus, route: "/warehouse/goods-out" },
   { id: "warehouse-orders", label: "Warehouse orders", icon: ClipboardCheck, route: "/warehouse/orders" },
   { id: "warehouse-purchase-orders", label: "Expected receipts", icon: ReceiptText, route: "/warehouse/purchase-orders" },
+  { id: "warehouse-charges", label: "Charges", icon: Wallet, route: "/warehouse/charges" },
 ]
 
 export const warehouseSetupNavigation: SidebarDestination = {
@@ -94,6 +95,7 @@ export const warehouseSetupNavigation: SidebarDestination = {
   icon: Forklift,
   children: [
     { label: "Default pricing", icon: ReceiptText, route: "/warehouse/pricing" },
+    { label: "Billing settings", icon: Clock3, route: "/warehouse/billing" },
     { label: "Facilities", icon: Building2, route: "/warehouse/facilities" },
     { label: "Locations", icon: MapPin, route: "/warehouse/locations" },
     { label: "Items", icon: Package, route: "/warehouse/items" },
@@ -410,7 +412,7 @@ export const adminHubs: AdminHub[] = [
     route: "/admin/warehouse",
     display: "hub",
     description: "Sites, locations, stocked items and default charges.",
-    owns: ["/warehouse/pricing", "/warehouse/facilities", "/warehouse/locations", "/warehouse/items"],
+    owns: ["/warehouse/pricing", "/warehouse/billing", "/warehouse/facilities", "/warehouse/locations", "/warehouse/items"],
     blocks: [
       {
         id: "warehouse-setup",
@@ -422,6 +424,7 @@ export const adminHubs: AdminHub[] = [
           { label: "Locations", route: "/warehouse/locations", keywords: "bays racks bins", icon: MapPin },
           { label: "Items", route: "/warehouse/items", keywords: "sku products", icon: Package },
           { label: "Default pricing", route: "/warehouse/pricing", keywords: "storage handling charges", icon: ReceiptText },
+          { label: "Billing settings", route: "/warehouse/billing", keywords: "cut-off time zone billing cycle weekly monthly storage", icon: Clock3 },
         ],
       },
     ],

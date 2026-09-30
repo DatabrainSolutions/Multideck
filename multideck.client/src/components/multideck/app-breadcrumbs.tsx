@@ -92,6 +92,7 @@ const staticLeafLabels: Record<string, string> = {
   "/settings": "Settings",
   "/warehouse": "Warehouse",
   "/warehouse/calendar": "Calendar",
+  "/warehouse/charges": "Charges",
   "/warehouse/facilities": "Facilities",
   "/warehouse/goods-in": "Goods in",
   "/warehouse/goods-out": "Goods out",
@@ -377,12 +378,12 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null, 
     ]
   }
 
-  if (route === "/warehouse/pricing") {
+  if (route === "/warehouse/pricing" || route === "/warehouse/billing") {
     return [
       { label: "Home", route: "/" },
       { label: "Admin" },
       { label: "Warehouse" },
-      { label: "Default pricing" },
+      { label: route === "/warehouse/pricing" ? "Default pricing" : "Billing settings" },
     ]
   }
 

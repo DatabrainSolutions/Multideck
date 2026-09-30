@@ -223,6 +223,8 @@ const validRoutes = new Set([
   "/warehouse",
   "/warehouse/calendar",
   "/warehouse/pricing",
+  "/warehouse/billing",
+  "/warehouse/charges",
   "/warehouse/facilities",
   "/warehouse/goods-in",
   "/warehouse/goods-out",
