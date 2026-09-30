@@ -87,12 +87,12 @@ This report is currently being developed, Andy Newlands (BoxTop)  to confirm onc
 
 Notes:
 This report will require some explanation as to what is included, etc."
-86,Accounts and reporting,FinancialReport[],AWB Stock Report,AWB Stock Levels,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"AWB Stock Report: 
+86,Accounts and reporting,FinancialReport[],AWB Stock Report,AWB Stock Levels,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"AWB Stock Report:
 This report shows how many Air Waybill numbers you currently have in stock by carrier."
 87,Accounts and reporting,FinancialReport[],Carrier Statistics - Air Export,Ranking_Air_Export,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Carrier Statistics - Air Export Report:
 This report lists the Weight, Air Waybill count and Base Net Cost, by Carrier, where the departure date falls within the reporting period.
 
-Notes:  
+Notes:
 To be added"
 88,Accounts and reporting,FinancialReport[],Carrier Statistics - Air Export - Flown As Booked,FAB_Report,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Flown As Booked Performance Report:
 
@@ -101,22 +101,22 @@ This report returns all jobs, within the specified date range above, where the p
 89,Accounts and reporting,FinancialReport[],Carrier Statistics - Air Import,Ranking_Air_Import,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Carrier Statistics - Air Import Report:
 This report lists the Weight, Job count and Base Net Cost, by Carrier, where the arrival date falls within the reporting period.
 
-Notes:  
+Notes:
 To be added"
 90,Accounts and reporting,FinancialReport[],Carrier Statistics - Sea Export,Ranking_Sea_Export,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Carrier Statistics - Sea Export Report:
 This report lists the TEU, Cube, Job count and Base Net Cost? where the Departure Date falls within the reporting period?
 
-Notes:  
+Notes:
 To be added"
 91,Accounts and reporting,FinancialReport[],Carrier Statistics - Sea Import,Ranking_Sea_Import,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Carrier Statistics - Sea Import Report:
 This report lists the TEU, Cube, Job count and Base Net Cost? where the Arrival Date falls within the reporting period?
 
-Notes:  
+Notes:
 To be added"
 92,Accounts and reporting,FinancialReport[],Charge Description Analysis,Charge Description Analysis,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Charge Description Analysis Report:
 This report shows the charges on invoices which have been transferred to the accounting system within the reporting period.
 
-Notes:  
+Notes:
 Other invoices or costs which are not attached to invoices are not shown."
 93,Accounts and reporting,FinancialReport[],Charge Description Analysis - Sales,Charge Description Analysis_Sales,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Charge Description Analysis Report:
 This report shows the sales charges on Jobs where the Job Date is between the dates shown above.  All amounts are converted to Base Net at the time of Charge creation.
@@ -128,7 +128,7 @@ This report lists charges that do not appear on a sales invoice where the job da
 95,Accounts and reporting,FinancialReport[],Consol Profit,ConsolProfit,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Consol Profit Report:
 This report shows overall profit for consolidations where the Job Date is within the reporting period.
 
-Notes:  
+Notes:
 This report only includes those House and Master jobs where the job dates on the Master files are within the reporting period.  This report does not include Duty and Tax (on Import Jobs) if the nominal code includes the D suffix.  All amounts shown are in Base Net."
 96,Accounts and reporting,FinancialReport[],Cost Analysis by Sales Invoice Date,CostAnalysis_SalesInvoice,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Cost Analysis Report:
 This report shows details of estimated, actual and calculated costs attached to Sales Invoices that are dated within the reporting period.
@@ -163,32 +163,32 @@ Notes:
 All amounts are converted to Base Net."
 107,Accounts and reporting,FinancialReport[],Costs Entered Outside Job Date Range,AccrualsLaterThanJobDate,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),Costs Entered Outside Job Date Range:
 108,Accounts and reporting,FinancialReport[],Costs Invoiced but Not Passed,AccrualsInvoicedNotPassed,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Costs Invoiced but Not Passed Report:
-This report lists estimated costs that have been assigned to a Sales Invoice but not yet passed/approved, where the Sales Invoice date falls within the reporting period. 
+This report lists estimated costs that have been assigned to a Sales Invoice but not yet passed/approved, where the Sales Invoice date falls within the reporting period.
 
 Notes:
 This report shows all estimates of costs, not yet passed/approved, but recorded on Sales Invoices between the invoice dates shown above.  Any foreign currency amounts are converted to base net currency at the appropriate exchange rate shown in BoxTop at the time the estimate is recorded on the job."
 109,Accounts and reporting,FinancialReport[],Costs Not Attached to Sales Invoice,AccrualsNotInvoiced,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Costs Not Attached to Sales Invoices Report:
-This report lists costs that have NOT been assigned to a Sales Invoice where the job date falls within the reporting period. 
+This report lists costs that have NOT been assigned to a Sales Invoice where the job date falls within the reporting period.
 
 Notes:
 This report shows all costs not attached/recorded on sales invoices between the job dates shown above.  Any foreign currency amounts are converted to base net currency at the appropriate exchange rate shown in BoxTop at the time the estimate is recorded on the job."
 110,Accounts and reporting,FinancialReport[],Costs Not Passed by Job Type,Accruals Not Passed,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Costs Not Passed Report:
-This report lists costs that have not been assigned to a Supplier Invoice where the job date falls within the reporting period. 
+This report lists costs that have not been assigned to a Supplier Invoice where the job date falls within the reporting period.
 
 Notes:
 This report shows all estimates of costs, not yet passed/approved, but recorded on jobs between the job dates shown above.  Any foreign currency amounts are converted to base net currency at the appropriate exchange rate shown in BoxTop at the time the estimate is recorded on the job.  If you are transferring purchase invoice information into your accounts system using the automated feature in BoxTop it is recommended you do NOT use this report but use the Costs Not Posted report instead."
 111,Accounts and reporting,FinancialReport[],Costs Not Passed by Job Type - Summary,Accruals Not Passed_Summary,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Costs Not Passed - Summary Report:
-This report lists costs that have not been assigned to a Supplier Invoice where the job date falls within the reporting period. 
+This report lists costs that have not been assigned to a Supplier Invoice where the job date falls within the reporting period.
 
 Notes:
 This report shows all estimates of costs, not yet passed/approved, but recorded on jobs between the job dates shown above.  Any foreign currency amounts are converted to base net currency at the appropriate exchange rate shown in BoxTop at the time the estimate is recorded on the job.  If you are transferring purchase invoice information into your accounts system using the automated feature in BoxTop it is recommended you do NOT use this report but use the Costs Not Posted report instead."
 112,Accounts and reporting,FinancialReport[],Costs Not Passed by Nominal Code - Summary,Accruals Not Passed_NominalCode_Summary,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Costs Not Passed - Summary Report:
-This report lists costs that have not been assigned to a Supplier Invoice where the job date falls within the reporting period. 
+This report lists costs that have not been assigned to a Supplier Invoice where the job date falls within the reporting period.
 
 Notes:
 This report shows all estimates of costs, not yet passed/approved, but recorded on jobs between the job dates shown above.  Any foreign currency amounts are converted to base net currency at the appropriate exchange rate shown in BoxTop at the time the estimate is recorded on the job.  If you are transferring purchase invoice information into your accounts system using the automated feature in BoxTop it is recommended you do NOT use this report but use the Costs Not Posted report instead."
 113,Accounts and reporting,FinancialReport[],Costs Not Passed by Supplier,AccruedNotPassedBySupplier,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Costs Not Passed Report:
-This report lists costs that have not been assigned to a Supplier Invoice where the job date falls within the reporting period. 
+This report lists costs that have not been assigned to a Supplier Invoice where the job date falls within the reporting period.
 
 Notes:
 This report shows all estimates of costs, not yet passed/approved, but recorded on jobs between the job dates shown above.  Any foreign currency amounts are converted to base net currency at the appropriate exchange rate shown in BoxTop at the time the estimate is recorded on the job.  If you are transferring purchase invoice information into your accounts system using the automated feature in BoxTop it is recommended you do NOT use this report but use the Costs Not Posted report instead."
@@ -228,19 +228,19 @@ Duties and Taxes are included."
 121,Accounts and reporting,FinancialReport[],Costs Variance Report,Accrual Report_Variance,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Costs Variance Report:
 This report lists all costs where the job date falls within the reporting period. This report can potentially be very long!
 
-Notes:  
+Notes:
 This report compares Estimated and Actual costs in Base Currency where the cost records are attached to job records between specified Job dates."
 122,Accounts and reporting,FinancialReport[],Customer Lane Report (Based on Principal),CustomerLaneReport,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Customer Lane Report (Based on Principal):
 This report shows Job Count, Revenue, Profit and Margin(%) for Jobs based on the Principal of the Job and lists by JobType, Mode and Destination, where costs/charges have been assigned to the Job. All amounts are converted to base currency."
 123,Accounts and reporting,FinancialReport[],Destinations by Air,Top Air Destinations,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Destinations by Air Report:
 This report lists the weight and cost of Freight shipped to various destinations where the Job date falls within the reporting period.
 
-Notes:  
+Notes:
 This report is based on Job Dates as shown in the Job Control screen. If more than one Waybill is found on a job, this report will show data from only one of the waybills."
 124,Accounts and reporting,FinancialReport[],Destinations by Sea,Top Sea Destinations,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Destinations by Sea Report:
 This report lists the weight and cost of Freight shipped to various destinations where the Job date falls within the reporting period.
 
-Notes:  
+Notes:
 This report is based on Job Dates as shown in the Job Control screen. If more than one Waybill is found on a job, this report will show data from only one of the waybills."
 125,Accounts and reporting,FinancialReport[],Expected Costs Report by Sales Invoice Date Report,CostReport_SalesInvReporting,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Cost Report by Sales Invoice Date Report:
 This report is designed to be run in conjunction with Sales Invoice Date type reports.
@@ -270,17 +270,17 @@ This report lists the expected costs (accruals) attached to a sales invoice (dat
 130,Accounts and reporting,FinancialReport[],FAB Report,FAB_Report,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Duplicate output code in configured library. Notes:
 This report returns all jobs with AWB's where FAB information has been entered into BoxTop within the specified date range above."
 131,Accounts and reporting,FinancialReport[],Gross Profit,Income Report,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Gross Profit Report:
-This report shows the sales, purchase and profit amounts for each month of the reporting period. 
+This report shows the sales, purchase and profit amounts for each month of the reporting period.
 
-Notes:  
+Notes:
 These figures include Customs Duty and VAT.
 Where no actual cost is available, an estimated cost is used.
 Income is derived from a calculation of Sales minus Purchases.
 These figures are based on costs and charges only, regardless of the status of the job or any invoices attached to jobs (open jobs and un-printed invoices are included)."
 132,Accounts and reporting,FinancialReport[],Gross Profit - Invoice Date,Income Report_InvoiceBased,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Gross Profit Report:
-This report shows the sales, purchase and profit amounts for each month of the reporting period. 
+This report shows the sales, purchase and profit amounts for each month of the reporting period.
 
-Notes:  
+Notes:
 These figures include Customs Duty and VAT.
 Where no actual cost is available, an estimated cost is used.
 Income is derived from a calculation of Sales minus Purchases.
@@ -302,7 +302,7 @@ This report shows Jobs by creation date, grouped by the person who created them 
 138,Accounts and reporting,FinancialReport[],Jobs Not Invoiced,Jobs Not Invoiced,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Jobs Not Invoiced Report:
 This report lists jobs that have not been invoiced where the job date falls within the reporting period.
 
-Notes:  
+Notes:
 Jobs are excluded from this list if they are marked as Completed.  Details are grouped by the job Owner."
 139,Accounts and reporting,FinancialReport[],Jobs Without Costs,Jobs Without Accruals,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Jobs Without Costs Report:
 This report lists jobs without any Estimated or Actual Costs where the Job date falls within the reporting period.
@@ -312,19 +312,19 @@ To be added"
 140,Accounts and reporting,FinancialReport[],List of Costs,Accrual Report,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"List of Costs Report:
 This report lists all costs where the job date falls within the reporting period.
 
-Notes:  
+Notes:
 This report compares Estimated and Actual costs in Base Currency where the cost records are attached to job records between specified Job dates."
 141,Accounts and reporting,FinancialReport[],List of Costs for a Supplier,Accrual Report_Supplier,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"List of Costs by Supplier Report:
 This report lists all costs for a specific supplier where the job date falls within the reporting period.
 
-Notes:  
+Notes:
 This report compares Estimated and Actual costs in Base Currency where the cost records are attached to job records between specified Job dates."
 142,Accounts and reporting,FinancialReport[],List of Duty and VAT/Deferment - Cost/Revenue Lines,List Of Duty VAT Invoices_Description,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"List of Duty and VAT/Deferment - Cost/Revenue Lines:
 This report lists all Duty/VAT/Use Deferment charge lines which have been attached to a printed Sales Invoice/Credit Note. All Cost/Revenue values are reported in Base Currency. Date Criteria is based on Invoice Date."
 143,Accounts and reporting,FinancialReport[],List of Sales Invoices,Sales By Month,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"List of Sales Invoices Report:
-This report lists all invoices where the invoice date falls within the reporting period. 
+This report lists all invoices where the invoice date falls within the reporting period.
 
-Notes:  
+Notes:
 This report lists the Net, Tax and Gross amounts for each invoice, along with the Invoice Number, Job Number, Invoice Date and Account Number.  All amounts are converted to Base Currency."
 144,Accounts and reporting,FinancialReport[],List of Sales Invoices - Transaction Date,Sales By Month_TransactionDate,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"List of Sales Invoices & Credit Notes by Transaction Date Report
 This report lists Invoice Number & Date, Job Number & Date, Job Type, Net, Tax and Gross Amounts and Account Number.
@@ -334,15 +334,15 @@ THIS REPORT USES SALES INVOICE TRANSACTION DATES TO RETURN RESULTS
 This report will return results using the dates specified above.
 The report is ordered by Sales Invoice Number. It excludes UNPRINTED Sales Invoices/Credit Notes.
 All values are expressed in base net currency. Duty/Tax Invoices are INCLUDED."
-145,Accounts and reporting,FinancialReport[],New Accounts Report,New Accounts Report,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"New Accounts Report: 
+145,Accounts and reporting,FinancialReport[],New Accounts Report,New Accounts Report,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"New Accounts Report:
 This report shows Job Count, Revenue, Profit and Margin(%) for new customers listed by principal, where costs/charges have be assigned to the Job. All amounts are converted to base currency."
-146,Accounts and reporting,FinancialReport[],New Accounts Report (Customer),New Accounts Report_Customer,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"New Accounts Report (Customer): 
+146,Accounts and reporting,FinancialReport[],New Accounts Report (Customer),New Accounts Report_Customer,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"New Accounts Report (Customer):
 This report shows Job Count, Revenue, Profit and Margin(%) for new customers listed by alphabetically, where costs/charges have be assigned to the Job. All amounts are converted to base currency."
 147,Accounts and reporting,FinancialReport[],New Accounts Report (Sales Person),New Accounts Report_SalesPerson,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),
 148,Accounts and reporting,FinancialReport[],Principal Analysis,PrincipalAnalysisRpt,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Principal Analysis Report:
 This report shows turnover and profit for each Principal where jobs exist within the reporting period."
 149,Accounts and reporting,FinancialReport[],Profit By Invoice,Profit By Invoice,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Profit By Invoice:
-This Report is ordered by Invoice Number and only includes Cost & Charges associated to an Invoice/Credit Note. 
+This Report is ordered by Invoice Number and only includes Cost & Charges associated to an Invoice/Credit Note.
 All amounts are reported in base currency where the Invoice/Credit Note has been printed. This report does not include Duty"
 150,Accounts and reporting,FinancialReport[],Profit By Invoice - Transaction Date,Profit By Invoice_TransactionDate,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Profit by Invoice & Credit Note by Transaction Date Report
 This report lists Invoice Number & Date, Job Number & Date, Account Number & Customer Name, Invoice Type, Sales Charges, Costs, Profit and Margin.
@@ -360,12 +360,12 @@ This report returns individual profit per charge line on jobs that fall within t
 152,Accounts and reporting,FinancialReport[],Purchase Transfer Analysis - Detailed,DaySheetAnalysis,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"List of Purchase Daysheets Report:
 This report lists all Purchase Invoice Day Sheets (transfer files) where the Day Sheet date falls within the reporting period.
 
-Notes:  
+Notes:
 The report shows the Day Sheet Number, Transfer Date, Amount of Transfer and the currency that was tranferred."
 153,Accounts and reporting,FinancialReport[],Purchase Transfer Analysis - Summary,Day Sheet Summary,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"List of Purchase Daysheets Report:
 This report lists all Purchase Invoice Day Sheets (transfer files) where the Day Sheet date falls within the reporting period.
 
-Notes:  
+Notes:
 The report shows the Day Sheet Number, Transfer Date, Amount of Transfer and the currency that was tranferred."
 154,Accounts and reporting,FinancialReport[],Rate Savings Report by Customer,RateSavingsReport,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Rate Savings Report by Customer:
 If a spot rate is used, the spot rate amount will show up as the “Est Cost”. Users should enter the total published rate into the System Info field, in the format “GCR(nnn.nn)” with the rate being input between the brackets. Please note ""n"" equals numeric value.
@@ -403,12 +403,12 @@ This report lists Invoice that were raised outside of the Job Date range specifi
 163,Accounts and reporting,FinancialReport[],Shipment Statistics - Sea Import,Ranking_Sea_Import_JobData,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Shipment Statistics - Sea Import Report:
 This report lists statistics for LCL and FCL Jobs, including Job count, Weight, Cube and TEU numbers, where the Arrival Date falls within the reporting period.
 
-Notes:  
+Notes:
 TBA"
 164,Accounts and reporting,FinancialReport[],Summary of Sales by Month,Sales Invoice Summary,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Summary of Sales by Month Report:
-This report groups all invoices where the invoice date falls within the reporting period. 
+This report groups all invoices where the invoice date falls within the reporting period.
 
-Notes:  
+Notes:
 This report shows the sum of invoices created during the specified period, grouped by JOB DATE.  All amounts are converted to Sterling at the time the invoice is printed.  The Net, VAT and Total columns do not include Customs Duty && VAT, but this is shown separately."
 165,Accounts and reporting,FinancialReport[],Supplier Invoices not Transferred,Day Sheet Exceptions,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Supplier Invoices not Transferred Report:
 This report lists details of Supplier Invoices (entered into BoxTop), but not transferred to your accounting system, where the supplier invoice date falls within the reporting period.
@@ -418,42 +418,42 @@ The Passed column shows the amounts already passed/approved in BoxTop, if no val
 166,Accounts and reporting,FinancialReport[],TEU by Carrier (ContBkg),TEUbyCarrier_ContBkg,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"TEU by Carrier (ContBkg) Report:
 This report calculates TEU and container counts ONLY if specified in the Container Booking screen.
 
-Notes:  
+Notes:
 Containers are classified by length and are either 20ft or 40ft. Date ranges are based on either the estimated departure date or actual departure date where this has been specified."
 167,Accounts and reporting,FinancialReport[],TEU by Carrier (JobData),TEUbyCarrier_JobData,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"TEU by Carrier (JobData) Report:
 This report calculates TEU and container counts for FCL Jobs, if entered at the foot of the Job Control screen.
 
-Notes:  
+Notes:
 Containers are classified by length and are either 20ft or 40ft. Date ranges are based on either the estimated departure date or actual departure date where this has been specified."
 168,Accounts and reporting,FinancialReport[],TEU by Period (ContBkg),TEUperAnnum_ContBkg,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"TEU by Period (ContBkg) Report:
 This report does what?
 
-Notes:  
+Notes:
 To be added"
 169,Accounts and reporting,FinancialReport[],TEU by Period (JobData),TEUperAnnum_JobData,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"TEU by Period (JobData) Report:
 This report does what?
 
-Notes:  
+Notes:
 To be added"
 170,Accounts and reporting,FinancialReport[],TEU by Region (ContBkg),TEUbyRegion_ContBkg,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"TEU by Region (ContBkg) Report:
 This report does what?
 
-Notes:  
+Notes:
 To be added"
 171,Accounts and reporting,FinancialReport[],TEU by Region (JobData),TEUbyRegion_JobData,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"TEU by Region (JobData) Report:
 This report does what?
 
-Notes:  
+Notes:
 To be added"
 172,Accounts and reporting,FinancialReport[],Top Carriers,Top Export Carriers,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Top Carriers Report:
 This report lists the weight and cost of Freight assigned to Export carriers where the Job date falls within the reporting period.
 
-Notes:  
+Notes:
 Costs are taken from cost lines where the word Freight is somewhere in the description. Only one waybill per job will be included in this report.  On consolidations, only house jobs are included in order to prevent a duplication of data.   Where an actual cost is not available the estimated cost is used."
 173,Accounts and reporting,FinancialReport[],Top Destinations,Top Destinations,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Configured menu,Accounts and reporting sections (inferred from menu names),"Top Destinations Report:
 This report lists the weight and cost of Freight shipped to various destinations where the Job date falls within the reporting period.
 
-Notes:  
+Notes:
 This report is based on Job Dates as shown in the Job Control screen. If more than one Waybill is found on a job, this report will show data from only one of the waybills."
 174,Accounts and reporting,Print history,Invoice print,Invoice Print,draft layout created,CATALOGUE_FREIGHT_INVOICE,Finance,"Finance-issued invoice identity, tax and totals only. No invoice numbering or financial recalculation in the template.",Observed print only,Section inferred from output name; current menu unverified,"Found in ReportsAudit, outside the extracted configured print menus."
 175,Accounts and reporting,Print history,Sage invoice list,Sage InvList,report definition required,,,"Define the Multideck source, filters, aggregation and permission scope before authoring a report. BoxTop output names alone do not specify those rules.",Observed print only,Section inferred from output name; current menu unverified,"Found in ReportsAudit, outside the extracted configured print menus."

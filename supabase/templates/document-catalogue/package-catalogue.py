@@ -12,6 +12,7 @@ def clean(value):
 
 def csv_value(value):
     text='' if value is None else str(value)
+    text='\n'.join(line.rstrip() for line in text.replace('\r\n','\n').split('\n'))
     return "'"+text if text.startswith(('=','+','-','@')) else text
 
 def main():
@@ -31,7 +32,7 @@ def main():
     (ROOT/'TEMPLATE_INDEX.md').write_text('\n'.join(lines))
     columns=['row','section','menu','name','outputCode','status','templateCode','sourceRecord','gate','evidence','mapping','notes']
     with (ROOT/'catalogue-crosswalk.csv').open('w',newline='',encoding='utf-8-sig') as handle:
-        writer=csv.DictWriter(handle,fieldnames=columns)
+        writer=csv.DictWriter(handle,fieldnames=columns,lineterminator='\n')
         writer.writeheader()
         for row in manifest['crosswalk']:
             writer.writerow({key:csv_value(row.get(key,'')) for key in columns})
