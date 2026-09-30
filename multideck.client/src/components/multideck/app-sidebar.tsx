@@ -1038,7 +1038,8 @@ export function AppSidebar({
   const inboxWorkspace = useOptionalInboxWorkspace()
   const shouldReduceMotion = useReducedMotion()
   const locationSearch = useSyncExternalStore(subscribeToLocationSearch, getLocationSearch, () => "")
-  const navigationRoute = route === "/crm/accounts" ? `${route}${locationSearch}` : route
+  const supplierDetail = /^\/crm\/accounts\/[^/]+$/.test(route) && new URLSearchParams(locationSearch).get("view") === "suppliers"
+  const navigationRoute = supplierDetail ? "/crm/accounts?view=suppliers" : route === "/crm/accounts" ? `${route}${locationSearch}` : route
   const collapsed = requestedCollapsed
   const isCustomer = currentUser?.actorType === "customer"
   const accentPreferenceId = useAccentPresetId()

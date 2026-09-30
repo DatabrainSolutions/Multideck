@@ -259,7 +259,7 @@ export function FinancePurchaseIntakePage({ navigate, currentUser }: { navigate:
   }
 
   return <>
-    <SettingsPageHeader title={t("Supplier document intake")} description={t("Drop one invoice or credit note, or a whole batch. Multideck extracts the data, keeps uncertain fields for review, and posts only validated selections.")} icon={Upload} actions={<Button type="button" variant="outline" onClick={() => navigate("/finance/payables")}><ArrowLeft className="rtl:rotate-180" />{t("Purchase ledger")}</Button>} />
+    <SettingsPageHeader title={t("Supplier document intake")} actions={<Button type="button" variant="outline" onClick={() => navigate("/finance/payables")}><ArrowLeft className="rtl:rotate-180" />{t("Purchase ledger")}</Button>} />
     <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
       <div className="md-kpi-scope"><KpiStrip density="compact" spark={false} kpis={[
         { label: t("Documents"), value: String(items.length), detail: t("Current batch"), tone: "neutral", icon: FileText },

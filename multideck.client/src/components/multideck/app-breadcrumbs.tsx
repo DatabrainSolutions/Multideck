@@ -156,11 +156,12 @@ function baseTrail(label: string): AppBreadcrumb[] {
 export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null, search = ""): AppBreadcrumb[] {
   if (route === "/") return [{ label: "Home" }]
 
-  if (route === "/crm/accounts" && new URLSearchParams(search).get("view") === "customers") {
+  const accountView = new URLSearchParams(search).get("view")
+  if (route === "/crm/accounts" && (accountView === "customers" || accountView === "suppliers")) {
     return [
       { label: "Home", route: "/" },
       { label: "Finance" },
-      { label: "Customers" },
+      { label: accountView === "suppliers" ? "Suppliers" : "Customers" },
     ]
   }
 
@@ -253,6 +254,14 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null, 
   }
 
   const crmAccountMatch = route.match(/^\/crm\/accounts\/([^/]+)$/)
+  if (crmAccountMatch && accountView === "suppliers") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Finance" },
+      { label: "Suppliers", route: "/crm/accounts?view=suppliers" },
+      recordBreadcrumb(leafLabel, crmAccountMatch[1], "Supplier"),
+    ]
+  }
   if (crmAccountMatch) {
     return [
       { label: "Home", route: "/" },

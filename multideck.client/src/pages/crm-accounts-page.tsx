@@ -7,6 +7,7 @@ import { collectExportPages } from "@/lib/table-export"
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { ArrowRight, Building2, RefreshCw, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
+import { PolarAngleAxis, RadialBar, RadialBarChart } from "recharts"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
@@ -28,6 +29,19 @@ import { countActiveFilterConditions, createEmptyFilterQuery, filterQueryIsEmpty
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import { getProviderPartySyncOverview, syncProviderParties, type ProviderPartySyncOverview, type ProviderPartySyncResponse, type ProviderPartyType } from "@/lib/finance-subledger-api"
 import { isCustomerClassification, isLegacyKeyCustomerRole, selectCustomerClassification } from "@/lib/organisation-roles"
+
+// Use the authorised register for every page before filtering, so pagination and
+// exports include all due suppliers, not only those on the current page.
+async function loadAccountRegisterPage(input: Parameters<typeof listAccountsPage>[0], options: Parameters<typeof listAccountsPage>[1], attentionOnly: boolean, signal?: AbortSignal): Promise<AccountRegisterPage> {
+  if (!attentionOnly) return listAccountsPage(input, options)
+  const first = await listAccountsPage({ ...input, offset: 0, limit: 100 }, options)
+  signal?.throwIfAborted()
+  if (!first.summary.needsAttention) return { ...first, rows: [], total: 0 }
+  const rows = await collectExportPages((page) => page.offset === 0 ? Promise.resolve(first) : listAccountsPage({ ...input, ...page }, options), (account) => account.id, signal)
+  const now = Date.now()
+  const due = rows.filter((account) => account.nextActionDueAt && new Date(account.nextActionDueAt).getTime() <= now)
+  return { ...first, rows: due.slice(input.offset, input.offset + input.limit), total: due.length }
+}
 
 const emptyAccount = (): CreateCustomerInput => ({
   name: "", orgTypeIds: [], addressLine1: null, townCity: null, postZipCode: null, countryCode: null,
@@ -78,11 +92,13 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   const singular = "company"
   const viewNoun = view === "Customers" ? "customers" : view === "Suppliers" ? "suppliers" : "companies"
   const routeBase = "/crm/accounts"
+  const accountDetailUrl = (id: string) => `${routeBase}/${id}${organisationType === "supplier" ? "?view=suppliers" : ""}`
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [relationshipFilter, setRelationshipFilter] = useState("")
   const [ownerFilter, setOwnerFilter] = useState("")
+  const [attentionOnly, setAttentionOnly] = useState(false)
   const [advancedFilter, setAdvancedFilter] = useState<FilterQuery>(() => createEmptyFilterQuery("any"))
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [reloadToken, setReloadToken] = useState(0)
@@ -180,6 +196,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     if (next === view) return
     // Each view fetches different companies (and customers carry receivables), so rows from the last view are not shown under its columns.
     setAccounts([])
+    setAttentionOnly(false)
     setView(next)
     window.history.replaceState(window.history.state, "", companyViewUrl(next))
     window.dispatchEvent(new Event("multideck:location-change"))
@@ -190,7 +207,8 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     const forceRefresh = reloadToken !== lastConsumedReloadToken.current
     lastConsumedReloadToken.current = reloadToken
     setState("loading")
-    listAccountsPage({
+    const controller = new AbortController()
+    loadAccountRegisterPage({
       organisationType,
       search: debouncedQuery,
       marketingScope: "all",
@@ -200,7 +218,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
       sort,
       limit: accountPageSize,
       offset,
-    }, { forceRefresh })
+    }, { forceRefresh }, attentionOnly && organisationType === "supplier", controller.signal)
       .then((data) => {
         if (!active) return
         setAccounts(data.rows)
@@ -213,8 +231,8 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
         setState("ready")
       })
       .catch((error) => { console.error("Accounts could not be loaded.", error); if (active) setState("error") })
-    return () => { active = false }
-  }, [accountPageSize, accountScope, advancedFilter, currentOwnerId, debouncedQuery, offset, organisationType, ownerFilter, relationshipFilter, reloadToken, sort])
+    return () => { active = false; controller.abort() }
+  }, [attentionOnly, accountPageSize, accountScope, advancedFilter, currentOwnerId, debouncedQuery, offset, organisationType, ownerFilter, relationshipFilter, reloadToken, sort])
 
   useEffect(() => {
     if (reference || (customerAccounts && !referenceRequested)) return
@@ -270,7 +288,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   const contactTotal = summary.contacts
   const unassignedAccounts = summary.unassigned
   const healthyAccounts = summary.healthy
-  const accountFiltersActive = Boolean(query || relationshipFilter || ownerFilter || countActiveFilterConditions(advancedFilter))
+  const accountFiltersActive = Boolean(attentionOnly || query || relationshipFilter || ownerFilter || countActiveFilterConditions(advancedFilter))
   const relationshipOptions = useMemo(() => facets.relationships.map((value) => ({ value, label: humanize(value) })), [facets.relationships])
   const ownerOptions = useMemo(() => {
     const assigned = facets.owners.map((owner) => ({ value: owner.id, label: owner.name }))
@@ -289,7 +307,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     { value: "relationship", label: "Relationship", kind: "select", placeholder: "Choose a relationship", options: relationshipOptions },
     { value: "lastContactAt", label: "Last contact", kind: "date" },
   ], [ownerOptions, reference?.organisationTypes, relationshipOptions])
-  const countAdvancedMatches = useCallback((filterQuery: FilterQuery) => listAccountsPage({
+  const countAdvancedMatches = useCallback((filterQuery: FilterQuery) => loadAccountRegisterPage({
     organisationType,
     search: debouncedQuery,
     marketingScope: "all",
@@ -299,7 +317,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
     sort,
     limit: 1,
     offset: 0,
-  }, { forceRefresh: true }).then((page) => page.total), [accountScope, currentOwnerId, debouncedQuery, organisationType, ownerFilter, relationshipFilter, sort])
+  }, { forceRefresh: true }, attentionOnly && organisationType === "supplier").then((page) => page.total), [attentionOnly, accountScope, currentOwnerId, debouncedQuery, organisationType, ownerFilter, relationshipFilter, sort])
 
   const accountColumns = useMemo<DataTableColumn<ApiCustomer>[]>(() => {
     const openColumn: DataTableColumn<ApiCustomer> = { id: "open", label: "Open", headerContent: <span className="sr-only">{t("Open")}</span>, width: 52, minWidth: 52, maxWidth: 52, canHide: false, canPin: false, exportable: false, cell: () => <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /> }
@@ -394,6 +412,8 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   }, [accountingSyncAccess, customerAccounts, financialAccess, language, singular, t])
 
   function clearAccountFilters() {
+    setAttentionOnly(false)
+    setOffset(0)
     setQuery("")
     setRelationshipFilter("")
     setOwnerFilter("")
@@ -444,7 +464,7 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
       setCreateOpen(false)
       setDraft({ ...emptyAccount(), orgTypeIds: requiredOrgTypeId ? [requiredOrgTypeId] : [] })
       setReloadToken((value) => value + 1)
-      navigate(`${routeBase}/${account.id}`)
+      navigate(accountDetailUrl(account.id))
     } catch (error) {
       setCreateError(error instanceof Error ? t(error.message) : t(`The ${singular} could not be created. Check the details and try again.`))
     } finally {
@@ -513,39 +533,53 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
   const displayedSync = latestSync ?? syncOverview?.runs[0] ?? null
   const summaryCards: Array<[string, string | number, string]> = [
     [t(`Total ${viewNoun}`), summary.accounts, t(view === "Mine" ? "assigned to you" : `all ${viewNoun === "companies" ? "company" : viewNoun.slice(0, -1)} records`)],
-    [t("Contacts"), contactTotal, t("recorded contacts")],
+    ...(organisationType === "supplier" ? [] : [[t("Contacts"), contactTotal, t("recorded contacts")] as [string, number, string]]),
     [t("Needs attention"), needsAttention, t("need attention now")],
-    [t("Unassigned"), unassignedAccounts, t("without an assigned owner")],
+    ...(organisationType === "supplier" ? [] : [[t("Unassigned"), unassignedAccounts, t("without an assigned owner")] as [string, number, string]]),
     [t(`Healthy ${viewNoun}`), healthyAccounts, t("health score 70 or above")],
   ]
+
+  const summaryCardGrid = (
+    <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${organisationType === "supplier" ? "w-full sm:w-[90%]" : "xl:grid-cols-5"}`}>
+        {summaryCards.map(([label, value, detail], index) => {
+          const supplierHealth = organisationType === "supplier" && index === 2
+          const supplierAttention = organisationType === "supplier" && index === 1
+          const healthyRatio = summary.accounts > 0 ? healthyAccounts / summary.accounts : 0
+          const content = <div className="flex h-full min-w-0 items-center gap-2.5">
+            {supplierHealth ? <span className="size-[22px] shrink-0" aria-hidden="true">
+              <RadialBarChart width={22} height={22} cx={11} cy={11} innerRadius={8} outerRadius={11} barSize={3} startAngle={90} endAngle={-270} data={[{ value: healthyRatio * 100 }]}>
+                <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                <RadialBar dataKey="value" fill="var(--md-accent)" background={{ fill: "var(--md-line)" }} isAnimationActive={false} />
+              </RadialBarChart>
+            </span> : null}
+            <p className="shrink-0 text-[19px] font-medium leading-none tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">
+              {supplierHealth ? summary.accounts > 0 ? new Intl.NumberFormat(language, { style: "percent", maximumFractionDigits: 0 }).format(healthyRatio) : "—" : typeof value === "number" ? new Intl.NumberFormat(language).format(value) : value}
+            </p>
+            <div className="min-w-0">
+              <p className="truncate whitespace-nowrap text-[10.5px] font-medium leading-[13px] text-[var(--md-text)]">{label}</p>
+              {organisationType !== "supplier" ? <p className="truncate text-[9px] leading-[11px] text-[var(--md-subtle)]">{detail}</p> : null}
+            </div>
+          </div>
+          const cardClass = `min-w-0 rounded-[var(--md-radius-lg)] px-3 ${organisationType === "supplier" ? "h-8 py-1" : "h-[44px] py-1.5"}`
+          return supplierAttention ? <button key={label} type="button" aria-pressed={attentionOnly} onClick={() => { setAttentionOnly((current) => !current); setOffset(0); setAccounts([]) }} className={`${cardClass} min-h-0 text-start shadow-[var(--md-shadow-soft)] transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)] ${attentionOnly ? "bg-[var(--md-surface-tint)] ring-1 ring-[var(--md-accent)]" : "bg-[var(--md-surface)]"}`} title={t(attentionOnly ? "Show all suppliers" : "Show suppliers with a due next action")}>{content}</button>
+            : <Surface key={label} padding="none" className={cardClass} title={supplierHealth ? `${healthyAccounts} / ${summary.accounts} · ${t("health score 70 or above")}` : undefined}>{content}</Surface>
+        })}
+      </div>
+  )
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t(title)} className="md-page md-page-stack-compact">
       <header className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 ${customerAccounts ? "items-center" : "items-start"}`}>
-        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1>{!customerAccounts ? <p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(view === "Suppliers" ? "Suppliers" : "Organisations")}</p> : null}</div>{!customerAccounts ? <p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(view === "Suppliers" ? "Every company that supplies you, with its contacts and accounting-system status." : "Every company, its contacts and all operational roles kept in one place. Customers and suppliers are companies with that role.")}</p> : null}</div>
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1>{!customerAccounts ? <p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(view === "Suppliers" ? "Suppliers" : "Organisations")}</p> : null}</div>{!customerAccounts && view !== "Suppliers" ? <p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t("Every company, its contacts and all operational roles kept in one place. Customers and suppliers are companies with that role.")}</p> : null}</div>
         <div className="flex flex-wrap gap-2">
-          {organisationType === "supplier" && canManageAccounting ? <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => { setLatestSync(null); setSyncOpen(true) }}><RefreshCw className="size-4" strokeWidth={1.4} />{t("Sync with accounting system")}</Button> : null}
           <DexterActionPill onClick={() => setDexterOpen(true)} label={t("Ask Dexter")} />
         </div>
       </header>
 
-      {!customerAccounts ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-        {summaryCards.map(([label, value, detail]) => (
-          <Surface key={String(label)} padding="none" className="h-[44px] min-w-0 rounded-[var(--md-radius-lg)] px-3 py-1.5">
-            <div className="flex h-full min-w-0 items-center gap-2.5">
-              <p className="shrink-0 text-[19px] font-medium leading-none tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">
-                {typeof value === "number" ? new Intl.NumberFormat(language).format(value) : value}
-              </p>
-              <div className="min-w-0">
-                <p className="truncate text-[10.5px] font-medium leading-[13px] text-[var(--md-text)]">{label}</p>
-                <p className="truncate text-[9px] leading-[11px] text-[var(--md-subtle)]">{detail}</p>
-              </div>
-            </div>
-          </Surface>
-        ))}
-      </div> : null}
+      {!customerAccounts && organisationType !== "supplier" ? summaryCardGrid : null}
 
       <DataTable
+        className={organisationType === "supplier" ? "sm:[&_[data-table-tabs]]:flex-1 sm:[&_[data-table-tabs]]:min-w-[440px]" : undefined}
         key={customerAccounts ? "customer-accounts-receivable-v2" : `crm-${organisationType}-organisations-v1`}
         ariaLabel={customerAccounts ? "Customer companies with receivables" : `${title} directory`}
         columnsButtonLabel={customerAccounts ? "Manage customer columns" : `Manage ${singular} columns`}
@@ -570,17 +604,17 @@ export function CrmAccountsPage({ navigate, currentUser }: { navigate: (path: st
             dateLabel: "Last contact date",
             dateValue: (account) => account.lastContactAt,
             busy: query.trim() !== debouncedQuery,
-            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({ organisationType, search: debouncedQuery, marketingScope: "all", relationship: relationshipFilter, owner: accountScope === "Mine" ? currentOwnerId ?? "__no_current_user__" : ownerFilter, filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter, sort, ...page }, { forceRefresh: true }), (account) => account.id, signal),
+            loadAllRows: (signal) => collectExportPages((page) => loadAccountRegisterPage({ organisationType, search: debouncedQuery, marketingScope: "all", relationship: relationshipFilter, owner: accountScope === "Mine" ? currentOwnerId ?? "__no_current_user__" : ownerFilter, filterQuery: filterQueryIsEmpty(advancedFilter) ? null : advancedFilter, sort, ...page }, { forceRefresh: true }, attentionOnly && organisationType === "supplier", signal), (account) => account.id, signal),
           },
           loadRecords: (selectedAccounts) => Promise.all(selectedAccounts.map((account) => getCustomer(account.id))),
         }}
-        onRowClick={(account) => navigate(`${routeBase}/${account.id}`)}
+        onRowClick={(account) => navigate(accountDetailUrl(account.id))}
         rowClassName="group hover:bg-[var(--md-hover)]"
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "account", direction: "asc" }); setOffset(0) } }}
         pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setAccountPageSize, error: state === "error" }}
         compactToolbar
         fillToolbarSpace={customerAccounts}
-        toolbarTabs={organisationType === "company" ? <RegisterViewSwitch options={companyTabs} value={view} onChange={changeView} counts={{ [view]: summary.accounts }} ariaLabel="Company view" compact /> : undefined}
+        toolbarTabs={organisationType === "supplier" ? summaryCardGrid : organisationType === "company" ? <RegisterViewSwitch options={companyTabs} value={view} onChange={changeView} counts={{ [view]: summary.accounts }} ariaLabel="Company view" compact /> : undefined}
         toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${viewNoun}`} placeholder={`Search ${viewNoun}…`} className={customerAccounts ? "sm:w-full sm:max-w-none sm:flex-1" : "sm:w-[180px]"} />}
         toolbarFilters={<>
           <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className={customerAccounts ? "w-[132px] sm:flex-1" : "w-[132px]"} />

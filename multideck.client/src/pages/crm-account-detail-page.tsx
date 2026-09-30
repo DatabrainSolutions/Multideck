@@ -333,7 +333,8 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
     return [...activities, ...emails].sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime())
   }, [account])
 
-  const back = { label: t("Companies"), onClick: () => navigate("/crm/accounts") }
+  const supplierContext = new URLSearchParams(window.location.search).get("view") === "suppliers"
+  const back = { label: t(supplierContext ? "Suppliers" : "Companies"), onClick: () => navigate(supplierContext ? "/crm/accounts?view=suppliers" : "/crm/accounts") }
 
   if (state === "loading") {
     return (
@@ -346,7 +347,7 @@ export function CrmAccountDetailPage({ accountId, navigate, currentUser }: { acc
   if (state === "error" || !account) {
     return (
       <div className="md-page md-page-stack-compact">
-        <Button type="button" variant="ghost" className="-ms-2 h-8 w-fit rounded-[var(--md-radius-md)] px-2 text-[12px] font-medium text-[var(--md-text)]" onClick={back.onClick}>{t("Back to companies")}</Button>
+        <Button type="button" variant="ghost" className="-ms-2 h-8 w-fit rounded-[var(--md-radius-md)] px-2 text-[12px] font-medium text-[var(--md-text)]" onClick={back.onClick}>{t(supplierContext ? "Back to suppliers" : "Back to companies")}</Button>
         <Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)] text-center" role="alert">
           <div className="max-w-md">
             <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Company unavailable")}</p>

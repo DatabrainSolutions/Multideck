@@ -75,7 +75,7 @@ export function FinanceDailyPage({ route, navigate, currentUser }: { route: Fina
     "/finance/management/profitability": [{ label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }],
   }
   return <>
-    <SettingsPageHeader title={t(selected.title)} description={route === "/finance/receivables/statements" ? undefined : t(selected.description)} icon={route === "/finance/receivables/statements" ? undefined : selected.icon} actions={<Button type="button" variant="outline" onClick={refresh}><RefreshCw className="size-4" />{t("Refresh")}</Button>} />
+    <SettingsPageHeader title={t(selected.title)} description={route === "/finance/receivables/statements" || route.startsWith("/finance/payables/") ? undefined : t(selected.description)} icon={route === "/finance/receivables/statements" || route.startsWith("/finance/payables/") ? undefined : selected.icon} actions={<Button type="button" variant="outline" onClick={refresh}><RefreshCw className="size-4" />{t("Refresh")}</Button>} />
     <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
       <nav aria-label={t("Continue Accounts workflow")} className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs"><span className="text-[var(--md-subtle)]">{t("Continue with")}</span>{workflowLinks[route].map((link) => <button key={link.route} type="button" className="font-medium text-[var(--md-accent)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]" onClick={() => navigate(link.route)}>{t(link.label)}</button>)}</nav>
       {error ? <InlineNotice tone="error">{t(error)}</InlineNotice> : null}

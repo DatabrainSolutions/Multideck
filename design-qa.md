@@ -54,3 +54,18 @@
 - No open visual follow-up remains for the approved booking-only scope. The grouped document feed is migration-backed and remains local until the wider change set is approved for deployment.
 
 final result: passed
+
+## Supplier health ring and attention filter — 30 September 2026
+
+Selected target: second displayed concept, `exec-1d67e551-8910-4158-b7d3-7b5044b50285.png`.
+Implementation evidence: `/tmp/multideck-suppliers-health-ring.png`, localhost Suppliers register.
+
+Compared the compact toolbar region against the selected concept: teal 20% ring, percentage and Healthy suppliers label on one row. The existing toolbar widths and 32px controls are retained per the user's earlier sizing requirements; the generated presentation's enlarged inspection panel is not part of the application.
+
+First responsive inspection found the Needs attention button inherited a 44px minimum height. Applied `min-h-0`; subsequent measured desktop card heights are all 32px. Mobile layout has no page overflow at 390px. The small health label stays within its card.
+
+Click activates attention filtering and its selected tint; Space clears the filter and restores five supplier rows. Current real data has zero due suppliers, so a positive-match result could not be observed without modifying data. Empty state and clear behaviour were observed. Read-only filtering uses the existing authorised register endpoint, collects all matching pages before filtering and preserves pagination/export scope. No permission or backend changes.
+
+TypeScript compilation and diff whitespace checks passed. Browser error log was empty.
+
+final result: passed
