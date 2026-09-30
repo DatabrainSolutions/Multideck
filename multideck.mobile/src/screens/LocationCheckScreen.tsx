@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { StyleSheet, Text } from "react-native"
 import { Field } from "@/components/FormControls"
 import { DataCard, ErrorState, LoadingState, MetricRow, ScanField, SuccessState, WarehouseButton, WarehouseScreen, WarningState } from "@/components/WarehouseUI"
@@ -6,7 +6,7 @@ import { colors, spacing, type } from "@/theme/tokens"
 import { sameScan, type WarehouseFacility, type WarehouseInventoryBalance, type WarehouseLocation, type WarehouseMobileApi } from "@/warehouse/api"
 import { wt } from "@/warehouse/i18n"
 
-export function LocationCheckScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
+export function LocationCheckScreen({ api, facility, initialScan, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; initialScan?: string; onBack: () => void }) {
   const [matches, setMatches] = useState<WarehouseLocation[]>([])
   const [query, setQuery] = useState("")
   const [selected, setSelected] = useState<WarehouseLocation | null>(null)
@@ -19,6 +19,8 @@ export function LocationCheckScreen({ api, facility, onBack }: { api: WarehouseM
   const [actionError, setActionError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const retryLoad = useRef<() => void>(() => {})
+
+  useEffect(() => { if (initialScan) { setQuery(initialScan); void search(initialScan) } }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function search(text = query) {
     const term = text.trim()

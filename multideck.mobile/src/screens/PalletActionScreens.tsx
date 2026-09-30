@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { StyleSheet, View } from "react-native"
 import { Field } from "@/components/FormControls"
 import { DataCard, ScanField, SuccessState, WarehouseButton, WarehouseScreen, WarningState } from "@/components/WarehouseUI"
@@ -16,7 +16,7 @@ function palletSummary(pallet: WarehouseHandlingUnit) {
   return [pallet.locationCode ? `${wt("at")} ${pallet.locationCode}` : wt("noLocation"), pallet.customerName, `${quantity} ${wt("units")}`].filter(Boolean).join(" · ")
 }
 
-export function PalletMoveScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
+export function PalletMoveScreen({ api, facility, initialPalletCode, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; initialPalletCode?: string; onBack: () => void }) {
   const [reason, setReason] = useState("")
   const [notes, setNotes] = useState("")
   const [busy, setBusy] = useState(false)
@@ -43,6 +43,12 @@ export function PalletMoveScreen({ api, facility, onBack }: { api: WarehouseMobi
     return { ok: true, value: location, note: `${location.code} · ${location.typeName || location.typeCode}` }
   })
   const mismatch = source.status === "warning"
+
+  useEffect(() => {
+    if (!initialPalletCode) return
+    pallet.setValue(initialPalletCode)
+    void pallet.submit(initialPalletCode).then((found) => { if (found) source.focus() })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const ready = Boolean(pallet.result && source.result && destination.result) && (!mismatch || Boolean(reason.trim()))
 
   function clearSuccess<T extends (value: string) => void>(handler: T) {
@@ -63,7 +69,7 @@ export function PalletMoveScreen({ api, facility, onBack }: { api: WarehouseMobi
 
   return <WarehouseScreen title={wt("moveOverride")} subtitle={wt("moveOverrideDetail")} onBack={onBack}>
     {success ? <SuccessState message={success} /> : null}
-    <ScanField ref={pallet.ref} label={`1 · ${wt("palletCode")}`} value={pallet.value} onChangeText={clearSuccess((value) => { pallet.change(value); if (source.value) source.reset(); if (destination.value) destination.reset() })} onSubmit={async (text) => { if (await pallet.submit(text)) source.focus() }} status={pallet.status} message={pallet.message} placeholder={wt("scanPalletPlaceholder")} autoFocus />
+    <ScanField ref={pallet.ref} label={`1 · ${wt("palletCode")}`} value={pallet.value} onChangeText={clearSuccess((value) => { pallet.change(value); if (source.value) source.reset(); if (destination.value) destination.reset() })} onSubmit={async (text) => { if (await pallet.submit(text)) source.focus() }} status={pallet.status} message={pallet.message} placeholder={wt("scanPalletPlaceholder")} autoFocus={!initialPalletCode} />
     <ScanField ref={source.ref} label={`2 · ${wt("scannedSource")}`} expected={pallet.result?.locationCode ? `${wt("expected")} ${pallet.result.locationCode}` : null} value={source.value} onChangeText={clearSuccess(source.change)} onSubmit={async (text) => { if (await source.submit(text)) destination.focus() }} status={source.status} message={source.message} placeholder={wt("scanLocationPlaceholder")} />
     {mismatch ? <Field label={wt("overrideReason")} value={reason} onChangeText={setReason} /> : null}
     <ScanField ref={destination.ref} label={`3 · ${wt("destination")}`} value={destination.value} onChangeText={clearSuccess(destination.change)} onSubmit={(text) => void destination.submit(text)} status={destination.status} message={destination.message} placeholder={wt("scanLocationPlaceholder")} />

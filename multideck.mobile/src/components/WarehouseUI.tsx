@@ -111,7 +111,12 @@ export const ScanField = forwardRef<TextInput, ScanFieldProps>(function ScanFiel
           editable={editable}
           multiline={multiline}
           onChangeText={onChangeText}
-          onSubmitEditing={onSubmit ? (event) => onSubmit(event.nativeEvent.text) : undefined}
+          onSubmitEditing={(event) => {
+            const text = event.nativeEvent.text
+            onSubmit?.(text)
+            // Select the scan so the next trigger pull replaces it instead of appending.
+            if (!multiline) setTimeout(() => inputRef.current?.setSelection(0, text.length), 0)
+          }}
           placeholder={placeholder}
           placeholderTextColor="rgba(104,117,112,0.58)"
           returnKeyType={onSubmit ? "go" : "done"}
@@ -165,6 +170,22 @@ export function ActionTile({ label, detail, icon, code, onPress, disabled = fals
       <Text style={styles.tileArrow}>{"→"}</Text>
     </Pressable>
   )
+}
+
+/** A work queue with its live count; the count is the reason to open it. */
+export function QueueTile({ label, count, detail, onPress }: { label: string; count: string; detail?: string; onPress: () => void }) {
+  const idle = count === "0"
+  return (
+    <Pressable accessibilityLabel={`${label}: ${count}`} accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.queueTile, pressed && styles.tilePressed]}>
+      <Text style={[styles.queueCount, idle && styles.queueCountIdle]}>{count}</Text>
+      <Text style={styles.queueLabel}>{label}</Text>
+      {detail ? <Text numberOfLines={2} style={styles.queueDetail}>{detail}</Text> : null}
+    </Pressable>
+  )
+}
+
+export function SectionLabel({ children }: { children: string }) {
+  return <Text accessibilityRole="header" style={styles.sectionLabel}>{children}</Text>
 }
 
 export function WarehouseButton({ label, onPress, tone = "primary", disabled = false, busy = false, compact = false }: { label: string; onPress: () => void; tone?: "primary" | "danger" | "secondary"; disabled?: boolean; busy?: boolean; compact?: boolean }) {
@@ -254,6 +275,12 @@ const styles = StyleSheet.create({
   quantityShell: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xl, flex: 1, flexDirection: "row", height: 62, paddingHorizontal: spacing.lg, ...shadow.surface },
   quantityInput: { color: colors.ink, flex: 1, fontSize: 22, fontWeight: "500", textAlign: "center" },
   quantityUom: { color: colors.subtle, fontSize: type.label },
+  queueTile: { backgroundColor: colors.surface, borderRadius: radius.xxl, flex: 1, minHeight: 116, padding: spacing.lg, ...shadow.surface },
+  queueCount: { color: colors.accent, fontSize: 30, fontWeight: "500", letterSpacing: -0.5 },
+  queueCountIdle: { color: colors.subtle },
+  queueLabel: { color: colors.ink, fontSize: 16, fontWeight: "500", marginTop: spacing.xs, ...directional },
+  queueDetail: { color: colors.text, fontSize: type.meta, lineHeight: 16, marginTop: 2, ...directional },
+  sectionLabel: { color: colors.subtle, fontSize: type.meta, fontWeight: "500", letterSpacing: 0.4, marginBottom: spacing.sm, marginTop: spacing.lg, textTransform: "uppercase", ...directional },
   tile: { alignItems: "center", backgroundColor: colors.surface, borderRadius: radius.xxl, flexDirection: "row", gap: spacing.md, marginBottom: spacing.md, minHeight: 72, padding: spacing.lg, ...shadow.surface },
   tilePressed: { opacity: 0.78, transform: [{ scale: 0.995 }] },
   tileDisabled: { opacity: 0.58 },

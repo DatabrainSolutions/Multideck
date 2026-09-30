@@ -35,7 +35,7 @@ type ReceiptRow = {
   expiryDate: string
 }
 
-export function ReceiveScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
+export function ReceiveScreen({ api, facility, initialOrderId, onBack }: ScreenProps & { initialOrderId?: string }) {
   const [orders, setOrders] = useState<WarehouseOrder[]>([])
   const [selected, setSelected] = useState<WarehouseOrder | null>(null)
   const [locations, setLocations] = useState<WarehouseLocation[]>([])
@@ -64,9 +64,9 @@ export function ReceiveScreen({ api, facility, onBack }: { api: WarehouseMobileA
     }
   }, [api, facility.id])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load().then(() => { if (initialOrderId) void chooseOrder({ id: initialOrderId }) }) }, [load]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function chooseOrder(order: WarehouseOrder) {
+  async function chooseOrder(order: Pick<WarehouseOrder, "id">) {
     setLoading(true); setError(null); setSuccess(null)
     try {
       const detail = await api.getOrder(order.id)
@@ -168,11 +168,13 @@ function matchesTaskFilter(task: WarehouseTask, scan: string) {
   return [task.sourceLocationCode, task.targetLocationCode, task.sku, task.orderNumber, task.lotNumber].some((value) => sameScan(value, scan))
 }
 
-function WarehouseTaskQueueScreen({ api, facility, onBack, typeCode }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void; typeCode: "putaway" | "pick" }) {
+type ScreenProps = { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }
+
+function WarehouseTaskQueueScreen({ api, facility, onBack, typeCode, initialFilter }: ScreenProps & { typeCode: "putaway" | "pick"; initialFilter?: string }) {
   const [tasks, setTasks] = useState<WarehouseTask[]>([])
   const [total, setTotal] = useState(0)
   const [selected, setSelected] = useState<WarehouseTask | null>(null)
-  const [filter, setFilter] = useState("")
+  const [filter, setFilter] = useState(initialFilter ?? "")
   const [quantity, setQuantity] = useState("")
   const [notes, setNotes] = useState("")
   const [loading, setLoading] = useState(true)
@@ -198,13 +200,15 @@ function WarehouseTaskQueueScreen({ api, facility, onBack, typeCode }: { api: Wa
     ? { ok: true, value: true }
     : { ok: true, value: true, note: wt("barcodeCheckedOnConfirm"), warning: false })
 
-  const load = useCallback(async (openNext = false) => {
+  const load = useCallback(async (openNext = false, openMatching?: string) => {
     setLoading(true); setError(null)
     try {
       const page = await api.listTasks({ facilityId: facility.id, type: typeCode, status: "open", limit: 50, offset: 0 })
       const ordered = sortTasks(page.rows, typeCode)
       setTasks(ordered); setTotal(page.total)
-      if (openNext && ordered[0]) openTask(ordered[0])
+      const matching = openMatching ? ordered.filter((task) => matchesTaskFilter(task, openMatching)) : []
+      if (matching.length === 1 && matching[0]) { setFilter(""); openTask(matching[0]) }
+      else if (openNext && ordered[0]) openTask(ordered[0])
     } catch (loadError) {
       setError(message(loadError))
     } finally {
@@ -212,7 +216,7 @@ function WarehouseTaskQueueScreen({ api, facility, onBack, typeCode }: { api: Wa
     }
   }, [api, facility.id, typeCode]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(false, initialFilter) }, [load]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openTask(task: WarehouseTask) {
     setSelected(task)
@@ -296,11 +300,11 @@ function WarehouseTaskQueueScreen({ api, facility, onBack, typeCode }: { api: Wa
   </WarehouseScreen>
 }
 
-export function PutawayScreen(props: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
+export function PutawayScreen(props: ScreenProps & { initialFilter?: string }) {
   return <WarehouseTaskQueueScreen {...props} typeCode="putaway" />
 }
 
-export function PickScreen(props: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
+export function PickScreen(props: ScreenProps & { initialFilter?: string }) {
   return <WarehouseTaskQueueScreen {...props} typeCode="pick" />
 }
 
@@ -310,7 +314,7 @@ function hasPickedStock(order: WarehouseOrder) {
   return order.lines.some((line) => Number(line.pickedQuantity) > Number(line.dispatchedQuantity))
 }
 
-export function ShipScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
+export function ShipScreen({ api, facility, initialOrderId, onBack }: ScreenProps & { initialOrderId?: string }) {
   const [orders, setOrders] = useState<WarehouseOrder[]>([])
   const [selected, setSelected] = useState<WarehouseOrder | null>(null)
   const [rows, setRows] = useState<ShipRow[]>([])
@@ -335,9 +339,9 @@ export function ShipScreen({ api, facility, onBack }: { api: WarehouseMobileApi;
     }
   }, [api, facility.id])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load().then(() => { if (initialOrderId) void chooseOrder({ id: initialOrderId }) }) }, [load]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function chooseOrder(order: WarehouseOrder) {
+  async function chooseOrder(order: Pick<WarehouseOrder, "id">) {
     setLoading(true); setError(null); setSuccess(null)
     try {
       const detail = await api.getOrder(order.id)

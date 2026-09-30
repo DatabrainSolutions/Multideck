@@ -7,9 +7,9 @@ import { StatusBar } from "expo-status-bar"
 import type { Session, SupabaseClient } from "@supabase/supabase-js"
 import { WorkspaceScreen } from "@/screens/WorkspaceScreen"
 import { SignInScreen } from "@/screens/SignInScreen"
-import { WarehouseHomeScreen } from "@/screens/WarehouseHomeScreen"
+import { WarehouseHomeScreen, type WarehouseRouteParams } from "@/screens/WarehouseHomeScreen"
 import { WarehouseSelectScreen } from "@/screens/WarehouseSelectScreen"
-import { ExceptionsScreen, HoldingFeesScreen, PalletsScreen, StockEnquiryScreen, StockItemsScreen } from "@/screens/WarehouseBrowseScreens"
+import { ExceptionsScreen, PalletsScreen, StockEnquiryScreen, StockItemsScreen } from "@/screens/WarehouseBrowseScreens"
 import { LocationCheckScreen } from "@/screens/LocationCheckScreen"
 import { ConsolidationScreen, PalletMoveScreen } from "@/screens/PalletActionScreens"
 import { PickScreen, PutawayScreen, ReceiveScreen, ShipScreen } from "@/screens/WarehouseTaskScreens"
@@ -22,23 +22,11 @@ import type { WarehouseFacility } from "@/warehouse/api"
 import { WarehouseShellProvider } from "@/components/WarehouseShell"
 import { forgetFacility, loadRememberedFacilityId, rememberFacility } from "@/warehouse/facilityMemory"
 
-export type RootStackParams = {
+export type RootStackParams = WarehouseRouteParams & {
   Workspace: undefined
   SignIn: undefined
   WarehouseSelect: undefined
   Home: undefined
-  Receive: undefined
-  Putaway: undefined
-  Pick: undefined
-  Ship: undefined
-  LocationCheck: undefined
-  StockEnquiry: undefined
-  StockItems: undefined
-  Pallets: undefined
-  PalletMove: undefined
-  Consolidation: undefined
-  Exceptions: undefined
-  HoldingFees: undefined
 }
 
 const Stack = createNativeStackNavigator<RootStackParams>()
@@ -190,20 +178,19 @@ export default function App() {
           ) : warehouseApi && facility ? (
             <Stack.Group>
               <Stack.Screen name="Home">
-                {({ navigation }) => <WarehouseHomeScreen onOpen={(route) => navigation.navigate(route)} />}
+                {({ navigation }) => <WarehouseHomeScreen api={warehouseApi} facility={facility} onOpen={(route, params) => navigation.navigate(route as never, params as never)} />}
               </Stack.Screen>
-              <Stack.Screen name="Receive">{({ navigation }) => <ReceiveScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="Putaway">{({ navigation }) => <PutawayScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="Pick">{({ navigation }) => <PickScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="Ship">{({ navigation }) => <ShipScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="LocationCheck">{({ navigation }) => <LocationCheckScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="StockEnquiry">{({ navigation }) => <StockEnquiryScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Receive">{({ navigation, route }) => <ReceiveScreen api={warehouseApi} facility={facility} initialOrderId={route.params?.orderId} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Putaway">{({ navigation, route }) => <PutawayScreen api={warehouseApi} facility={facility} initialFilter={route.params?.filter} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Pick">{({ navigation, route }) => <PickScreen api={warehouseApi} facility={facility} initialFilter={route.params?.filter} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Ship">{({ navigation, route }) => <ShipScreen api={warehouseApi} facility={facility} initialOrderId={route.params?.orderId} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="LocationCheck">{({ navigation, route }) => <LocationCheckScreen api={warehouseApi} facility={facility} initialScan={route.params?.scan} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="StockEnquiry">{({ navigation, route }) => <StockEnquiryScreen api={warehouseApi} facility={facility} initialSearch={route.params?.search} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="StockItems">{({ navigation }) => <StockItemsScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="Pallets">{({ navigation }) => <PalletsScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="PalletMove">{({ navigation }) => <PalletMoveScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Pallets">{({ navigation, route }) => <PalletsScreen api={warehouseApi} facility={facility} initialSearch={route.params?.search} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="PalletMove">{({ navigation, route }) => <PalletMoveScreen api={warehouseApi} facility={facility} initialPalletCode={route.params?.palletCode} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="Consolidation">{({ navigation }) => <ConsolidationScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="Exceptions">{({ navigation }) => <ExceptionsScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="HoldingFees">{({ navigation }) => <HoldingFeesScreen onBack={() => navigation.goBack()} />}</Stack.Screen>
             </Stack.Group>
           ) : null}
           </Stack.Navigator>

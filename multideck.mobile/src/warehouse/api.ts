@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { WorkspaceConfiguration } from "@/auth/workspace"
 
 export class WarehouseMobileError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly status?: number) {
     super(message)
     this.name = "WarehouseMobileError"
   }
@@ -265,7 +265,7 @@ export function createWarehouseMobileApi(client: SupabaseClient, workspace: Work
       } catch {
         // Keep the HTTP fallback when the function did not return a problem document.
       }
-      throw new WarehouseMobileError(message)
+      throw new WarehouseMobileError(message, response.status)
     }
 
     if (response.status === 204) return undefined as T
@@ -306,6 +306,16 @@ export function createWarehouseMobileApi(client: SupabaseClient, workspace: Work
     consolidateHandlingUnits: (input: { facilityId: string; targetHandlingUnitId: string; sourceHandlingUnitIds: string[]; notes: string | null }) => request<WarehouseInventoryActionResult>("/inventory/actions/consolidate", "POST", { requestId: requestId(), ...input }),
     listOrders: (options: { facilityId: string; typeCode: "inbound" | "outbound"; openOnly?: boolean; search?: string; limit?: number; offset?: number }) => request<WarehousePage<WarehouseOrder>>(`/orders${query(options)}`),
     getOrder: (orderId: string) => request<WarehouseOrder>(`/orders/${orderId}`),
+    /** Exact order-number lookup; returns null when the scan is not an order in this workspace. */
+    findOrderByNumber: async (orderNumber: string) => {
+      if (!orderNumber.trim()) return null
+      try {
+        return await request<WarehouseOrder>(`/orders/detail${query({ number: orderNumber.trim() })}`)
+      } catch (error) {
+        if (error instanceof WarehouseMobileError && error.status === 404) return null
+        throw error
+      }
+    },
     receiveOrder: (orderId: string, input: {
       receivingLocationId: string
       notes: string | null
@@ -326,6 +336,7 @@ export function createWarehouseMobileApi(client: SupabaseClient, workspace: Work
       newHandlingUnit: null,
       ...input,
     }),
+    countOpenTasks: async (facilityId: string, type: "putaway" | "pick") => (await request<WarehousePage<WarehouseTask>>(`/tasks${query({ facilityId, type, status: "open", limit: 1, offset: 0 })}`)).total,
     listTasks: (options: { facilityId: string; type: "putaway" | "pick"; status?: "open"; limit?: number; offset?: number }) => request<WarehousePage<WarehouseTask>>(`/tasks${query(options)}`),
     getTask: (taskId: string) => request<WarehouseTask>(`/tasks/${taskId}`),
     confirmTask: (taskId: string, input: {

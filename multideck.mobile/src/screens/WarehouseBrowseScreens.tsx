@@ -10,8 +10,8 @@ function message(error: unknown) {
   return error instanceof Error ? error.message : wt("serviceError")
 }
 
-export function StockEnquiryScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
-  const [query, setQuery] = useState("")
+export function StockEnquiryScreen({ api, facility, initialSearch, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; initialSearch?: string; onBack: () => void }) {
+  const [query, setQuery] = useState(initialSearch ?? "")
   const [rows, setRows] = useState<WarehouseInventoryBalance[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -48,8 +48,8 @@ export function StockItemsScreen({ api, facility, onBack }: { api: WarehouseMobi
   </WarehouseScreen>
 }
 
-export function PalletsScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
-  const [query, setQuery] = useState("")
+export function PalletsScreen({ api, facility, initialSearch, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; initialSearch?: string; onBack: () => void }) {
+  const [query, setQuery] = useState(initialSearch ?? "")
   const [rows, setRows] = useState<WarehouseHandlingUnit[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -96,13 +96,6 @@ export function ExceptionsScreen({ api, facility, onBack }: { api: WarehouseMobi
       <Field label={wt("resolutionNotes")} value={notes} onChangeText={setNotes} multiline style={styles.notes} />
       <WarehouseButton label={wt("confirmResolution")} disabled={!notes.trim()} busy={busy} onPress={() => void resolveDataError()} />
     </> : null}
-  </WarehouseScreen>
-}
-
-export function HoldingFeesScreen({ onBack }: { onBack: () => void }) {
-  return <WarehouseScreen title={wt("holdingFees")} subtitle={wt("holdingFeesDetail")} onBack={onBack}>
-    <DataCard title={wt("feeModelTitle")} status={wt("designDecision")}><Text style={styles.detail}>{wt("feeModelBody")}</Text></DataCard>
-    <DataCard title={wt("proposedParameters")}><Text style={styles.detail}>{wt("feeParameters")}</Text></DataCard>
   </WarehouseScreen>
 }
 
