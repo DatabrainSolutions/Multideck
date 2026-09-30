@@ -1,0 +1,223 @@
+{
+  "verifiedOn": "2026-09-30",
+  "environment": "Connected shared-development template library through localhost:3000",
+  "libraryUrl": "http://localhost:3000/documents/templates",
+  "drafts": [
+    {
+      "name": "Advice of charges",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Arrival notice",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Customs clearance instructions",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Delivery confirmation",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "ERTS release request",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Container PIN request",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Cargo release request",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Freight invoice",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Freight proforma invoice",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Remittance advice",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Transport instructions",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Customer quotation",
+      "sourceSaved": "Saved draft · v3",
+      "draft": true
+    },
+    {
+      "name": "Sea booking request",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Shipping instructions",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Bill of lading instructions",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Standard shipping note",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Road consignment instructions",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Road and courier cargo label",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Courier docket",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Collection and delivery note",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Air assembly manifest",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Sea assembly manifest",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Consolidation manifest",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Agent manifest",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Customs manifest source sheet",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Container loading manifest",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Packing list",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Commercial invoice working draft",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Warehouse goods in note",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Warehouse goods out note",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Warehouse pick list",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Warehouse inventory report",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Operational job sheet",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Pre shipment advice",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    },
+    {
+      "name": "Vehicle handover record",
+      "sourceSaved": "Saved draft · v2",
+      "draft": true
+    }
+  ],
+  "catalogueDraftsAfterBrowserReload": 35,
+  "representativeCarbonePdfPreviews": [
+    {
+      "code": "CATALOGUE_QUOTE_LAYOUT",
+      "templateId": "1521020222028081488",
+      "version": 3,
+      "pdfShown": true
+    },
+    {
+      "code": "CATALOGUE_FREIGHT_INVOICE",
+      "templateId": "1521021930785004886",
+      "version": 2,
+      "pdfShown": true
+    },
+    {
+      "code": "CATALOGUE_LOADING_MANIFEST",
+      "templateId": "1521029881940871298",
+      "version": 2,
+      "pdfShown": true
+    }
+  ],
+  "sourceDownloadHashChecks": [
+    {
+      "code": "CATALOGUE_QUOTE_LAYOUT",
+      "sha256": "26197c8ad56801d9114984c1705ae24839d27c81278a0db59f231f41f065f316",
+      "matches": true
+    },
+    {
+      "code": "CATALOGUE_FREIGHT_INVOICE",
+      "sha256": "4c6b8ea5c324d7b969f6cb0c54a27673e9fc87f36b0be00c1c020b8031a63c1a",
+      "matches": true
+    }
+  ],
+  "localRendering": {
+    "documents": 71,
+    "pageImages": 73,
+    "visuallyInspectedAllPages": true
+  },
+  "published": false,
+  "liveRecordAdaptersWired": false,
+  "realDocumentsIssued": false
+}
