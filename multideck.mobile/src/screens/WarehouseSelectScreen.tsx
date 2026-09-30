@@ -3,7 +3,7 @@ import { ActionTile, EmptyState, ErrorState, LoadingState, WarehouseScreen } fro
 import type { WarehouseFacility, WarehouseMobileApi } from "@/warehouse/api"
 import { wt } from "@/warehouse/i18n"
 
-export function WarehouseSelectScreen({ api, onSelect }: { api: WarehouseMobileApi; onSelect: (facility: WarehouseFacility) => void }) {
+export function WarehouseSelectScreen({ api, rememberedFacilityId, onSelect }: { api: WarehouseMobileApi; rememberedFacilityId?: string | null; onSelect: (facility: WarehouseFacility) => void }) {
   const [facilities, setFacilities] = useState<WarehouseFacility[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -12,13 +12,16 @@ export function WarehouseSelectScreen({ api, onSelect }: { api: WarehouseMobileA
     setLoading(true)
     setError(null)
     try {
-      setFacilities((await api.listFacilities()).filter((facility) => facility.isActive))
+      const active = (await api.listFacilities()).filter((facility) => facility.isActive)
+      const remembered = active.find((facility) => facility.id === rememberedFacilityId) ?? (active.length === 1 ? active[0] : undefined)
+      if (remembered) return onSelect(remembered)
+      setFacilities(active)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : wt("serviceError"))
     } finally {
       setLoading(false)
     }
-  }, [api])
+  }, [api, onSelect, rememberedFacilityId])
 
   useEffect(() => { void load() }, [load])
 

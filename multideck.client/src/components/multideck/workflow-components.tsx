@@ -261,9 +261,11 @@ export function TabsRail({
 
   return (
     <div role="tablist" className={cn("relative flex gap-[var(--md-page-stack-gap)] overflow-x-auto shadow-[inset_0_-1px_0_rgba(11,20,19,0.08)] md-scrollbar", className)}>
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const tabId = tab.id ?? tab.label
         const selected = activeTab === tabId
+        // When the active section lives outside the rail (under a More menu, say), the first tab keeps the rail reachable by keyboard.
+        const focusable = selected || (index === 0 && !tabIds.includes(activeTab))
 
         return (
           <button
@@ -271,7 +273,7 @@ export function TabsRail({
             type="button"
             role="tab"
             aria-selected={selected}
-            tabIndex={selected ? 0 : -1}
+            tabIndex={focusable ? 0 : -1}
             className={cn(
               "relative flex h-12 shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-accent)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]",
               selected && "text-[var(--md-accent)]",

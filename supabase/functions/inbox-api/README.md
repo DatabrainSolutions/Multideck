@@ -59,7 +59,7 @@ In addition to Supabase-provided runtime variables, this function uses the same 
 - `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`
 - `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`
 - `OPENAI_API_KEY` (or the existing `OPEN_API_KEY`) for Dexter summaries
-- optional `INBOX_LUNA_MODEL` (default `gpt-5.6-luna`)
+- optional `INBOX_LUNA_MODEL` (default `gpt-6-luna`)
 
 ## Verification
 

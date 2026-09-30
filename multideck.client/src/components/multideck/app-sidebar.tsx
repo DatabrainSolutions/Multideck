@@ -1,9 +1,10 @@
-import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
+import { preloadRoute } from "@/lib/route-pages"
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Star, Tags, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { AiBrain, AiEditing, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, PencilEdit01, Plus, Pin, Search, Send, Settings, Star, Tags, Ticket, TicketCheck, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { LayoutLeftIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ContextMenu as ContextMenuPrimitive, DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { SidebarArrangeCanvas, type SidebarArrangeItem } from "@/components/multideck/sidebar-arrange"
@@ -12,7 +13,6 @@ import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { isDefaultScope, mergeSavedOrder, useSidebarLayoutScope } from "@/lib/sidebar-preferences"
@@ -22,7 +22,10 @@ import { isTrainingWorkspace } from "@/lib/workspace-environment"
 import { authSupabase, supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
-import { calendarNavItem, customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, todoNavItem, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
+import { adminDockHubIdFor, dismissAdminDock, noteAdminSettingOpened, rememberAdminSetting, restoreAdminDock } from "@/lib/admin-explorer-state"
+import { sidebarNavigationIndex, searchSidebarNavigation, type SidebarNavigationResult } from "@/lib/sidebar-navigation-search"
+import { useSidebarDropdown } from "@/lib/sidebar-dropdown-state"
+import { adminHubs, adminEmailSignaturesDestination, calendarNavItem, customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, todoNavItem, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
 import { deleteDexterConversation, getDexterUsage, listDexterConversationsPage, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
@@ -41,16 +44,12 @@ import { useOptionalInboxWorkspace, type InboxNavigationView } from "@/lib/inbox
 import { defaultCoverPhotoUrl } from "@/lib/default-cover-photo"
 import type { MailboxFolder } from "@/lib/inbox-api"
 import { workspaceNotificationDestination } from "@/lib/notification-destination"
-import { notificationPreviewText } from "@/lib/notification-preview"
-import { toast } from "sonner"
+import { NotificationCenter } from "@/components/multideck/notification-center"
+import type { WorkspaceNotification } from "@/lib/notification-api"
 import { useWorkspaceNotifications } from "@/lib/use-workspace-notifications"
 import { openSupportTicket } from "@/components/multideck/support-ticket-dialog"
 import { supportTicketFeatureEnabled } from "@/lib/support-ticket-feature"
-
-const sidebarItemTransition = {
-  duration: 0.18,
-  ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
-}
+import { useEventsSettings } from "@/lib/company-events-api"
 
 const sidebarActiveTransition = {
   type: "spring" as const,
@@ -76,61 +75,24 @@ const sidebarPinTransition = {
   mass: 0.9,
 }
 
-const navReveal = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      duration: 0.18,
-      ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
-      staggerChildren: 0.018,
-      delayChildren: 0.01,
-    },
-  },
-}
-
-const navItemReveal = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: sidebarItemTransition },
-}
-
-const notificationsReveal = {
-  hidden: { opacity: 1 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.055,
-      delayChildren: 0.05,
-    },
-  },
-}
-
-const notificationItemExit = { opacity: 0, x: -8, transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } }
-
-function notificationTime(value: string) {
-  const parsed = Date.parse(value)
-  if (!Number.isFinite(parsed)) return ""
-  const minutes = Math.max(0, Math.floor((Date.now() - parsed) / 60_000))
-  if (minutes < 1) return "now"
-  if (minutes < 60) return `${minutes} min`
-  if (minutes < 1_440) return `${Math.floor(minutes / 60)} hr`
-  return `${Math.floor(minutes / 1_440)} d`
-}
-
 function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
   const [open, setOpen] = useState(false)
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const { notifications, unreadCount, total, loading, loaded, error, pending, hasMore, loadMore, refresh, updateNotificationStatus, dismissNotification, markAllRead, clearNotifications } = useWorkspaceNotifications()
-  const notificationPreviews = useMemo(() => notifications.map((notification) => ({
-    ...notification,
-    preview: notificationPreviewText(notification.body),
-  })), [notifications])
+  // Ring again whenever something new arrives, not only on first paint.
+  const [ring, setRing] = useState(0)
+  const previousUnread = useRef(unreadCount)
+  useEffect(() => {
+    if (loaded && unreadCount > previousUnread.current) setRing((value) => value + 1)
+    previousUnread.current = unreadCount
+  }, [loaded, unreadCount])
+  const destinationFor = useCallback((notification: WorkspaceNotification) => workspaceNotificationDestination(notification, window.location.origin), [])
 
-  function openNotificationSettings() {
+  function navigate(url: string) {
     setOpen(false)
     onNavigate?.()
-    window.history.pushState({}, "", "/settings?tab=notifications")
+    window.history.pushState({}, "", url)
     window.dispatchEvent(new PopStateEvent("popstate"))
   }
 
@@ -141,24 +103,32 @@ function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
           type="button"
           aria-label={t("Open notifications")}
           title={t("Open notifications")}
-          className="group relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
+          className="group relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
         >
           <motion.span
             aria-hidden="true"
             className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,var(--md-accent-a14),transparent_58%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100"
           />
           <motion.span
-            animate={shouldReduceMotion ? undefined : { rotate: [0, -7, 6, 0] }}
-            transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-            className="relative"
+            key={ring}
+            animate={shouldReduceMotion ? undefined : { rotate: [0, -12, 9, -5, 2, 0] }}
+            transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
+            className="relative origin-[50%_15%]"
           >
-            <Bell className="size-3.5" strokeWidth={1.3} />
+            <Bell className="size-4" strokeWidth={1.3} />
           </motion.span>
-          {unreadCount > 0 ? <motion.span
-            className="absolute end-2 top-2 size-1.5 rounded-full bg-[var(--md-amber)] shadow-[0_0_0_2px_var(--md-glass)]"
-            animate={shouldReduceMotion ? undefined : { scale: [1, 1.35, 1] }}
-            transition={{ duration: 0.54, delay: 0.32, ease: [0.22, 1, 0.36, 1] }}
-          /> : null}
+          <AnimatePresence initial={false}>
+            {unreadCount > 0 ? <motion.span
+              key="unread"
+              aria-hidden="true"
+              className="absolute end-2 top-2 size-1.5 rounded-full bg-[var(--md-amber)] shadow-[0_0_0_2px_var(--md-glass)]"
+              initial={shouldReduceMotion ? { opacity: 0 } : { scale: 0 }}
+              animate={shouldReduceMotion ? { opacity: 1 } : { scale: [0, 1.35, 1] }}
+              exit={shouldReduceMotion ? { opacity: 0 } : { scale: 0, transition: { duration: 0.16, ease: [0.4, 0, 1, 1] } }}
+              transition={{ duration: 0.42, delay: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            /> : null}
+          </AnimatePresence>
+          {unreadCount > 0 ? <span className="sr-only">{`${unreadCount} ${t(unreadCount === 1 ? "unread notification" : "unread notifications")}`}</span> : null}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -167,109 +137,27 @@ function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
         alignOffset={10}
         sideOffset={onNavigate ? 8 : 18}
         collisionPadding={18}
-        className="w-[380px] max-w-[calc(100vw-36px)] max-h-[min(calc(100dvh-36px),var(--radix-popover-content-available-height))] flex flex-col gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]"
+        className="w-[400px] max-w-[calc(100vw-36px)] max-h-[min(640px,calc(100dvh-36px),var(--radix-popover-content-available-height))] flex flex-col gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] data-closed:duration-150"
       >
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Notifications")}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{unreadCount ? `${unreadCount} ${t(unreadCount === 1 ? "unread notification" : "unread notifications")}` : error ? t("Notifications need refreshing") : !loaded ? t("Loading notifications…") : t("You're all caught up")}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <button type="button" disabled={pending || !loaded || unreadCount === 0} onClick={() => void markAllRead()} className="h-7 rounded-full bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100">
-              {t("Mark all as read")}
-            </button>
-            <button type="button" disabled={pending || !loaded || total === 0} onClick={() => void clearNotifications()} className="h-7 rounded-full px-2.5 text-[11px] font-medium text-[var(--md-subtle)] transition-[background,color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100">
-              {t("Clear")}
-            </button>
-          </div>
-        </div>
-        <motion.div
-          className="min-h-0 overflow-y-auto divide-y divide-[rgba(11,20,19,0.07)] shadow-[inset_0_1px_0_rgba(11,20,19,0.06)]"
-          variants={shouldReduceMotion ? undefined : notificationsReveal}
-          initial={shouldReduceMotion ? undefined : "hidden"}
-          animate={shouldReduceMotion ? undefined : "show"}
-        >
-          {error ? <div role="alert" className="px-4 py-3 text-[12px] text-[var(--md-text)]">{t(error)} <button type="button" disabled={loading} onClick={() => void refresh()} className="underline">{t("Retry")}</button></div> : null}
-          {!loaded && !error ? <p role="status" className="px-4 py-5 text-[13px] text-[var(--md-text)]">{t("Loading notifications…")}</p> : null}
-          {loaded && !error && notifications.length === 0 ? <div className="px-4 py-5 text-center"><EmptyStateIllustration variant="activity" compact className="mb-2" /><p className="text-[13px] text-[var(--md-text)]">{t("No notifications yet")}</p></div> : null}
-          <AnimatePresence initial={false} mode="popLayout">
-          {notificationPreviews.map((notification) => (
-            <motion.div
-              key={notification.id}
-              layout
-              className="flex items-center"
-              initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={shouldReduceMotion ? { opacity: 0 } : notificationItemExit}
-              transition={sidebarItemTransition}
-            >
-              <ContextMenuPrimitive.Root dir={direction}>
-                <ContextMenuPrimitive.Trigger asChild>
-              <motion.button
-                type="button"
-                disabled={pending}
-                title={notification.preview}
-                className="group grid min-w-0 flex-1 grid-cols-[6px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3 text-start transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]"
-                onClick={() => {
-                  const url = workspaceNotificationDestination(notification, window.location.origin)
-                  if (!url) {
-                    toast.info(notification.title, { description: notification.preview, duration: 10_000 })
-                    if (notification.status === "unread") void updateNotificationStatus(notification.id, "read")
-                    return
-                  }
-                  if (notification.status === "unread") void updateNotificationStatus(notification.id, "read")
-                  setOpen(false)
-                  onNavigate?.()
-                  window.history.pushState({}, "", url)
-                  window.dispatchEvent(new PopStateEvent("popstate"))
-                }}
-              >
-                <span aria-hidden="true" className={cn("mt-[7px] size-1.5 rounded-full transition-opacity duration-150", notification.status === "unread" ? "bg-[var(--md-accent)] opacity-100" : "opacity-0")} />
-                <span className="min-w-0">
-                  <span className="line-clamp-2 break-words text-[13px] font-medium text-[var(--md-ink)]">{notification.title}</span>
-                  <span className="sr-only">{notification.status === "unread" ? t("Unread") : t("Read")}</span>
-                  <span className="mt-0.5 line-clamp-2 break-words text-[12px] leading-5 text-[var(--md-text)]">{notification.preview}</span>
-                </span>
-                <span className="whitespace-nowrap pt-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{notificationTime(notification.createdAt)}</span>
-              </motion.button>
-                </ContextMenuPrimitive.Trigger>
-                <ContextMenuPrimitive.Portal>
-                  <ContextMenuPrimitive.Content collisionPadding={14} className="z-50 min-w-[168px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
-                    <ContextMenuPrimitive.Item className="h-9 cursor-default select-none rounded-[var(--md-radius-lg)] px-3 text-[13px] leading-9 text-[var(--md-text)] outline-none data-[highlighted]:bg-[var(--md-hover)] data-[highlighted]:text-[var(--md-ink)]" disabled={pending} onSelect={() => updateNotificationStatus(notification.id, notification.status === "unread" ? "read" : "unread")}>
-                      {t(notification.status === "unread" ? "Mark as read" : "Mark as unread")}
-                    </ContextMenuPrimitive.Item>
-                    <ContextMenuPrimitive.Item className="h-9 cursor-default select-none rounded-[var(--md-radius-lg)] px-3 text-[13px] leading-9 text-[var(--md-danger)] outline-none data-[highlighted]:bg-[rgba(194,91,65,0.08)]" disabled={pending} onSelect={() => dismissNotification(notification.id)}>
-                      {t("Clear notification")}
-                    </ContextMenuPrimitive.Item>
-                  </ContextMenuPrimitive.Content>
-                </ContextMenuPrimitive.Portal>
-              </ContextMenuPrimitive.Root>
-              <DropdownMenuPrimitive.Root>
-                <DropdownMenuPrimitive.Trigger asChild>
-                  <button type="button" disabled={pending} aria-label={`${t("Notification actions")}: ${notification.title}`} className="me-2 grid size-9 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]"><ChevronDown className="size-3.5" /></button>
-                </DropdownMenuPrimitive.Trigger>
-                <DropdownMenuPrimitive.Portal>
-                  <DropdownMenuPrimitive.Content align="end" collisionPadding={14} className="z-50 min-w-[168px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]">
-                    <DropdownMenuPrimitive.Item disabled={pending} onSelect={() => void updateNotificationStatus(notification.id, notification.status === "unread" ? "read" : "unread")} className="cursor-default rounded-[var(--md-radius-lg)] px-3 py-2 text-[13px] text-[var(--md-text)] outline-none data-[highlighted]:bg-[var(--md-hover)]">{t(notification.status === "unread" ? "Mark as read" : "Mark as unread")}</DropdownMenuPrimitive.Item>
-                    <DropdownMenuPrimitive.Item disabled={pending} onSelect={() => void dismissNotification(notification.id)} className="cursor-default rounded-[var(--md-radius-lg)] px-3 py-2 text-[13px] text-[var(--md-text)] outline-none data-[highlighted]:bg-[var(--md-hover)]">{t("Clear notification")}</DropdownMenuPrimitive.Item>
-                  </DropdownMenuPrimitive.Content>
-                </DropdownMenuPrimitive.Portal>
-              </DropdownMenuPrimitive.Root>
-            </motion.div>
-          ))}
-          </AnimatePresence>
-          {hasMore ? <button type="button" disabled={loading || pending} onClick={() => void loadMore()} className="w-full px-4 py-3 text-[12px] text-[var(--md-accent)]">{t(loading ? "Loading…" : "Load older notifications")}</button> : null}
-        </motion.div>
-        <div className="px-3 py-3">
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-8 w-full rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)]"
-            onClick={openNotificationSettings}
-          >
-            {t("Review notification settings")}
-          </Button>
-        </div>
+        <NotificationCenter
+          className="min-h-0 flex-1"
+          notifications={notifications}
+          unreadCount={unreadCount}
+          loaded={loaded}
+          loading={loading}
+          error={error}
+          pending={pending}
+          hasMore={hasMore}
+          destinationFor={destinationFor}
+          onOpen={(_notification, url) => navigate(url)}
+          onToggleRead={(id, status) => void updateNotificationStatus(id, status)}
+          onDismiss={(id) => void dismissNotification(id)}
+          onMarkAllRead={() => void markAllRead()}
+          onClearAll={() => { if (total > 0) void clearNotifications() }}
+          onLoadMore={() => void loadMore()}
+          onRetry={() => void refresh()}
+          onOpenSettings={() => navigate("/settings?tab=notifications")}
+        />
       </PopoverContent>
     </Popover>
   )
@@ -329,6 +217,10 @@ export function SidebarNavItem({
   const Icon = item.icon
   const { t } = useLanguage()
   const aiAgentName = useAiAgentName()
+  const label = t(item.label)
+  const labelRef = useRef<HTMLSpanElement>(null)
+  const [labelTruncated, setLabelTruncated] = useState(false)
+  const [labelTooltipOpen, setLabelTooltipOpen] = useState(false)
   const isDisabled = !onClick
   const isDexterItem = accent === "dexter"
   const valueTone =
@@ -340,7 +232,30 @@ export function SidebarNavItem({
     "bg-transparent text-[var(--md-text)]"
   const trailingSlot = trailing ?? (affordance ? <SidebarNavArrow affordance={affordance} /> : null)
 
+  const handleIntent = () => {
+    if (isDisabled) return
+    if (item.route && expanded === undefined) preloadRoute(item.route)
+    onIntent?.()
+  }
   const hideLabel = collapsed || iconOnly
+
+  useEffect(() => {
+    const labelElement = labelRef.current
+    if (!labelElement || hideLabel) return
+
+    const checkTruncation = () => setLabelTruncated(labelElement.scrollWidth > labelElement.clientWidth + 1)
+    checkTruncation()
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(checkTruncation)
+    observer.observe(labelElement)
+    return () => observer.disconnect()
+  }, [hideLabel, label])
+
+  const showLabelTooltip = hideLabel || labelTruncated
+
+  useEffect(() => {
+    if (!showLabelTooltip) setLabelTooltipOpen(false)
+  }, [showLabelTooltip])
 
   const button = (
     <button
@@ -349,8 +264,7 @@ export function SidebarNavItem({
       aria-current={isActive ? "page" : undefined}
       aria-disabled={isDisabled || undefined}
       aria-expanded={expanded}
-      aria-label={hideLabel ? t(item.label) : undefined}
-      title={iconOnly ? undefined : t(item.label)}
+      aria-label={hideLabel ? label : undefined}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
         "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-lg)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
@@ -359,9 +273,9 @@ export function SidebarNavItem({
         isDexterItem && "md-sidebar-dexter-item !text-white hover:!text-white focus-visible:!text-white",
         hideLabel && "justify-center px-0",
         iconOnly && "h-11",
-        isActive && "text-[var(--md-selected-text)]",
+        isActive && "text-[var(--md-accent-ink)] hover:text-[var(--md-accent-ink)]",
         accent === "dexter" && isActive && "!text-white",
-        isDisabled && "cursor-default opacity-55 hover:text-[var(--md-text)]",
+        isDisabled && "pointer-events-none cursor-default opacity-55 hover:text-[var(--md-text)]",
         className,
       )}
       style={{
@@ -370,8 +284,9 @@ export function SidebarNavItem({
         transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
       }}
       disabled={isDisabled}
-      onPointerEnter={onIntent}
-      onFocus={onIntent}
+      onPointerEnter={handleIntent}
+      onPointerDown={handleIntent}
+      onFocus={handleIntent}
       onClick={onClick}
     >
       {isDexterItem ? (
@@ -393,8 +308,8 @@ export function SidebarNavItem({
             data-sidebar-active-surface
             aria-hidden="true"
             className={cn(
-              "pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)]",
-              nested ? "shadow-[inset_0_0_0_1px_var(--md-hairline)]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]",
+              "pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)]",
+              "shadow-none",
             )}
             transition={mdMotion.fast}
           />
@@ -403,8 +318,8 @@ export function SidebarNavItem({
             data-sidebar-active-surface
             aria-hidden="true"
             className={cn(
-              "pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)]",
-              nested ? "shadow-[inset_0_0_0_1px_var(--md-hairline)]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]",
+              "pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)]",
+              "shadow-none",
             )}
           />
         )
@@ -423,7 +338,7 @@ export function SidebarNavItem({
         className={cn(
           "relative grid size-5 place-items-center text-[var(--md-subtle)] transition-colors duration-150",
           !isActive && "group-hover:text-[var(--md-ink)] group-focus-visible:text-[var(--md-ink)]",
-          isActive && "text-[var(--md-selected-text)]",
+          isActive && "text-[var(--md-accent-ink)] hover:text-[var(--md-accent-ink)]",
           isDexterItem && "z-10 !text-white group-hover:!text-white",
         )}
       >
@@ -434,12 +349,12 @@ export function SidebarNavItem({
           <Icon data-icon={hideLabel ? undefined : "inline-start"} strokeWidth={1.2} />
         </span>
       </span>
-      <span className={cn("min-w-0 flex-1 truncate text-start", isDexterItem && "z-10", hideLabel ? "sr-only !absolute" : "relative")}>{t(item.label)}</span>
+      <span ref={labelRef} className={cn("min-w-0 flex-1 truncate text-start", isDexterItem && "z-10", hideLabel ? "sr-only !absolute" : "relative")}>{label}</span>
       {item.value ? (
         <span
           className={cn(
             "relative rounded-full px-2 py-0.5 text-[11px] font-medium shadow-[inset_0_0_0_1px_rgba(255,255,255,0.38)]",
-            valueTone,
+            isActive && !isDexterItem ? "bg-transparent text-[var(--md-accent-ink)] shadow-none" : valueTone,
             hideLabel && "absolute end-1 top-1 min-w-2 px-0 text-[0px] leading-none",
           )}
         >
@@ -449,17 +364,19 @@ export function SidebarNavItem({
       {/* One fixed 20px slot holds either the pin or the arrow, so the glyph column
           never drifts with the label's length or type size. */}
       {trailingSlot && !hideLabel ? (
-        <span className="relative ms-auto grid size-5 shrink-0 place-items-center text-[var(--md-subtle)]">{trailingSlot}</span>
+        <span className={cn("relative ms-auto grid size-5 shrink-0 place-items-center", isActive ? "text-[var(--md-accent-ink)]" : "text-[var(--md-subtle)]")}>{trailingSlot}</span>
       ) : null}
     </button>
   )
 
-  return iconOnly ? (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side={collapsed ? "right" : "bottom"} sideOffset={6}>{t(item.label)}</TooltipContent>
+  return (
+    <Tooltip disableHoverableContent open={showLabelTooltip && labelTooltipOpen} onOpenChange={(open) => setLabelTooltipOpen(showLabelTooltip && open)}>
+      <TooltipTrigger asChild>
+        <span className="block min-w-0 w-full">{button}</span>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={6}>{label}</TooltipContent>
     </Tooltip>
-  ) : button
+  )
 }
 
 function SidebarSection({
@@ -469,27 +386,20 @@ function SidebarSection({
   children: ReactNode
   className?: string
 }) {
-  const shouldReduceMotion = useReducedMotion()
-
   return (
-    <motion.nav
-      className={cn("flex flex-col gap-1", className)}
-      variants={shouldReduceMotion ? undefined : navReveal}
-      initial={shouldReduceMotion ? undefined : "hidden"}
-      animate={shouldReduceMotion ? undefined : "show"}
-    >
+    <nav className={cn("flex flex-col gap-1", className)}>
       {children}
-    </motion.nav>
+    </nav>
   )
 }
 
-function SidebarSectionItem({ children, layout = false }: { children: ReactNode; layout?: boolean }) {
+function SidebarSectionItem({ children, layout = false, layoutDependency }: { children: ReactNode; layout?: boolean; layoutDependency?: string }) {
   const shouldReduceMotion = useReducedMotion()
 
   return (
     <motion.div
-      variants={navItemReveal}
       layout={layout && !shouldReduceMotion ? "position" : false}
+      layoutDependency={layoutDependency}
       transition={{ layout: sidebarPinTransition }}
     >
       {children}
@@ -616,6 +526,7 @@ function CustomisableSidebarSection({
     const validIds = new Set([...baseIds, ...promotedIds])
     return scope.pinned.filter((id) => validIds.has(id))
   }, [baseIds, promotedIds, scope.pinned])
+  const pinLayoutKey = `${scope.pinned.join(",")}|${scope.order.join(",")}`
 
   if (arranging) {
     return (
@@ -640,7 +551,7 @@ function CustomisableSidebarSection({
     const favourite = Boolean(favouriteId && favouriteIds?.has(favouriteId))
 
     rows.push(
-      <SidebarSectionItem key={id} layout>
+      <SidebarSectionItem key={id} layout layoutDependency={pinLayoutKey}>
         <SidebarItemMenu
           pinned={pinned}
           onTogglePin={() => togglePin(id)}
@@ -671,6 +582,7 @@ function CustomisableSidebarSection({
           key="pinned-divider"
           aria-hidden="true"
           layout="position"
+          layoutDependency={pinLayoutKey}
           transition={{ layout: sidebarPinTransition }}
           className="mx-2 my-1 h-px bg-[var(--md-line-strong)]"
         />,
@@ -681,21 +593,26 @@ function CustomisableSidebarSection({
   return <SidebarSection className={className}>{rows}</SidebarSection>
 }
 
-function routePatternMatches(item: NavItem, route: string) {
+function routePatternMatches(item: NavItem | SidebarDestination, route: string) {
   if (!item.route) return false
-  if (item.route === "/") return route === "/"
-  if (item.route === "/calendar/meetings") return route === "/calendar/meetings" || route === "/calendar/booking-links"
-  if (item.route === "/finance/administration") {
-    return /^\/finance\/(administration|systems|currencies|ledger|tax|documents|mappings|compliance|controls)(\/|$)/.test(route)
+  const pathname = route.split("?", 1)[0]
+  if (item.route.includes("?")) {
+    const [itemPath, itemSearch] = item.route.split("?", 2)
+    const routeSearch = new URLSearchParams(route.split("?", 2)[1] ?? "")
+    return pathname === itemPath && Array.from(new URLSearchParams(itemSearch)).every(([key, value]) => routeSearch.get(key) === value)
   }
-  if (item.route === "/customs/standalone/export") return /^\/customs\/standalone\/(export|import)(\/|$)/.test(route)
-  if (item.route === "/customs/job-related/export") return /^\/customs\/job-related\/(export|import)(\/|$)/.test(route)
+  if ("owns" in item && item.owns?.some((owned) => pathname === owned || pathname.startsWith(`${owned}/`))) return true
+  if (item.route === "/") return pathname === "/"
+  if (item.route === "/admin") return pathname === "/admin"
+  if (item.route === "/calendar/meetings") return pathname === "/calendar/meetings" || pathname === "/calendar/booking-links"
+  if (item.route === "/customs/standalone/export") return /^\/customs\/standalone\/(export|import)(\/|$)/.test(pathname)
+  if (item.route === "/customs/job-related/export") return /^\/customs\/job-related\/(export|import)(\/|$)/.test(pathname)
   if (item.route === "/bookings") {
-    return route === "/bookings" || (/^\/bookings\/[^/]+$/.test(route) && route !== "/bookings/new" && route !== "/bookings/provisional")
+    return pathname === "/bookings" || (/^\/bookings\/[^/]+$/.test(pathname) && pathname !== "/bookings/new" && pathname !== "/bookings/provisional")
   }
-  if (item.route === "/crm") return route === "/crm"
-  if (item.route === "/warehouse") return route === "/warehouse"
-  return route === item.route || route.startsWith(`${item.route}/`)
+  if (item.route === "/crm") return pathname === "/crm"
+  if (item.route === "/warehouse") return pathname === "/warehouse"
+  return pathname === item.route || pathname.startsWith(`${item.route}/`)
 }
 
 const sidebarRouteItems = sidebarAreas.flatMap((area) =>
@@ -703,6 +620,10 @@ const sidebarRouteItems = sidebarAreas.flatMap((area) =>
 )
 
 function routeMatches(item: NavItem, route: string) {
+  // While the Admin second sidebar is out, its area is the only match, so a
+  // longer link elsewhere in Admin cannot take the highlight from it.
+  const dockedId = adminDockHubIdFor(route)
+  if (dockedId) return "id" in item && item.id === `admin-${dockedId}`
   if (!routePatternMatches(item, route) || !item.route) return false
   const itemRoute = item.route
 
@@ -735,8 +656,27 @@ function activeDestinationIds(area: SidebarArea | undefined, route: string) {
   return area.destinations.filter((destination) => destination.children && destinationMatches(destination, route)).map((destination) => destination.id)
 }
 
-function nestedDestinationId(parentId: string, item: NavItem) {
-  return `${parentId}::${item.route ?? item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+function subscribeToLocationSearch(onChange: () => void) {
+  window.addEventListener("popstate", onChange)
+  window.addEventListener("multideck:location-change", onChange)
+  return () => {
+    window.removeEventListener("popstate", onChange)
+    window.removeEventListener("multideck:location-change", onChange)
+  }
+}
+
+function getLocationSearch() {
+  return window.location.search
+}
+
+function nestedDestinationId(parentId: string, item: NavItem, siblings: NavItem[]) {
+  const labelKey = item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  const baseId = `${parentId}::${item.route ?? labelKey}`
+  // Some Admin links share a page but lead to distinct settings. Keep the
+  // first link's saved pin ID and give later rows their own stable identity.
+  return item.route && siblings.findIndex((sibling) => sibling.route === item.route) < siblings.indexOf(item)
+    ? `${baseId}::${labelKey}`
+    : baseId
 }
 
 function inboxFolderRows(folders: MailboxFolder[]) {
@@ -861,64 +801,46 @@ function InboxContextSidebar({
     >
       <SidebarSection>
         <SidebarSectionItem>
-          <SidebarNavItem
-            item={{ label: "Back", icon: ArrowLeft }}
-            onClick={() => {
-              navigate("/")
-              onRequestClose?.()
-            }}
-            collapsed={collapsed}
-          />
+          <div className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <SidebarNavItem
+                item={{ label: "Back", icon: ArrowLeft }}
+                onClick={() => {
+                  navigate("/")
+                  onRequestClose?.()
+                }}
+                collapsed={collapsed}
+              />
+            </div>
+            {!collapsed && providers.length > 1 ? (
+              <div role="group" aria-label={t("Mail provider")} className="flex shrink-0 items-center gap-1">
+                {providers.map((candidate) => (
+                  <button
+                    key={candidate}
+                    type="button"
+                    aria-label={t(mailProviderLabels[candidate])}
+                    aria-pressed={provider === candidate}
+                    title={t(mailProviderLabels[candidate])}
+                    onClick={() => selectProvider(candidate)}
+                    className={cn(
+                      "grid size-10 place-items-center rounded-[var(--md-radius-lg)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-ink)]",
+                      provider === candidate && "bg-[var(--md-bg-strong)]",
+                    )}
+                  >
+                    <MailProviderMark provider={candidate} className="size-5" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </SidebarSectionItem>
       </SidebarSection>
 
-      <div className={cn("mt-4 px-1", collapsed && "px-0")}>
-        {provider && providers.length > 1 ? (
-          <Select value={provider} onValueChange={(value) => selectProvider(value as typeof provider)}>
-            <SelectTrigger
-              aria-label={t("Mail provider")}
-              className={cn(
-                "h-10 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-2.5 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus:ring-[3px] focus:ring-[var(--md-accent-a14)]",
-                collapsed && "justify-center px-0 [&>svg]:hidden",
-              )}
-            >
-              <SelectValue>
-                <span className="flex min-w-0 items-center gap-2">
-                  <MailProviderMark provider={provider} />
-                  <span className={cn("truncate", collapsed && "sr-only")}>{mailProviderLabels[provider]}</span>
-                </span>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
-              {providers.map((candidate) => (
-                <SelectItem key={candidate} value={candidate} className="text-[13px]">
-                  <span className="flex items-center gap-2">
-                    <MailProviderMark provider={candidate} />
-                    {mailProviderLabels[candidate]}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : provider ? (
-          <div className={cn(
-            "flex h-10 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 shadow-[var(--md-shadow-line)]",
-            collapsed && "justify-center px-0",
-          )}>
-            <MailProviderMark provider={provider} />
-            <span className={cn("truncate text-[13px] font-medium text-[var(--md-ink)]", collapsed && "sr-only")}>{mailProviderLabels[provider]}</span>
-          </div>
-        ) : (
-          <p className={cn("px-2 text-[12px] text-[var(--md-subtle)]", collapsed && "sr-only")}>
-            {t(accountState === "idle" || accountState === "loading" ? "Loading mailboxes" : accountState === "error" ? "Mail unavailable" : "No mail connected")}
-          </p>
-        )}
-      </div>
-
-      <div className={cn("mt-4 flex min-h-9 items-center gap-2.5 border-b border-[var(--md-line)] px-2 pb-3", collapsed && "justify-center border-b-0 px-0 pb-0")}>
-        <Inbox className="size-[18px] shrink-0 text-[var(--md-accent)]" strokeWidth={1.3} aria-hidden="true" />
-        <h2 className={cn("truncate text-[17px] font-medium leading-6 tracking-[-0.015em] text-[var(--md-ink)]", collapsed && "sr-only")}>{t("Inbox")}</h2>
-      </div>
+      {!provider ? (
+        <p className={cn("mt-2 px-2 text-[12px] text-[var(--md-subtle)]", collapsed && "sr-only")}>
+          {t(accountState === "idle" || accountState === "loading" ? "Loading mailboxes" : accountState === "error" ? "Mail unavailable" : "No mail connected")}
+        </p>
+      ) : null}
 
       <SidebarSection className="mt-2">
         {items.map((item) => (
@@ -1099,7 +1021,7 @@ export function AppSidebar({
   navigate,
   className,
   currentUser,
-  collapsed = false,
+  collapsed: requestedCollapsed = false,
   onCollapsedChange,
   onRequestClose,
 }: {
@@ -1115,6 +1037,10 @@ export function AppSidebar({
   const aiAgentName = useAiAgentName()
   const inboxWorkspace = useOptionalInboxWorkspace()
   const shouldReduceMotion = useReducedMotion()
+  const locationSearch = useSyncExternalStore(subscribeToLocationSearch, getLocationSearch, () => "")
+  const supplierDetail = /^\/crm\/accounts\/[^/]+$/.test(route) && new URLSearchParams(locationSearch).get("view") === "suppliers"
+  const navigationRoute = supplierDetail ? "/crm/accounts?view=suppliers" : route === "/crm/accounts" ? `${route}${locationSearch}` : route
+  const collapsed = requestedCollapsed
   const isCustomer = currentUser?.actorType === "customer"
   const accentPreferenceId = useAccentPresetId()
   const companyAppearance = useCompanyAppearance(currentUser?.id)
@@ -1130,12 +1056,16 @@ export function AppSidebar({
   const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
   const canManageSignatures = hasPermission(currentUser, "Email.Signatures.Manage")
   const canOpenAdmin = isTenantAdministrator(currentUser)
+  const canViewFinanceDashboard = hasPermission(currentUser, "Finance.Director.Dashboard.View")
   const canPayMileage = canOpenAdmin || hasPermission(currentUser, "Finance.ReviewAndPost")
 
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
-      return sidebarAreas.filter((area) => area.id !== "administration" || canOpenAdmin || canManageSignatures).map((area) => {
-        if (area.id === "administration" && !canOpenAdmin) return { ...area, destinations: area.destinations.filter(destination => destination.id === "admin-email-signatures") }
+      return sidebarAreas.filter((area) => area.id !== "administration" || canOpenAdmin || canManageSignatures || canViewFinanceDashboard).map((area) => {
+        if (area.id === "administration") {
+          if (!canOpenAdmin) return { ...area, destinations: [...(canViewFinanceDashboard ? [area.destinations[0]] : []), ...(canManageSignatures ? [adminEmailSignaturesDestination] : [])] }
+          return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "admin-dashboard" || canViewFinanceDashboard) }
+        }
         if (area.id === "documents-service") {
           return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
         }
@@ -1151,7 +1081,7 @@ export function AppSidebar({
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, canManageSignatures, canPayMileage])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, canOpenAdmin, canReadPhoneCalls, canManageSignatures, canPayMileage, canViewFinanceDashboard])
   const favouriteCandidates = useMemo(() => sidebarFavouriteCandidates(availableAreas), [availableAreas])
   const { scope: favouritesScope, save: saveFavourites } = useSidebarLayoutScope(favouritesScopeId)
   const favouriteIds = useMemo(
@@ -1166,20 +1096,75 @@ export function AppSidebar({
       ? availableAreas[0]
       : isTopLevelRoute(route)
         ? undefined
-        : findAreaForRoute(route, availableAreas)
+        : findAreaForRoute(navigationRoute, availableAreas)
   const [activeAreaId, setActiveAreaId] = useState<string | null>(initialArea?.id ?? null)
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>(readSettingsSectionFromUrl)
-  const [expandedDestinationIds, setExpandedDestinationIds] = useState<Set<string>>(
-    () => new Set(activeDestinationIds(initialArea, route)),
-  )
+  const [expandedDestinationId, setExpandedDestinationId] = useSidebarDropdown("main")
   const activeArea = availableAreas.find((area) => area.id === activeAreaId)
   const ActiveAreaIcon = activeArea?.icon
+  const [navigationQuery, setNavigationQuery] = useState("")
+  const navigationSearchRef = useRef<HTMLInputElement>(null)
+  const navigationResultsRef = useRef<HTMLElement>(null)
+  const focusSearchOnExpand = useRef(false)
+  const navigationSearchId = useId()
+  const searchingNavigation = navigationQuery.trim().length > 0
+  const navigationEntries = useMemo(() => sidebarNavigationIndex(availableAreas, adminHubs, isCustomer ? [] : [
+    homeNavItem, inboxNavItem, todoNavItem, calendarNavItem,
+    { label: `Agent ${aiAgentName}`, icon: AiBrain, route: "/agent-dexter" },
+    ...settingsNavigationGroups.flatMap((group) => group.items.map((item) => ({
+      label: `Settings · ${item.id === "dexter" ? aiAgentName : item.label}`, icon: item.icon,
+      route: item.id === "profile" ? "/settings" : `/settings?tab=${item.id}`,
+    }))),
+  ]), [availableAreas, isCustomer, aiAgentName])
+  const navigationResults = useMemo(() => searchSidebarNavigation(navigationEntries, navigationQuery), [navigationEntries, navigationQuery])
+
+  useEffect(() => {
+    if (!collapsed && focusSearchOnExpand.current) {
+      focusSearchOnExpand.current = false
+      navigationSearchRef.current?.focus()
+    }
+    if (collapsed) setNavigationQuery("")
+  }, [collapsed])
+
+  useEffect(() => { setNavigationQuery("") }, [route])
+
+  function clearNavigationSearch() {
+    setNavigationQuery("")
+    navigationSearchRef.current?.focus()
+  }
+
+  function openNavigationResult(result: SidebarNavigationResult) {
+    setNavigationQuery("")
+    if (result.adminSetting) {
+      const { hubId, area, link } = result.adminSetting
+      noteAdminSettingOpened(hubId, link)
+      rememberAdminSetting({ label: link.label, route: link.route, area })
+    }
+    if (result.route) {
+      navigate(result.route)
+      onRequestClose?.()
+    } else {
+      // Contextual sidebars own their own content, so leave that workspace when
+      // choosing an area from Inbox, Dexter or personal settings.
+      if (isInboxRoute || isAgentRoute || isSettingsRoute) {
+        const area = availableAreas.find((entry) => entry.id === result.areaId)
+        const destinations = result.destinationId ? area?.destinations.filter((entry) => entry.id === result.destinationId) : area?.destinations
+        const firstRoute = destinations?.flatMap((entry) => [entry.route, ...(entry.children ?? []).map((child) => child.route)]).find(Boolean)
+        if (firstRoute) navigate(firstRoute)
+      }
+      setActiveAreaId(result.areaId ?? null)
+      setExpandedDestinationId(result.destinationId ?? null)
+      navigationSearchRef.current?.focus()
+    }
+  }
   const accountName = currentUser?.name ?? currentUser?.email ?? t("Signed in")
   const accountDetail = currentUser?.name && currentUser.email ? currentUser.email : t("Signed in")
   const accountInitials = currentUser?.initials ?? "MD"
   const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(currentUser?.profilePhotoUrl ?? null)
   const [accountCoverPhotoUrl, setAccountCoverPhotoUrl] = useState<string | null>(null)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const { settings: eventsSettings } = useEventsSettings(currentUser?.actorType === "internal")
+  const eventsEnabled = eventsSettings?.enabled === true
   const [aiUsagePercent, setAiUsagePercent] = useState<number | null>(null)
   const profileIsActive = false
   const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
@@ -1196,18 +1181,29 @@ export function AppSidebar({
   const [dexterSidebarError, setDexterSidebarError] = useState<string | null>(null)
   const dexterConversationRequestVersion = useRef(0)
   const sidebarScrollRef = useRef<HTMLDivElement>(null)
+  const navigationScrollPosition = useRef(0)
   const [sidebarScrollFade, setSidebarScrollFade] = useState({ top: 0, bottom: 0 })
+
+  useLayoutEffect(() => {
+    const region = sidebarScrollRef.current
+    if (!region || !searchingNavigation) return
+    const previousScroll = navigationScrollPosition.current
+    region.scrollTop = 0
+    return () => { region.scrollTop = previousScroll }
+  }, [searchingNavigation])
 
   const updateSidebarScrollFade = useCallback(() => {
     const scrollRegion = sidebarScrollRef.current
     if (!scrollRegion) return
+
+    if (!searchingNavigation) navigationScrollPosition.current = scrollRegion.scrollTop
 
     const remaining = Math.max(0, scrollRegion.scrollHeight - scrollRegion.clientHeight - scrollRegion.scrollTop)
     setSidebarScrollFade({
       top: Math.min(1, scrollRegion.scrollTop / 36),
       bottom: Math.min(1, remaining / 36),
     })
-  }, [])
+  }, [searchingNavigation])
 
   useEffect(() => {
     const scrollRegion = sidebarScrollRef.current
@@ -1279,7 +1275,7 @@ export function AppSidebar({
       new Map(
         (activeArea?.destinations ?? []).flatMap((destination) =>
           (destination.children ?? []).map((item) => [
-            nestedDestinationId(destination.id, item),
+            nestedDestinationId(destination.id, item, destination.children ?? []),
             { parentId: destination.id, item },
           ] as const),
         ),
@@ -1365,17 +1361,11 @@ export function AppSidebar({
         ? availableAreas[0]
         : isTopLevelRoute(route)
           ? undefined
-          : findAreaForRoute(route, availableAreas)
+          : findAreaForRoute(navigationRoute, availableAreas)
     setActiveAreaId(routeArea?.id ?? null)
-    setExpandedDestinationIds((current) => {
-      const requiredIds = activeDestinationIds(routeArea, route)
-      if (requiredIds.every((id) => current.has(id))) return current
-
-      const next = new Set(current)
-      requiredIds.forEach((id) => next.add(id))
-      return next
-    })
-  }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers, canShowDocumentBuilder]) // availableAreas is intentionally derived from the account type, environment and permissions.
+    const routeDestinationId = activeDestinationIds(routeArea, navigationRoute)[0]
+    if (routeDestinationId) setExpandedDestinationId(routeDestinationId)
+  }, [navigationRoute, isCustomer, isSettingsRoute, canManageWarehouseUsers, canShowDocumentBuilder]) // availableAreas is intentionally derived from the account type, environment and permissions.
 
   useEffect(() => {
     if (!isSettingsRoute) return
@@ -1403,8 +1393,10 @@ export function AppSidebar({
   }, [dexterConversationSearch, isAgentRoute, loadDexterConversations])
 
   function openArea(area: SidebarArea) {
+    if (area.id === "administration") restoreAdminDock()
+    else dismissAdminDock(route)
     setActiveAreaId(area.id)
-    setExpandedDestinationIds(new Set(activeDestinationIds(area, route)))
+    setExpandedDestinationId(activeDestinationIds(area, navigationRoute)[0] ?? null)
   }
 
   function toggleSidebarFavourite(id: string) {
@@ -1424,7 +1416,7 @@ export function AppSidebar({
     if (!area) return
     openArea(area)
     if (favourite.destinationId) {
-      setExpandedDestinationIds((current) => new Set(current).add(favourite.destinationId!))
+      setExpandedDestinationId(favourite.destinationId)
     }
   }
 
@@ -1435,12 +1427,7 @@ export function AppSidebar({
   }
 
   function toggleDestination(destinationId: string) {
-    setExpandedDestinationIds((current) => {
-      const next = new Set(current)
-      if (next.has(destinationId)) next.delete(destinationId)
-      else next.add(destinationId)
-      return next
-    })
+    setExpandedDestinationId((current) => current === destinationId ? null : destinationId)
   }
 
   function openSettingsSection(sectionId: SettingsSectionId) {
@@ -1507,7 +1494,6 @@ export function AppSidebar({
       <SidebarNavItem
         item={homeNavItem}
         isActive={route === "/"}
-        onIntent={() => { if (typeof window !== "undefined") void import("@/pages/home-page") }}
         onClick={() => navigate("/")}
         collapsed={collapsed}
         iconOnly
@@ -1522,7 +1508,6 @@ export function AppSidebar({
         isActive={route === "/inbox"}
         onIntent={() => {
           void inboxWorkspace?.prepareAccounts()
-          if (typeof window !== "undefined") void import("@/pages/inbox-page")
         }}
         onClick={() => navigate("/inbox")}
         collapsed={collapsed}
@@ -1536,7 +1521,6 @@ export function AppSidebar({
       <SidebarNavItem
         item={todoNavItem}
         isActive={route === "/to-do"}
-        onIntent={() => { if (typeof window !== "undefined") void import("@/pages/to-do-page") }}
         onClick={() => navigate("/to-do")}
         collapsed={collapsed}
         iconOnly
@@ -1549,7 +1533,6 @@ export function AppSidebar({
       <SidebarNavItem
         item={calendarNavItem}
         isActive={route === "/calendar"}
-        onIntent={() => { if (typeof window !== "undefined") void import("@/pages/calendar-page") }}
         onClick={() => navigate("/calendar")}
         collapsed={collapsed}
         iconOnly
@@ -1562,11 +1545,11 @@ export function AppSidebar({
     if (!favourite) return null
 
     return (
-      <SidebarSectionItem key={id} layout>
+      <SidebarSectionItem key={id} layout layoutDependency={favouriteIds.join(",")}>
         <SidebarItemMenu favourite onToggleFavourite={() => toggleSidebarFavourite(id)}>
           <SidebarNavItem
             item={favourite.item}
-            isActive={favourite.item.route ? routeMatches(favourite.item, route) : false}
+            isActive={favourite.item.route ? routeMatches(favourite.item, navigationRoute) : false}
             onClick={() => openSidebarFavourite(favourite)}
             collapsed={collapsed}
             trailing={<Star className="size-3.5 text-[var(--md-accent)]" fill="currentColor" strokeWidth={1.3} />}
@@ -1590,15 +1573,19 @@ export function AppSidebar({
 
   return (
     <aside
-      data-sidebar-collapsed={collapsed ? "true" : undefined}
+      data-sidebar-collapsed={requestedCollapsed ? "true" : undefined}
+      data-sidebar-searching={navigationQuery ? "true" : undefined}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && navigationQuery) { event.preventDefault(); event.stopPropagation(); clearNavigationSearch() }
+      }}
       data-sidebar-mode={isInboxRoute ? "inbox" : isAgentRoute ? "dexter" : isSettingsRoute ? "settings" : activeArea?.id ?? "areas"}
       className={cn(
-        "relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        collapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
+        "md-app-sidebar relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)]",
+        requestedCollapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
         className,
       )}
     >
-      <div className={cn("relative z-10 flex h-10 items-center gap-1", collapsed ? "justify-center px-0" : "px-1")}>
+      <div className={cn("relative z-10 flex h-10 items-center gap-1", collapsed ? "justify-center px-0" : "px-1", onCollapsedChange && "pe-10")}>
         {collapsed ? null : (
           activeCompanyBrand ? (
             <span
@@ -1631,7 +1618,7 @@ export function AppSidebar({
             />
           )
         )}
-        {!collapsed ? <NotificationBell onNavigate={onRequestClose} /> : null}
+        {!collapsed ? <span className="shrink-0 self-start"><NotificationBell onNavigate={onRequestClose} /></span> : null}
         {!collapsed && onRequestClose ? (
           <Button
             type="button"
@@ -1650,14 +1637,12 @@ export function AppSidebar({
             type="button"
             variant="ghost"
             size="icon"
-            aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
-            title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
-            className={cn(
-              "size-9 shrink-0 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
-            )}
+            aria-label={t(requestedCollapsed ? "Expand sidebar" : "Collapse sidebar")}
+            title={t(requestedCollapsed ? "Expand sidebar" : "Collapse sidebar")}
+            className={cn("absolute top-0 size-9 shrink-0 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]", collapsed ? "end-0.5" : "end-0")}
             onClick={() => onCollapsedChange(!collapsed)}
           >
-            <MorphingIcon from={PanelLeftClose} to={PanelLeftOpen} active={collapsed} className="size-3.5" strokeWidth={1.3} />
+            <HugeiconsIcon icon={LayoutLeftIcon} size={16} strokeWidth={1.3} aria-hidden="true" />
           </Button>
         ) : null}
       </div>
@@ -1670,15 +1655,40 @@ export function AppSidebar({
         </div>
       ) : null}
 
-      {!isCustomer ? (
-        <nav
-          aria-label={t("Pinned shortcuts")}
-          data-sidebar-shortcuts
-          className={cn("relative z-10 mt-[var(--md-page-stack-gap)] grid shrink-0 gap-1 pb-4", collapsed ? "grid-cols-1" : "grid-cols-4")}
-        >
-          {homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{calendarSidebarItem}
-        </nav>
-      ) : null}
+      <div className="relative z-10 my-4 shrink-0">
+        {collapsed ? (
+          <SidebarNavItem
+            item={{ label: "Search navigation", icon: Search }}
+            collapsed
+            onClick={() => { focusSearchOnExpand.current = true; onCollapsedChange?.(false) }}
+          />
+        ) : (
+          <div className="md-sidebar-search relative flex h-11 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 sm:h-10">
+            <Search className="pointer-events-none size-4 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+            <input
+              ref={navigationSearchRef}
+              id={navigationSearchId}
+              type="search"
+              aria-label={t("Search navigation")}
+              aria-controls={searchingNavigation ? `${navigationSearchId}-results` : undefined}
+              placeholder={t("Search navigation…")}
+              autoComplete="off"
+              spellCheck={false}
+              value={navigationQuery}
+              className="min-w-0 flex-1 bg-transparent text-base leading-normal text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)] sm:text-[13px] [&::-webkit-search-cancel-button]:appearance-none"
+              onChange={(event) => setNavigationQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && navigationQuery) { event.preventDefault(); event.stopPropagation(); clearNavigationSearch() }
+                if (event.key === "ArrowDown" && searchingNavigation) { event.preventDefault(); navigationResultsRef.current?.querySelector<HTMLButtonElement>("[data-navigation-result]")?.focus() }
+                if (event.key === "Enter" && navigationResults[0] && !event.nativeEvent.isComposing) { event.preventDefault(); openNavigationResult(navigationResults[0]) }
+              }}
+            />
+            {navigationQuery ? <button type="button" aria-label={t("Clear navigation search")} className="md-sidebar-search-clear -me-1 grid size-7 shrink-0 place-items-center rounded-full text-[var(--md-text)] hover:bg-[var(--md-hover)] focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]" onClick={clearNavigationSearch}>
+              <X className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+            </button> : null}
+          </div>
+        )}
+      </div>
 
       <div className={cn("relative z-10 min-h-0 flex-1", isCustomer && "mt-[var(--md-page-stack-gap)]")}>
         <div
@@ -1688,6 +1698,27 @@ export function AppSidebar({
           onScroll={updateSidebarScrollFade}
         >
           <div>
+        {searchingNavigation ? (
+          <nav ref={navigationResultsRef} id={`${navigationSearchId}-results`} aria-label={t("Navigation results")} className="flex flex-col gap-1" onKeyDown={(event) => {
+            const rows = Array.from(navigationResultsRef.current?.querySelectorAll<HTMLButtonElement>("[data-navigation-result]") ?? [])
+            const index = rows.indexOf(event.target as HTMLButtonElement)
+            if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); clearNavigationSearch() }
+            if (index < 0) return
+            if (event.key === "ArrowDown") { event.preventDefault(); rows[Math.min(index + 1, rows.length - 1)]?.focus() }
+            if (event.key === "ArrowUp") { event.preventDefault(); if (index === 0) navigationSearchRef.current?.focus(); else rows[index - 1]?.focus() }
+          }}>
+            <p role="status" className="px-2.5 pb-2 text-xs leading-normal text-[var(--md-text)]">{navigationResults.length} {t(navigationResults.length === 1 ? "destination" : "destinations")}</p>
+            {navigationResults.map((result) => {
+              const Icon = result.icon
+              return <button key={result.id} type="button" data-navigation-result className="md-sidebar-search-result group flex min-h-12 w-full items-start gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 py-2.5 text-start text-[var(--md-ink)] outline-none hover:bg-[var(--md-hover)] focus-visible:bg-[var(--md-bg-strong)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--md-accent)]" onClick={() => openNavigationResult(result)}>
+                <Icon className="mt-0.5 size-4 shrink-0 text-[var(--md-text)]" strokeWidth={1.3} aria-hidden="true" />
+                <span className="min-w-0 flex-1"><span className="block text-[13px] font-medium leading-snug">{t(result.label)}</span><span className="mt-0.5 block text-xs leading-normal text-[var(--md-text)]">{t(result.context)}</span></span>
+                <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.3} aria-hidden="true" />
+              </button>
+            })}
+            {navigationResults.length === 0 ? <div className="px-2.5 py-4"><p className="text-sm font-medium text-[var(--md-ink)]">{t("No matching destinations")}</p><p className="mt-1 text-[13px] leading-normal text-[var(--md-text)]">{t("Try a different page or area name.")}</p><button type="button" className="mt-3 rounded px-1 py-1 text-[13px] font-medium text-[var(--md-accent)] focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]" onClick={clearNavigationSearch}>{t("Clear search")}</button></div> : null}
+          </nav>
+        ) : <>
         {isSettingsRoute || isCustomer || isAgentRoute || isInboxRoute ? null : (
           <SidebarSection>
             {favouriteSidebarItems}{dexterSidebarItem}
@@ -1972,18 +2003,16 @@ export function AppSidebar({
               exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
               transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
+              <header className="px-2.5 pb-1 pt-4">
+                <p className={cn("mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>{t("Personal")}</p>
+                <h2 className={cn("text-[22px] font-medium leading-tight tracking-[-0.02em] text-[var(--md-ink)]", collapsed && "sr-only")}>{t("Settings")}</h2>
+                {collapsed ? <Settings className="size-4 text-[var(--md-accent)]" aria-hidden="true" /> : null}
+              </header>
               <SidebarNavItem
                 item={{ label: "All areas", icon: ArrowLeft }}
                 collapsed={collapsed}
                 onClick={() => navigate("/")}
               />
-
-              <div className={cn("mt-3 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
-                <Settings className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />
-                <p className={cn("truncate text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>
-                  {t("Settings")}
-                </p>
-              </div>
 
               <nav aria-label={t("Settings")} className="mt-3 flex flex-col gap-[var(--md-page-stack-gap)]">
                 {settingsNavigationGroups.map((group) => (
@@ -2021,23 +2050,23 @@ export function AppSidebar({
               exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
               transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
+              {arrangingScopeId === activeArea.id ? (
+                <SidebarArrangeHeader label={t(activeArea.label)} onExit={() => setArranging(activeArea.id, false)} />
+              ) : (
+                <header className={cn("px-2.5 pb-3 pt-4", collapsed && "flex justify-center px-0 pb-0")}>
+                  {collapsed && ActiveAreaIcon ? <ActiveAreaIcon className="size-[18px] text-[var(--md-accent)]" strokeWidth={1.3} aria-hidden="true" /> : null}
+                  <div className={cn(collapsed && "sr-only")}>
+                    <p className="mb-1 text-[11px] font-medium uppercase leading-normal tracking-[0.08em] text-[var(--md-subtle)]">{t("Current area")}</p>
+                    <h2 className="text-[22px] font-medium leading-tight tracking-[-0.02em] text-balance text-[var(--md-ink)]">{t(activeArea.label)}</h2>
+                  </div>
+                </header>
+              )}
               {isCustomer || arrangingScopeId === activeArea.id ? null : (
                 <SidebarNavItem
                   item={{ label: "All areas", icon: ArrowLeft }}
                   collapsed={collapsed}
-                  onClick={() => setActiveAreaId(null)}
+                  onClick={() => { dismissAdminDock(route); setActiveAreaId(null) }}
                 />
-              )}
-
-              {arrangingScopeId === activeArea.id ? (
-                <SidebarArrangeHeader label={t(activeArea.label)} onExit={() => setArranging(activeArea.id, false)} />
-              ) : (
-                <div className={cn("mt-4 flex min-h-9 items-center gap-2.5 border-b border-[var(--md-line)] px-2 pb-3", collapsed && "justify-center border-b-0 px-0 pb-0")}>
-                  {ActiveAreaIcon ? <ActiveAreaIcon className="size-[18px] shrink-0 text-[var(--md-accent)]" strokeWidth={1.3} aria-hidden="true" /> : null}
-                  <h2 className={cn("truncate text-[17px] font-medium leading-6 tracking-[-0.015em] text-[var(--md-ink)]", collapsed && "sr-only")}>
-                    {t(activeArea.label)}
-                  </h2>
-                </div>
               )}
 
               <CustomisableSidebarSection
@@ -2067,7 +2096,7 @@ export function AppSidebar({
                     return (
                       <SidebarNavItem
                         item={item}
-                        isActive={routeMatches(item, route)}
+                        isActive={routeMatches(item, navigationRoute)}
                         onClick={item.route ? () => navigate(item.route!) : undefined}
                         collapsed={collapsed}
                         className={pinned && !collapsed ? "pe-9" : undefined}
@@ -2079,11 +2108,11 @@ export function AppSidebar({
                   if (!destination) return null
 
                   const hasChildren = Boolean(destination.children?.length)
-                  const isExpanded = expandedDestinationIds.has(destination.id)
-                  const destinationActive = destinationMatches(destination, route)
+                  const isExpanded = expandedDestinationId === destination.id
+                  const destinationActive = destinationMatches(destination, navigationRoute)
 
                   return (
-                    <>
+                    <div className="md-sidebar-dropdown-group" data-expanded={hasChildren && isExpanded ? "true" : undefined}>
                       <SidebarNavItem
                         item={destination}
                         isActive={!hasChildren && destinationActive}
@@ -2098,29 +2127,20 @@ export function AppSidebar({
                       <AnimatePresence initial={false}>
                         {hasChildren && isExpanded ? (
                           <motion.div
-                            className="mt-1 overflow-hidden"
-                            initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
-                            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                            className="overflow-hidden"
+                            initial={shouldReduceMotion ? false : { height: 0 }}
+                            animate={{ height: "auto" }}
+                            exit={shouldReduceMotion ? undefined : { height: 0 }}
+                            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
                           >
-                            <div className="md-sidebar-expanded-options flex flex-col gap-1 rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-1 dark:bg-[var(--md-surface-soft)]">
-                              <AnimatePresence initial={false}>
-                                {destination.children?.map((child) => {
-                                  const childId = nestedDestinationId(destination.id, child)
+                            <div className="md-sidebar-expanded-options flex flex-col gap-1 px-1 pb-1">
+                              {destination.children?.map((child) => {
+                                  const childId = nestedDestinationId(destination.id, child, destination.children ?? [])
                                   const favouriteId = sidebarFavouriteId(activeArea.id, destination.id, child.route ?? child.label)
                                   if (activeAreaPinnedIds.has(childId)) return null
 
                                   return (
-                                    <motion.div
-                                      key={childId}
-                                      layout={shouldReduceMotion ? false : "position"}
-                                      initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
-                                      animate={{ height: "auto", opacity: 1 }}
-                                      exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
-                                      transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
-                                      className="overflow-hidden"
-                                    >
+                                    <div key={childId} className="overflow-hidden">
                                       <SidebarItemMenu
                                         onTogglePin={() => toggleActiveAreaPin(childId)}
                                         favourite={favouriteIdSet.has(favouriteId)}
@@ -2129,21 +2149,20 @@ export function AppSidebar({
                                       >
                                         <SidebarNavItem
                                           item={child}
-                                          isActive={routeMatches(child, route)}
+                                          isActive={routeMatches(child, navigationRoute)}
                                           onClick={child.route ? () => navigate(child.route!) : undefined}
                                           collapsed={collapsed}
                                           nested
                                         />
                                       </SidebarItemMenu>
-                                    </motion.div>
+                                    </div>
                                   )
                                 })}
-                              </AnimatePresence>
                             </div>
                           </motion.div>
                         ) : null}
                       </AnimatePresence>
-                    </>
+                    </div>
                   )
                 }}
               />
@@ -2192,6 +2211,7 @@ export function AppSidebar({
             </motion.div>
           )}
           </AnimatePresence>
+        </>}
           </div>
         </div>
         <div
@@ -2209,20 +2229,11 @@ export function AppSidebar({
       </div>
 
       <div className="relative z-10 mt-[var(--md-page-stack-gap)] shrink-0">
-        {supportTicketFeatureEnabled ? <><Separator className="sidebar-support-divider mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
-        <button
-          type="button"
-          aria-label={collapsed ? t("Submit a ticket") : undefined}
-          title={collapsed ? t("Submit a ticket") : undefined}
-          className={cn(
-            "group mb-[var(--md-page-stack-gap)] flex min-h-10 w-full items-center gap-3 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background-color,color,scale] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.97] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100",
-            collapsed && "justify-center px-0",
-          )}
-          onClick={launchSupportTicket}
-        >
-          <TicketCheck className="size-4 shrink-0" strokeWidth={1.4} aria-hidden="true" />
-          <span className={cn("min-w-0 flex-1 truncate", collapsed && "sr-only")}>{t("Submit a ticket")}</span>
-        </button></> : null}
+        {!isCustomer ? (
+          <nav aria-label={t("Pinned shortcuts")} data-sidebar-shortcuts className={cn("mb-3 grid shrink-0 gap-1", collapsed ? "grid-cols-1" : "grid-cols-4")}>
+            {homeSidebarItem}{inboxSidebarItem}{todoSidebarItem}{calendarSidebarItem}
+          </nav>
+        ) : null}
         <Popover open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
           <PopoverTrigger asChild>
             <button
@@ -2232,7 +2243,7 @@ export function AppSidebar({
               title={collapsed ? accountName : undefined}
               className={cn(
                 "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.004] hover:text-[var(--md-ink)] active:scale-[0.986] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
-                collapsed && "justify-center px-0",
+                collapsed && "h-10 justify-center p-0",
                 profileIsActive && "text-[var(--md-ink)]",
               )}
               style={{
@@ -2257,7 +2268,7 @@ export function AppSidebar({
                   }}
                 />
               )}
-              <Avatar className="relative size-10 rounded-full">
+              <Avatar className={cn("relative size-10 rounded-full", collapsed && "size-9")}>
                 {accountPhotoUrl ? <AvatarImage src={accountPhotoUrl} alt="" /> : null}
                 <AvatarFallback
                   className={cn(
@@ -2269,10 +2280,10 @@ export function AppSidebar({
                   {currentUser?.profilePhoto ? null : accountInitials}
                 </AvatarFallback>
               </Avatar>
-              <div className={cn("relative min-w-0 flex-1", collapsed && "sr-only")}>
+              {!collapsed ? <div className="relative min-w-0 flex-1">
                 <p className="truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
                 <p className="truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
-              </div>
+              </div> : null}
             </button>
           </PopoverTrigger>
           <PopoverContent
@@ -2280,7 +2291,7 @@ export function AppSidebar({
             align="start"
             sideOffset={-48}
             collisionPadding={8}
-            className="md-account-sheet w-[232px] max-w-[calc(100vw-32px)] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[0_22px_60px_rgba(11,20,19,0.20),inset_0_0_0_1px_rgba(255,255,255,0.72)]"
+            className="md-account-sheet w-[232px] max-w-[calc(100vw-32px)] max-h-[var(--radix-popover-content-available-height)] gap-0 overflow-y-auto rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[0_22px_60px_rgba(11,20,19,0.20),inset_0_0_0_1px_rgba(255,255,255,0.72)]"
           >
             <div className="relative h-[112px] overflow-hidden bg-[color-mix(in_srgb,var(--md-accent)_11%,var(--md-surface-soft))]">
               {accountCoverPhotoUrl || !currentUser?.coverPhoto ? (
@@ -2368,6 +2379,27 @@ export function AppSidebar({
                 </button>
               </>
             ) : null}
+            {eventsEnabled ? <button
+              type="button"
+              aria-current={route === "/events" || route.startsWith("/events/") ? "page" : undefined}
+              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] aria-[current=page]:text-[var(--md-ink)] motion-reduce:transition-none motion-reduce:active:scale-100"
+              onClick={() => {
+                setAccountMenuOpen(false)
+                onRequestClose?.()
+                navigate("/events")
+              }}
+            >
+              <Ticket data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Events")}</span>
+            </button> : null}
+            {supportTicketFeatureEnabled ? <button
+              type="button"
+              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+              onClick={launchSupportTicket}
+            >
+              <TicketCheck data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Submit a ticket")}</span>
+            </button> : null}
             {supportTicketFeatureEnabled ? <button
               type="button"
               className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"

@@ -34,6 +34,11 @@ The finance smoke check does not certify that every later migration is present.
 
 `system-reference-data.sql` deliberately excludes the large `sys_RefUNLOCO`, `sys_Airlines`, screening-list entries/snapshots/sources and all tenant/provider settings. UN/LOCODE and airline lookup files are shipped as application assets; screening sources are configured and refreshed separately. iCustoms catalogue values are present, but no iCustoms credentials or connection are included.
 
+The reference data includes seven Multideck-owned `MD-` starter charge codes.
+It does not include CargoWise customer codes, tax defaults, prices, provider
+items or legal-entity nominal mappings. Configure the latter against each
+entity's approved chart before booking or posting these codes.
+
 `storage.sql` creates the approved buckets and object policies only. It contains no objects. The `tenant-brand-assets` bucket is the sole public bucket because those allowlisted brand assets are intentionally externally served; operational, document, warehouse, rate, customs and profile buckets remain private.
 
 `function-access.sql` is required because Supabase's hosted default privileges grant function execution to API roles. It restores the effective Dev/Test execution rights for every captured function after the schema has been created; omitting it would make privileged internal functions callable when Dev/Test denies them.

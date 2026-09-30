@@ -1,3 +1,5 @@
+import { Table } from "@/components/ui/table"
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { EmptyStateIllustration } from "@/components/multideck/empty-state-illustration"
 import { bookingLifecycle, bookingLifecycleLabel, type BookingLifecycle } from "@/lib/booking-lifecycle"
 import { bookingDraftConflicts, rebaseBookingDraft } from "@/lib/booking-draft"
@@ -2214,6 +2216,8 @@ function BookingCargoWiseField({
             onChange={(event) => onChange(event.target.value)}
             className="min-h-20 min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-2 py-2 text-[12px] font-medium shadow-[var(--md-shadow-line)]"
           />
+        ) : label === "Address" ? (
+          <LocationAutocomplete id={fieldId} label={label} hideLabel hint="" value={value} onChange={onChange} disabled={!editable} error={error} inputClassName="h-8 text-[12px]" />
         ) : (
           <AutoPopulatedInput
             autoPopulated={autoPopulated}
@@ -3567,7 +3571,7 @@ function BookingRecordDetails({
             {record.booking.customFields.filter(field => !["Quote type", "Quote ref", "Customer PO", "Incoterms", "Source"].includes(field.label) || Object.prototype.hasOwnProperty.call(editableDetails, `customField:${field.label}`)).map((field, index) => <BookingCargoWiseField key={`${field.label}-${index}`} label={field.label === "Source" ? "Booking source" : field.label} value={detailValue(`customField:${field.label}`, field.value)} {...editDetail(`customField:${field.label}`)} />)}
           </div>
           <div role="region" aria-label={t("Cargo line comparison")} tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-accent)]">
-            <table className="w-full text-left text-[12px]">
+            <Table className="w-full text-left text-[12px]">
               <caption className="sr-only">{t("Expand a cargo line to edit its goods and handling details")}</caption>
               <thead className="bg-[var(--md-surface-soft)] text-[var(--md-text)]"><tr>
                 {["Goods description", "Packages", "Gross weight (kg)", ...(showChargeableWeight ? ["Chargeable weight (kg)"] : []), "Volume (CBM)", "Handling", "Equipment", "Actions"].map((label) => <th key={label} scope="col" className="px-3 py-2 font-medium">{t(label)}</th>)}
@@ -3605,7 +3609,7 @@ function BookingRecordDetails({
                 {selectedCargoIndex === index ? <tr><td colSpan={showChargeableWeight ? 8 : 7} className="bg-[var(--md-surface-soft)] p-0 align-top"><div id={`booking-cargo-line-${index}`} className="min-w-0">{cargoLineEditor}</div></td></tr> : null}
                 </tbody>
               )})}
-            </table>
+            </Table>
           </div>
           {!workspace.cargo.length ? <p className="px-3 py-4 text-[12px] text-[var(--md-text)]">{t("No cargo lines yet.")}</p> : null}
           {showChargeableWeight ? <div className="grid gap-2 px-3 py-3 text-[12px] sm:grid-cols-2">
@@ -4112,6 +4116,7 @@ function BookingCustomsSourceEditor({
   }
 
   function field(key: keyof typeof form, label: string, options?: string[]) {
+    if (key === "exporterAddress" || key === "importerAddress") return <LocationAutocomplete label={label} hint="" value={form[key]} onChange={value => setForm(current => ({ ...current, [key]: value }))} multiline disabled={saving} />
     return (
       <label className="grid min-w-0 gap-1 text-[11px] text-[var(--md-text)]">
         <span>{t(label)}</span>
@@ -6050,7 +6055,7 @@ export function BookingDetailWorkspace({
         <Dialog open={Boolean(pendingLifecycle)} onOpenChange={open => { if (!open) setPendingLifecycle(null) }}><DialogContent><DialogHeader><DialogTitle>{t("Change booking status?")}</DialogTitle><DialogDescription>{t("Change this booking to")} {pendingLifecycle ? t(bookingLifecycleLabel(pendingLifecycle)) : ""}. {t("Required operational checks still apply. Financial records remain unavailable while provisional.")}</DialogDescription></DialogHeader><DialogFooter><Button variant="ghost" onClick={() => setPendingLifecycle(null)}>{t("Cancel")}</Button><Button disabled={savingDetails || detailsDirty || !canEditBooking} onClick={() => { const status = pendingLifecycle; setPendingLifecycle(null); if (status) setDraftWorkspace(current => current ? { ...current, booking: { ...current.booking, status } } : current) }}>{t("Confirm status change")}</Button></DialogFooter></DialogContent></Dialog>
         <Dialog open={pendingNavigation && Boolean(saveError)} onOpenChange={open => { if (!open) { pendingNavigationRef.current = null; setPendingNavigation(false) } }}><DialogContent><DialogHeader><DialogTitle>{t("Booking changes are not saved")}</DialogTitle><DialogDescription>{saveError}</DialogDescription></DialogHeader><DialogFooter><Button variant="ghost" onClick={() => { pendingNavigationRef.current = null; setPendingNavigation(false) }}>{t("Keep editing")}</Button><Button variant="outline" onClick={discardDetails}>{t("Discard and leave")}</Button><Button onClick={() => void saveDetails()}>{t("Retry save")}</Button></DialogFooter></DialogContent></Dialog>
         <Dialog open={Boolean(latestSavedReview)} onOpenChange={open => { if (!open) setLatestSavedReview(null) }}><DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{t("Review saved updates")}</DialogTitle><DialogDescription>{t("Your edits are retained. Continuing keeps your changes and incorporates other saved updates. Any conflicting values below will use your edit.")}</DialogDescription></DialogHeader>
-          {latestSavedReview && draftBooking ? <div className="overflow-x-auto"><table className="w-full text-left text-[12px]"><thead><tr><th className="p-2">{t("Field")}</th><th className="p-2">{t("Saved")}</th><th className="p-2">{t("Your edit")}</th></tr></thead><tbody>{bookingDraftConflicts({ booking: loadedRecord.booking, workspace: loadedRecord.workspace }, { booking: bookingWorkspaceRecord(latestSavedReview).booking, workspace: latestSavedReview }, { booking: draftBooking, workspace: draftWorkspace }).map(item => <tr key={item.field}><td className="p-2">{item.field}</td><td className="break-words p-2" data-i18n-skip>{item.saved}</td><td className="break-words p-2" data-i18n-skip>{item.draft}</td></tr>)}</tbody></table></div> : null}
+          {latestSavedReview && draftBooking ? <div className="overflow-x-auto"><Table className="w-full text-left text-[12px]"><thead><tr><th className="p-2">{t("Field")}</th><th className="p-2">{t("Saved")}</th><th className="p-2">{t("Your edit")}</th></tr></thead><tbody>{bookingDraftConflicts({ booking: loadedRecord.booking, workspace: loadedRecord.workspace }, { booking: bookingWorkspaceRecord(latestSavedReview).booking, workspace: latestSavedReview }, { booking: draftBooking, workspace: draftWorkspace }).map(item => <tr key={item.field}><td className="p-2">{item.field}</td><td className="break-words p-2" data-i18n-skip>{item.saved}</td><td className="break-words p-2" data-i18n-skip>{item.draft}</td></tr>)}</tbody></Table></div> : null}
           <DialogFooter><Button variant="ghost" onClick={() => setLatestSavedReview(null)}>{t("Cancel")}</Button><Button disabled={savingDetails} onClick={() => { if (!latestSavedReview || !draftBooking || !draftWorkspace) return; const fresh = bookingWorkspaceRecord(latestSavedReview); setDraftBooking(rebaseBookingDraft(fresh.booking, loadedRecord.booking, draftBooking)); setDraftWorkspace(rebaseBookingDraft(latestSavedReview, loadedRecord.workspace!, draftWorkspace)); setRecord(fresh); setLatestSavedReview(null); failedSaveFingerprintRef.current = null; setSaveError(null) }}>{t("Keep my edits and retry")}</Button></DialogFooter></DialogContent>
         </Dialog>
         <Dialog open={ownershipForm !== null} onOpenChange={(open) => { if (!open && !ownershipBusy && !ownershipSaved) setOwnershipForm(null) }}>

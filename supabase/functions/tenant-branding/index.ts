@@ -347,7 +347,7 @@ async function importBrand(admin: any, current: any, payload: JsonObject) {
   const evidence = websiteEvidence(html, page.url)
   const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim() || Deno.env.get("OPEN_API_KEY")?.trim() || ""
   if (!apiKey) throw new HttpError(503, "Luna website import is not configured for this workspace.")
-  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-5.6-luna"
+  const model = Deno.env.get("DEXTER_FAST_MODEL")?.trim() || "gpt-6-luna"
   const requestBody: JsonObject = {
     model,
     reasoning: { effort: "medium" },

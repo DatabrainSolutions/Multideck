@@ -1,4 +1,15 @@
+import tablePrimitiveSource from "@/components/ui/table.tsx?raw"
+import tableViewportSource from "@/components/ui/table-viewport.tsx?raw"
+import workingCapitalPanelSource from "@/components/multideck/finance-working-capital-panel.tsx?raw"
+import breakdownPanelSource from "@/components/multideck/dashboard-breakdown-panel.tsx?raw"
+import profitLossPanelSource from "@/components/multideck/finance-profit-loss-panel.tsx?raw"
+import appSidebarSource from "@/components/multideck/app-sidebar.tsx?raw"
+import sidebarNavigationSearchSource from "@/lib/sidebar-navigation-search.ts?raw"
+import appBreadcrumbsSource from "@/components/multideck/app-breadcrumbs.tsx?raw"
+import appBreadcrumbsStyles from "@/components/multideck/app-breadcrumbs.css?raw"
 import dashboardModeChartSource from "@/components/multideck/dashboard-mode-chart.tsx?raw"
+import commandInputSource from "@/components/multideck/command-input.tsx?raw"
+import globalSearchSource from "@/lib/global-search.ts?raw"
 import crmDealActionsSource from "@/components/multideck/crm-deal-actions.tsx?raw"
 import spreadsheetImportReviewSource from "@/components/multideck/spreadsheet-import-review.tsx?raw"
 import warehouseRateEditorSource from "@/components/multideck/warehouse-rate-editor.tsx?raw"
@@ -9,11 +20,21 @@ import bellToggleCss from "@/components/multideck/bell-toggle.css?raw"
 import springCheckSource from "@/components/multideck/spring-check.tsx?raw"
 import springCheckStyles from "@/components/multideck/spring-check.css?raw"
 import todoComponentsSource from "@/components/multideck/todo-components.tsx?raw"
+import companyEventComponentsSource from "@/components/multideck/company-event-components.tsx?raw"
+import companyEventComponentsStyles from "@/components/multideck/company-event-components.css?raw"
+import tearTicketSource from "@/components/multideck/tear-ticket.tsx?raw"
+import refineFrameSource from "@/components/multideck/refine-frame.tsx?raw"
+import locationAutocompleteSource from "@/components/multideck/location-autocomplete.tsx?raw"
+import addressSearchSource from "@/components/multideck/address-search.tsx?raw"
+import refineFrameStyles from "@/components/multideck/refine-frame.css?raw"
 import codeSlotsSource from "@/components/multideck/code-slots.tsx?raw"
 import codeSlotsCss from "@/components/multideck/code-slots.css?raw"
 import mileageRouteMapSource from "@/components/multideck/mileage-route-map.tsx?raw"
 import inlineNoticeSource from "@/components/multideck/inline-notice.tsx?raw"
 import inlineNoticeStyles from "@/components/multideck/inline-notice.css?raw"
+import notificationCenterSource from "@/components/multideck/notification-center.tsx?raw"
+import notificationCenterStyles from "@/components/multideck/notification-center.css?raw"
+import notificationPresentationSource from "@/lib/notification-presentation.ts?raw"
 import suggestedUpdateIllustrationSource from "@/components/multideck/suggested-update-illustration.tsx?raw"
 import suggestedUpdateIllustrationStyles from "@/components/multideck/suggested-update-illustration.css?raw"
 import signatureBuilderSource from "@/components/multideck/signature-builder.tsx?raw"
@@ -160,10 +181,10 @@ export const galleryComponents = [
   {
     id: "contact-preferences-popover", name: "Contact Preferences", category: "CRM",
     description: "Edit one person's contact details, preferred channel and marketing consent in place.",
-    details: "Loads the authorised contact record on demand. Changes use the existing contact version check, permissions and consent history; marketing changes require a source or reason. Company preferences are never inherited.",
-    foundOn: [{ label: "Companies", route: "/crm/accounts" }, { label: "Leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-preferences-popover" }],
+    details: "Loads the authorised contact record on demand. Changes use the existing contact version check, permissions and consent history; marketing changes require a source or reason. Company preferences are never inherited. Use `compact` for an icon trigger in dense lists such as a company's people column.",
+    foundOn: [{ label: "Company record people", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000002" }, { label: "Leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=contact-preferences-popover" }],
     componentCode: contactPreferencesSource,
-    usageCode: `<ContactPreferencesPopover contactId={contact.id} name={contact.name} onSaved={refreshContact} />`,
+    usageCode: `<ContactPreferencesPopover contactId={contact.id} name={contact.name} onSaved={refreshContact} />\n<ContactPreferencesPopover compact contactId={contact.id} name={contact.name} onSaved={refreshContact} />`,
   },
 
   {
@@ -472,6 +493,7 @@ export const galleryComponents = [
       { label: "Digital business cards", route: "/crm/contact-cards" },
       { label: "Reports", route: "/reports" },
       { label: "Trips & mileage", route: "/crm/trips/new" },
+      { label: "Events · new event", route: "/events" },
       { label: "Components", route: "/components?component=wizard-dialog" },
     ],
     componentCode: `export function WizardDialog({ open, onOpenChange, steps, activeStepId, onStepChange, onSubmit, children }) {\n  return (\n    <Dialog open={open} onOpenChange={onOpenChange}>\n      <DialogContent>\n        <WizardStepRail steps={steps} activeStepId={activeStepId} onStepChange={onStepChange} />\n        <WizardStepContent activeStepId={activeStepId}>{children}</WizardStepContent>\n        <WizardFooter onBack={goBack} onNext={goNext} onSubmit={onSubmit} />\n      </DialogContent>\n    </Dialog>\n  )\n}`,
@@ -496,6 +518,116 @@ export const galleryComponents = [
     foundOn: [{ label: "Tasks", route: "/to-do" }, { label: "Home", route: "/" }, { label: "Components", route: "/components?component=spring-check" }],
     componentCode: `${springCheckSource}\n\n/* spring-check.css */\n${springCheckStyles}`,
     usageCode: `<SpringCheck label="Review revised delivery plan" checked={completed} onChange={setCompleted} busy={saving} />`,
+  },
+  {
+    id: "event-ticket",
+    name: "Event Ticket",
+    category: "Events",
+    description: "A company event rendered by the adapted React Bits TearTicket, with an explicit RSVP menu and a RefineFrame cover while Dexter creates an image.",
+    details: "The ticket appears as soon as the event is saved. Its image band shows the React Bits RefineFrame sweep while generation runs, then shows the finished image without an extra reveal delay. Covers load eagerly so opening a ticket can reuse the loaded image. Cancelled tickets are greyed, clearly labelled and shown last in their list. A failed cover can be retried without recreating the event. The body opens the event; attendance changes only through the stub's Yes / Maybe / No menu.",
+    foundOn: [{ label: "Events", route: "/events" }, { label: "Components", route: "/components?component=event-ticket" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* tear-ticket.tsx (adapted React Bits) */\n${tearTicketSource}\n\n/* refine-frame.tsx (adapted React Bits) */\n${refineFrameSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}\n\n/* refine-frame.css */\n${refineFrameStyles}`,
+    usageCode: `<EventTicket\n  title={event.title}\n  startsAt={event.startsAt}\n  endsAt={event.endsAt}\n  timezone={event.timezone}\n  location={event.location}\n  imageUrl={imageUrl}\n  imageFrameStatus={event.imageGenerationStatus === "generating" ? "generating" : null}\n  onRetryImage={() => startEventImage(event.id)}\n  goingCount={event.goingCount}\n  cancelled={event.status === "cancelled"}\n  muted={isEventOver(event)}\n  rsvp={saving ? "saving" : event.myRsvp?.status ?? "none"}\n  onOpen={() => navigate(\`/events/\${event.id}\`)}\n  onRsvp={() => rsvp(event)}\n/>`,
+  },
+  {
+    id: "refine-frame",
+    name: "Refine Frame",
+    category: "Events",
+    description: "React Bits image-generation frame: a reserved cover area and quiet sweep become a staged mosaic reveal when the image is ready.",
+    details: "Used inside Event Ticket while the saved event's cover is being made. Queued, generating, complete and error states are announced; errors offer a retry. Reduced-motion users see a still transition. The frame keeps the ticket layout stable throughout.",
+    foundOn: [{ label: "Events · event ticket", route: "/events" }, { label: "Components", route: "/components?component=refine-frame" }],
+    componentCode: `${refineFrameSource}\n\n/* refine-frame.css */\n${refineFrameStyles}`,
+    usageCode: `<RefineFrame status={imageStatus} src={imageUrl} aspectRatio="21 / 9" onRetry={() => startEventImage(event.id)} />`,
+  },
+  {
+    id: "location-autocomplete",
+    name: "Location Autocomplete",
+    category: "Forms",
+    description: "A free-text location with worldwide place, address and postcode suggestions as you type.",
+    details: "The centred place icon sits beside a name and address, with rounded hover rows. Choose a worldwide suggestion or retain free text. Saved address choices keep their record links. Supports multiline addresses, disabled fields, keyboard selection, debouncing and cancellation. Failure never blocks manual entry.",
+    foundOn: [{ label: "Events", route: "/events" }, { label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Trips & mileage", route: "/crm/trips" }, { label: "Calendar", route: "/calendar" }, { label: "Booking links", route: "/calendar/booking-links" }, { label: "Signature team", route: "/admin/email-signatures/team" }],
+    componentCode: locationAutocompleteSource,
+    usageCode: `<LocationAutocomplete value={location} onChange={setLocation} error={errors.location} />`,
+  },
+  {
+    id: "address-search",
+    name: "Address Search",
+    category: "Forms",
+    description: "An address or postcode field with worldwide suggestions and manual override built in.",
+    details: "Suggestions open from the existing address or postal-code input, without a separate search block. Choosing a result fills the supported fields; typing remains a manual override. Labels follow the address country, such as Postcode, ZIP code or Eircode. A shorter typing delay and bounded session cache reduce repeat waits. Use confirm for inline-save records.",
+    foundOn: [{ label: "Companies, customers and suppliers", route: "/crm/accounts" }, { label: "CRM lead creation", route: "/crm" }, { label: "Warehouse facilities", route: "/warehouse/facilities" }, { label: "Customs declarations", route: "/customs/declarations" }],
+    componentCode: addressSearchSource,
+    usageCode: `<AddressSearch value={draft.line1} onChange={line1 => setDraft(current => ({ ...current, line1 }))} onSelect={address => setDraft(current => ({ ...current, ...address }))} />`,
+  },
+  {
+    id: "rsvp-choice",
+    name: "RSVP Choice",
+    category: "Events",
+    description: "Yes, Maybe or No for “Are you going?”, with one pill that slides to the saved answer.",
+    details: "The answer being saved shows Saving… in place, so a click is never ambiguous; the pill only settles on the server's answer. Arrow keys move between options. Reduced motion moves the pill without travel.",
+    foundOn: [{ label: "Events · event detail", route: "/events" }, { label: "Components", route: "/components?component=rsvp-choice" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<RsvpChoice value={event.myRsvp?.status ?? null} pending={saving} disabled={Boolean(saving)} onChange={saveRsvp} />`,
+  },
+  {
+    id: "event-audience-picker",
+    name: "Event Audience Picker",
+    category: "Events",
+    description: "Who an event is for: Everyone (default), specific people or departments, with a live invited count.",
+    details: "Invitation is the visibility boundary: only invited colleagues see and RSVP, organisers always can. People and departments are searchable, checkable lists with their own height; each mode keeps its selection while you compare. The count uses the same rule as the server.",
+    foundOn: [{ label: "Events · new event · Invite", route: "/events" }, { label: "Components", route: "/components?component=event-audience-picker" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<EventAudiencePicker audience={draft.audience} invitees={draft.invitees} directory={directory} photoUrls={photoUrls} onChange={({ audience, invitees }) => update({ audience, invitees })} />`,
+  },
+  {
+    id: "event-attendee-strip",
+    name: "Event Attendee Strip",
+    category: "Events",
+    description: "One fixed-height row in the event detail: invited, going, maybe and not going counts with a few faces. Opens Who's coming.",
+    details: "Never grows with the number of replies, so a busy event cannot leave gaps or make the detail view scroll. Faces arrive in a short spring stagger; reduced motion shows them at once. Disabled until someone replies.",
+    foundOn: [{ label: "Events · event detail", route: "/events" }, { label: "Components", route: "/components?component=event-attendee-strip" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<EventAttendeeStrip attendees={event.attendees ?? []} photoUrls={photoUrls} onOpen={() => setView("guests")} />`,
+  },
+  {
+    id: "event-guest-list",
+    name: "Event Guest List",
+    category: "Events",
+    description: "The Who's coming view: count cards as tabs for Invited, Going, Maybe and Not going, then photos and names with search. Organisers can see invited people who have not replied.",
+    details: "The count cards are the tabs (arrow keys move between them). The list has its own height so the view stays still however many people reply. Search appears once there are more than eight replies; very long lists render the first 150 matches and ask for a narrower search. Organisers can select a colleague to read their RSVP answers.",
+    foundOn: [{ label: "Events · event detail", route: "/events" }, { label: "Components", route: "/components?component=event-guest-list" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<EventGuestList attendees={event.attendees ?? []} invitedCount={event.invitedCount ?? undefined} invitedPeople={invitedPeople} photoUrls={photoUrls} status={guestStatus} onStatusChange={setGuestStatus} listHeight={320} onSelect={event.canManage ? openAnswers : undefined} />`,
+  },
+  {
+    id: "rsvp-form-builder",
+    name: "RSVP Form Builder",
+    category: "Events",
+    description: "Builds an event's RSVP questions: add, drag or arrow-key reorder, edit labels and options, mark required.",
+    details: "Drag by the handle on touch or pointer, use the move buttons, or focus the handle and press Up or Down. Moves are announced. Questions that already have answers keep their type, matching the server rule that protects saved responses.",
+    foundOn: [{ label: "Events · new or edit event", route: "/events" }, { label: "Components", route: "/components?component=rsvp-form-builder" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<RsvpFormBuilder fields={draft.form} errors={formErrors} answeredIds={answeredIds} onChange={(form) => setDraft({ ...draft, form })} />`,
+  },
+  {
+    id: "rsvp-form-fields",
+    name: "RSVP Form",
+    category: "Events",
+    description: "Answers an RSVP form with persistent labels, optional markers and per-question errors.",
+    details: "Supports short answer, paragraph, number, date, yes or no, single and multiple choice. Validation mirrors the server and errors are associated with each question.",
+    foundOn: [{ label: "Events · event detail", route: "/events" }, { label: "Components", route: "/components?component=rsvp-form-fields" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<RsvpFormFields form={event.form} answers={answers} errors={fieldErrors} disabled={saving} onChange={setAnswers} />`,
+  },
+  {
+    id: "events-empty-state",
+    name: "Events Empty State",
+    category: "Events",
+    description: "A softly looping ticket illustration with the empty message and, for organisers, the New event action.",
+    details: "The ticket drifts, the perforation flows and two sparks breathe. Reduced motion shows the resting frame. The illustration is decorative; the message and action carry the meaning.",
+    foundOn: [{ label: "Events", route: "/events" }, { label: "Components", route: "/components?component=events-empty-state" }],
+    componentCode: `${companyEventComponentsSource}\n\n/* company-event-components.css */\n${companyEventComponentsStyles}`,
+    usageCode: `<EventsEmptyState canCreate={canManage} onCreate={openEditor} title="No events yet" message="Company events will appear here when an organiser publishes them." />`,
   },
   {
     id: "todo-completion-control",
@@ -599,20 +731,10 @@ export const galleryComponents = [
     name: "Home Dexter Launcher",
     category: "Home",
     description: "The greeting and prompt box that opens Home: the real Dexter composer, a time-of-day welcome, and the prompts worth starting from today.",
-    details: "Use as the head of Home. The greeting follows the operator's own clock – morning, afternoon, evening, and a plain welcome for the hours before dawn. Writing clears the deck below; sending drops the composer to the position it holds in a conversation and hands the whole draft – specialist, model, access mode, @ records and uploads – to the Dexter workspace, so nothing the operator set up is lost in the route change.",
+    details: "Use as the head of Home. The greeting follows the operator's own clock – morning, afternoon, evening, and a plain welcome for the hours before dawn. The composer's tray shelves the day's prompt presets. Writing changes nothing on the page; sending drops the composer to the position it holds in a conversation – settling into the quiet conversation shape on the way, at the same width – and hands the whole draft – specialist, model, access mode, @ records and uploads – to the Dexter workspace, so nothing the operator set up is lost in the route change.",
     foundOn: [{ label: "Home", route: "/" }, { label: "Components", route: "/components?component=home-dexter-launcher" }],
-    componentCode: `export function HomeDexterLauncher({ operatorName, standfirst, suggestions, engaged, onEngagedChange, docked, onDockedChange, navigate }) {\n  const now = useMinuteTick()\n  const [value, setValue] = useState("")\n  const greeting = greetingPartForHour(now.getHours())\n\n  function handOver(prompt, specialistId) {\n    rememberDexterHomeHandoff({ prompt, specialistId, modelId, accessMode, fullAccessGrantId, clientSessionId, mentions, uploadedDocuments })\n    onDockedChange(true)\n  }\n\n  return (\n    <div className="mx-auto flex w-full flex-col">\n      <AnimatePresence initial={false}>\n        {engaged ? null : (\n          <motion.div key="home-greeting" className="mx-auto mb-[var(--md-page-section-gap)] text-center">\n            <DexterBrandMark className="size-6" />\n            <h1>{greeting}</h1>\n            <p>{standfirst}</p>\n          </motion.div>\n        )}\n      </AnimatePresence>\n\n      <motion.div layout layoutDependency={docked} onLayoutAnimationComplete={openWorkspace}>\n        <DexterPromptComposer value={value} onChange={setValue} onSend={handOver} />\n      </motion.div>\n\n      <AnimatePresence initial={false}>\n        {engaged ? null : <HomePromptRail suggestions={suggestions} onPick={handOver} />}\n      </AnimatePresence>\n    </div>\n  )\n}`,
-    usageCode: `const [engaged, setEngaged] = useState(false)\nconst [docked, setDocked] = useState(false)\n\n<HomeDexterLauncher\n  operatorName={currentUser?.name ?? null}\n  standfirst="Three jobs need you before today's cutoff."\n  suggestions={suggestions}\n  engaged={engaged}\n  onEngagedChange={setEngaged}\n  docked={docked}\n  onDockedChange={setDocked}\n  navigate={navigate}\n/>`,
-  },
-  {
-    id: "home-prompt-rail",
-    name: "Home Prompt Rail",
-    category: "Home",
-    description: "Personalised prompts on a hairline: rows drawn from the operator's own records, with one highlight that travels between them.",
-    details: "Use under a prompt box when the suggestions are real sentences of different lengths. Rows on a rule rather than a grid of pills, which reflows into a ragged block every time the underlying work changes. Every suggestion should name a record or a figure so the request it sends is never a guess.",
-    foundOn: [{ label: "Home", route: "/" }, { label: "Components", route: "/components?component=home-prompt-rail" }],
-    componentCode: `export function HomePromptRail({ suggestions, onPick }) {\n  const [activeId, setActiveId] = useState(null)\n\n  return (\n    <div role="list">\n      {suggestions.map((suggestion, index) => (\n        <motion.div key={suggestion.id} role="listitem" className="border-t border-[var(--md-line)] first:border-t-0">\n          <button\n            type="button"\n            className="group relative isolate flex w-full items-center gap-3 rounded-[var(--md-radius-lg)] px-2.5 py-2.5"\n            onPointerEnter={() => setActiveId(suggestion.id)}\n            onFocus={() => setActiveId(suggestion.id)}\n            onClick={() => onPick(suggestion.prompt, suggestion.specialistId)}\n          >\n            {activeId === suggestion.id ? (\n              <motion.span layoutId="rail-highlight" className="absolute inset-0 -z-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)]" />\n            ) : null}\n            <suggestion.icon className="size-[15px] text-[var(--md-accent)]" strokeWidth={1.35} />\n            <span className="min-w-0 flex-1 text-[13.5px] font-medium">{suggestion.title}</span>\n            <span className="text-[11.5px] text-[var(--md-subtle)]">{suggestion.meta}</span>\n          </button>\n        </motion.div>\n      ))}\n    </div>\n  )\n}`,
-    usageCode: `<HomePromptRail\n  suggestions={[\n    { id: "triage", title: "Work through what is due before cutoff", prompt: "Take my queue for today in deadline order…", meta: "4 due", icon: Zap, specialistId: "ops" },\n  ]}\n  onPick={(prompt, specialistId) => handOver(prompt, specialistId)}\n/>`,
+    componentCode: `export function HomeDexterLauncher({ operatorName, standfirst, suggestions, docked, onDockedChange, navigate }) {\n  const now = useMinuteTick()\n  const [value, setValue] = useState("")\n  const greeting = greetingPartForHour(now.getHours())\n\n  function handOver(prompt, specialistId) {\n    rememberDexterHomeHandoff({ prompt, specialistId, modelId, accessMode, fullAccessGrantId, clientSessionId, mentions, uploadedDocuments })\n    onDockedChange(true)\n  }\n\n  return (\n    <div className="mx-auto flex w-full flex-col">\n      <AnimatePresence initial={false}>\n        {docked ? null : (\n          <motion.div key="home-greeting" className="mb-[var(--md-gap-xl)]" exit={{ opacity: 0, y: -6, filter: "blur(4px)" }}>\n            <DexterGreeting title={greeting} standfirst={standfirst} />\n          </motion.div>\n        )}\n      </AnimatePresence>\n\n      {/* Position only – the composer settles into its quiet shape on the way down */}\n      <motion.div layout="position" layoutDependency={docked} onLayoutAnimationComplete={openWorkspace}>\n        <div className="md-composer-arrive">\n          <DexterPromptComposer\n            value={value}\n            compact={docked}\n            fadeBloomOnCompact\n            presets={<DexterPromptPresets presets={suggestions} delay={0.34} onPick={handOver} />}\n            onChange={setValue}\n            onSend={handOver}\n          />\n        </div>\n      </motion.div>\n    </div>\n  )\n}`,
+    usageCode: `const [docked, setDocked] = useState(false)\n\n<HomeDexterLauncher\n  operatorName={currentUser?.name ?? null}\n  standfirst="Three jobs need you before today's cutoff."\n  suggestions={suggestions}\n  docked={docked}\n  onDockedChange={setDocked}\n  navigate={navigate}\n/>`,
   },
   {
     id: "home-deck-panel",
@@ -879,9 +1001,9 @@ export const galleryComponents = [
     id: "empty-state-illustration",
     name: "Empty State Illustration",
     category: "Feedback",
-    description: "Eleven looping SVG scenes for empty registers and workspaces, matched to the operator's workflow.",
-    details: "Choose search, tasks, documents, contacts, cargo, chart, calendar, mail, phone, route or activity. Keep the existing heading, explanation and contextual action alongside the illustration. Use compact in small panels. The SVG is decorative, uses semantic theme colours and rests between movements. Reduced motion shows a complete static scene. No playback controls, progress tracks or network requests. Never use these scenes to replace loading, permission, integration or error feedback, or to imply live processing.",
-    foundOn: [{ label: "CRM dashboard", route: "/crm" }, {"label": "Inbox", "route": "/inbox"}, {"label": "Tasks", "route": "/to-do"}, {"label": "Bookings", "route": "/bookings"}, {"label": "Quotes and audit history", "route": "/quotes"}, {"label": "Leads", "route": "/crm/leads"}, {"label": "Deals", "route": "/crm/deals"}, {"label": "Contacts", "route": "/crm/contacts"}, {"label": "Organisations", "route": "/crm/accounts"}, {"label": "Customers", "route": "/customers"}, {"label": "Suppliers", "route": "/suppliers"}, {"label": "Phone calls", "route": "/crm/phone-calls"}, {"label": "Booking links", "route": "/calendar/booking-links"}, {"label": "Documents", "route": "/documents"}, {"label": "Warehouse inventory", "route": "/warehouse/inventory"}, {"label": "Warehouse orders", "route": "/warehouse/orders"}, {"label": "Expected receipts", "route": "/warehouse/purchase-orders"}, {"label": "Warehouse facilities", "route": "/warehouse/facilities"}, {"label": "Warehouse locations", "route": "/warehouse/locations"}, {"label": "Warehouse items", "route": "/warehouse/items"}, {"label": "Report library", "route": "/reports"}, {"label": "Scheduled reports", "route": "/reports/scheduled"}, {"label": "Report history", "route": "/reports/history"}, {"label": "Sales invoices", "route": "/finance/receivables"}, {"label": "Customer receipts", "route": "/finance/receivables/cash"}, {"label": "Supplier invoices", "route": "/finance/payables"}, {"label": "Supplier payments", "route": "/finance/payables/cash"}, {"label": "Trips and approvals", "route": "/crm/trips"}, {"label": "Mileage payments", "route": "/finance/mileage"}, {"label": "Standalone exports", "route": "/customs/standalone/export"}, {"label": "Standalone imports", "route": "/customs/standalone/import"}, {"label": "Job exports", "route": "/customs/job-related/export"}, {"label": "Job imports", "route": "/customs/job-related/import"}, {"label": "CRM activity", "route": "/crm/activity"}, {"label": "Notifications", "route": "/"}, {"label": "Components", "route": "/components?component=empty-state-illustration"}],
+    description: "Twelve looping SVG scenes for empty registers and workspaces, matched to the operator's workflow.",
+    details: "Choose search, tasks, documents, contacts, cargo, chart, calendar, mail, phone, route, activity or settings. Keep the existing heading, explanation and contextual action alongside the illustration. Use compact in small panels. The SVG is decorative, uses semantic theme colours and rests between movements. Reduced motion shows a complete static scene. No playback controls, progress tracks or network requests. Never use these scenes to replace loading, permission, integration or error feedback, or to imply live processing.",
+    foundOn: [{ label: "Admin settings", route: "/admin/settings" }, { label: "Admin finance", route: "/admin/finance" }, { label: "Admin sales & CRM", route: "/admin/sales-crm" }, { label: "CRM dashboard", route: "/crm" }, {"label": "Inbox", "route": "/inbox"}, {"label": "Tasks", "route": "/to-do"}, {"label": "Bookings", "route": "/bookings"}, {"label": "Quotes and audit history", "route": "/quotes"}, {"label": "Leads", "route": "/crm/leads"}, {"label": "Deals", "route": "/crm/deals"}, {"label": "Contacts", "route": "/crm/contacts"}, {"label": "Organisations", "route": "/crm/accounts"}, {"label": "Customers", "route": "/customers"}, {"label": "Suppliers", "route": "/suppliers"}, {"label": "Phone calls", "route": "/crm/phone-calls"}, {"label": "Booking links", "route": "/calendar/booking-links"}, {"label": "Documents", "route": "/documents"}, {"label": "Warehouse inventory", "route": "/warehouse/inventory"}, {"label": "Warehouse orders", "route": "/warehouse/orders"}, {"label": "Expected receipts", "route": "/warehouse/purchase-orders"}, {"label": "Warehouse facilities", "route": "/warehouse/facilities"}, {"label": "Warehouse locations", "route": "/warehouse/locations"}, {"label": "Warehouse items", "route": "/warehouse/items"}, {"label": "Report library", "route": "/reports"}, {"label": "Scheduled reports", "route": "/reports/scheduled"}, {"label": "Report history", "route": "/reports/history"}, {"label": "Sales invoices", "route": "/finance/receivables"}, {"label": "Customer receipts", "route": "/finance/receivables/cash"}, {"label": "Supplier invoices", "route": "/finance/payables"}, {"label": "Supplier payments", "route": "/finance/payables/cash"}, {"label": "Trips and approvals", "route": "/crm/trips"}, {"label": "Mileage payments", "route": "/finance/mileage"}, {"label": "Standalone exports", "route": "/customs/standalone/export"}, {"label": "Standalone imports", "route": "/customs/standalone/import"}, {"label": "Job exports", "route": "/customs/job-related/export"}, {"label": "Job imports", "route": "/customs/job-related/import"}, {"label": "CRM activity", "route": "/crm/activity"}, {"label": "Notifications", "route": "/"}, {"label": "Components", "route": "/components?component=empty-state-illustration"}],
     componentCode: emptyStateIllustrationSource + "\n\n/* Styles */\n" + emptyStateIllustrationStyles,
     usageCode: `<div className="py-8 text-center">\n  <EmptyStateIllustration variant="tasks" className="mb-3" />\n  <h2>Nothing waiting here.</h2>\n  <p>Use the field above to plan the next thing.</p>\n</div>\n\n<EmptyStateIllustration variant="search" />\n<EmptyStateIllustration variant="activity" compact />`,
   },
@@ -901,7 +1023,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Persistent feedback with a status icon, neutral rounded surface, and an optional recovery action.",
     details: "Use for errors, warnings, information and confirmed results that must remain visible in the workflow. Keep text readable and actions below the message. Colour belongs in the icon, never in a decorative left-edge stripe. Errors use an alert role; other notices use a polite status. Do not dismiss an unresolved error automatically.",
-    foundOn: [{ label: "Warehouse items", route: "/warehouse/items" }, { label: "Warehouse locations", route: "/warehouse/locations" }, { label: "Warehouse pricing", route: "/warehouse/pricing" }, { label: "Account Warehouse tab", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000004?tab=warehouse" }, { label: "Trips & mileage", route: "/crm/trips" }, { label: "Mileage claim", route: "/crm/trips/new" }, { label: "Mileage finance", route: "/finance/mileage" }, { label: "Mileage settings", route: "/crm/trips/settings" }, { label: "Customs imports", route: "/customs/standalone/import/new" }, { label: "Customs exports", route: "/customs/standalone/export/new" }, { label: "Documents", route: "/documents" }, { label: "Admin preferences", route: "/admin/system-preferences" }, { label: "Components", route: "/components?component=inline-notice" }, { label: "CRM dashboard", route: "/crm" }],
+    foundOn: [{ label: "Warehouse items", route: "/warehouse/items" }, { label: "Warehouse locations", route: "/warehouse/locations" }, { label: "Warehouse pricing", route: "/warehouse/pricing" }, { label: "Account Warehouse tab", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000004?tab=warehouse" }, { label: "Trips & mileage", route: "/crm/trips" }, { label: "Mileage claim", route: "/crm/trips/new" }, { label: "Mileage finance", route: "/finance/mileage" }, { label: "Mileage settings", route: "/crm/trips/settings" }, { label: "Customer statements", route: "/finance/receivables/statements" }, { label: "Collections", route: "/finance/receivables/collections" }, { label: "Payment runs", route: "/finance/payables/payment-runs" }, { label: "Supplier POs", route: "/finance/payables/purchase-orders" }, { label: "Supplier invoice matching", route: "/finance/payables/matching" }, { label: "Job profitability", route: "/finance/management/profitability" }, { label: "Customs imports", route: "/customs/standalone/import/new" }, { label: "Customs exports", route: "/customs/standalone/export/new" }, { label: "Documents", route: "/documents" }, { label: "Admin preferences", route: "/admin/system-preferences" }, { label: "Components", route: "/components?component=inline-notice" }, { label: "CRM dashboard", route: "/crm" }],
     componentCode: inlineNoticeSource + "\n\n/* Styles */\n" + inlineNoticeStyles,
     usageCode: `<InlineNotice tone="error" title="Your changes have not been saved" action={<Button type="button" variant="ghost" onClick={retrySave}>Retry save</Button>}>Your entries are still here. Keep this page open and try again.</InlineNotice>`,
   },
@@ -914,6 +1036,16 @@ export const galleryComponents = [
     foundOn: [{ label: "Customers", route: "/customers" }, { label: "Bookings", route: "/bookings" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `const toastLifetimeMs = 5_000\n\nexport function Toaster(props) {\n  return (\n    <Sonner\n      position="bottom-right"\n      duration={toastLifetimeMs}\n      visibleToasts={4}\n      gap={12}\n      closeButton\n      className="toaster group md-toaster"\n      icons={{\n        success: <ToastStatusIcon src={toastSuccessIcon} kind="success" />,\n        info: <ToastStatusIcon src={toastGeneralIcon} kind="general" />,\n        warning: <ToastStatusIcon src={toastErrorIcon} kind="warning" />,\n        error: <ToastStatusIcon src={toastErrorIcon} kind="error" />,\n        close: <span>Dismiss</span>,\n      }}\n      style={{\n        "--normal-bg": "color-mix(in srgb, var(--md-surface) 94%, transparent)",\n        "--normal-text": "var(--md-ink)",\n        "--normal-border": "transparent",\n        "--border-radius": "var(--md-radius-2xl)",\n        "--width": "min(520px, calc(100vw - 32px))",\n        "--md-toast-duration": "5000ms",\n      }}\n      toastOptions={{\n        classNames: {\n          toast: "cn-toast md-toast",\n          icon: "md-toast-icon",\n          title: "md-toast-title",\n          description: "md-toast-description",\n          actionButton: "md-toast-action",\n          closeButton: "md-toast-close",\n        },\n      }}\n      {...props}\n    />\n  )\n}`,
     usageCode: `<Toaster />\n\ntoast.success("Customer CSV prepared", {\n  description: "The export is ready to download.",\n})\n\n// Triggering several toasts shows a compact stack. Hover or focus it to expand.\ntoast.warning("Declaration needs attention", {\n  description: "Two checks still need review.",\n})`,
+  },
+  {
+    id: "notification-center",
+    name: "Notification Centre",
+    category: "Feedback",
+    description: "The bell's panel: unread work first, each notification shown as what it is about, with its next step one click away.",
+    details: "Opens on Unread when anything is waiting, otherwise All. Each row names its category (quote response, customs, mention, Dexter task, mileage, event and so on) with a matching icon and colour, the title, the record it concerns, a two-line preview and the producer's own action such as Open quote. Unread rows are in colour with a dot; reading one draws the colour back into the dot and dims the text, and in the Unread view it stays where it is until the view is reopened, so it is never lost from under the pointer. Rows are grouped Today, Yesterday, Earlier this week and Older. Hover or focus swaps the time for Mark as read / Mark as unread and Clear; touch keeps both visible. A row with nowhere to go opens its full message in place. Arrow keys move between rows; right-click opens the same actions. Mark all read cascades down the list. Clear all is kept in the options menu because it cannot be undone. Loading uses the dot grid, errors keep a retry, and reduced motion keeps every state change as a short fade.",
+    foundOn: [{ label: "Sidebar · notification bell", route: "/" }, { label: "Components", route: "/components?component=notification-center" }],
+    componentCode: `${notificationCenterSource}\n\n/* notification-presentation.ts */\n${notificationPresentationSource}\n\n/* notification-center.css */\n${notificationCenterStyles}`,
+    usageCode: `const feed = useWorkspaceNotifications()\n\n<NotificationCenter\n  notifications={feed.notifications}\n  unreadCount={feed.unreadCount}\n  loaded={feed.loaded}\n  loading={feed.loading}\n  error={feed.error}\n  pending={feed.pending}\n  hasMore={feed.hasMore}\n  destinationFor={(notification) => workspaceNotificationDestination(notification, window.location.origin)}\n  onOpen={(_notification, url) => navigate(url)}\n  onToggleRead={(id, status) => void feed.updateNotificationStatus(id, status)}\n  onDismiss={(id) => void feed.dismissNotification(id)}\n  onMarkAllRead={() => void feed.markAllRead()}\n  onClearAll={() => void feed.clearNotifications()}\n  onLoadMore={() => void feed.loadMore()}\n  onRetry={() => void feed.refresh()}\n  onOpenSettings={() => navigate("/settings?tab=notifications")}\n/>`,
   },
   {
     id: "metric-card",
@@ -1059,30 +1191,30 @@ export const galleryComponents = [
     id: "command",
     name: "Command Input",
     category: "Navigation",
-    description: "The shared search and jump control, with rich booking and quote matches that make a record recognisable before opening it.",
-    details: "Use in the app header across operational modules. Each result should show its reference, customer, route and current operational context rather than a bare identifier.",
-    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Road control", route: "/road-control" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CommandInput({ placeholder, onNavigate }) {\n  const [query, setQuery] = useState("")\n  const results = findBookingsAndQuotes(query)\n\n  return (\n    <div className="relative">\n      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={placeholder} />\n      {query ? results.map((result) => (\n        <button key={result.id} onClick={() => onNavigate?.(result.path)}>\n          <strong>{result.reference}</strong>\n          <span>{result.customer} · {result.route}</span>\n          <small>{result.mode} · {result.service} · {result.status}</small>\n        </button>\n      )) : null}\n    </div>\n  )\n}`,
-    usageCode: `<CommandInput placeholder="Job, reference, customer, route..." onNavigate={navigate} />`,
+    description: "The shared search control for live records across operations, CRM, warehouse, customs and generated documents.",
+    details: "Use in the app header. It searches permission-aware register pages, ranks direct reference matches first, supports keyboard selection, and reports when an area cannot be searched.",
+    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "CRM", route: "/crm" }, { label: "Warehouse", route: "/warehouse" }, { label: "Customs", route: "/customs" }, { label: "Documents", route: "/documents" }, { label: "Components", route: "/components" }],
+    componentCode: `${commandInputSource}\n\n${globalSearchSource}`,
+    usageCode: `<CommandInput placeholder="Search jobs, quotes, companies, contacts and more…" onNavigate={navigate} />`,
   },
   {
     id: "app-breadcrumbs",
     name: "App Breadcrumbs",
     category: "Navigation",
     description: "The shared route trail for showing where an operator is and returning to the parent workspace without losing context.",
-    details: "Use in the app header for list, detail, and nested workflow routes. Keep ancestor items actionable, the current page non-interactive, dynamic references readable, and every static label in the shared English copy layer.",
+    details: "Use in the app header for list, detail, and nested workflow routes. A home icon leads soft ancestor pills and slash separators. Long trails collapse into a keyboard-accessible parent menu. The accent current page stays non-interactive; structural groups never become empty links.",
     foundOn: [{ label: "App shell", route: "/" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Road control", route: "/road-control" }, { label: "Components", route: "/components?component=app-breadcrumbs" }],
-    componentCode: `export function AppBreadcrumbs({ route, navigate, leafLabel }) {\n  const { direction, t } = useLanguage()\n  const trail = getAppBreadcrumbTrail(route, leafLabel)\n\n  function openRoute(event, path) {\n    if (!navigate || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return\n    event.preventDefault()\n    navigate(path)\n  }\n\n  return (\n    <Breadcrumb dir={direction}>\n      <BreadcrumbList>\n        {trail.map((item, index) => {\n          const isCurrent = index === trail.length - 1\n          return (\n            <Fragment key={item.route ?? item.label}>\n              {index > 0 ? <BreadcrumbSeparator /> : null}\n              <BreadcrumbItem>\n                {isCurrent ? (\n                  <BreadcrumbPage>{t(item.label)}</BreadcrumbPage>\n                ) : (\n                  <BreadcrumbLink asChild>\n                    <a href={item.route} onClick={(event) => openRoute(event, item.route)}>\n                      {t(item.label)}\n                    </a>\n                  </BreadcrumbLink>\n                )}\n              </BreadcrumbItem>\n            </Fragment>\n          )\n        })}\n      </BreadcrumbList>\n    </Breadcrumb>\n  )\n}`,
+    componentCode: `${appBreadcrumbsSource}\n\n${appBreadcrumbsStyles}`,
     usageCode: `<AppBreadcrumbs\n  route="/crm/leads/northstar-components/convert"\n  leafLabel="Northstar Components"\n  navigate={navigate}\n/>`,
   },
   {
     id: "sidebar",
     name: "Area Sidebar Navigation",
     category: "Navigation",
-    description: "The two-level Multideck navigation pattern: Dexter stays first in every rail, followed by stable product areas or area-specific destinations with optional dropdown groups.",
-    details: "Keep Dexter permanently mounted at the top and use its shared shader treatment in both navigation levels, so changing areas never restarts the shader. Selecting a CSV-backed area replaces only the remaining rail without changing the page; destinations can link directly or disclose smaller page links. The shared active surface, motion and collapsed state remain consistent across both levels.",
-    foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar" }],
-    componentCode: `export function AppSidebar({ route, navigate }) {\n  const [activeAreaId, setActiveAreaId] = useState(findAreaForRoute(route)?.id ?? null)\n  const [expandedIds, setExpandedIds] = useState(new Set())\n  const activeArea = sidebarAreas.find((area) => area.id === activeAreaId)\n\n  return (\n    <aside className="relative flex h-full flex-col bg-[var(--md-sidebar-bg)]">\n      <SidebarNavItem\n        item={{ label: "Agent Dexter", icon: AiBrain, route: "/agent-dexter" }}\n        accent="dexter"\n        onClick={() => navigate("/agent-dexter")}\n      />\n      <AnimatePresence mode="popLayout" initial={false}>\n        {activeArea ? (\n          <motion.nav key={activeArea.id}>\n            <button onClick={() => setActiveAreaId(null)}>All areas</button>\n            {activeArea.destinations.map((destination) => (\n              <div key={destination.id}>\n                <SidebarNavItem\n                  item={destination}\n                  expanded={destination.children ? expandedIds.has(destination.id) : undefined}\n                  onClick={destination.children\n                    ? () => toggleExpanded(destination.id)\n                    : destination.route ? () => navigate(destination.route) : undefined}\n                />\n                {expandedIds.has(destination.id)\n                  ? destination.children?.map((child) => (\n                      <SidebarNavItem key={child.label} item={child} nested onClick={() => navigate(child.route)} />\n                    ))\n                  : null}\n              </div>\n            ))}\n          </motion.nav>\n        ) : (\n          <motion.nav key="areas">\n            {sidebarAreas.map((area) => (\n              <SidebarNavItem key={area.id} item={area} onClick={() => setActiveAreaId(area.id)} />\n            ))}\n          </motion.nav>\n        )}\n      </AnimatePresence>\n    </aside>\n  )\n}`,
+    description: "Navigation search, distinct area headings and grouped destinations, with personal quick links above the profile.",
+    details: "Search only available navigation destinations, including nested Admin settings; show each result’s area and update immediately while typing. Area headings sit above the links with their own type hierarchy. Expanded dropdown titles and their options share one surface, with smaller, quieter child rows. Home, Inbox, Tasks and Calendar sit above the profile. Submit a ticket lives in the profile menu. The current destination uses the chosen accent fill with its paired foreground colour. Escape clears search and restores the previous navigation; arrow keys move through search results.",
+    foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Admin", route: "/admin" }, { label: "Admin finance", route: "/admin/finance" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar" }],
+    componentCode: `${appSidebarSource}\n\n${sidebarNavigationSearchSource}`,
     usageCode: `<AppSidebar route={route} navigate={navigate} />`,
   },
   {
@@ -1532,7 +1664,7 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
     category: "Operations",
     description: "View tabs on the left and right-aligned search, filters, options, and Columns above a register table.",
     details: "Every register puts one transparent control row on the page background above the rounded table surface. Only view tabs belong on the left. Search, filters, and secondary options stay on the right, with the icon-only Columns control fixed as the final option at the far logical edge. Facet options are built from the rows actually in hand, so a menu cannot offer a value that returns nothing, and an active trigger takes the accent colour. Search narrows loaded rows immediately and only asks the server once the operator stops typing. Controls share the tabs' corner radius; on narrow screens the right-side controls collapse into Controls while Columns remains the final standalone option.",
-    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Components", route: "/components?component=register-toolbar" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Bookings", route: "/bookings" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "CRM deals", route: "/crm/deals" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Components", route: "/components?component=register-toolbar" }, { label: "Customers", route: "/customers" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: `export function RegisterViewSwitch({ options, value, onChange, counts, ariaLabel }) {
   const { t } = useLanguage()
 
@@ -1618,7 +1750,7 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
     category: "Navigation",
     description: "A compact checkbox menu for fields that can hold several choices without expanding the form.",
     details: "Use when choices can be combined, such as multimodal freight transport or warehouse access. The toolbar variant keeps a stable label and selected count beside view controls, with matching corners. Field styling remains the default. Options may be plain English strings or stable values with data-driven labels. An optional leading marker can match colours in the content being filtered, as in Calendar; retain labels and checkmarks so colour is never the only cue. It supports required, invalid, and disabled states.",
-    foundOn: [{ label: "Quote details", route: "/quotes" }, { label: "Company profiles", route: "/crm/accounts" }, { label: "Customer warehouse access", route: "/customers" }, { label: "Calendar", route: "/calendar" }, { label: "Warehouse calendar", route: "/warehouse/calendar" }, { label: "Components", route: "/components?component=multi-select-menu" }, { label: "Account financial details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Supplier accounts", route: "/suppliers" }],
+    foundOn: [{ label: "Quote details", route: "/quotes" }, { label: "Company profiles", route: "/crm/accounts" }, { label: "Customer warehouse access", route: "/warehouse/users" }, { label: "Calendar", route: "/calendar" }, { label: "Warehouse calendar", route: "/warehouse/calendar" }, { label: "Components", route: "/components?component=multi-select-menu" }, { label: "Account financial details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Supplier accounts", route: "/suppliers" }],
     componentCode: multiSelectMenuSource,
     usageCode: `<MultiSelectMenu\n  value={warehouseIds}\n  options={warehouses.map((warehouse) => ({\n    value: warehouse.id,\n    label: \`\${warehouse.code} · \${warehouse.name}\`,\n  }))}\n  onValueChange={setWarehouseIds}\n  placeholder="Select warehouses"\n  label="Warehouses"\n/>` + `\n\n// Match markers to the same tokens used by the calendar blocks.\n<MultiSelectMenu\n  variant="toolbar"\n  label="Show on calendar"\n  options={[\n    { value: "Operational dates", label: "Operational dates",\n      leading: <span className="h-3 w-8 rounded-full bg-[var(--md-calendar-ribbon-sky-bg)]" /> },\n    { value: "Personal events", label: "Personal events",\n      leading: <span className="h-3 w-8 rounded-full bg-[var(--md-calendar-blue)]" /> },\n  ]}\n  value={visibleLayers}\n  onValueChange={setVisibleLayers}\n/>`,
   },
@@ -1890,6 +2022,16 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
   {
+    id: "admin-settings-explorer",
+    name: "Admin Settings Explorer",
+    category: "Navigation",
+    description: "Admin settings in three tiers: a section column, that section's settings, and a preview of what the pointed-at setting does.",
+    details: "Used where the Admin second sidebar is not docked (tablet and phone) and for Admin search. The sidebar picks the area; this component owns the other two tiers and never adds a fourth. Sections sit under short headings and one pill travels between them. Settings list in one surface; the row under the pointer or focus is the one previewed, with its path, what it decides, and any settings that open the same page. Arrow keys walk the same path: up and down within a column, left and right between columns, Enter to open. A search narrows every area at once and dims sections without matches, without changing the page's shape. At medium width the preview folds into the rows; on a phone it becomes a drill-down with a way back.",
+    foundOn: [{ label: "Admin settings", route: "/admin/settings" }, { label: "Admin finance", route: "/admin/finance" }, { label: "Admin sales & CRM", route: "/admin/sales-crm" }, { label: "Admin dashboard search", route: "/admin" }, { label: "Components", route: "/components?component=admin-settings-explorer" }],
+    componentCode: `export function AdminSettingsExplorer({ areas, areaId, query, sectionId, onSectionChange, onOpen }) {\n  // Tier 1 is the sidebar area. This component owns tiers 2 and 3:\n  // a section column, the section's settings, and a preview of the\n  // setting under the pointer or focus. Arrow keys walk the same path.\n  return (\n    <div className="grid grid-cols-[15rem_minmax(0,1fr)_19rem] items-start gap-5">\n      <SectionColumn sections={area.sections} selected={section} onSelect={onSectionChange} />\n      <SettingsList settings={listed} active={active} onActive={setActiveKey} onOpen={onOpen} />\n      <SettingPreview target={active} onOpen={onOpen} />\n    </div>\n  )\n}`,
+    usageCode: `<AdminSettingsExplorer\n  areas={explorerAreas}\n  areaId="finance"\n  query={query}\n  sectionId={sectionId}\n  onSectionChange={setSectionId}\n  onClearQuery={() => setQuery("")}\n  onOpen={({ setting }) => navigate(setting.route)}\n  empty={<NoMatches query={query} onClear={() => setQuery("")} />}\n/>`,
+  },
+  {
     id: "choice-control",
     name: "Choice Control",
     category: "Navigation",
@@ -1923,11 +2065,21 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "data-table",
     name: "Data Table",
     category: "Data",
-    description: "The canonical Multideck table with persisted layout, right-click row selection, field-aware CSV export, and a responsive Controls panel with full-width search and touch-friendly actions.",
-    details: "Opt in to register-wide export with exportConfig.register and an explicit authorised, fully paginated loader. The icon beside column settings opens the shared Table Export dialog. Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Use pagination with onLimitChange for server-paged registers, or clientPagination only when rows contains the complete local dataset. Sorting runs before local slicing; selecting all applies to the visible page. Do not enable local paging for server pages, cursor-based lists or line editors. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
+    description: "The canonical Multideck table with rounded surfaces, sticky headings, a horizontal scroll rail, visible column resize dividers, persisted layout, right-click row selection, field-aware CSV export, and a responsive Controls panel with full-width search and touch-friendly actions.",
+    details: "Column headings and the overflow-only horizontal scrollbar stay together while scrolling. Column resizing starts from the rendered widths, keeping the opposite edge fixed. These features are enabled by default; use resizable: false for a fixed column. Opt in to register-wide export with exportConfig.register and an explicit authorised, fully paginated loader. The icon beside column settings opens the shared Table Export dialog. Declare each column's data kind so alignment and status treatments stay consistent. Right-click any row and choose Select to reveal the sticky checkbox column; operators can select several rows, then use the CSV action to choose displayed columns or expand hairline record sections for hidden fields. Register endpoints stay lean: pass exportConfig.loadRecords when full detail such as lead contacts, account addresses, or Customs parties should be loaded only after export is requested. Use pagination with onLimitChange for server-paged registers, or clientPagination only when rows contains the complete local dataset. Sorting runs before local slicing; selecting all applies to the visible page. Do not enable local paging for server pages, cursor-based lists or line editors. Existing row actions such as Duplicate or Delete belong in rowContextActions so they share the same animated menu.",
     foundOn: [{ label: "Trips & mileage", route: "/crm/trips" }, { label: "New trip", route: "/crm/trips/new" }, { label: "Mileage payments", route: "/finance/mileage" }, { label: "Nominal structure", route: "/finance/ledger" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "General ledger", route: "/finance/general-ledger" }, { label: "Account enquiries", route: "/finance/general-ledger/accounts" }, { label: "Journals", route: "/finance/general-ledger/journals" }, { label: "Opportunities", route: "/crm/deals" }, { label: "Phone calls", route: "/crm/phone-calls" }, { label: "Digital business cards", route: "/crm/contact-cards" }, { label: "Road control", route: "/road-control" }, { label: "Documents", route: "/documents" }, { label: "Contracts", route: "/rates/contracts" }, { label: "Tariffs", route: "/rates/tariffs" }, { label: "Inventory", route: "/warehouse/inventory" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Goods out", route: "/warehouse/goods-out" }, { label: "Marketing emails", route: "/crm/emails" }, { label: "Quotes", route: "/quotes" }, { label: "Quote carrier options", route: "/quotes/jq20013" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact card detail", route: "/crm/contact-cards/8a0c2dab-7597-45dc-8f3a-3992f57919a4" }, { label: "Bookings", route: "/bookings" }, { label: "Import terms", route: "/customs/standalone/import/new" }, { label: "Customs declarations", route: "/customs/standalone/export" }, { label: "Compliance controls", route: "/compliance/screening" }, { label: "Rates & contracts", route: "/rates" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "Cash & allocations", route: "/finance/cash" }, { label: "Reports", route: "/reports" }, { label: "Scheduled reports", route: "/reports/scheduled" }, { label: "Users", route: "/admin/users" }, { label: "Active log", route: "/admin/activity" }, { label: "Detailed log", route: "/admin/detailed-log" }, { label: "Broadcast history", route: "/admin/broadcast" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=data-table" }, { label: "Suppliers", route: "/suppliers" }],
     componentCode: dataTableSource,
     usageCode: "// Server register: use the same limit and offset in the data request.\nconst [offset, setOffset] = useState(0)\nconst [limit, setLimit] = useState(30)\n<DataTable columns={columns} rows={result.rows} getRowKey={(row) => row.id}\n  pagination={{ offset, limit, total: result.total, loading, error: Boolean(error), onOffsetChange: setOffset, onLimitChange: setLimit }} />\n\n// Complete in-memory dataset: the table sorts, then slices the rows.\n<DataTable clientPagination columns={columns} rows={records} getRowKey={(row) => row.id} />",
+  },
+  {
+    id: "table",
+    name: "Table",
+    category: "Data",
+    description: "The shared rounded table surface for reports, detail panels and editable lines.",
+    details: "Uses the Finance Customers design: soft headings, subtle row separators, full-height header resize dividers and an overflow-only horizontal rail immediately below the sticky headings. Simple column headers can be resized by dragging or arrow keys. Spanning report headers keep their grouping. Sticky headings respect nested scrolling panels and dialogs. Use DataTable for registers that need sorting, saved column layout, pagination or export. Table preserves the existing cell contents and form controls.",
+    foundOn: [{ label: "Finance reports", route: "/finance/reports" }, { label: "General ledger", route: "/finance/general-ledger" }, { label: "Finance setup", route: "/finance/administration" }, { label: "Nominal structure", route: "/finance/ledger" }, { label: "Accruals & WIP", route: "/finance/management/accruals-wip" }, { label: "Bank reconciliation", route: "/finance/bank-reconciliation" }, { label: "Customer statements", route: "/finance/receivables/statements" }, { label: "Collections", route: "/finance/receivables/collections" }, { label: "Payment runs", route: "/finance/payables/payment-runs" }, { label: "Purchase orders", route: "/finance/payables/purchase-orders" }, { label: "Matching", route: "/finance/payables/matching" }, { label: "Profitability", route: "/finance/management/profitability" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Purchase ledger", route: "/finance/payables" }, { label: "CRM analysis", route: "/crm" }, { label: "Companies", route: "/crm/accounts" }, { label: "Bookings", route: "/bookings" }, { label: "Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=table" }],
+    componentCode: tablePrimitiveSource + "\n\n" + tableViewportSource,
+    usageCode: `<Table aria-label="Customer balances">\n  <TableHeader><TableRow><TableHead>Company</TableHead><TableHead>Balance due</TableHead></TableRow></TableHeader>\n  <TableBody>{accounts.map(account => <TableRow key={account.id}><TableCell>{account.name}</TableCell><TableCell>{account.balance}</TableCell></TableRow>)}</TableBody>\n</Table>`,
   },
   {
     id: "table-export",
@@ -1955,7 +2107,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Operations",
     description: "The advanced quote filter, opened as a compact panel beside the toolbar button, with condition groups, field operators and saved filters.",
     details: "Open it from the table toolbar to combine commercial, route, ownership, timing and workflow conditions. Each group matches all or any of its conditions, the footer shows how many quotes the draft would return, and a named filter can be saved and picked again from the panel header.",
-    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "CRM Leads", route: "/crm/leads" }, { label: "Components", route: "/components?component=quote-search-builder" }],
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "CRM Leads", route: "/crm/leads" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Components", route: "/components?component=quote-search-builder" }],
     componentCode: `<AdvancedFilterPopover\n  fields={quoteSearchFieldOptions}\n  value={search}\n  onChange={setSearch}\n  storageKey="quote-register"\n  label="Advanced search"\n  title="Advanced quote search"\n  itemLabel="quotes"\n  countMatches={countDraftMatches}\n  totalCount={quotes.length}\n/>`,
     usageCode: `const [search, setSearch] = useState(createEmptyQuoteSearch)\nconst visibleQuotes = quotes.filter((quote) => quoteMatchesSearch(quote, search))\n\n<DataTable\n  columns={columns}\n  rows={visibleQuotes}\n  toolbarFilters={<AdvancedFilterPopover fields={quoteSearchFieldOptions} value={search} onChange={setSearch} storageKey="quote-register" />}\n/>`,
   },
@@ -2144,11 +2296,26 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "record-header",
     name: "Record Header",
     category: "Operations",
-    description: "A calm record header for identity, status, key metadata, and ownership.",
-    details: "Use at the top of detail records. It should create context without becoming a marketing hero.",
-    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CustomerDetailHero() {\n  return (\n    <section className="flex items-center gap-5">\n      <CustomerAvatar initials="MA" tone="olive" size="lg" />\n      <div>\n        <h1>Marlow Apparel Ltd</h1>\n        <StatusPill tone="teal">Premium</StatusPill>\n        <StatusPill tone="green">Active</StatusPill>\n        <StatusPill tone="amber">1 open exception</StatusPill>\n      </div>\n    </section>\n  )\n}`,
-    usageCode: `<CustomerDetailHero />\n<CustomerMetricsGrid />`,
+    description: "The top of a record: a shallow banner, the record's mark overlapping its edge, identity, quick actions and a hairline strip of figures.",
+    details: "Use at the top of a record page. Keep the banner shallow so the first working content stays above the fold; it can show a record image or the Multideck illustration fallback, and never takes tenant branding. Organisations get a rounded-square mark and people a circle. Give each figure in the strip a different question to answer, with a supporting line that says what it is made of, and reserve a figure's cell while it loads so the strip never grows under the reader. Pass a route worth naming, such as a company's main trade lane, as the banner label.",
+    foundOn: [{ label: "Company record", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000002" }, { label: "Components", route: "/components?component=record-header" }],
+    componentCode: "import { useId, type ReactNode } from \"react\"\nimport { ArrowLeft } from \"@/components/icons/hugeicons\"\nimport { cn } from \"@/lib/utils\"\n\n/**\n * The top of a record: a short banner, the record's mark overlapping its lower\n * edge, then identity, actions and a hairline strip of figures.\n *\n * The banner is deliberately shallow (72px on a phone, 96px from `sm`) so the\n * first working content stays above the fold. Records may supply an image; the\n * Multideck accent illustration remains the fallback. When the record has a\n * route worth naming, `bannerLabel` prints it over the banner.\n */\nexport function RecordProfileHeader({\n  avatar,\n  avatarShape = \"organisation\",\n  title,\n  badges,\n  meta,\n  actions,\n  bannerLabel,\n  bannerImageUrl,\n  bannerAction,\n  back,\n  stats,\n  className,\n}: {\n  /** The record's mark, sized to fill (`size-full`). It sits on an opaque plate, so a tinted avatar reads cleanly over the banner. */\n  avatar: ReactNode\n  /** Organisations get a rounded square and people a circle, so the two never read as the same kind of record. */\n  avatarShape?: \"organisation\" | \"person\"\n  title: ReactNode\n  badges?: ReactNode\n  meta?: ReactNode\n  actions?: ReactNode\n  bannerLabel?: ReactNode\n  /** An optional record-specific image; the shared illustration remains the fallback. */\n  bannerImageUrl?: string\n  bannerAction?: ReactNode\n  back?: { label: string; onClick: () => void }\n  /** `RecordProfileStat` cells. They share one hairline strip beneath the identity. */\n  stats?: ReactNode\n  className?: string\n}) {\n  const person = avatarShape === \"person\"\n\n  return (\n    <section className={cn(\"min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]\", className)}>\n      <div className=\"relative h-[72px] sm:h-[96px]\">\n        {bannerImageUrl ? <img src={bannerImageUrl} alt=\"\" className=\"absolute inset-0 size-full object-cover\" /> : <RecordProfileBanner />}\n        {back ? (\n          <button\n            type=\"button\"\n            onClick={back.onClick}\n            className=\"absolute start-3 top-3 inline-flex h-7 items-center gap-1.5 rounded-full bg-[color-mix(in_srgb,var(--md-surface)_82%,transparent)] px-2.5 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] backdrop-blur-md transition-[color,background-color,scale] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a24)] active:scale-[0.96] motion-reduce:transition-none sm:start-4\"\n          >\n            <ArrowLeft className=\"size-3.5 rtl:rotate-180\" strokeWidth={1.4} aria-hidden=\"true\" />\n            {back.label}\n          </button>\n        ) : null}\n        {bannerLabel ? (\n          <div className={cn(\"absolute end-3 max-w-[60%] truncate rounded-full bg-[color-mix(in_srgb,var(--md-surface)_82%,transparent)] px-2.5 py-1 text-[11px] font-medium leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)] backdrop-blur-md sm:end-4\", bannerAction ? \"bottom-2\" : \"top-3\")}>\n            {bannerLabel}\n          </div>\n        ) : null}\n        {bannerAction ? <div className=\"absolute end-3 top-3 sm:end-4\">{bannerAction}</div> : null}\n      </div>\n\n      <div className=\"flex flex-col gap-3 px-4 pb-4 sm:flex-row sm:items-start sm:gap-4 sm:px-5\">\n        {/* The plate is the surface colour, so the ring reads as a cut-out of\n            the banner rather than a border drawn on top of it.\n            Radius: outer 18px, 4px plate, inner mark 14px. */}\n        <div\n          className={cn(\n            \"relative -mt-[30px] w-fit shrink-0 bg-[var(--md-surface)] p-1 sm:-mt-[38px]\",\n            person ? \"rounded-full\" : \"rounded-[var(--md-radius-2xl)]\",\n          )}\n        >\n          <div className={cn(\"grid size-[60px] place-items-center overflow-hidden sm:size-[76px]\", person ? \"rounded-full\" : \"rounded-[var(--md-radius-xl)]\")}>\n            {avatar}\n          </div>\n        </div>\n\n        <div className=\"flex min-w-0 flex-1 flex-col gap-3 sm:pt-3 lg:flex-row lg:items-start lg:justify-between\">\n          <div className=\"min-w-0\">\n            <div className=\"flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5\">\n              {title}\n              {badges}\n            </div>\n            {meta ? <div className=\"mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] leading-4 text-[var(--md-text)]\">{meta}</div> : null}\n          </div>\n          {actions ? <div className=\"flex shrink-0 flex-wrap items-center gap-2\">{actions}</div> : null}\n        </div>\n      </div>\n\n      {stats ? (\n        // Every cell draws its start and top hairline; the first column and row\n        // are pulled one pixel outside the clip, so any count of cells wraps\n        // into a clean grid without a stray edge or an empty filled cell.\n        // On a phone the figures run as one swipeable row, so the header stays\n        // a header rather than three rows of numbers.\n        <div className=\"overflow-hidden border-t border-[var(--md-line)]\">\n          <div className=\"-ms-px -mt-px grid snap-x snap-mandatory auto-cols-[minmax(148px,46%)] grid-flow-col overflow-x-auto [scrollbar-width:none] sm:snap-none sm:grid-flow-row sm:grid-cols-3 sm:overflow-visible lg:grid-cols-[repeat(auto-fit,minmax(136px,1fr))] [&::-webkit-scrollbar]:hidden [&>*]:snap-start [&>*]:border-s [&>*]:border-t [&>*]:border-[var(--md-line)]\">\n            {stats}\n          </div>\n        </div>\n      ) : null}\n    </section>\n  )\n}\n\n/** One figure in the header strip: what it is, the figure, and what it is made of. */\nexport function RecordProfileStat({\n  label,\n  value,\n  detail,\n  icon,\n  tone = \"default\",\n  children,\n}: {\n  label: string\n  value?: ReactNode\n  detail?: ReactNode\n  icon?: ReactNode\n  tone?: \"default\" | \"attention\" | \"danger\" | \"muted\"\n  /** Replaces the figure and detail when the value needs its own shape, such as a score ring. */\n  children?: ReactNode\n}) {\n  return (\n    <div className=\"min-w-0 px-4 py-3 sm:px-5\">\n      <p className=\"flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-[var(--md-subtle)]\">\n        {icon}\n        <span className=\"truncate\">{label}</span>\n      </p>\n      {children ?? (\n        <>\n          <p\n            className={cn(\n              \"mt-1 truncate text-[17px] font-medium leading-6 tabular-nums\",\n              tone === \"danger\" ? \"text-[var(--md-red)]\" : tone === \"attention\" ? \"text-[var(--md-amber)]\" : tone === \"muted\" ? \"text-[var(--md-subtle)]\" : \"text-[var(--md-ink)]\",\n            )}\n          >\n            {value}\n          </p>\n          {detail ? <p className=\"mt-0.5 truncate text-[11px] leading-4 text-[var(--md-text)]\">{detail}</p> : null}\n        </>\n      )}\n    </div>\n  )\n}\n\n/**\n * A quiet chart of the sea: a fine dot grid fading in from the right, and one\n * dashed route arc between two ports. Decorative, so it is hidden from\n * assistive technology and never moves.\n */\nfunction RecordProfileBanner() {\n  const id = useId().replace(/:/g, \"\")\n\n  return (\n    <div\n      aria-hidden=\"true\"\n      className=\"absolute inset-0 overflow-hidden bg-[radial-gradient(110%_170%_at_4%_0%,var(--md-accent-a32),transparent_62%),radial-gradient(60%_150%_at_97%_135%,var(--md-accent-a24),transparent_68%),linear-gradient(115deg,var(--md-surface-tint),var(--md-surface-soft)_55%,var(--md-surface-tint))]\"\n    >\n      <svg className=\"absolute inset-0 size-full\" xmlns=\"http://www.w3.org/2000/svg\">\n        <defs>\n          <pattern id={`${id}-dots`} width=\"11\" height=\"11\" patternUnits=\"userSpaceOnUse\">\n            <circle cx=\"1.5\" cy=\"1.5\" r=\"0.9\" fill=\"var(--md-accent)\" />\n          </pattern>\n          <linearGradient id={`${id}-fade`} x1=\"0\" x2=\"1\" y1=\"0\" y2=\"0\">\n            <stop offset=\"0.2\" stopColor=\"white\" stopOpacity=\"0\" />\n            <stop offset=\"1\" stopColor=\"white\" stopOpacity=\"1\" />\n          </linearGradient>\n          <mask id={`${id}-mask`}>\n            <rect width=\"100%\" height=\"100%\" fill={`url(#${id}-fade)`} />\n          </mask>\n        </defs>\n        <rect width=\"100%\" height=\"100%\" fill={`url(#${id}-dots)`} mask={`url(#${id}-mask)`} opacity=\"0.36\" />\n      </svg>\n      <svg className=\"absolute bottom-0 end-0 h-full w-[min(520px,78%)] rtl:-scale-x-100\" viewBox=\"0 0 520 96\" preserveAspectRatio=\"xMaxYMax meet\" xmlns=\"http://www.w3.org/2000/svg\">\n        <path d=\"M86 84 C 190 -10, 360 -6, 470 58\" fill=\"none\" stroke=\"var(--md-accent)\" strokeOpacity=\"0.7\" strokeWidth=\"1.25\" strokeDasharray=\"2 5\" strokeLinecap=\"round\" />\n        <circle cx=\"86\" cy=\"84\" r=\"3.5\" fill=\"var(--md-surface)\" stroke=\"var(--md-accent)\" strokeWidth=\"1.25\" />\n        <circle cx=\"470\" cy=\"58\" r=\"3.5\" fill=\"var(--md-accent)\" />\n        <circle cx=\"470\" cy=\"58\" r=\"8\" fill=\"var(--md-accent)\" fillOpacity=\"0.14\" />\n      </svg>\n    </div>\n  )\n}\n",
+    usageCode: `<RecordProfileHeader
+  back={{ label: "Companies", onClick: () => navigate("/crm/accounts") }}
+  avatar={<CustomerAvatar initials={company.initials} tone="teal" className="size-full text-[26px]" />}
+  title={<HeadingField value={company.name} onSave={(name) => patch({ name })} />}
+  badges={company.strategic ? <StatusPill kind="status" indicator={false} tone="blue">Key Account</StatusPill> : null}
+  meta={<><span>Customer, Consignee</span><span>·</span><span>{company.location}</span></>}
+  actions={<ContactEmailAction email={company.address.mainEmail} name={company.name}>Email</ContactEmailAction>}
+  bannerLabel="Ocean · France to UK"
+  bannerImageUrl={companyCover.url}
+  bannerAction={<button onClick={openCoverPicker}>Change cover</button>}
+  stats={<>
+    <RecordProfileStat label="Active shipments" value={12} detail="None need attention" />
+    <RecordProfileStat label="Balance due" value="£4,210" detail="Nothing overdue" />
+    <RecordProfileStat label="Last contact" value="Yesterday" />
+  </>}
+/>`,
   },
   {
     id: "tabs",
@@ -2156,7 +2323,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "A reusable horizontal tab rail for switching sections inside one record or workflow.",
     details: "Use when the user should stay in context while moving between record sections. Quotes and bookings use the shared keyboard-accessible tab rail for their main workspace sections. Booking Details is one continuous form, with job data, parties, routing, cargo and terms.",
-    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Account detail", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Booking detail", route: "/bookings/je0991133" }, { label: "Warehouse", route: "/warehouse" }, { label: "Finance administration", route: "/admin/finance" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Account detail", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Booking detail", route: "/bookings/je0991133" }, { label: "Warehouse", route: "/warehouse" }, { label: "Finance administration", route: "/finance/administration" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function TabsRail({ tabs, activeTab, onChange }) {\n  return (\n    <div className="flex gap-6 overflow-x-auto border-b border-[rgba(11,20,19,0.08)]">\n      {tabs.map((tab) => (\n        <button key={tab.label} onClick={() => onChange(tab.label)}>\n          {tab.label}\n          {tab.value ? <span>{tab.value}</span> : null}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<TabsRail\n  tabs={tabs}\n  activeTab={activeTab}\n  onChange={setActiveTab}\n/>`,
   },
@@ -2222,11 +2389,133 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "breakdown-panel",
     name: "Breakdown Panel",
     category: "Data",
-    description: "A split of a total drawn as bars \u2014 segmented, ranked horizontally, or compared as upright columns.",
-    details: "Use for a categorical split in a side column. Prefer this over a ring or a funnel there: both carry a fixed aspect ratio, so beside a tall table they stretch and leave a band of empty surface under the drawing, and comparing lengths on a shared baseline is easier than comparing arc angles. Use `segmented` when the categories are parts of one quantity, `ranked` when the order is the point, and `columns` for a compact stage-by-stage comparison. Ranked and column bars scale against the largest category, not the total, so a long tail still has visible length.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=breakdown-panel" }],
-    componentCode: `export function DashboardBreakdownPanel({ title, subtitle, slices, variant = "ranked" }) {\n  const peak = slices.reduce((highest, slice) => Math.max(highest, slice.value), 0)\n\n  return (\n    <Surface padding="none" className="md-breakdown-panel">\n      <div className="md-breakdown-head">\n        <h2 className="md-panel-title">{title}</h2>\n        <p className="md-panel-meta">{subtitle}</p>\n      </div>\n      <div className="md-breakdown-body">\n        {variant === "columns" ? (\n          <ul className="md-breakdown-columns">\n            {slices.map((slice) => (\n              <li key={slice.label}>\n                <span className="md-breakdown-column-value">{slice.value}</span>\n                <span className="md-breakdown-column-plot">\n                  <motion.span className="md-breakdown-column-bar" style={{ height: String((slice.value / peak) * 100) + "%", background: slice.color }} />\n                </span>\n                <span className="md-breakdown-column-label">{slice.label}</span>\n              </li>\n            ))}\n          </ul>\n        ) : (\n          <ul className="md-breakdown-rows">\n            {slices.map((slice) => (\n              <li key={slice.label}>\n                <span className="md-breakdown-row-head">{slice.label}<span>{slice.value}</span></span>\n                <span className="md-breakdown-track"><motion.span className="md-breakdown-fill" animate={{ scaleX: slice.value / peak }} /></span>\n              </li>\n            ))}\n          </ul>\n        )}\n      </div>\n    </Surface>\n  )\n}`,
-    usageCode: `<DashboardBreakdownPanel\n  title="Mode mix"\n  subtitle="Live bookings by transport mode"\n  slices={dashboardModeMix(bookings).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="segmented"\n  totalLabel="in transit"\n/>\n\n<DashboardBreakdownPanel\n  title="Quote pipeline"\n  subtitle="Open quotes by workflow stage"\n  slices={dashboardQuoteStages(quotes).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="columns"\n/>`,
+    description: "A categorical breakdown shown as aligned figures, segmented bars, ranked bars or columns.",
+    details: "Use for a categorical split in a side column. Prefer this over a ring or a funnel there: both carry a fixed aspect ratio, so beside a tall table they stretch and leave a band of empty surface under the drawing, and comparing lengths on a shared baseline is easier than comparing arc angles. Use `segmented` when the categories are parts of one quantity, `ranked` when the order is the point, and `columns` for a compact stage-by-stage comparison. Use `figures` for exact financial amounts and margin tiles with miniature proportion bars. Ranked and column bars scale against the largest category, not the total, so a long tail still has visible length.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=breakdown-panel" }],
+    componentCode: breakdownPanelSource,
+    usageCode: `<DashboardBreakdownPanel
+  title="Shipping modes"
+  variant="figures"
+  slices={[{ label: "Ocean", value: 24000, color: "var(--md-accent)", meta: "24% margin" }]}
+  formatValue={money.compact}
+/>
+
+<DashboardBreakdownPanel\n  title="Mode mix"\n  subtitle="Live bookings by transport mode"\n  slices={dashboardModeMix(bookings).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="segmented"\n  totalLabel="in transit"\n/>\n\n<DashboardBreakdownPanel\n  title="Quote pipeline"\n  subtitle="Open quotes by workflow stage"\n  slices={dashboardQuoteStages(quotes).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="columns"\n/>`,
+  },
+  {
+    id: "column-chart",
+    name: "Column Chart",
+    category: "Data",
+    description: "Months as columns, one series or two side by side, with the reported period in full colour and the month in progress drawn lighter.",
+    details: "Use for money over time where the reader compares one month with the next and, with two series, the gap inside a month: revenue against costs, cash in against cash out. Put the second series in the neutral so the eye goes to the first and reads the gap. `emphasis` marks the months the rest of the page reports on, so a period reads inside its year without a second chart; `partialIndex` marks the month still in progress so it is never read as a fall. On arrival the columns rise in time order; after that a change of data morphs every column at once from where it stands. Zero is always on the scale, so a loss hangs below the baseline on the same scale as a profit above it. A visually hidden table carries every value.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=column-chart" }],
+    componentCode: `export function DashboardColumnChart({ labels, series, emphasis, partialIndex, formatValue, formatAxis, tooltipExtra, ariaLabel }) {
+  const [containerRef, width] = useElementWidth()
+  const scale = getChartScale([0, ...series.flatMap((entry) => entry.values)], true, 4)
+  const baseline = projectY(0, scale, box)
+
+  return (
+    <div ref={containerRef} className="md-column-chart">
+      <svg role="img" tabIndex={0} aria-label={ariaLabel} onPointerMove={snapToMonth} onKeyDown={stepMonths}>
+        {labels.map((_, index) => series.map((entry, seriesIndex) => (
+          <motion.path
+            key={entry.key}
+            fill={entry.color}
+            initial={{ d: barPath(x, barWidth, baseline, baseline) }}
+            animate={{ d: barPath(x, barWidth, baseline, projectY(entry.values[index], scale, box)), opacity: emphasis[index] ? 1 : 0.4 }}
+            transition={{ d: settled ? mdMotion.morph : { ...mdMotion.panel, delay: staggerRamp(index, 0.034) } }}
+          />
+        )))}
+      </svg>
+      <table className="sr-only">{/* every value */}</table>
+    </div>
+  )
+}`,
+    usageCode: `<DashboardColumnChart
+  labels={months.map((month) => formatMonth(month.month, language))}
+  series={[
+    { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", values: months.map((month) => month.revenue) },
+    { key: "costs", label: "Costs", color: "var(--md-fin-out)", values: months.map((month) => month.directCost + month.overheads) },
+  ]}
+  emphasis={months.map((month) => month.month >= period.start && month.month <= period.end)}
+  partialIndex={months.length - 1}
+  formatValue={money.whole}
+  formatAxis={money.compact}
+  ariaLabel="Revenue and costs, last twelve months"
+/>`,
+  },
+  {
+    id: "forecast-chart",
+    name: "Forecast Chart",
+    category: "Data",
+    description: "Recorded months as a solid line, continued as a dashed projection inside a likely range over a shaded forecast zone.",
+    details: "Use where a figure is carried forward from real history. The join between fact and estimate is always visible: the recorded line ends, the projection starts from its last point, and the forecast zone is shaded behind it. The arrival makes the same point: the recorded line draws itself up to today, and only then do the projection, its range and the end labels appear. End labels are nudged apart only when they would collide. Keep to two or three series on one money scale; the tooltip gives each projected value with its range, and a hidden table carries all of it.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=forecast-chart" }],
+    componentCode: `export function DashboardForecastChart({ labels, series, formatValue, formatAxis, ariaLabel }) {
+  const history = series[0].actual.length
+
+  return (
+    <svg role="img" tabIndex={0} aria-label={ariaLabel}>
+      <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }}>
+        <rect x={x(history - 1)} className="forecast-zone" />
+      </motion.g>
+      {series.map((entry) => (
+        <g key={entry.key}>
+          <motion.path d={bandPath(entry)} fill={entry.color} initial={{ opacity: 0 }} animate={{ opacity: 0.12 }} transition={{ delay: 0.9 }} />
+          <motion.path d={actualPath(entry)} stroke={entry.color} initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.9, ease: mdEaseOut }} />
+          <motion.path d={projectedPath(entry)} stroke={entry.color} strokeDasharray="4 5" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }} />
+        </g>
+      ))}
+    </svg>
+  )
+}`,
+    usageCode: `const outlook = forecast(dashboard.months, period.current)
+
+<DashboardForecastChart
+  labels={[...history.map(label), ...outlook.revenue.map(label)]}
+  series={[
+    { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", actual: history.map((month) => month.revenue), projected: outlook.revenue },
+    { key: "net", label: "Net profit", color: "var(--md-blue)", actual: history.map(netProfit), projected: outlook.netProfit },
+  ]}
+  formatValue={money.whole}
+  formatAxis={money.compact}
+  ariaLabel="Revenue and net profit, recorded and projected"
+/>`,
+  },
+  {
+    id: "profit-loss-panel",
+    name: "Profit and Loss Panel",
+    category: "Finance",
+    description: "A condensed P&L with aligned amount and margin tiles for one reporting period.",
+    details: "Read revenue, costs and results in calculation order. Amounts sit at the right edge in compact rounded tiles with miniature bars showing their relative size; margins remain separate figures. Gross and net profit have a separating rule, and negative results retain a minus sign and red text. Largest overheads use the same treatment.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=profit-loss-panel" }],
+    componentCode: profitLossPanelSource,
+    usageCode: `<FinanceProfitLossPanel
+  title="Profit and loss"
+  subtitle="Jul – Sep 2026"
+  figures={{ revenue: totals.revenue, directCost: totals.directCost, overheads: totals.overheads }}
+  overheadAccounts={dashboard.overheadAccounts}
+  formatMoney={money.whole}
+  formatPercent={(value) => percent(value, language)}
+/>`,
+  },
+  {
+    id: "working-capital-panel",
+    name: "Cash and Working Capital Panel",
+    category: "Finance",
+    description: "A compact cash statement with aligned amount tiles and miniature bars showing when receivables and payables are due.",
+    details: "Cash at bank leads, followed by what customers owe and what the business owes. Each ledger shows its total and overdue amount, then dated buckets with exact figures and small bars proportional to the positive balance. Credit balances remain labelled in the figures and reduce the total without becoming overdue bars. Empty balances and missing bank connections have explicit states. The layout matches the profit and loss panel, and motion respects reduced-motion preferences.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=working-capital-panel" }],
+    componentCode: workingCapitalPanelSource,
+    usageCode: `<FinanceWorkingCapitalPanel
+  title="Cash and working capital"
+  subtitle="Today, across every open invoice and bill"
+  cashAtBank={dashboard.cashAtBank}
+  receivables={dashboard.receivables}
+  payables={dashboard.payables}
+  debtorDays={debtorDays(dashboard.receivables.total, dashboard.months, period.current)}
+  formatMoney={money.whole}
+/>`,
   },
   {
     id: "coverage-panel",
@@ -2254,7 +2543,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "A single compact KPI tile for booking list headers, designed for quick count scanning.",
     details: "Use one per metric in booking-heavy views. Keep the card to a short label and one number so the row stays calm and scannable.",
-    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Sales ledger", route: "/finance/receivables" }, { label: "Components", route: "/components" }],
     componentCode: `export function BookingMetricCard({ label, value, tone }) {\n  return (\n    <Surface padding="none" className="flex min-h-[52px] items-center justify-between gap-3 rounded-[var(--md-radius-xl)] px-4 py-2.5">\n      <p className="text-[12px] font-medium text-[var(--md-text)]">{label}</p>\n      <strong\n        className={cn("block text-[22px] font-medium leading-none", tone === "neutral" && "text-[var(--md-ink)]")}\n        style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}\n      >\n        {value}\n      </strong>\n    </Surface>\n  )\n}`,
     usageCode: `<BookingMetricCard\n  label="In transit"\n  value="23"\n  tone="teal"\n/>`,
   },
@@ -2429,6 +2718,26 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `<div className={chatCollapsed ? \"fixed right-6 top-6 size-14\" : \"fixed bottom-6 right-6 top-6 w-[368px]\"}>\n  <BookingAskPanel\n    collapsed={chatCollapsed}\n    onCollapsedChange={setChatCollapsed}\n  />\n</div>`,
   },
   {
+    id: "dexter-prompt-presets",
+    name: "Dexter Prompt Presets",
+    category: "Agent Dexter",
+    description: "Short starting prompts shelved, centred, in the composer tray beneath the writing. Choosing one sends it.",
+    details: "Pass as the composer's presets before anything has been sent. Titles are a verb and its object – three or four words – so several fit on one line; the fuller request Dexter receives, its role, and the record or figure behind it stay in the preset, the figure readable on hover. Chips use a readable translucent fill on the shader. On Home, set instant so the shelf is legible as soon as the composer appears; other surfaces may use a short entrance. The row centres when it fits; when it does not, it scrolls sideways from the start and fades only the edge that has more behind it.",
+    foundOn: [{ label: "Home", route: "/" }, { label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-presets" }],
+    componentCode: `export function DexterPromptPresets({ presets, onPick, delay = 0, label = "Suggested prompts" }) {\n  return (\n    <motion.div\n      role="list"\n      aria-label={t(label)}\n      className="mx-auto flex min-w-max items-center gap-1.5"\n      initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}\n      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}\n      transition={{ duration: 0.34, ease: mdEaseOut, delay }}\n    >\n      {presets.map((preset) => (\n        <div key={preset.id} role="listitem">\n          <button\n            type="button"\n            title={preset.meta ? \`\${preset.title} · \${preset.meta}\` : preset.title}\n            className="md-composer-preset inline-flex h-8 items-center gap-1.5 rounded-full pe-3 ps-2.5 text-[12.5px] font-medium"\n            onClick={() => onPick(preset.prompt, preset.specialistId)}\n          >\n            <preset.icon className="md-composer-preset__icon size-3.5" strokeWidth={1.4} />\n            <span className="whitespace-nowrap">{preset.title}</span>\n          </button>\n        </div>\n      ))}\n    </motion.div>\n  )\n}`,
+    usageCode: `<DexterPromptComposer\n  value={value}\n  onChange={setValue}\n  presets={\n    <DexterPromptPresets\n      delay={0.3}\n      presets={[\n        { id: "triage", title: "Clear today's cutoffs", prompt: "Take my queue for today in deadline order…", meta: "4 due", icon: Zap, specialistId: "ops" },\n        { id: "quotes", title: "Send ready quotes", prompt: "Show me every quote that is ready to send…", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },\n      ]}\n      onPick={(prompt, specialistId) => handOver(prompt, specialistId)}\n    />\n  }\n  {...composerProps}\n/>`,
+  },
+  {
+    id: "dexter-greeting",
+    name: "Dexter Greeting",
+    category: "Agent Dexter",
+    description: "The line that opens a Dexter prompt box: a greeting set flush with the composer's start edge, with an optional standfirst.",
+    details: "Use directly above a landing composer. It shares the composer's left margin rather than centring, so greeting, writing and tray read as one object. It arrives in two beats – the greeting resolves out of a blur, then the standfirst follows – and under reduced motion it simply appears.",
+    foundOn: [{ label: "Home", route: "/" }, { label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-greeting" }],
+    componentCode: `export function DexterGreeting({ title, standfirst }) {\n  const rise = (delay) => ({\n    initial: { opacity: 0, y: 8, filter: "blur(6px)" },\n    animate: { opacity: 1, y: 0, filter: "blur(0px)" },\n    transition: { duration: 0.52, ease: mdEaseOut, delay },\n  })\n\n  return (\n    <div className="ps-1.5 text-start">\n      <motion.h1 className="text-[24px] font-medium sm:text-[28px]" {...rise(0)}>{title}</motion.h1>\n      {standfirst ? <motion.p className="mt-1.5 text-[14.5px]" {...rise(0.1)}>{standfirst}</motion.p> : null}\n    </div>\n  )\n}`,
+    usageCode: `<DexterGreeting\n  title={t("What can I help you with today?")}\n  standfirst={t("Bookings, customers, documents, rates – or hand me the whole job.")}\n/>`,
+  },
+  {
     id: "dexter-mention-input",
     name: "Dexter Mention Input",
     category: "Agent Dexter",
@@ -2469,7 +2778,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Prompt Composer",
     category: "Agent Dexter",
     description: "The central command box for Agent Dexter: voice input, @ mentions, attached context, slash commands, model and role choices, and live context usage.",
-    details: "Use on Home, the Agent Dexter landing and the conversation footer. The microphone uses the existing Gemini transcription service and saved microphone preference. Recording preserves the composer size, shape and shader: the microphone becomes Stop in place, with a compact live waveform flowing right to left along the controls row. Stopping inserts the transcript without sending the prompt. Draft text and attachments are retained. Escape cancels a recording. For an active steerable run, canUpdateRequest changes Send to Update request; updatePending prevents duplicates and updateStatus announces progress without clearing unsent text. The + button uploads files, @ references records, and / switches between Chat and Watch.",
+    details: "Use on Home, the Agent Dexter landing and the conversation footer. Before anything is sent, pass presets and they shelve in a tray of shader beneath the writing; the conversation footer is compact and has no tray. A compact composer given fadeBloomOnCompact arrives in the landing shape and settles – tray folding away, height easing down, bloom fading – so a hand-off only moves the box and never scales it. The microphone uses the existing Gemini transcription service and saved microphone preference. Recording preserves the composer size, shape and shader: the microphone becomes Stop in place, with a compact live waveform flowing right to left along the controls row. Stopping inserts the transcript without sending the prompt. Draft text and attachments are retained. Escape cancels a recording. For an active steerable run, canUpdateRequest changes Send to Update request; updatePending prevents duplicates and updateStatus announces progress without clearing unsent text. The + button uploads files, @ references records, and / switches between Chat and Watch.",
     foundOn: [{ label: "Home", route: "/" }, { label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
     componentCode: `export function DexterPromptComposer({ value, selectedSpecialistId, selectedModelId, accessMode, contextUsedTokens, contextMaxTokens, attachments, onChange, onOpenAttachments, onSelectSpecialist, onSelectModel, onAccessModeChange, onSend }) {\n  return (\n    <div className="md-composer md-composer-bloom relative overflow-hidden rounded-[26px]">\n      <span aria-hidden className="md-composer-bloom__shader">\n        <SpectralBloomShader shape="composer" />\n      </span>\n      <span aria-hidden className="md-composer-bloom__contrast" />\n      <div className="relative z-[2] flex h-[44px] items-center px-3">\n        <DexterRoleMenu selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />\n      </div>\n      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)]">\n        {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n        <textarea\n          value={value}\n          rows={1}\n          onChange={(event) => onChange(event.target.value)}\n          onKeyDown={(event) => {\n            if (event.key === "Enter" && !event.shiftKey) {\n              event.preventDefault()\n              if (value.trim()) onSend()\n            }\n          }}\n        />\n        <button onClick={onOpenAttachments}>Attach</button>\n        <DexterModelMenu selectedId={selectedModelId} onSelect={onSelectModel} />\n        <Context\n          usedTokens={contextUsedTokens}\n          maxTokens={contextMaxTokens}\n          label={t("Conversation context")}\n          description={t("How much of this chat Dexter can keep in mind.")}\n        >\n          <ContextTrigger />\n          <ContextContent><ContextContentHeader /></ContextContent>\n        </Context>\n        <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />\n        <DexterActionPill icon={ArrowUp} iconOnly disabled={!value.trim()} onClick={onSend} />\n      </div>\n    </div>\n  )\n}`,
     usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => computerFileInputRef.current?.click()}\n  attachmentActionLabel="Upload files"\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  isSending={isSending}\n  canUpdateRequest={Boolean(activeRunId)}\n  updatePending={isCorrectionPending}\n  updateStatus={correctionStatus}\n  onSend={activeRunId ? updateRequest : startConversation}\n/>`,
@@ -2552,8 +2861,8 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Role Menu",
     category: "Agent Dexter",
     description: "The role selector that rides on the composer's shared Dexter shader header, stating the lane every following reply is answered in.",
-    details: "Use inside the composer header rather than as a separate panel: the role is persistent state, so it belongs on the control it changes. Reusing Dexter's shared shader keeps that state inside the agent's established visual language.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
+    details: "Use inside a composer rather than as a separate panel: the role is persistent state, so it belongs on the control it changes. Reusing Dexter's shared shader keeps that state inside the agent's established visual language. The Home and Agent Dexter landing composers no longer carry it – their tray shelves prompt presets, and each preset brings its own role.",
+    foundOn: [{ label: "Components", route: "/components?component=dexter-specialist-menu" }],
     componentCode: `export function DexterRoleMenu({ specialists, selectedId, onSelect }) {\n  const selected = specialists.find((specialist) => specialist.id === selectedId)\n\n  return (\n    <DropdownMenu>\n      <DropdownMenuTrigger asChild>\n        <button className="md-composer-lead">\n          <SwapLabel value={selected.name} className="text-white dark:text-[var(--md-ink)]" />\n          <ChevronDown className="md-composer-chip__caret" />\n        </button>\n      </DropdownMenuTrigger>\n      <DropdownMenuContent align="start" className="w-[336px]">\n        <DropdownMenuLabel>Role</DropdownMenuLabel>\n        <DropdownMenuRadioGroup value={selectedId} onValueChange={onSelect}>\n          {specialists.map((specialist) => (\n            <DropdownMenuRadioItem key={specialist.id} value={specialist.id}>\n              <specialist.icon />\n              <span>{specialist.name}</span>\n              <span>{specialist.description}</span>\n            </DropdownMenuRadioItem>\n          ))}\n        </DropdownMenuRadioGroup>\n      </DropdownMenuContent>\n    </DropdownMenu>\n  )\n}`,
     usageCode: `<DexterRoleMenu\n  specialists={defaultDexterSpecialists}\n  selectedId={selectedSpecialistId}\n  onSelect={setSelectedSpecialistId}\n/>`,
   },
@@ -3293,9 +3602,29 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Foundation",
     description: "A compact connector row for personal tools such as Gmail, Outlook, calendars, file storage, chat, and project systems.",
     details: "Use inside profile or settings panels when a user needs to connect, manage, or review one external tool. Keep the row factual: tool, why it matters, status, and the next action.",
-    foundOn: [{ label: "Settings integrations", route: "/settings?tab=integrations" }, { label: "Finance integrations", route: "/finance/systems" }, { label: "Components", route: "/components?component=settings-integration-row" }],
+    foundOn: [{ label: "Finance integrations", route: "/finance/systems" }, { label: "Components", route: "/components?component=settings-integration-row" }],
     componentCode: `export function SettingsIntegrationRow({ icon: Icon, title, description, status, actionLabel, onAction }) {\n  return (\n    <div className="grid gap-3 px-5 py-4 sm:grid-cols-[36px_minmax(0,1fr)_auto] sm:items-center">\n      <div className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]">\n        <Icon />\n      </div>\n      <div>\n        <p>{title}</p>\n        <span>{status}</span>\n        <p>{description}</p>\n      </div>\n      <button onClick={onAction}>{actionLabel}</button>\n    </div>\n  )\n}`,
     usageCode: `<SettingsPanel title="Connected tools">\n  <SettingsIntegrationRow\n    icon={Mail}\n    title="Gmail"\n    description="Connect your Google inbox for customer replies, quote follow-ups, and approved Dexter drafts."\n    status="Ready"\n    actionLabel="Connect"\n    onAction={connectGmail}\n  />\n</SettingsPanel>`,
+  },
+  {
+    id: "settings-integration-card",
+    name: "Settings Integration Card",
+    category: "Foundation",
+    description: "A compact overview of an external connection with its live status and next action.",
+    details: "Use on the Settings integrations page. Details opens connection facts and the cog opens provider settings. The switch reflects confirmed provider state; turning it on starts authorisation, while turning it off asks for disconnect confirmation.",
+    foundOn: [{ label: "Settings integrations", route: "/settings?tab=integrations" }, { label: "Components", route: "/components?component=settings-integration-card" }],
+    componentCode: "export function SettingsIntegrationCard({\n  logoSrc,\n  title,\n  description,\n  status,\n  statusTone = \"ready\",\n  onDetails,\n  onSettings,\n  active,\n  onActiveChange,\n  toggleDisabled = false,\n}: {\n  logoSrc: string\n  title: string\n  description: string\n  status: string\n  statusTone?: \"connected\" | \"ready\" | \"review\" | \"workspace\"\n  onDetails: () => void\n  onSettings?: () => void\n  active: boolean\n  onActiveChange?: (active: boolean) => void\n  toggleDisabled?: boolean\n}) {\n  const statusClass = {\n    connected: \"bg-[var(--md-accent-a10)] text-[var(--md-green)]\",\n    ready: \"bg-[var(--md-surface-tint)] text-[var(--md-text)]\",\n    review: \"bg-[color-mix(in_srgb,var(--md-amber),transparent_88%)] text-[var(--md-amber)]\",\n    workspace: \"bg-[var(--md-surface-tint)] text-[var(--md-text)]\",\n  }[statusTone]\n\n  return (\n    <article className=\"flex aspect-[3/2] min-h-[240px] min-w-0 flex-col overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]\">\n      <div className=\"flex min-h-[168px] flex-1 flex-col p-5\">\n        <div className=\"flex items-start justify-between gap-3\">\n          <div className=\"grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]\">\n            <img src={logoSrc} alt=\"\" aria-hidden=\"true\" className=\"size-6 object-contain\" />\n          </div>\n          <span className={cn(\"rounded-full px-2.5 py-1 text-[11px] font-medium leading-4 whitespace-nowrap\", statusClass)}>{status}</span>\n        </div>\n        <h3 className=\"mt-4 text-[15px] font-medium leading-[1.25] tracking-[-0.01em] text-[var(--md-ink)]\">{title}</h3>\n        <p className=\"mt-1.5 max-w-[40ch] text-pretty text-[13px] leading-[1.5] text-[var(--md-text)]\">{description}</p>\n      </div>\n      <div className=\"flex min-h-14 flex-wrap items-center gap-2 bg-[var(--md-surface-soft)] px-4 py-2 shadow-[var(--md-stroke-top)]\">\n        {onSettings ? (\n          <Button type=\"button\" variant=\"ghost\" size=\"icon\" aria-label={`${title} settings`} title={`${title} settings`} className=\"size-9 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[transform,background-color,color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a18)] motion-reduce:transition-none motion-reduce:active:scale-100\" onClick={onSettings}>\n            <Settings2 className=\"size-4\" strokeWidth={1.5} aria-hidden=\"true\" />\n          </Button>\n        ) : null}\n        <Button type=\"button\" variant=\"ghost\" className=\"h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[transform,background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a18)] motion-reduce:transition-none motion-reduce:active:scale-100\" onClick={onDetails}>\n          Details\n        </Button>\n        <Switch\n          aria-label={`${title} integration`}\n          checked={active}\n          disabled={toggleDisabled || !onActiveChange}\n          onCheckedChange={onActiveChange}\n          className=\"ms-auto\"\n        />\n      </div>\n    </article>\n  )\n}",
+    usageCode: `<SettingsIntegrationCard
+  logoSrc={gmailLogo}
+  title="Gmail"
+  description="Find customer conversations in one Inbox, reply faster and prepare drafts with Dexter."
+  status="Connected"
+  statusTone="connected"
+  active={gmailConnected}
+  onActiveChange={(active) => active ? connectGmail() : confirmDisconnectGmail()}
+  onDetails={() => setDetailsProvider("gmail")}
+  onSettings={() => setSettingsProvider("gmail")}
+/>`,
   },
   {
     id: "settings-controls",
@@ -3303,7 +3632,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "Compact input, select, switch, and adaptive choice controls for settings pages.",
     details: "Use these inside settings rows so field heights, radius, shadows, focus states, and choice behaviour stay consistent across every tab.",
-    foundOn: [{ label: "Settings", route: "/settings" }, { label: "Finance administration", route: "/admin/finance" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Settings", route: "/settings" }, { label: "Finance administration", route: "/finance/administration" }, { label: "Components", route: "/components" }],
     componentCode: `export function SettingsInput(props) {\n  return <Input className="h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" {...props} />\n}\n\nexport function SettingsChoiceGroup({ options, value, onChange }) {\n  return <ChoiceControl options={options} value={value} onChange={onChange} ariaLabel="Choose an option" />\n}`,
     usageCode: `<SettingsFieldRow label="Approval rule">\n  <SettingsChoiceGroup\n    options={["Always ask", "Ask non-reversible", "Never ask"]}\n    value={approvalRule}\n    onChange={setApprovalRule}\n  />\n</SettingsFieldRow>`,
   },
@@ -3663,7 +3992,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Operations",
     description: "Compact party-screening language for no match, possible match, match, and a stale government list.",
     details: "Use on Compliance controls, customer records, and anywhere a completed sanctions screen needs to be scanned without turning the result into legal certainty.",
-    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Customer detail", route: "/customers" }, { label: "Components", route: "/components?component=screening-outcome-pill" }],
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Company record", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000002" }, { label: "Components", route: "/components?component=screening-outcome-pill" }],
     componentCode: `export function ScreeningOutcomePill({ outcome, stale = false }) {\n  return (\n    <span className="inline-flex flex-wrap items-center gap-1.5">\n      <StatusPill tone={outcomeTone[outcome]}>{outcomeLabel[outcome]}</StatusPill>\n      {stale ? <StatusPill tone="amber">List stale</StatusPill> : null}\n    </span>\n  )\n}`,
     usageCode: `<ScreeningOutcomePill outcome={check.outcome} stale={check.listStale} />`,
   },
@@ -3689,7 +4018,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Operations",
     description: "One compact government-list match card with the sanctions programme, UK list reference, and expandable listing rationale.",
     details: "Stack these beneath a screening result. Keep the first read thin and scannable, with the full listing rationale available on demand.",
-    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Customer detail", route: "/customers" }, { label: "Components", route: "/components?component=screening-match-row" }],
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Company record", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000002" }, { label: "Components", route: "/components?component=screening-match-row" }],
     componentCode: `export function ScreeningMatchRow({ match }) {\n  return (\n    <article className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 py-3 shadow-[var(--md-shadow-line)]">\n      <div className="flex items-start justify-between gap-3">\n        <p>{match.listedName}</p>\n        <StatusPill tone={match.matchKind === "exact" ? "red" : "amber"}>\n          {match.matchKind === "exact" ? "Exact name" : "Similar name"}\n        </StatusPill>\n      </div>\n      <div className="grid gap-3 sm:grid-cols-2">\n        <ScreeningFact label="Sanctions programme" value={match.regime} />\n        <ScreeningFact label="UK list reference" value={match.ukRef} />\n      </div>\n      <details>\n        <summary>Why listed</summary>\n        <p>{match.listingNotes}</p>\n      </details>\n    </article>\n  )\n}`,
     usageCode: `{check.matches.map((match) => (\n  <ScreeningMatchRow key={match.groupId + match.listedName} match={match} />\n))}`,
   },
@@ -3699,7 +4028,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Operations",
     description: "Shows listed names from a screen, starting at 30 per page, with filtering and adjustable row counts for longer results.",
     details: "Use under a screening result. The pager shows the total count and lets operators choose the number of listed names per page. It stays available when a filter leaves no matches or a larger page size fits every result. It does not hide older government listings.",
-    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Customer detail", route: "/customers" }, { label: "Components", route: "/components?component=screening-match-list" }],
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Company record", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000002" }, { label: "Components", route: "/components?component=screening-match-list" }],
     componentCode: screeningComponentsSource,
     usageCode: `<ScreeningMatchList matches={check.matches} />`,
   },
@@ -3709,7 +4038,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Operations",
     description: "Explains a completed screen in plain language: match, possible match, no match, or list unavailable.",
     details: "Use above match rows so the operator sees what the outcome means before reading the sanctions programme and listing notes.",
-    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Customer detail", route: "/customers" }, { label: "Components", route: "/components?component=screening-result-summary" }],
+    foundOn: [{ label: "Compliance controls", route: "/compliance/screening" }, { label: "Company record", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000002" }, { label: "Components", route: "/components?component=screening-result-summary" }],
     componentCode: `export function ScreeningResultSummary({ subjectName, country, outcome }) {\n  return (\n    <section className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 py-3 shadow-[var(--md-shadow-line)]">\n      <p>{subjectName}{country ? \` · \${country}\` : ""}</p>\n      <p>{outcome === "match"\n        ? "Listed name found. Review the programme and listing details before continuing."\n        : "No listed names matched. This is not legal clearance."}</p>\n    </section>\n  )\n}`,
     usageCode: `<ScreeningResultSummary subjectName={check.subjectName} country={check.country} outcome={check.outcome} />`,
   },
@@ -4260,6 +4589,7 @@ export const galleryIcons = {
   "settings-rail": LayoutDashboard,
   "settings-panel-row": Gauge,
   "settings-integration-row": Cloud,
+  "settings-integration-card": Cloud,
   "settings-controls": KeyRound,
   "settings-option-card": Sparkles,
   "settings-summary-card": BarChart3,

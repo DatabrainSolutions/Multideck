@@ -1,3 +1,4 @@
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import {
@@ -479,10 +480,10 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
                     <Field label="Shipment type">
                       <Select value={record.shipmentType ?? currentShipmentTypes[0]} onValueChange={(value) => updateRecord("shipmentType", value)} disabled={readOnly}><SelectTrigger className={inputClass()}><SelectValue /></SelectTrigger><SelectContent>{currentShipmentTypes.map((value) => <SelectItem key={value} value={value}>{t(value)}</SelectItem>)}</SelectContent></Select>
                     </Field>
-                    <Field label="Collection address"><Input dir="auto" value={record.collectionAddress ?? ""} onChange={(event) => updateRecord("collectionAddress", event.target.value)} disabled={readOnly} className={inputClass()} /></Field>
+                    <LocationAutocomplete label="Collection address" value={record.collectionAddress ?? ""} onChange={value => updateRecord("collectionAddress", value)} disabled={readOnly} inputClassName={inputClass()} hint="" />
                     {record.mode !== "road" ? <Field label={record.mode === "air" ? "Departure airport" : "Port of loading"}><Input dir="auto" value={record.loadingPoint ?? ""} onChange={(event) => updateRecord("loadingPoint", event.target.value)} disabled={readOnly} className={inputClass()} /></Field> : null}
                     {record.mode !== "road" ? <Field label={record.mode === "air" ? "Arrival airport" : "Port of discharge"}><Input dir="auto" value={record.dischargePoint ?? ""} onChange={(event) => updateRecord("dischargePoint", event.target.value)} disabled={readOnly} className={inputClass()} /></Field> : null}
-                    <Field label="Delivery address"><Input dir="auto" value={record.deliveryAddress ?? ""} onChange={(event) => updateRecord("deliveryAddress", event.target.value)} disabled={readOnly} className={inputClass()} /></Field>
+                    <LocationAutocomplete label="Delivery address" value={record.deliveryAddress ?? ""} onChange={value => updateRecord("deliveryAddress", value)} disabled={readOnly} inputClassName={inputClass()} hint="" />
                     <Field label="Valid from"><Input type="date" dir="ltr" value={record.validFrom ?? ""} onChange={(event) => updateRecord("validFrom", event.target.value)} disabled={readOnly} className={inputClass()} /></Field>
                     <Field label="Valid to"><Input type="date" dir="ltr" value={record.validTo ?? ""} onChange={(event) => updateRecord("validTo", event.target.value)} disabled={readOnly} className={inputClass()} /></Field>
                     <Field label="Quote due"><Input type="datetime-local" dir="ltr" value={record.deadline?.slice(0, 16) ?? ""} onChange={(event) => updateRecord("deadline", event.target.value)} disabled={readOnly} className={inputClass()} /></Field>

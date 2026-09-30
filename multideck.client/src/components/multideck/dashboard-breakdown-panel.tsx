@@ -8,6 +8,8 @@ export type BreakdownSlice = {
   label: string
   value: number
   color: string
+  /** A short second reading for the row, such as a margin. Replaces the share. */
+  meta?: string
 }
 
 /**
@@ -22,7 +24,7 @@ export type BreakdownSlice = {
  * of a single quantity. `ranked` gives each category its own horizontal bar
  * under a shared scale, for a list where the order is the point. `columns`
  * turns the same values upright when category-to-category comparison is the
- * useful reading.
+ * useful reading. `figures` shows aligned value tiles with miniature proportion bars.
  */
 export function DashboardBreakdownPanel({
   title,
@@ -31,26 +33,31 @@ export function DashboardBreakdownPanel({
   variant = "ranked",
   totalLabel,
   emptyLabel,
+  formatValue,
   className,
 }: {
   title: string
   subtitle?: string
   slices: BreakdownSlice[]
-  variant?: "segmented" | "ranked" | "columns"
+  variant?: "segmented" | "ranked" | "columns" | "figures"
   /** Noun for the headline count, e.g. "live bookings". */
   totalLabel?: string
   emptyLabel?: string
+  /** How a value is written, e.g. as money. Counts are printed as they are. */
+  formatValue?: (value: number) => string
   className?: string
 }) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
 
   const total = slices.reduce((sum, slice) => sum + slice.value, 0)
+  const magnitudeTotal = slices.reduce((sum, slice) => sum + Math.abs(slice.value), 0)
   const peak = slices.reduce((highest, slice) => Math.max(highest, slice.value), 0)
   const share = (value: number) => (total === 0 ? 0 : Math.round((value / total) * 100))
+  const written = (value: number) => (formatValue ? formatValue(value) : String(value))
 
   return (
-    <Surface padding="none" className={cn("md-breakdown-panel", className)}>
+    <Surface padding="none" className={cn("md-breakdown-panel", variant === "figures" && "md-breakdown-panel-figures", className)}>
       <div className="md-breakdown-head">
         <h2 className="md-panel-title">{title}</h2>
         {subtitle ? <p className="md-panel-meta">{subtitle}</p> : null}
@@ -64,7 +71,7 @@ export function DashboardBreakdownPanel({
             <>
               <p className="md-breakdown-total">
                 <span className="md-breakdown-total-value" dir="ltr">
-                  {total}
+                  {written(total)}
                 </span>
                 {totalLabel ? <span className="md-breakdown-total-label">{totalLabel}</span> : null}
               </p>
@@ -93,7 +100,7 @@ export function DashboardBreakdownPanel({
                     <span className="md-breakdown-swatch" style={{ background: slice.color }} aria-hidden="true" />
                     <span className="md-breakdown-legend-label">{slice.label}</span>
                     <span className="md-breakdown-legend-value" dir="ltr">
-                      {slice.value}
+                      {written(slice.value)}
                     </span>
                     <span className="md-breakdown-legend-share" dir="ltr">
                       {share(slice.value)}%
@@ -108,9 +115,9 @@ export function DashboardBreakdownPanel({
                 const height = peak === 0 ? 0 : Math.max((slice.value / peak) * 100, 3)
 
                 return (
-                  <li key={slice.label} aria-label={`${slice.label}: ${slice.value}, ${share(slice.value)}%`}>
+                  <li key={slice.label} aria-label={`${slice.label}: ${written(slice.value)}, ${slice.meta ?? `${share(slice.value)}%`}`}>
                     <span className="md-breakdown-column-value" dir="ltr">
-                      {slice.value}
+                      {written(slice.value)}
                     </span>
                     <span className="md-breakdown-column-plot" aria-hidden="true">
                       <motion.span
@@ -135,15 +142,16 @@ export function DashboardBreakdownPanel({
                   <span className="md-breakdown-row-head">
                     <span className="md-breakdown-row-label">{slice.label}</span>
                     <span className="md-breakdown-row-value" dir="ltr">
-                      {slice.value}
+                      {written(slice.value)}
+                      {variant === "figures" ? <span className="md-mini-split" aria-hidden="true"><span style={{ transform: `scaleX(${magnitudeTotal > 0 ? Math.abs(slice.value) / magnitudeTotal : 0})`, background: slice.value < 0 ? "var(--md-red)" : slice.color }} /></span> : null}
                     </span>
-                    <span className="md-breakdown-row-share" dir="ltr">
-                      {share(slice.value)}%
+                    <span className="md-breakdown-row-share" data-meta={slice.meta ? "true" : undefined} dir="ltr">
+                      {slice.meta ?? `${share(slice.value)}%`}
                     </span>
                   </span>
                   {/* Scaled against the largest category rather than the total,
                       so a long tail still has visible length to compare. */}
-                  <span className="md-breakdown-track" aria-hidden="true">
+                  {variant !== "figures" ? <span className="md-breakdown-track" aria-hidden="true">
                     <motion.span
                       className="md-breakdown-fill"
                       style={{ background: slice.color }}
@@ -153,7 +161,7 @@ export function DashboardBreakdownPanel({
                         shouldReduceMotion ? { duration: 0 } : { ...mdMotion.panel, delay: staggerRamp(index, 0.04) }
                       }
                     />
-                  </span>
+                  </span> : null}
                 </li>
               ))}
             </ul>

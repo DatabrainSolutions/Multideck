@@ -9,7 +9,7 @@ test('CRM sales workflow real PostgreSQL lifecycle, access, To Do and measured i
  select test_assert(jsonb_array_length(multideck_crm_deal_conversion_options()->'opportunityTypes')=1,'native conversion options load');
  select test_assert((multideck_crm_deal_register_page()->>'total')::int=4,'native register loads enriched same-company rows');
  select test_assert((multideck_crm_deal_people(fid(1))->>'canReassign')::boolean,'sales role can assign');
- select multideck_crm_set_deal_next_action(fid(1),deal_version(1),jsonb_build_object('title','Confirm volumes with Jamie','type','call','ownerId','00000000-0000-0000-0000-000000000002','dueAt',now()-interval '1 day'));
+ select multideck_crm_set_deal_next_action(fid(1),deal_version(1),jsonb_build_object('title','Confirm volumes with Jamie','type','call','ownerId','00000000-0000-0000-0000-000000000002','dueAt',(current_date-1+time '12:00')::timestamptz));
  select test_assert(multideck_crm_get_deal_essential(fid(1))->'nextAction'->>'title'='Confirm volumes with Jamie','named next action saved');
  select test_assert(jsonb_array_length(multideck_todo_list(current_date-1))=1,'assigned action appears in own real tasks');
  select test_assert(jsonb_array_length(query_sales())=4,'Dexter reads shared same-company deals');

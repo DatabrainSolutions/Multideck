@@ -34,8 +34,11 @@ test("personal, shared, mailbox and folder unread counts remain available", () =
 })
 
 test("notification bell is still driven by unread state and keeps its controls", () => {
+  const center = readFileSync(new URL("../src/components/multideck/notification-center.tsx", import.meta.url), "utf8")
   assert.match(sidebar, /notifications, unreadCount, total, loading, loaded, error, pending/u)
   assert.match(sidebar, /\{unreadCount > 0 \? <motion\.span/u)
-  assert.match(sidebar, /disabled=\{pending \|\| !loaded \|\| unreadCount === 0\}/u)
   assert.match(sidebar, /aria-label=\{t\("Open notifications"\)\}/u)
+  assert.match(sidebar, /<NotificationCenter/u)
+  assert.match(center, /disabled=\{pending \|\| !loaded \|\| unreadCount === 0\}/u)
+  for (const label of ["Mark as read", "Mark as unread", "Clear notification", "Clear all notifications", "Notification settings"]) assert.ok(center.includes(`"${label}"`), `${label} remains available`)
 })

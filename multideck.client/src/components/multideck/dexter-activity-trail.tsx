@@ -37,21 +37,24 @@ export function DexterActivityTrail({ content, activities = [], isStreaming, ans
   const hasDetails = Boolean(content.trim() || activities.length)
   const active = [...activities].reverse().find(item => item.status === "running")
   const usedProviders = [...new Set(activities.filter(item => item.status === "completed").flatMap(item => item.providers))]
-  const label = isStreaming
-    ? active?.label ?? (answerStarted ? "Writing response" : activities.length ? "Reviewing findings" : "Thinking")
+  // Answer streaming is already visible in the answer itself. Only show a
+  // busy trail while waiting for text or while a real tool is still running.
+  const isWorking = isStreaming && (!answerStarted || Boolean(active))
+  const label = isWorking
+    ? active?.label ?? (activities.length ? "Reviewing findings" : "Thinking")
     : usedProviders.length ? `Used ${usedProviders.map(source => providers[source].label).join(" and ")}`
     : activities.length ? "Activity summary" : "Reasoning summary"
-  const sources = isStreaming ? active?.providers ?? [] : usedProviders
-  if (!isStreaming && !hasDetails) return null
+  const sources = isWorking ? active?.providers ?? [] : usedProviders
+  if (!hasDetails && (!isStreaming || answerStarted)) return null
 
   return <div className="max-w-[680px]" data-dexter-activity-trail>
     <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{t(label)}</span>
-    <Reasoning open={open && hasDetails} onOpenChange={onOpenChange} isStreaming={isStreaming} className="mb-0 py-1"
-      data-reasoning-state={isStreaming ? "streaming" : "complete"}>
+    <Reasoning open={open && hasDetails} onOpenChange={onOpenChange} isStreaming={isWorking} className="mb-0 py-1"
+      data-reasoning-state={isWorking ? "streaming" : "complete"}>
       <ReasoningTrigger disabled={!hasDetails}
         className="min-h-9 min-w-0 gap-2.5 rounded-sm text-start text-[13px] font-normal text-[var(--md-text)] hover:text-[var(--md-ink)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--md-accent)] disabled:cursor-default">
         {sources.length ? <ActivityIcons sources={sources} /> : null}
-        <Shimmer className="min-w-0 break-words" disabled={!isStreaming}>{t(label)}</Shimmer>
+        <Shimmer className="min-w-0 break-words" disabled={!isWorking}>{t(label)}</Shimmer>
         {hasDetails ? <ChevronDown className={cn("size-3.5 shrink-0 text-[var(--md-subtle)] transition-transform motion-reduce:transition-none", open && "rotate-180")} aria-hidden="true" /> : null}
       </ReasoningTrigger>
       <motion.div initial={false}

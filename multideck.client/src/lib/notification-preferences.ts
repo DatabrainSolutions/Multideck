@@ -11,6 +11,7 @@ export const notificationEventTypes = [
   "product_updates",
   "dexter_watch",
   "lifecycle_note_mention",
+  "company_event_invitation",
 ] as const
 
 export type NotificationEventType = (typeof notificationEventTypes)[number]
@@ -30,6 +31,7 @@ export const defaultNotificationEmailPreferences: NotificationEmailPreferences =
   product_updates: true,
   dexter_watch: false,
   lifecycle_note_mention: true,
+  company_event_invitation: true,
   digestTime: "07:30",
   timezone: "Europe/London",
 }

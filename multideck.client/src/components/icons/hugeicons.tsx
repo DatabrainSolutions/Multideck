@@ -249,6 +249,7 @@ import {
   TestTube02Icon as TestTube02IconData,
   TextFontIcon as TextFontIconData,
   TicketIcon as TicketIconData,
+  Ticket01Icon as Ticket01IconData,
   TruckIcon as TruckIconData,
   UploadIcon as UploadIconData,
   User03Icon as User03IconData,
@@ -608,6 +609,7 @@ export const TestTube2 = createMultideckIcon(TestTube02IconData, "TestTube2")
 export const TextCursorInput = createMultideckIcon(InputCursorTextIconData, "TextCursorInput")
 export const TextQuote = createMultideckIcon(QuotesIconData, "TextQuote")
 export const TicketCheck = createMultideckIcon(TicketIconData, "TicketCheck")
+export const Ticket = createMultideckIcon(Ticket01IconData, "Ticket")
 export const Trash2 = createMultideckIcon(Delete02IconData, "Trash2")
 export const TrendingUp = createMultideckIcon(ChartIncreaseIconData, "TrendingUp")
 export const TriangleAlert = createMultideckIcon(Alert02IconData, "TriangleAlert")

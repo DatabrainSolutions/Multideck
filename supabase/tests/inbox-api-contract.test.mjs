@@ -20,6 +20,7 @@ const dexterEmailContext = await readFile(new URL("../functions/agent-dexter/ema
 const dexterRuntime = await readFile(new URL("../functions/agent-dexter/index.ts", import.meta.url), "utf8")
 const emailWatchWorker = await readFile(new URL("../functions/email-watch-worker/index.ts", import.meta.url), "utf8")
 const inboxReadme = await readFile(new URL("../functions/inbox-api/README.md", import.meta.url), "utf8")
+const groupRemovalMigration = await readFile(new URL("../migrations/20260926163000_remove_google_group_mailbox.sql", import.meta.url), "utf8")
 
 test("authenticated Edge boundary is registered", () => {
   assert.match(config, /\[functions\.inbox-api\]\s+verify_jwt\s*=\s*true/)
@@ -103,6 +104,19 @@ test("authorization and mailbox ACLs are enforced before service-role reads", ()
   assert.match(runtime, /CommMailboxAccess_CanRead/)
   assert.match(runtime, /CommMailboxAccess_CanSendAs/)
   assert.match(runtime, /CommMailboxAccess_CanManage/)
+})
+
+test("removing a Google Group inbox is scoped to its managing connection and revokes access", () => {
+  const removal = runtime.slice(runtime.indexOf("export async function removeGroupMailbox"), runtime.indexOf("function occurred("))
+  assert.match(index, /method === "DELETE" && path\.length === 3 && path\[0\] === "mailboxes" && path\[2\] === "group"/)
+  assert.match(removal, /requirePermission\(admin, actor, "Email\.ManageShared"\)/)
+  assert.match(removal, /requireMailbox\(admin, actor, mailboxId, "manage"\)/)
+  assert.match(removal, /connection\.CommConn_UserID !== actor\.userId/)
+  assert.match(removal, /CommMailbox_TypeCode !== "group"/)
+  assert.match(removal, /admin\.rpc\("comm_remove_group_mailbox"/)
+  assert.match(groupRemovalMigration, /CommMailboxAccess_RevokedAt" = v_now/)
+  assert.match(groupRemovalMigration, /CommMailbox_IsDeleted" = true/)
+  assert.match(groupRemovalMigration, /revoke all on function public\.comm_remove_group_mailbox\(uuid, uuid, uuid\) from public, anon, authenticated/)
 })
 
 test("shared Outlook consent stays explicit and shared discovery remains delegated", () => {

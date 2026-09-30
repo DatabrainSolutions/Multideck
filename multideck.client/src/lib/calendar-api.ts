@@ -2,6 +2,8 @@ import { edgeFetch } from "@/lib/api"
 import { getSupabaseSession, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 import type { PublicBranding } from "@/lib/public-brand-theme"
 import { normaliseBookingLink } from "@/lib/booking-link-response"
+import { getEventsSettings, listEvents } from "@/lib/company-events-api"
+import { companyEventsForCalendar } from "@/lib/company-event-calendar"
 
 export type CalendarProvider = "multideck" | "google_meet" | "microsoft_teams" | "zoom" | "phone" | "in_person"
 export type MeetingStatus = "provisioning" | "confirmed" | "sync_pending" | "sync_failed" | "cancelled" | "completed"
@@ -45,6 +47,8 @@ export type MeetingChangeRequest = {
 
 export type CalendarEvent = {
   id: string
+  /** Source event, opened in Events instead of the meeting editor. */
+  companyEventId?: string
   title: string
   agenda?: string | null
   startAt: string
@@ -189,6 +193,7 @@ export type CalendarWorkspace = {
   timeZone: string
   meetings: CalendarEvent[]
   externalEvents: CalendarEvent[]
+  companyEvents?: CalendarEvent[]
   ribbons: CalendarRibbon[]
   availability: CalendarAvailabilityPreferences
   connections: CalendarConnection[]
@@ -325,8 +330,14 @@ export async function getCalendarWorkspace(start: string, end: string, signal?: 
     return { ...workspace, bookingLinks: workspace.bookingLinks.map(normaliseBookingLink) }
   }
   const query = new URLSearchParams({ start, end })
-  const workspace = await apiJson<CalendarWorkspace>(calendarFetch(`/workspace?${query}`, { signal }), "Calendar could not be loaded.")
-  return { ...workspace, bookingLinks: workspace.bookingLinks.map(normaliseBookingLink) }
+  const [workspace, events] = await Promise.all([
+    apiJson<CalendarWorkspace>(calendarFetch(`/workspace?${query}`, { signal }), "Calendar could not be loaded."),
+    // Recheck the switch each load. Both RPCs resolve the signed-in actor and
+    // apply the existing invitation/active-colleague boundaries server-side.
+    getEventsSettings(true).then((settings) => settings.enabled ? listEvents() : []),
+  ])
+  if (signal?.aborted) throw new DOMException("The request was aborted.", "AbortError")
+  return { ...workspace, companyEvents: companyEventsForCalendar(events, start, end), bookingLinks: workspace.bookingLinks.map(normaliseBookingLink) }
 }
 
 export async function createMeeting(draft: MeetingDraft, source: "calendar" | "crm" = "calendar") {

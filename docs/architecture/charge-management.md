@@ -12,6 +12,18 @@ and revenue relationships are selected per legal entity through
 nominal accounts. External accounting provider mappings continue to use those
 Multideck nominals. No provider code is stored on the charge catalogue record.
 
+New tenants receive seven Multideck-owned `MD-` starter charge identities with
+the approved product reference data: freight, agency, port and terminal,
+documentation, warehouse, transport and other service. They are distinct from
+customer-specific imported charge codes. Their shared catalogue identity is
+standard; their cost and revenue nominal group mappings are still configured
+and validated for each legal entity before booking or posting. The starter
+codes are initially available across quote and booking directions and modes;
+administrators can narrow their applicability. They carry no guessed tax
+code, price basis or accounting-provider item.
+Existing tenants may install the same idempotent reference set through
+`supabase/operations/20260925_install_standard_charge_catalogue.sql`.
+
 Catalogue mutations go through `multideck_manage_charge_catalogue`: the
 server checks the finance configuration permission and legal entity, validates
 the matrix, replaces it atomically, checks the version, and writes an audit

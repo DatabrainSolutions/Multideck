@@ -14,8 +14,8 @@ import {
   type DexterSlashCommand,
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
-import { DexterBrandMark } from "@/components/multideck/dexter-brand-mark"
-import { HomePromptRail, type HomePromptSuggestion } from "@/components/multideck/home-prompt-rail"
+import { DexterGreeting } from "@/components/multideck/dexter-greeting"
+import { DexterPromptPresets, type DexterPromptPreset } from "@/components/multideck/dexter-prompt-presets"
 import { dexterMentionSnapshot } from "@/data/dexter-mentions"
 import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
 import { setDexterAccessMode, uploadDexterDocument, type DexterUploadedDocument } from "@/lib/dexter-api"
@@ -74,7 +74,7 @@ export function HomeDexterLauncher({
 }: {
   operatorName: string | null
   standfirst?: string
-  suggestions?: HomePromptSuggestion[]
+  suggestions?: DexterPromptPreset[]
   docked: boolean
   onDockedChange: (docked: boolean) => void
   navigate: (path: string) => void
@@ -314,26 +314,11 @@ export function HomeDexterLauncher({
         {docked ? null : (
           <motion.div
             key="home-greeting"
-            className="mx-auto mb-[var(--md-page-section-gap)] max-w-[46ch] text-center"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -6 }}
-            transition={reduceMotion(shouldReduceMotion, mdMotion.panel)}
+            className="mb-[var(--md-gap-xl)]"
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -6, filter: "blur(4px)" }}
+            transition={reduceMotion(shouldReduceMotion, mdMotion.exit)}
           >
-            <div className="flex items-center justify-center gap-3">
-              <DexterBrandMark className="size-6 shrink-0" />
-              <h1
-                className="text-[24px] font-medium leading-tight tracking-[-0.01em] text-[var(--md-ink)] sm:text-[30px]"
-                style={{ textWrap: "balance" }}
-              >
-                {greeting}
-              </h1>
-            </div>
-            {standfirst ? (
-              <p className="mt-4 text-[15px] leading-[1.5] text-[var(--md-text)]" style={{ textWrap: "pretty" }}>
-                {standfirst}
-              </p>
-            ) : null}
+            <DexterGreeting title={greeting} standfirst={standfirst} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -342,8 +327,12 @@ export function HomeDexterLauncher({
           travels from the middle of Home to the foot of the conversation, and
           Motion animates that layout change rather than fading a second copy in
           somewhere else. */}
+      {/* Position only: the composer settles into its quiet shape while it
+          travels – tray folding away, bloom fading, height easing down – so
+          the box never has to be scaled, and it lands looking exactly like the
+          conversation composer that replaces it. */}
       <motion.div
-        layout={!shouldReduceMotion}
+        layout={shouldReduceMotion ? false : "position"}
         layoutDependency={docked}
         className="relative z-30"
         // A tween rather than a spring: the handover is timed against this
@@ -354,8 +343,24 @@ export function HomeDexterLauncher({
         onFocusCapture={prepareWorkspace}
         onPointerDownCapture={prepareWorkspace}
       >
+        {/* A CSS entrance rather than a frame-driven one: it runs on the clock,
+            so the one control Home cannot do without always lands visible –
+            even when the page first renders in a background tab. */}
+        <div className="md-composer-arrive">
         <DexterPromptComposer
           value={value}
+          compact={docked}
+          fadeBloomOnCompact
+          presets={suggestions.length ? (
+            <DexterPromptPresets
+              presets={suggestions}
+              instant
+              onPick={(prompt, specialistId) => {
+                setSelectedSpecialistId(specialistId)
+                handOver(prompt, specialistId)
+              }}
+            />
+          ) : undefined}
           specialists={defaultDexterSpecialists}
           selectedSpecialistId={selectedSpecialistId}
           selectedModelId={selectedModelId}
@@ -388,28 +393,8 @@ export function HomeDexterLauncher({
           onSend={(prompt) => handOver(prompt ?? value)}
           isSending={isHandingOver || isUploadingDocument}
         />
+        </div>
       </motion.div>
-
-      <AnimatePresence initial={false}>
-        {docked || !suggestions.length ? null : (
-          <motion.div
-            key="home-prompt-rail"
-            className="mt-[var(--md-gap-xl)]"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: 6 }}
-            transition={reduceMotion(shouldReduceMotion, mdMotion.panel)}
-          >
-            <HomePromptRail
-              suggestions={suggestions}
-              onPick={(prompt, specialistId) => {
-                setSelectedSpecialistId(specialistId)
-                handOver(prompt, specialistId)
-              }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence initial={false}>
         {composerError ? (

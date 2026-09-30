@@ -12,11 +12,13 @@ import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpErro
 import { erpNextCreate, erpNextList, erpNextOrigin, erpNextRequest } from "../_shared/erpnext.ts"
 import { hyperExtConfigured, hyperExtRequest, hyperExtStatus, parseHyperExtNominals } from "../_shared/hyperext.ts"
 import { registerPagination } from "../_shared/register-pagination.ts"
+import { previewUkVatCashSources } from "../_shared/uk-vat-cash-preview.mts"
+import { previewUkVatCashControlBridge } from "../_shared/uk-vat-cash-control-bridge.mts"
 
 type LineInput = { description: string; quantity?: number; unitAmount?: number; taxRatePercent?: number; taxCode?: string | null; chargeCode?: string | null; jobCostingLineId?: string | null; lineType?: "service" | "ancillary" }
-type DraftInput = { type: "sl_invoice" | "credit_note" | "pl_invoice" | "debit_note"; partyOrgId: string; documentDate?: string; dueDate?: string | null; currencyCode?: string; exchangeRate?: number; lines: LineInput[]; sourceJobId?: string | null; idempotencyKey?: string; sourceExtractionId?: string }
+type DraftInput = { type: "sl_invoice" | "credit_note" | "pl_invoice" | "debit_note"; legalEntityId?: string; partyOrgId: string; documentDate?: string; dueDate?: string | null; currencyCode?: string; exchangeRate?: number; lines: LineInput[]; sourceJobId?: string | null; idempotencyKey?: string; sourceExtractionId?: string }
 type ControlledDraftInput = DraftInput & { legalEntityId: string }
-type CashInput = { type: "customer_receipt" | "supplier_payment"; partyOrgId: string; bankAccountId: string; transactionDate?: string; currencyCode?: string; exchangeRate?: number; amount: number; reference?: string | null; allocations?: Array<{ documentId: string; amount: number }>; idempotencyKey?: string }
+type CashInput = { type: "customer_receipt" | "supplier_payment"; legalEntityId?: string; partyOrgId: string; bankAccountId: string; transactionDate?: string; currencyCode?: string; exchangeRate?: number; amount: number; reference?: string | null; allocations?: Array<{ documentId: string; amount: number }>; idempotencyKey?: string }
 type ControlledCashInput = CashInput & { legalEntityId: string }
 type ConfigInput = { legalEntityId: string; chartTemplateCode: string; providerCode?: AccountingProviderCode; externalCompany: string; countryCode: string; taxRegistrationNo?: string | null; reportingBasisCode?: string | null; effectiveFrom?: string }
 type AdministrationInput = { settings: Record<string, unknown>; reason?: string | null }
@@ -48,7 +50,25 @@ type ProviderPartySyncResult = {
 type Ledger = "receivables" | "payables"
 
 function clean(value: unknown, max: number) { return typeof value === "string" ? value.trim().slice(0, max) : "" }
-function isUuid(value: string) { return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value) }
+function isoDate(value: unknown) {
+  const date = clean(value, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+  const parsed = new Date(`${date}T00:00:00Z`)
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === date ? date : null
+}
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)
+}
+function vatTenantProjectRef() {
+  const configured = Deno.env.get("SUPABASE_URL")?.trim()
+  if (!configured) throw new HttpError(503, "The tenant backend identity is not configured.")
+  let url: URL
+  try { url = new URL(configured) } catch { throw new HttpError(503, "The tenant backend identity is invalid.") }
+  if (!url.hostname || (url.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(url.hostname))) {
+    throw new HttpError(503, "The tenant backend identity is invalid.")
+  }
+  return url.host
+}
 function currency(value: unknown) { const code = clean(value, 3).toUpperCase(); return /^[A-Z]{3}$/.test(code) ? code : null }
 function finiteNumber(value: unknown) { const number = Number(value); return Number.isFinite(number) ? number : null }
 function sameAmount(left: number, right: number) { return Math.abs(left - right) <= 0.01 }
@@ -96,7 +116,19 @@ async function legalEntity(admin: any, current: any, id: string) {
   return data
 }
 
-async function tenantLegalEntity(admin: any, current: any) {
+async function tenantLegalEntity(admin: any, current: any, requestedId?: string) {
+  if (requestedId !== undefined) {
+    if (!isUuid(requestedId)) throw new HttpError(400, "Choose a valid legal entity.")
+    const { data, error } = await admin.from("cmp_LegalEntities")
+      .select("LegalEntity_ID,LegalEntity_Name,LegalEntity_BaseCurrencyCodeSnapshot,Company_ID")
+      .eq("LegalEntity_ID", requestedId)
+      .eq("Company_ID", current.Company_ID)
+      .eq("LegalEntity_IsActive", true)
+      .maybeSingle()
+    if (error) throw new HttpError(500, error.message)
+    if (!data) throw new HttpError(404, "That active legal entity is not in this workspace.")
+    return data
+  }
   const { data, error } = await admin.from("cmp_LegalEntities")
     .select("LegalEntity_ID,LegalEntity_Name,LegalEntity_BaseCurrencyCodeSnapshot,Company_ID")
     .eq("Company_ID", current.Company_ID)
@@ -105,7 +137,7 @@ async function tenantLegalEntity(admin: any, current: any) {
     .limit(2)
   if (error) throw new HttpError(500, error.message)
   if (!data?.length) throw new HttpError(409, "Set up the tenant company before creating finance records.")
-  if (data.length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")
+  if (data.length !== 1) throw new HttpError(400, "Choose the legal entity for this finance record.")
   return data[0]
 }
 
@@ -1289,7 +1321,6 @@ async function documentWorkspace(admin: any, current: any, selectedLedger: Ledge
   ])
   for (const query of [entities, parties, jobs, periods, currencies, banks, treatments, revisions, pendingRuns, demoConnections, activeConnections, suggestions, openDocuments]) if (query.error) throw new HttpError(500, query.error.message)
   if (!(entities.data ?? []).length) throw new HttpError(409, "Set up the tenant company before creating finance records.")
-  if ((entities.data ?? []).length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")
   const connectionIds = (activeConnections.data ?? []).map((connection: any) => connection.ACCIC_ID)
   const { data: partyMappings, error: partyMappingError } = connectionIds.length
     ? await admin.from("ACCI_PartyMappings").select("ACCIPM_ID,ACCIPM_ConnectionID,ACCIPM_OrgID,ACCIPM_PartyType,ACCIPM_ProviderPartyID,ACCIPM_ProviderPartyCode,ACCIPM_ProviderPartyName,ACCIPM_LastSyncedAt,ACCIPM_IsActive").in("ACCIPM_ConnectionID", connectionIds).eq("ACCIPM_IsActive", true)
@@ -1364,7 +1395,7 @@ async function documentDetail(admin: any, current: any, id: string) {
     document.FINDoc_PartyOrgID
       ? admin.from("Org_Master").select("Org_id,Org_Name,Org_AccCode").eq("Org_id", document.FINDoc_PartyOrgID).maybeSingle()
       : { data: null, error: null },
-    admin.from("cmp_LegalEntities").select("LegalEntity_ID,LegalEntity_Name,LegalEntity_BaseCurrencyCodeSnapshot").eq("LegalEntity_ID", document.FINDoc_LegalEntityID).maybeSingle(),
+    admin.from("cmp_LegalEntities").select("LegalEntity_ID,LegalEntity_Name,LegalEntity_CountryCode,LegalEntity_BaseCurrencyCodeSnapshot").eq("LegalEntity_ID", document.FINDoc_LegalEntityID).maybeSingle(),
     document.FINDoc_SourceJobID
       ? admin.from("Job_Header").select("Job_ID,Job_Number,Job_Period").eq("Job_ID", document.FINDoc_SourceJobID).maybeSingle()
       : { data: null, error: null },
@@ -1405,6 +1436,14 @@ async function documentDetail(admin: any, current: any, id: string) {
     && ["blocked", "failed"].includes(document.FINDoc_ExportStatusCode)
     && Boolean(queueResult.data)
     && (queueResult.data.FINIntQ_StatusCode !== "processing" || lastAttempt < Date.now() - 15 * 60 * 1000)
+  const vatResult = entityResult.data?.LegalEntity_CountryCode === "GB"
+    ? await admin.rpc("multideck_uk_vat_document_reconciliation", {
+      p_actor: current.User_ID,
+      p_entity: document.FINDoc_LegalEntityID,
+      p_document: id,
+    })
+    : { data: null, error: null }
+  if (vatResult.error && vatResult.error.code !== "42501") throw new HttpError(500, vatResult.error.message)
   return {
     document: {
       ...safeDocument,
@@ -1419,6 +1458,7 @@ async function documentDetail(admin: any, current: any, id: string) {
     history: historyResult.data ?? [],
     externalReference: externalResult.data ?? null,
     reconciliationIssues: issueResult.data ?? [],
+    vatReconciliation: vatResult.error ? null : vatResult.data,
     provider: connectionResult.data ?? null,
     // Presentation-only projection of an address already available through the
     // tenant-scoped CRM account domain. It does not add a finance write or event:
@@ -1490,7 +1530,7 @@ async function linkDocumentChargeLines(admin: any, current: any, documentId: str
 
 async function createDocumentDraft(admin: any, current: any, input: DraftInput) {
   await requirePermission(admin, current.User_ID, documentPermission(input.type))
-  const tenantEntity = await tenantLegalEntity(admin, current)
+  const tenantEntity = await tenantLegalEntity(admin, current, input.legalEntityId)
   const tenantInput: ControlledDraftInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }
   const evidence = await financePurchaseEvidence(admin, current, tenantInput)
   const controlledInput = await controlledDocumentDraftInput(admin, tenantInput)
@@ -1623,7 +1663,7 @@ async function correctDocumentBillingParty(admin: any, current: any, id: string,
 
 async function createCashDraft(admin: any, current: any, input: CashInput) {
   await requirePermission(admin, current.User_ID, cashPermission(input.type))
-  const tenantEntity = await tenantLegalEntity(admin, current)
+  const tenantEntity = await tenantLegalEntity(admin, current, input.legalEntityId)
   const controlledInput: ControlledCashInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }
   const { data, error } = await admin.rpc("multideck_finance_create_cash_draft", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_input: { ...controlledInput, idempotencyKey: input.idempotencyKey || crypto.randomUUID() } })
   rpcFailure(error, "Could not create the cash draft.")
@@ -1633,9 +1673,11 @@ async function createCashDraft(admin: any, current: any, input: CashInput) {
 async function transitionDocument(admin: any, current: any, id: string, transition: "request_review" | "approve" | "reject", reason?: string) {
   const document = await scopedDocument(admin, current, id)
   await requirePermission(admin, current.User_ID, transition === "request_review" ? documentPermission(document.FINDoc_TypeCode) : "Finance.ReviewAndPost")
-  const { data, error } = await admin.rpc("multideck_finance_transition_document", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_document_id: id, p_transition: transition, p_reason: clean(reason, 500) || null })
+  const { data, error } = transition === "request_review"
+    ? await admin.rpc("multideck_finance_submit_document", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_document_id: id, p_reason: clean(reason, 500) || null })
+    : await admin.rpc("multideck_finance_transition_document", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_document_id: id, p_transition: transition, p_reason: clean(reason, 500) || null })
   rpcFailure(error, "Could not change the finance document status.")
-  if (transition === "approve") {
+  if (transition === "approve" || data?.FINDoc_StatusCode === "approved") {
     const { data: queue } = await admin.from("FIN_IntegrationQueue").select("FINIntQ_ID").eq("FINIntQ_LocalTable", "FIN_Documents").eq("FINIntQ_LocalID", id).eq("FINIntQ_StatusCode", "queued").order("FINIntQ_CreatedAt", { ascending: false }).limit(1).maybeSingle()
     if (queue?.FINIntQ_ID) await processQueue(admin, current, queue.FINIntQ_ID, true).catch(() => null)
     return await scopedDocument(admin, current, id)
@@ -1646,9 +1688,11 @@ async function transitionDocument(admin: any, current: any, id: string, transiti
 async function transitionCash(admin: any, current: any, id: string, transition: "request_review" | "approve" | "reject", reason?: string) {
   const cash = await scopedCash(admin, current, id)
   await requirePermission(admin, current.User_ID, transition === "request_review" ? cashPermission(cash.FINCash_TypeCode) : "Finance.ReviewAndPost")
-  const { data, error } = await admin.rpc("multideck_finance_transition_cash", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_cash_id: id, p_transition: transition, p_reason: clean(reason, 500) || null })
+  const { data, error } = transition === "request_review"
+    ? await admin.rpc("multideck_finance_submit_cash", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_cash_id: id, p_reason: clean(reason, 500) || null })
+    : await admin.rpc("multideck_finance_transition_cash", { p_company_id: current.Company_ID, p_user_id: current.User_ID, p_cash_id: id, p_transition: transition, p_reason: clean(reason, 500) || null })
   rpcFailure(error, "Could not change the cash transaction status.")
-  if (transition === "approve") {
+  if (transition === "approve" || data?.FINCash_StatusCode === "approved") {
     const { data: queue } = await admin.from("FIN_IntegrationQueue").select("FINIntQ_ID").eq("FINIntQ_LocalTable", "FIN_CashTransactions").eq("FINIntQ_LocalID", id).eq("FINIntQ_StatusCode", "queued").order("FINIntQ_CreatedAt", { ascending: false }).limit(1).maybeSingle()
     if (queue?.FINIntQ_ID) await processQueue(admin, current, queue.FINIntQ_ID, true).catch(() => null)
     return await scopedCash(admin, current, id)
@@ -1917,6 +1961,1040 @@ Deno.serve(async (request) => {
     if (request.method === "GET" && parts[0] === "reports") {
       await requirePermission(admin, current.User_ID, "Finance.Reporting.View")
       return json(request, await reportingSnapshot(admin, current, request.url))
+    }
+    if (parts[0] === "vat" && parts.length === 2 && parts[1] === "entities" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      const { data, error } = await admin.from("cmp_LegalEntities")
+        .select("LegalEntity_ID,LegalEntity_Name,LegalEntity_BaseCurrencyCodeSnapshot")
+        .eq("Company_ID", current.Company_ID).eq("LegalEntity_CountryCode", "GB")
+        .eq("LegalEntity_IsActive", true).order("LegalEntity_Name").limit(100)
+      if (error) throw new HttpError(500, error.message)
+      return json(request, { entities: data ?? [] })
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "registration" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const { data, error } = await admin.rpc("multideck_uk_vat_registration", {
+        p_actor: current.User_ID, p_entity: parts[1],
+      })
+      rpcFailure(error, "UK VAT registration could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "registration" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ vrn?: unknown; schemeCode?: unknown; effectiveFrom?: unknown; invoiceBasisConfirmed?: unknown }>(request)
+      const vrn = typeof input.vrn === "string" ? input.vrn.trim() : ""
+      const scheme = typeof input.schemeCode === "string" ? input.schemeCode : ""
+      const effectiveFrom = isoDate(input.effectiveFrom)
+      if (!/^[0-9]{9}$/.test(vrn) || scheme !== "standard" || !effectiveFrom
+        || input.invoiceBasisConfirmed !== true) {
+        throw new HttpError(400, "Enter a nine-digit VAT number, Standard Accounting, effective date and invoice-basis confirmation.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_configure_registration", {
+        p_actor: current.User_ID, p_entity: parts[1], p_vrn: vrn,
+        p_scheme: scheme, p_effective_from: effectiveFrom, p_invoice_basis_confirmed: true,
+      })
+      rpcFailure(error, "UK VAT registration could not be configured.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 4 && parts[2] === "registration"
+      && parts[3] === "revisions" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ vrn?: unknown; schemeCode?: unknown; effectiveFrom?: unknown;
+        invoiceBasisConfirmed?: unknown; reason?: unknown }>(request)
+      const vrn = typeof input.vrn === "string" ? input.vrn.trim() : ""
+      const scheme = typeof input.schemeCode === "string" ? input.schemeCode : ""
+      const effectiveFrom = isoDate(input.effectiveFrom)
+      const reason = typeof input.reason === "string" ? input.reason.trim() : ""
+      if (!/^[0-9]{9}$/.test(vrn) || scheme !== "standard" || !effectiveFrom
+        || input.invoiceBasisConfirmed !== true || reason.length < 10 || reason.length > 2000) {
+        throw new HttpError(400, "Enter valid new VAT terms, invoice-basis confirmation, effective date and reason.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_schedule_registration", {
+        p_actor: current.User_ID, p_entity: parts[1], p_vrn: vrn, p_scheme: scheme,
+        p_effective_from: effectiveFrom, p_invoice_basis_confirmed: true, p_reason: reason,
+      })
+      if (error?.code === "23P01" || error?.code === "23505") {
+        throw new HttpError(409, "VAT registration dates overlap an existing record. Refresh and review the schedule.")
+      }
+      rpcFailure(error, "UK VAT registration change could not be scheduled.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "coverage" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const { data, error } = await admin.rpc("multideck_uk_vat_source_coverage", { p_actor: current.User_ID, p_entity: parts[1] })
+      rpcFailure(error, "UK VAT source coverage could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "periods" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const { data, error } = await admin.rpc("multideck_uk_vat_list_periods", { p_actor: current.User_ID, p_entity: parts[1] })
+      rpcFailure(error, "UK VAT periods could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "periods" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ startDate?: unknown; endDate?: unknown }>(request)
+      const start = isoDate(input.startDate)
+      const end = isoDate(input.endDate)
+      if (!start || !end || end < start) throw new HttpError(400, "Choose valid UK VAT period dates.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_create_draft_period", {
+        p_actor: current.User_ID, p_entity: parts[1], p_start: start, p_end: end,
+      })
+      rpcFailure(error, "UK VAT draft period could not be prepared.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "prior-errors" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_prior_period_error_intake", {
+        p_actor: current.User_ID, p_entity: parts[1], p_discovery_period: parts[3],
+      })
+      rpcFailure(error, "Prior-period VAT errors could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 6 && parts[2] === "periods"
+      && parts[4] === "prior-errors" && parts[5] === "preview" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const choice = new URL(request.url).searchParams.get("chooseSeparate")
+      if (choice !== "true" && choice !== "false") throw new HttpError(400, "Choose a valid correction method preview.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_prior_error_status", {
+        p_actor: current.User_ID, p_entity: parts[1], p_discovery_period: parts[3],
+        p_choose_separate: choice === "true",
+      })
+      rpcFailure(error, "Prior-period VAT error method could not be previewed.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "prior-errors" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const input = await body<{ originalPeriodStart?: unknown; originalPeriodEnd?: unknown;
+        discoveredOn?: unknown; sourceReference?: unknown; taxSide?: unknown;
+        signedVatErrorGbp?: unknown; conduct?: unknown; explanation?: unknown }>(request)
+      const originalStart = isoDate(input.originalPeriodStart)
+      const originalEnd = isoDate(input.originalPeriodEnd)
+      const discoveredOn = isoDate(input.discoveredOn)
+      const sourceReference = clean(input.sourceReference, 160)
+      const taxSide = input.taxSide
+      const amount = typeof input.signedVatErrorGbp === "string" ? input.signedVatErrorGbp.trim() : ""
+      const explanation = clean(input.explanation, 2000)
+      if (!originalStart || !originalEnd || originalEnd < originalStart || !discoveredOn
+        || sourceReference.length < 3 || !["input", "output"].includes(String(taxSide))
+        || !/^-?(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(amount) || Number(amount) === 0
+        || !["undetermined", "reasonable_care", "careless", "deliberate"].includes(String(input.conduct))
+        || explanation.length < 10) {
+        throw new HttpError(400, "Enter complete dated prior-period VAT error evidence to the penny.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_record_prior_period_error", {
+        p_actor: current.User_ID, p_entity: parts[1], p_discovery_period: parts[3],
+        p_original_start: originalStart, p_original_end: originalEnd,
+        p_discovered_on: discoveredOn, p_source_reference: sourceReference,
+        p_tax_side: taxSide, p_signed_vat_error_gbp: amount,
+        p_conduct: input.conduct, p_explanation: explanation,
+      })
+      if (error?.code === "23505") throw new HttpError(409, "This source already has a different prior-period VAT error record.")
+      rpcFailure(error, "Prior-period VAT error could not be recorded.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "prior-errors"
+      && parts[4] === "conduct" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "Prior-period VAT error was not found.")
+      const input = await body<{ conduct?: unknown; reason?: unknown }>(request)
+      const reason = clean(input.reason, 2000)
+      if (!["reasonable_care", "careless", "deliberate"].includes(String(input.conduct)) || reason.length < 10) {
+        throw new HttpError(400, "Choose a conduct category and explain the review.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_review_prior_error_conduct", {
+        p_actor: current.User_ID, p_entity: parts[1], p_intake: parts[3],
+        p_conduct: input.conduct, p_reason: reason,
+      })
+      rpcFailure(error, "Prior-period VAT error conduct could not be reviewed.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "prior-errors"
+      && parts[4] === "time-limit" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "Prior-period VAT error was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_prior_error_time_limit_history", {
+        p_actor: current.User_ID, p_entity: parts[1], p_intake: parts[3],
+      })
+      rpcFailure(error, "Prior-period VAT deadline reviews could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "prior-errors"
+      && parts[4] === "time-limit" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "Prior-period VAT error was not found.")
+      const input = await body<{ errorCategory?: unknown; originalReturnReference?: unknown;
+        originalReturnDueOn?: unknown; evidenceReference?: unknown; reason?: unknown }>(request)
+      const category = String(input.errorCategory ?? "")
+      const returnReference = clean(input.originalReturnReference, 160)
+      const evidenceReference = clean(input.evidenceReference, 160)
+      const reason = clean(input.reason, 2000)
+      const dueOn = input.originalReturnDueOn == null || input.originalReturnDueOn === ""
+        ? null : isoDate(input.originalReturnDueOn)
+      if (!["output_underdeclared", "output_overdeclared", "input_overclaimed", "input_underclaimed"].includes(category)
+        || returnReference.length < 3 || evidenceReference.length < 3 || reason.length < 10
+        || (category === "input_underclaimed" ? !dueOn : dueOn !== null || Boolean(input.originalReturnDueOn))) {
+        throw new HttpError(400, "Provide the original return, error category and supporting deadline evidence.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_review_prior_error_time_limit", {
+        p_actor: current.User_ID, p_entity: parts[1], p_intake: parts[3],
+        p_category: category, p_original_return_reference: returnReference,
+        p_original_return_due_on: dueOn, p_evidence_reference: evidenceReference,
+        p_reason: reason,
+      })
+      rpcFailure(error, "Prior-period VAT deadline could not be reviewed.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "method1-offsets"
+      && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const { data, error } = await admin.rpc("multideck_uk_vat_method1_offset_nominals", {
+        p_actor: current.User_ID, p_entity: parts[1],
+      })
+      rpcFailure(error, "VAT correction offset accounts could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 6 && parts[2] === "periods"
+      && parts[4] === "prior-errors" && parts[5] === "method1-plans"
+      && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_method1_plans", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+      })
+      rpcFailure(error, "Method 1 posting plans could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 6 && parts[2] === "periods"
+      && parts[4] === "prior-errors" && parts[5] === "method1-plans"
+      && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const input = await body<{ baseCalculationId?: unknown; sourceDigest?: unknown;
+        items?: unknown; reason?: unknown; confirmed?: unknown }>(request)
+      const reason = clean(input.reason, 2000)
+      const items = input.items
+      if (!isUuid(input.baseCalculationId) || typeof input.sourceDigest !== "string"
+        || !/^[a-f0-9]{64}$/.test(input.sourceDigest)
+        || !Array.isArray(items) || items.length < 1 || items.length > 100
+        || !items.every((item) => item && typeof item === "object"
+          && isUuid((item as Record<string, unknown>).intakeId)
+          && isUuid((item as Record<string, unknown>).offsetNominalId)
+          && /^-?(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(String((item as Record<string, unknown>).boxNetDeltaGbp ?? ""))
+          && clean((item as Record<string, unknown>).evidenceReference, 160).length >= 3)
+        || reason.length < 10 || input.confirmed !== true) {
+        throw new HttpError(400, "Review every previous-return error, its net-box change and offset account.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_review_method1_plan", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+        p_base_calculation: input.baseCalculationId, p_source_digest: input.sourceDigest,
+        p_items: items, p_reason: reason, p_confirmed: true,
+      })
+      rpcFailure(error, "Method 1 posting plan could not be reviewed.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 6 && parts[2] === "periods"
+      && parts[4] === "prior-errors" && parts[5] === "method1-postings"
+      && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_method1_postings", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+      })
+      rpcFailure(error, "Method 1 postings could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 7 && parts[2] === "periods"
+      && parts[4] === "prior-errors" && parts[5] === "method1-plans"
+      && parts[6] && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3]) || !isUuid(parts[6])) throw new HttpError(404, "Method 1 plan was not found.")
+      const input = await body<{ reason?: unknown; confirmed?: unknown }>(request)
+      const reason = clean(input.reason, 2000)
+      if (reason.length < 10 || input.confirmed !== true) {
+        throw new HttpError(400, "Confirm the reviewed Method 1 plan and give a posting reason.")
+      }
+      const { data: plan, error: planError } = await admin.from("FIN_IndirectTaxPriorErrorMethod1Plans")
+        .select("id").eq("id", parts[6]).eq("legal_entity_id", parts[1])
+        .eq("discovery_period_id", parts[3]).maybeSingle()
+      rpcFailure(planError, "Method 1 plan could not be checked.")
+      if (!plan) throw new HttpError(404, "Method 1 plan was not found in this VAT period.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_post_method1_plan", {
+        p_actor: current.User_ID, p_entity: parts[1], p_plan: parts[6],
+        p_reason: reason, p_confirmed: true,
+      })
+      rpcFailure(error, "Method 1 correction could not be posted.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "cash-payment-dates"
+      && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      const limit = params.has("limit") ? Number(params.get("limit")) : 25
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit)
+        || limit < 1 || limit > 100) throw new HttpError(400, "Choose a valid cash payment review page.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_cash_payment_date_queue", {
+        p_actor: current.User_ID, p_entity: parts[1], p_offset: offset, p_limit: limit,
+      })
+      rpcFailure(error, "Cash VAT payment dates could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "cash-preview"
+      && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const params = new URL(request.url).searchParams
+      const start = isoDate(params.get("start"))
+      const end = isoDate(params.get("end"))
+      if (!start || !end || start > end) throw new HttpError(400, "Choose valid Cash Accounting preview dates.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_cash_source_snapshot", {
+        p_actor: current.User_ID, p_entity: parts[1], p_start: start, p_end: end,
+      })
+      rpcFailure(error, "Cash Accounting sources could not be read.")
+      return json(request, previewUkVatCashSources(data))
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "cash-projections"
+      && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const params = new URL(request.url).searchParams
+      const start = isoDate(params.get("start"))
+      const end = isoDate(params.get("end"))
+      if (!start || !end || start > end) throw new HttpError(400, "Choose valid Cash Accounting projection dates.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_cash_event_projection_history", {
+        p_actor: current.User_ID, p_entity: parts[1], p_start: start, p_end: end,
+      })
+      rpcFailure(error, "Cash Accounting projection history could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "cash-projections"
+      && parts[4] === "nine-box-preview" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(400, "Choose a valid Cash Accounting projection.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_cash_nine_box_preview", {
+        p_actor: current.User_ID, p_entity: parts[1], p_projection: parts[3],
+      })
+      rpcFailure(error, "Cash Accounting nine-box preview could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "cash-control" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const projectionId = new URL(request.url).searchParams.get("projectionId")
+      if (!isUuid(parts[3]) || !isUuid(projectionId)) {
+        throw new HttpError(400, "Choose a Cash VAT period and payment projection.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_cash_control_source_inventory", {
+        p_actor: current.User_ID, p_entity: parts[1],
+        p_period: parts[3], p_projection: projectionId,
+      })
+      rpcFailure(error, "Cash VAT control sources could not be read.")
+      return json(request, { source: data, preview: previewUkVatCashControlBridge(data) })
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "cash-reconciliations" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "Cash VAT period was not found.")
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647) {
+        throw new HttpError(400, "Choose a valid Cash VAT reconciliation page.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_cash_event_reconciliations", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+        p_offset: offset, p_limit: 100,
+      })
+      rpcFailure(error, "Cash VAT reconciliation history could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "cash-calculate" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ projectionId?: unknown }>(request)
+      if (!isUuid(parts[3]) || !isUuid(input.projectionId)) {
+        throw new HttpError(400, "Choose a Cash VAT period and payment projection.")
+      }
+      const { data: period, error: periodError } = await admin.from("FIN_IndirectTaxPeriods")
+        .select("id").eq("id", parts[3]).eq("legal_entity_id", parts[1]).maybeSingle()
+      if (periodError) throw new HttpError(500, periodError.message)
+      if (!period) throw new HttpError(404, "Cash VAT period was not found in this legal entity.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_calculate_cash_draft", {
+        p_actor: current.User_ID, p_period: parts[3], p_projection: input.projectionId,
+      })
+      rpcFailure(error, "Cash VAT draft could not be calculated.")
+      return json(request, data, 201)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "cash-projections"
+      && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ start?: unknown; end?: unknown }>(request)
+      const start = isoDate(input.start)
+      const end = isoDate(input.end)
+      if (!start || !end || start > end) throw new HttpError(400, "Choose valid Cash Accounting projection dates.")
+      const source = await admin.rpc("multideck_uk_vat_cash_source_snapshot", {
+        p_actor: current.User_ID, p_entity: parts[1], p_start: start, p_end: end,
+      })
+      rpcFailure(source.error, "Cash Accounting sources could not be read.")
+      const preview = previewUkVatCashSources(source.data)
+      if (!preview.calculationValid) {
+        throw new HttpError(409, "Resolve the Cash Accounting source issues before recording a projection.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_record_cash_event_projection", {
+        p_actor: current.User_ID, p_entity: parts[1], p_start: start, p_end: end,
+        p_source: source.data, p_preview: preview,
+      })
+      rpcFailure(error, "Cash Accounting event projection could not be recorded.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "cash-payment-dates"
+      && parts[4] === "review" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "Cash transaction was not found.")
+      const input = await body<{ method?: unknown; methodDate?: unknown;
+        chequeDate?: unknown; evidenceReference?: unknown; reason?: unknown }>(request)
+      const method = input.method
+      const methodDate = isoDate(input.methodDate)
+      const chequeDate = input.chequeDate === null || input.chequeDate === ""
+        ? null : isoDate(input.chequeDate)
+      const evidenceReference = clean(input.evidenceReference, 160)
+      const reason = clean(input.reason, 2000)
+      if (!["cash_handover", "bank_credit_or_debit", "card_voucher", "cheque", "agent_collection"].includes(String(method))
+        || !methodDate || (method === "cheque" && !chequeDate)
+        || (method !== "cheque" && chequeDate !== null)
+        || evidenceReference.length < 3 || reason.length < 10) {
+        throw new HttpError(400, "Enter a payment method, evidenced date and review reason.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_review_cash_payment_date", {
+        p_actor: current.User_ID, p_entity: parts[1], p_cash: parts[3],
+        p_method: method, p_method_date: methodDate, p_cheque_date: chequeDate,
+        p_evidence_reference: evidenceReference, p_reason: reason,
+      })
+      rpcFailure(error, "Cash VAT payment date could not be reviewed.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 6 && parts[2] === "periods"
+      && parts[4] === "prior-errors" && parts[5] === "notifications"
+      && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_external_error_notifications", {
+        p_actor: current.User_ID, p_entity: parts[1], p_discovery_period: parts[3],
+      })
+      rpcFailure(error, "External VAT error notification evidence could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 6 && parts[2] === "periods"
+      && parts[4] === "prior-errors" && parts[5] === "notifications"
+      && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const input = await body<{ intakeIds?: unknown; notifiedOn?: unknown; channel?: unknown;
+        evidenceReference?: unknown; explanation?: unknown; confirmed?: unknown }>(request)
+      const intakeIds = Array.isArray(input.intakeIds) ? input.intakeIds : []
+      const notifiedOn = isoDate(input.notifiedOn)
+      const evidenceReference = clean(input.evidenceReference, 160)
+      const explanation = clean(input.explanation, 2000)
+      if (!intakeIds.length || intakeIds.length > 100 || intakeIds.some((id) => !isUuid(id))
+        || new Set(intakeIds).size !== intakeIds.length || !notifiedOn
+        || !["hmrc_online", "letter"].includes(String(input.channel))
+        || evidenceReference.length < 3 || explanation.length < 10
+        || input.confirmed !== true) {
+        throw new HttpError(400, "Confirm the separate HMRC notification and its dated source evidence.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_record_external_error_notification", {
+        p_actor: current.User_ID, p_entity: parts[1], p_discovery_period: parts[3],
+        p_intake_ids: intakeIds, p_notified_on: notifiedOn,
+        p_channel: input.channel, p_evidence_reference: evidenceReference,
+        p_explanation: explanation, p_confirmed: true,
+      })
+      if (error?.code === "23505") throw new HttpError(409, "An error or evidence reference is already linked to a separate notification.")
+      rpcFailure(error, "External VAT error notification evidence could not be recorded.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods" && parts[4] === "calculate" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const { data: period, error: periodError } = await admin.from("FIN_IndirectTaxPeriods")
+        .select("id").eq("id", parts[3]).eq("legal_entity_id", parts[1]).eq("jurisdiction_code", "GB").maybeSingle()
+      if (periodError) throw new HttpError(500, periodError.message)
+      if (!period) throw new HttpError(404, "UK VAT period was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_calculate_draft", { p_actor: current.User_ID, p_period_id: parts[3] })
+      rpcFailure(error, "UK VAT draft could not be calculated.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods" && parts[4] === "clawback-candidates" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647) {
+        throw new HttpError(400, "Choose a valid supplier VAT candidate page.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_clawback_candidates_page", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+        p_offset: offset, p_limit: 50,
+      })
+      rpcFailure(error, "Unpaid supplier VAT candidates could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods"
+      && parts[4] === "supplier-payment-followups" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647) {
+        throw new HttpError(400, "Choose a valid supplier VAT follow-up page.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_supplier_payment_followups", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+        p_offset: offset, p_limit: 50,
+      })
+      rpcFailure(error, "Supplier VAT payment follow-ups could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts[2] === "periods"
+      && parts[4] === "supplier-input-tax" && (parts.length === 6 || parts.length === 7)) {
+      const action = parts[6] ?? "history"
+      const isRead = request.method === "GET" && action === "history"
+      const isSource = request.method === "GET" && action === "source"
+      const isWrite = request.method === "POST" && [
+        "first-proposals", "first-reviews", "first-postings",
+        "later-reviews", "later-postings",
+      ].includes(action)
+      if (isRead || isSource || isWrite) {
+        await requirePermission(admin, current.User_ID,
+          isRead ? "Finance.Compliance.View" : "Finance.Compliance.Manage")
+        await legalEntity(admin, current, parts[1])
+        if (!isUuid(parts[3]) || !isUuid(parts[5])) {
+          throw new HttpError(404, "Supplier VAT period or invoice was not found.")
+        }
+        const { data: period, error: periodError } = await admin.from("FIN_IndirectTaxPeriods")
+          .select("id").eq("id", parts[3]).eq("legal_entity_id", parts[1])
+          .eq("jurisdiction_code", "GB").maybeSingle()
+        rpcFailure(periodError, "Supplier VAT period could not be checked.")
+        const { data: invoice, error: invoiceError } = await admin.from("FIN_Documents")
+          .select("FINDoc_ID").eq("FINDoc_ID", parts[5])
+          .eq("FINDoc_LegalEntityID", parts[1]).eq("FINDoc_TypeCode", "pl_invoice")
+          .maybeSingle()
+        rpcFailure(invoiceError, "Supplier VAT invoice could not be checked.")
+        if (!period || !invoice) throw new HttpError(404, "Supplier VAT period or invoice was not found.")
+        const scope = { p_actor: current.User_ID, p_entity: parts[1],
+          p_period: parts[3], p_document: parts[5] }
+        if (isRead) {
+          const { data, error } = await admin.rpc("multideck_uk_vat_supplier_input_tax_history", scope)
+          rpcFailure(error, "Supplier input VAT history could not be read.")
+          return json(request, data)
+        }
+        if (isSource) {
+          const kind = new URL(request.url).searchParams.get("kind")
+          if (kind !== "first" && kind !== "later") {
+            throw new HttpError(400, "Choose the first repayment or a later payment period.")
+          }
+          const { data, error } = await admin.rpc(kind === "first"
+            ? "multideck_uk_vat_clawback_source_snapshot"
+            : "multideck_uk_vat_later_input_tax_restoration_source", scope)
+          rpcFailure(error, "Supplier payment VAT source could not be checked.")
+          return json(request, data)
+        }
+        const input = await body<{ reason?: unknown; confirmed?: unknown;
+          proposalId?: unknown; reviewId?: unknown; offsetNominalId?: unknown }>(request)
+        const reason = clean(input.reason, 2000)
+        if (reason.length < 10) throw new HttpError(400, "Give a supplier VAT review or posting reason.")
+        if (action === "first-proposals") {
+          const { data, error } = await admin.rpc("multideck_uk_vat_prepare_first_input_tax_repayment", {
+            ...scope, p_reason: reason,
+          })
+          rpcFailure(error, "First supplier input VAT repayment could not be prepared.")
+          return json(request, data)
+        }
+        if (input.confirmed !== true) {
+          throw new HttpError(400, "Confirm the supplier VAT review or posting.")
+        }
+        if (action === "first-reviews") {
+          if (!isUuid(input.proposalId) || !isUuid(input.offsetNominalId)) {
+            throw new HttpError(400, "Choose a supplier VAT proposal and offset account.")
+          }
+          const { data: proposal, error: proposalError } = await admin
+            .from("FIN_IndirectTaxInputTaxRepaymentProposals").select("id")
+            .eq("id", input.proposalId).eq("legal_entity_id", parts[1])
+            .eq("period_id", parts[3]).eq("document_id", parts[5]).maybeSingle()
+          rpcFailure(proposalError, "Supplier VAT proposal could not be checked.")
+          if (!proposal) throw new HttpError(404, "Supplier VAT proposal was not found in this period.")
+          const { data, error } = await admin.rpc("multideck_uk_vat_review_input_tax_repayment", {
+            p_actor: current.User_ID, p_entity: parts[1], p_proposal: input.proposalId,
+            p_offset_nominal: input.offsetNominalId, p_reason: reason,
+          })
+          rpcFailure(error, "First supplier input VAT repayment could not be reviewed.")
+          return json(request, data)
+        }
+        if (action === "first-postings" || action === "later-postings") {
+          if (!isUuid(input.reviewId)) throw new HttpError(400, "Choose a reviewed supplier VAT adjustment.")
+          const table = action === "first-postings"
+            ? "FIN_IndirectTaxInputTaxRepaymentReviews"
+            : "FIN_IndirectTaxLaterInputTaxRestorationReviews"
+          const { data: review, error: reviewError } = await admin.from(table).select("id")
+            .eq("id", input.reviewId).eq("legal_entity_id", parts[1])
+            .eq("period_id", parts[3]).eq("document_id", parts[5]).maybeSingle()
+          rpcFailure(reviewError, "Supplier VAT review could not be checked.")
+          if (!review) throw new HttpError(404, "Supplier VAT review was not found in this period.")
+          const { data, error } = await admin.rpc(action === "first-postings"
+            ? "multideck_uk_vat_post_input_tax_repayment"
+            : "multideck_uk_vat_post_later_input_tax_restoration", {
+            p_actor: current.User_ID, p_entity: parts[1], p_review: input.reviewId,
+            p_reason: reason, p_confirmed: true,
+          })
+          if (error?.code === "23505") throw new HttpError(409, "This supplier VAT adjustment was already posted.")
+          rpcFailure(error, "Supplier input VAT adjustment could not be posted.")
+          return json(request, data)
+        }
+        if (action === "later-reviews") {
+          if (!isUuid(input.offsetNominalId)) throw new HttpError(400, "Choose a supplier VAT offset account.")
+          const { data, error } = await admin.rpc("multideck_uk_vat_review_later_input_tax_restoration", {
+            ...scope, p_offset_nominal: input.offsetNominalId,
+            p_reason: reason, p_confirmed: true,
+          })
+          rpcFailure(error, "Later supplier input VAT restoration could not be reviewed.")
+          return json(request, data)
+        }
+      }
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "detail" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT calculation was not found.")
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      const limit = params.has("limit") ? Number(params.get("limit")) : 100
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+        throw new HttpError(400, "Choose a valid VAT calculation page of up to 100 lines.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_calculation_detail", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3], p_offset: offset, p_limit: limit,
+      })
+      rpcFailure(error, "UK VAT calculation detail could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "account" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT calculation was not found.")
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      const limit = params.has("limit") ? Number(params.get("limit")) : 100
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+        throw new HttpError(400, "Choose a valid VAT account page of up to 100 transactions.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_account", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3], p_offset: offset, p_limit: limit,
+      })
+      rpcFailure(error, "UK VAT account could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 4 && parts[2] === "credit-links" && parts[3] === "candidates" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      const params = new URL(request.url).searchParams
+      const creditId = params.get("creditEvidenceId") ?? ""
+      const search = (params.get("search") ?? "").trim()
+      if (!isUuid(creditId) || search.length < 2 || search.length > 80) {
+        throw new HttpError(400, "Choose a posted credit line and search for its original invoice number.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_credit_candidates", {
+        p_actor: current.User_ID, p_entity: parts[1], p_credit: creditId, p_search: search,
+      })
+      rpcFailure(error, "Original VAT invoice lines could not be searched.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "credit-links" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ creditEvidenceId?: unknown; originalEvidenceId?: unknown; reason?: unknown }>(request)
+      const creditId = typeof input.creditEvidenceId === "string" ? input.creditEvidenceId : ""
+      const originalId = typeof input.originalEvidenceId === "string" ? input.originalEvidenceId : ""
+      const reason = clean(input.reason, 2000)
+      if (!isUuid(creditId) || !isUuid(originalId) || creditId === originalId || reason.length < 10) {
+        throw new HttpError(400, "Choose the credit, original invoice line and correction reason.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_link_credit", {
+        p_actor: current.User_ID, p_entity: parts[1], p_credit: creditId,
+        p_original: originalId, p_reason: reason,
+      })
+      rpcFailure(error, "The VAT credit could not be linked to its original invoice.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 4 && parts[2] === "credit-applications" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await requirePermission(admin, current.User_ID, "Finance.Management.Approve")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "The posted credit was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_credit_application_source", {
+        p_actor: current.User_ID, p_entity: parts[1], p_credit: parts[3],
+      })
+      rpcFailure(error, "The posted credit balance could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "credit-applications" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await requirePermission(admin, current.User_ID, "Finance.Management.Approve")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ invoiceId?: unknown; creditId?: unknown; amountGbp?: unknown;
+        appliedOn?: unknown; requestKey?: unknown; reason?: unknown }>(request)
+      const invoiceId = typeof input.invoiceId === "string" ? input.invoiceId : ""
+      const creditId = typeof input.creditId === "string" ? input.creditId : ""
+      const amountGbp = typeof input.amountGbp === "string" ? input.amountGbp : ""
+      const appliedOn = typeof input.appliedOn === "string" ? input.appliedOn : ""
+      const requestKey = typeof input.requestKey === "string" ? input.requestKey : ""
+      const reason = clean(input.reason, 2000)
+      if (!isUuid(invoiceId) || !isUuid(creditId) || invoiceId === creditId
+        || !/^(?:0|[1-9][0-9]{0,13})(?:\.[0-9]{1,4})?$/.test(amountGbp)
+        || Number(amountGbp) <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(appliedOn)
+        || !isUuid(requestKey) || reason.length < 10) {
+        throw new HttpError(400, "Choose the posted GBP invoice and credit, application amount, date and reason.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_apply_credit_to_invoice", {
+        p_actor: current.User_ID, p_entity: parts[1], p_invoice: invoiceId,
+        p_credit: creditId, p_amount: amountGbp, p_applied_on: appliedOn,
+        p_request_key: requestKey, p_reason: reason,
+      })
+      rpcFailure(error, "The posted credit could not be applied to its invoice.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "tax-postings" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT calculation was not found.")
+      const params = new URL(request.url).searchParams
+      const offset = params.has("offset") ? Number(params.get("offset")) : 0
+      const limit = params.has("limit") ? Number(params.get("limit")) : 100
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2147483647 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+        throw new HttpError(400, "Choose a valid VAT tax-posting page of up to 100 lines.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_tax_posting_inventory", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3], p_offset: offset, p_limit: limit,
+      })
+      rpcFailure(error, "UK VAT tax postings could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "reconcile" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT calculation was not found.")
+      const input = await body<{ sourceDigest?: unknown; evidenceIds?: unknown; reason?: unknown }>(request)
+      const digest = typeof input.sourceDigest === "string" ? input.sourceDigest : ""
+      const evidenceIds = input.evidenceIds
+      const reason = clean(input.reason, 2000)
+      if (!/^[a-f0-9]{64}$/.test(digest) || !Array.isArray(evidenceIds)
+        || evidenceIds.length < 1 || evidenceIds.length > 100
+        || !evidenceIds.every((id) => typeof id === "string" && isUuid(id))
+        || new Set(evidenceIds).size !== evidenceIds.length || reason.length < 10) {
+        throw new HttpError(400, "Choose up to 100 VAT transactions, the reviewed calculation and a reason.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_reconcile_transactions", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3],
+        p_source_digest: digest, p_evidence_ids: evidenceIds, p_reason: reason,
+      })
+      rpcFailure(error, "UK VAT transactions could not be reconciled.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "cash-reconcile" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "Cash VAT calculation was not found.")
+      const input = await body<{ sourceDigest?: unknown; eventIds?: unknown; reason?: unknown }>(request)
+      const digest = typeof input.sourceDigest === "string" ? input.sourceDigest : ""
+      const eventIds = input.eventIds
+      const reason = clean(input.reason, 2000)
+      if (!/^[a-f0-9]{64}$/.test(digest) || !Array.isArray(eventIds)
+        || eventIds.length < 1 || eventIds.length > 100
+        || !eventIds.every((id) => typeof id === "string" && isUuid(id))
+        || new Set(eventIds).size !== eventIds.length || reason.length < 10) {
+        throw new HttpError(400, "Choose up to 100 Cash VAT payment events, the reviewed draft and a reason.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_reconcile_cash_events", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3],
+        p_source_digest: digest, p_event_ids: eventIds, p_reason: reason,
+      })
+      rpcFailure(error, "Cash VAT payment events could not be reconciled.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "control-review" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT calculation was not found.")
+      const input = await body<{ sourceDigest?: unknown; reason?: unknown }>(request)
+      const digest = typeof input.sourceDigest === "string" ? input.sourceDigest : ""
+      const reason = clean(input.reason, 2000)
+      if (!/^[a-f0-9]{64}$/.test(digest) || reason.length < 10) {
+        throw new HttpError(400, "Review the current VAT draft and enter a control reconciliation reason.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_review_control", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3],
+        p_source_digest: digest, p_reason: reason,
+      })
+      rpcFailure(error, "UK VAT control review could not be recorded.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods" && parts[4] === "control-reviews" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_list_control_reviews", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+      })
+      rpcFailure(error, "UK VAT control reviews could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "filing-projection" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT calculation was not found.")
+      const input = await body<{ sourceDigest?: unknown; reason?: unknown }>(request)
+      const digest = typeof input.sourceDigest === "string" ? input.sourceDigest : ""
+      const reason = clean(input.reason, 2000)
+      if (!/^[a-f0-9]{64}$/.test(digest) || reason.length < 10) {
+        throw new HttpError(400, "Review the current VAT calculation and explain the whole-pound filing values.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_review_whole_pounds", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3],
+        p_source_digest: digest, p_reason: reason,
+      })
+      rpcFailure(error, "UK VAT filing values could not be reviewed.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "filing-projection" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT calculation was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_filing_projection_preview", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3],
+      })
+      rpcFailure(error, "UK VAT filing values could not be previewed.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods" && parts[4] === "filing-projections" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_list_filing_projections", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+      })
+      rpcFailure(error, "UK VAT filing values could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "calculations" && parts[4] === "review-lock" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT calculation was not found.")
+      const input = await body<{ sourceDigest?: unknown; projectionId?: unknown; reason?: unknown }>(request)
+      const digest = typeof input.sourceDigest === "string" ? input.sourceDigest : ""
+      const projectionId = typeof input.projectionId === "string" ? input.projectionId : ""
+      const reason = clean(input.reason, 2000)
+      if (!/^[a-f0-9]{64}$/.test(digest) || !isUuid(projectionId) || reason.length < 10) {
+        throw new HttpError(400, "Choose the reviewed filing values and explain the VAT review lock.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_lock_review", {
+        p_actor: current.User_ID, p_entity: parts[1], p_calculation: parts[3],
+        p_source_digest: digest, p_projection: projectionId, p_reason: reason,
+      })
+      rpcFailure(error, "UK VAT period review could not be locked.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods" && parts[4] === "review-locks" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_list_review_locks", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+      })
+      rpcFailure(error, "UK VAT review locks could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods" && parts[4] === "filing-status" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_filing_status", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3],
+      })
+      rpcFailure(error, "UK VAT filing status could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods" && parts[4] === "filing-approval" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const input = await body<{ verificationId?: unknown; lockFingerprint?: unknown; confirmed?: unknown }>(request)
+      const verificationId = typeof input.verificationId === "string" ? input.verificationId : ""
+      const lockFingerprint = typeof input.lockFingerprint === "string" ? input.lockFingerprint : ""
+      if (!isUuid(verificationId) || !/^[a-f0-9]{64}$/.test(lockFingerprint) || input.confirmed !== true) {
+        throw new HttpError(400, "Review the locked VAT return and confirm the HMRC business declaration.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_confirm_filing_approval", {
+        p_actor: current.User_ID, p_entity: parts[1], p_project_ref: vatTenantProjectRef(),
+        p_period: parts[3], p_verification: verificationId,
+        p_lock_fingerprint: lockFingerprint, p_declaration_code: "hmrc-vat-business-v1",
+        p_confirmed: true,
+      })
+      rpcFailure(error, "UK VAT filing declaration could not be confirmed.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "filing-approvals" && parts[4] === "revoke" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT filing approval was not found.")
+      const input = await body<{ reason?: unknown }>(request)
+      const reason = clean(input.reason, 2000)
+      if (reason.length < 10) throw new HttpError(400, "Explain why the VAT filing declaration is being revoked.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_revoke_filing_approval", {
+        p_actor: current.User_ID, p_entity: parts[1], p_approval: parts[3], p_reason: reason,
+      })
+      rpcFailure(error, "UK VAT filing declaration could not be revoked.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "periods" && parts[4] === "review-locks" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT period was not found.")
+      const input = await body<{ reason?: unknown }>(request)
+      const reason = clean(input.reason, 2000)
+      if (reason.length < 10) throw new HttpError(400, "Explain why this VAT review lock is being reopened.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_unlock_review", {
+        p_actor: current.User_ID, p_entity: parts[1], p_period: parts[3], p_reason: reason,
+      })
+      rpcFailure(error, "UK VAT review lock could not be reopened.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "review-queue" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const params = new URL(request.url).searchParams
+      const requestedLimit = params.get("limit")
+      const limit = requestedLimit === null ? 100 : Number(requestedLimit)
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new HttpError(400, "Choose between 1 and 100 evidence rows.")
+      const afterAt = params.get("afterAt")
+      const afterId = params.get("afterId")
+      if ((afterAt === null) !== (afterId === null) || (afterId !== null && !isUuid(afterId))
+        || (afterAt !== null && (afterAt.length > 40 || !Number.isFinite(Date.parse(afterAt))))) {
+        throw new HttpError(400, "Choose a valid VAT review page cursor.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_review_queue", {
+        p_actor: current.User_ID, p_entity: parts[1], p_limit: limit,
+        p_after_at: afterAt === null ? null : new Date(afterAt).toISOString(), p_after_id: afterId,
+      })
+      rpcFailure(error, "UK VAT review evidence could not be read.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 5 && parts[2] === "evidence" && parts[4] === "review" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await legalEntity(admin, current, parts[1])
+      if (!isUuid(parts[3])) throw new HttpError(404, "UK VAT evidence was not found.")
+      const { data: evidence, error: evidenceError } = await admin.from("FIN_IndirectTaxEvidence")
+        .select("id").eq("id", parts[3]).eq("legal_entity_id", parts[1]).eq("jurisdiction_code", "GB").maybeSingle()
+      if (evidenceError) throw new HttpError(500, evidenceError.message)
+      if (!evidence) throw new HttpError(404, "UK VAT evidence was not found.")
+      const input = await body<{ taxPoint?: unknown; reason?: unknown }>(request)
+      const taxPoint = isoDate(input.taxPoint)
+      const reason = clean(input.reason, 2000)
+      if (!taxPoint || reason.length < 10) {
+        throw new HttpError(400, "Enter a VAT tax point and a review reason of at least ten characters.")
+      }
+      const { data, error } = await admin.rpc("multideck_uk_vat_review_evidence", {
+        p_actor: current.User_ID, p_evidence_id: parts[3], p_tax_point: taxPoint, p_reason: reason,
+      })
+      rpcFailure(error, "UK VAT evidence could not be reviewed.")
+      return json(request, data)
+    }
+    if (parts[0] === "vat" && parts.length === 3 && parts[2] === "backfill" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.Manage")
+      await requirePermission(admin, current.User_ID, "Finance.Compliance.View")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ limit?: unknown; reason?: unknown }>(request)
+      if (!Number.isInteger(input.limit) || Number(input.limit) < 1 || Number(input.limit) > 500) throw new HttpError(400, "Choose between 1 and 500 posted lines.")
+      const reason = clean(input.reason, 1000)
+      if (reason.length < 10) throw new HttpError(400, "Record why the historical evidence is being captured.")
+      const { data, error } = await admin.rpc("multideck_uk_vat_backfill_posted", {
+        p_actor: current.User_ID, p_entity: parts[1], p_limit: input.limit, p_reason: reason,
+      })
+      rpcFailure(error, "Historical UK VAT evidence could not be captured.")
+      return json(request, data)
+    }
+    if (parts[0] === "approval-policies" && parts.length === 2 && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
+      if (!isUuid(parts[1])) throw new HttpError(404, "Legal entity not found.")
+      await legalEntity(admin, current, parts[1])
+      const { data, error } = await admin.rpc("multideck_finance_list_approval_policies", {
+        p_company_id: current.Company_ID, p_entity_id: parts[1],
+      })
+      rpcFailure(error, "Finance approval policies could not be loaded.")
+      return json(request, { policies: Array.isArray(data) ? data : [] })
+    }
+    if (parts[0] === "approval-policies" && parts.length === 3 && request.method === "PUT") {
+      await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
+      if (!isUuid(parts[1])) throw new HttpError(404, "Legal entity not found.")
+      await legalEntity(admin, current, parts[1])
+      const input = await body<{ mode?: string; maxAutoAmount?: number | null; maxVariancePercent?: number | null; reason?: string }>(request)
+      const modes = ["always_review", "exception_review", "automatic"]
+      if (!modes.includes(input.mode || "") || !clean(input.reason, 501) || clean(input.reason, 501).length > 500) {
+        throw new HttpError(400, "Choose an approval mode and explain the change.")
+      }
+      const amount = input.maxAutoAmount
+      const variance = input.maxVariancePercent
+      if (input.mode !== "always_review" && (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || amount >= 1e12)) {
+        throw new HttpError(400, "Enter a finite base-currency automatic amount limit.")
+      }
+      if (variance != null && (typeof variance !== "number" || !Number.isFinite(variance) || variance < 0 || variance > 100)) {
+        throw new HttpError(400, "Enter a variance limit from zero to 100 percent.")
+      }
+      const { error } = await admin.rpc("multideck_finance_save_approval_policy", {
+        p_company_id: current.Company_ID, p_user_id: current.User_ID, p_entity_id: parts[1],
+        p_workflow: parts[2], p_mode: input.mode, p_max_auto_amount: input.mode === "always_review" ? null : amount,
+        p_max_variance_percent: input.mode === "always_review" ? null : variance ?? null,
+        p_reason: clean(input.reason, 500),
+      })
+      rpcFailure(error, "Finance approval policy could not be saved.")
+      const { data: policies, error: listError } = await admin.rpc("multideck_finance_list_approval_policies", {
+        p_company_id: current.Company_ID, p_entity_id: parts[1],
+      })
+      rpcFailure(listError, "Finance approval policy could not be reloaded.")
+      const saved = Array.isArray(policies) ? policies.find((item: any) => item.workflow === parts[2]) : null
+      if (!saved) throw new HttpError(500, "Finance approval policy was saved but could not be reloaded.")
+      return json(request, saved)
     }
     if (request.method === "PUT" && parts[0] === "administration" && parts.length === 2) {
       await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")

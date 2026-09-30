@@ -35,7 +35,7 @@ connected Sage 50 HyperExt audit/search cursor must be validated on the exact
 tenant connector before adopting the same transport; its audit sequence cannot
 be assumed to behave like ERPNext `modified`.
 
-## Reconciliation contract to finish
+## Period reconciliation contract
 
 For each legal entity and closed comparison period, retain a run with provider
 company, account mapping revision, base currency, source cut-off, provider
@@ -64,33 +64,71 @@ a conflict. Corrections to posted records use linked reversals or adjustments.
 Approval, period locks, tax/nominal validation, audit and retry idempotence apply
 equally to provider-originated drafts.
 
-## Current local increment and release boundary
+## Implemented local boundary
 
-The checkpointed ERPNext discovery migration, scanner and PostgreSQL contract
-fixture are local. The worker will scan before processing pending inbound events.
-The fixed upper bound and revision are retained across partial pages. No tenant
-migration or Edge deployment is claimed by this document.
-`ERPNEXT_CATCHUP_ENABLED=true` is required after applying and verifying the
-migration on the intended tenant. Until then the existing webhook worker runs
-without querying the new table. A scan failure returns a retryable worker error
-after the signed inbound and cost-finalisation stages have had their turn.
+The checkpointed ERPNext discovery worker remains a notification and review
+path. It does not certify a period. The new, separate period comparison reads
+the exact configured ERPNext Company. It counts and pages Sales Invoice,
+Purchase Invoice, Payment Entry, Journal Entry and GL Entry through the period
+end, reads complete document children, then repeats the inventory. A missing,
+changing or oversized source becomes `incomplete`. The comparison retains
+document, payment and allocation identities, tax lines, journal lines, trial
+balances, AR/AP/cash controls, mapping revision, checkpoint, source hashes and
+the full local snapshot. Missing records cannot cancel out numerically. The
+latest verified run becomes incomplete after 15 minutes, a saved local change,
+connection change or received webhook. Unseen provider edits are bounded by
+that 15-minute lifetime and require another run to be observed.
 
-This increment does not yet implement period reconciliation, provider-created
-transaction import, settlement recognition, deleted-record inventory, Sage 50
-scanning, or a signed-off independent-close workflow. It must not be described
-as fully reconciled merely because scan observations match delivered documents.
-Raw scan cursors and unverified observations are an explicit Dexter and Watching
-for you exception: they do not establish accounting truth and expose no safe
-operator action. Existing verified delivery status and review-issue capabilities
-remain the user-facing boundary until a role-scoped reconciliation domain and
-deterministic exception events are implemented and tested together.
+Sage 50 HyperExt currently has a verified company/status and nominal-read
+path only. It deliberately records `incomplete` because the tenant connector
+has no demonstrated complete, paged journal, payment allocation, tax and
+trial-balance contract. The period workflow never infers completeness from
+that partial read.
 
-Before release: run the real PostgreSQL fixture and full data-access regression,
-check exact tenant migration history, verify authenticated Finance and Dexter
-access, test a connected ERPNext insert/edit/cancel and missed webhook, test
-partial pages/retries/concurrent workers, and confirm no external or native
-posting occurs from discovery. A later reconciliation release needs deliberate
-discrepancies and matching period-level GL, tax, AR/AP and cash evidence.
-The focused JavaScript lifecycle checks pass locally. The PostgreSQL fixture
-was attempted but this host could not initialise a test database because its
-shared-memory allocation failed; the SQL migration is therefore unverified.
+Bank reconciliation imports an exact-period CSV with signed amounts and
+running balances, then matches lines to posted cash by bank, currency, date
+and amount. The control checks every statement line, cash transaction and
+bank nominal posting, including an approved opening-balance package posted in
+the first native period. Verification is audited and becomes incomplete if
+later ledger evidence breaks the control. Foreign-currency banks stay
+incomplete until a supported currency and FX bridge exists.
+
+A linked ERPNext opening package queues one provider Journal Entry delivery
+with a frozen source hash, exact company/currency/date, reviewed nominal
+mappings and a stable provider identity. Submission is followed by exact
+account-line readback; only a matched readback may satisfy the opening mirror
+control. Its provider Journal Entry ID links the native opening GL lines in
+the period comparison. A lost provider reply is recovered by the unique
+Multideck document key before any retry creates another journal. The package
+source import and release gate are owned by the opening-balance workflow.
+Imported CargoWise open invoices and historical unapplied cash are separate
+operational subledger records. A matched opening Journal Entry does not give
+those records ERPNext invoice or payment identities. The period comparison
+reports each affected source reference and opening package as an explicit
+incomplete blocker unless the exact ERPNext invoice or Payment Entry identity
+has a submitted readback. ERPNext opening invoices and payments create their
+own control-account ledger entries. The current full opening Journal Entry
+already carries those AR/AP and bank control balances, so exporting the
+subledger documents alongside it would double post. The opening mirror
+delivery boundary refuses a full-open-items package, including a previously
+queued package, before any provider write. A reviewed clearing or
+residual opening journal and exact provider subledger import/readback are
+required before linked full opening packages can be released or period parity
+can be signed off. Historical
+unapplied cash has no current bank account match and is excluded from the
+current bank statement's cash movement.
+
+Provider-only and concurrent differences are retained for authorised manual
+review. `prepare_draft` records a proposal only; it does not create an
+accounting document or post to either ledger. Finance and Dexter can read the
+saved evidence through role-scoped paths. Dexter watches fire on retained bank
+import/verification and provider run changes, not on an unseen external edit.
+
+These changes are implemented and locally tested. No tenant migration, Edge
+deployment, connected ERPNext period run or Sage 50 period run is claimed
+here. Before operational sign-off, validate the intended tenant and actual
+provider tax-row/account-mapping semantics with deliberate matching and
+conflicting invoices, payments, GL and control balances. Apply the migrations
+in order and verify the live URL/version and Finance permissions. The
+checkpointed discovery worker still requires `ERPNEXT_CATCHUP_ENABLED=true`
+after its own tenant migration and verification.

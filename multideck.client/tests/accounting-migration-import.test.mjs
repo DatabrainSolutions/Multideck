@@ -7,9 +7,9 @@ const { outputFiles } = buildSync({ stdin: { contents: `export * from './src/lib
 const { migrationAmount, migrationDate, trialBalanceFromUpload, openItemsFromUpload, readMigrationUpload, reconcileAccountingMigration } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString("base64")}`)
 const upload = rows => ({ name: "source.xlsx", sha256: "source", sheetName: "Balances", sheetNames: ["Balances"], dateSystem: "1900", rows })
 const tbMapping = { headerRow: 3, columns: { accountCode: 0, debit: 1, credit: 2 }, numberFormat: "decimal-point", balanceMode: "debit-credit" }
-const itemFields = ["sourceId", "partyCode", "reference", "accountCode", "kind", "documentDate", "dueDate", "currency", "originalAmount", "outstandingAmount", "outstandingBaseAmount"]
+const itemFields = ["sourceId", "partyCode", "reference", "accountCode", "kind", "documentDate", "dueDate", "currency", "originalAmount", "outstandingAmount", "outstandingBaseAmount", "originalBaseAmount"]
 const itemMapping = { headerRow: 1, columns: Object.fromEntries(itemFields.map((field, index) => [field, index])), numberFormat: "decimal-point", dateFormat: "day-first", amountConvention: "positive", fixedKind: "customer_invoice", kindValues: { INV: "customer_invoice", CRD: "customer_credit" } }
-const itemRow = extra => ({ number: 8, values: ["0001", "C001", "INV-001", "6210.00.00", "INV", "31/08/2026", "", "GBP", "120", "100", "100"], ...extra })
+const itemRow = extra => ({ number: 8, values: ["0001", "C001", "INV-001", "6210.00.00", "INV", "31/08/2026", "", "GBP", "120", "100", "100", "120"], ...extra })
 const itemsUpload = row => upload([{ number: 1, values: itemFields }, row])
 
 test("explicit number conventions preserve four decimals and reject ambiguous formatting", () => {
@@ -67,7 +67,7 @@ test("open-item conversion retains original and source FX carrying values withou
   assert.equal(result.rows[0].dueDate, undefined)
 })
 test("credit signs require a reviewed type and explicit source convention", () => {
-  const row = itemRow(); row.values[4] = "CRD"; row.values[8] = "-120"; row.values[9] = "-100"; row.values[10] = "-100"
+  const row = itemRow(); row.values[4] = "CRD"; row.values[8] = "-120"; row.values[9] = "-100"; row.values[10] = "-100"; row.values[11] = "-120"
   assert.ok(openItemsFromUpload(itemsUpload(row), itemMapping).issues.length)
   const signed = { ...itemMapping, amountConvention: "debit-positive" }
   assert.equal(openItemsFromUpload(itemsUpload(row), signed).rows[0].kind, "customer_credit")

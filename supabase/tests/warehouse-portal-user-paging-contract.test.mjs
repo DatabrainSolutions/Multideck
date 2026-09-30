@@ -9,7 +9,7 @@ const read = (path) => readFileSync(resolve(root, path), "utf8")
 const route = read("supabase/functions/warehouse/routes/portal-users.ts")
 const index = read("supabase/functions/warehouse/index.ts")
 const client = read("multideck.client/src/lib/warehouse.ts")
-const view = read("multideck.client/src/pages/customer-detail-page.tsx")
+const view = read("multideck.client/src/pages/warehouse-customer-access.tsx")
 const migration = read("supabase/migrations/20260819140000_warehouse_portal_user_paging.sql")
 
 test("portal user lists are server-paged and exact access-link reads stay bounded", () => {

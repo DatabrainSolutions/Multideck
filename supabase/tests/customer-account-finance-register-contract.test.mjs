@@ -128,12 +128,8 @@ test("the projection is read only and relies on existing lifecycle signals", () 
   ])
 })
 
-test("tenant provisioning baseline contains the exact customer finance migration", () => {
-  const start = `-- BEGIN MIGRATION ${migrationName}\n`
-  const end = `-- END MIGRATION ${migrationName}`
-  const startAt = baseline.indexOf(start)
-  const endAt = baseline.indexOf(end, startAt)
-  assert.notEqual(startAt, -1)
-  assert.notEqual(endAt, -1)
-  assert.equal(baseline.slice(startAt + start.length, endAt).trim(), migration.trim())
+test("tenant schema snapshot contains the guarded customer finance projection", () => {
+  assert.match(baseline, /CREATE OR REPLACE FUNCTION "public"\."multideck_finance_customer_account_snapshot"/)
+  assert.match(baseline, /REVOKE ALL ON FUNCTION "public"\."multideck_finance_customer_account_snapshot"[\s\S]*?FROM PUBLIC;/)
+  assert.match(baseline, /GRANT ALL ON FUNCTION "public"\."multideck_finance_customer_account_snapshot"[\s\S]*?TO "service_role";/)
 })

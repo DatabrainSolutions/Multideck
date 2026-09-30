@@ -1,9 +1,11 @@
+import { pageVisibility } from "@/lib/page-visibility"
 import {
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react"
 import { ShaderErrorBoundary } from "@/components/multideck/shader-error-boundary"
@@ -163,11 +165,14 @@ export function ResilientShaderSurface({
     return () => observer.disconnect()
   }, [rootMargin])
 
+  const pageVisible = useSyncExternalStore(pageVisibility.subscribe, pageVisibility.getSnapshot, pageVisibility.getSnapshot)
   const capabilityAvailable = supportsTechnology(technology)
-  const shouldMount = hasSize && nearby && capabilityAvailable
+  const shouldMount = hasSize && nearby && capabilityAvailable && pageVisible
 
   useEffect(() => {
     if (shouldMount) return
+    generationRef.current += 1
+    setGeneration(generationRef.current)
     cancelReadyFrames()
     retryCountRef.current = 0
     recoveryCycleRef.current = 0
@@ -178,7 +183,7 @@ export function ResilientShaderSurface({
   }, [cancelReadyFrames, shouldMount])
 
   const retry = useCallback((failedGeneration: number, error?: unknown) => {
-    if (!mountedRef.current || failedGeneration !== generationRef.current) return
+    if (!mountedRef.current || document.visibilityState === "hidden" || failedGeneration !== generationRef.current) return
     if (lastFailedGenerationRef.current === failedGeneration) return
 
     lastFailedGenerationRef.current = failedGeneration
@@ -198,11 +203,11 @@ export function ResilientShaderSurface({
   }, [cancelReadyFrames, maxRetries, name])
 
   const markReady = useCallback((readyGeneration: number) => {
-    if (!mountedRef.current || readyGeneration !== generationRef.current) return
+    if (!mountedRef.current || document.visibilityState === "hidden" || readyGeneration !== generationRef.current) return
     cancelReadyFrames()
 
     const confirmPaint = (remainingProbes: number) => {
-      if (!mountedRef.current || readyGeneration !== generationRef.current) return
+      if (!mountedRef.current || document.visibilityState === "hidden" || readyGeneration !== generationRef.current) return
       const canvas = gpuLayerRef.current?.querySelector("canvas")
       const canvasIsPaintable = Boolean(
         canvas
@@ -260,8 +265,6 @@ export function ResilientShaderSurface({
   }, [exhausted, maxRecoveryCycles, recoveryCooldownMs, shouldMount])
 
   useEffect(() => {
-    if (!shouldMount) return
-
     const remountRenderer = () => {
       if (!mountedRef.current || document.visibilityState === "hidden") return
       retryCountRef.current = 0
@@ -308,7 +311,7 @@ export function ResilientShaderSurface({
       window.removeEventListener("pageshow", handlePageShow)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [cancelReadyFrames, shouldMount])
+  }, [cancelReadyFrames])
 
   useEffect(() => {
     if (!shouldMount || ready || exhausted) return
@@ -364,7 +367,7 @@ export function ResilientShaderSurface({
     <span
       ref={rootRef}
       aria-hidden="true"
-      className={cn("relative isolate block size-full overflow-hidden", className)}
+      className={cn("relative isolate block size-full overflow-hidden", !shouldMount && "[&_*]:[animation-play-state:paused]", className)}
       data-md-shader={name}
       data-shader-state={ready ? "ready" : exhausted || !capabilityAvailable ? "fallback" : shouldMount ? "starting" : "painted"}
       data-shader-retries={retryCount}

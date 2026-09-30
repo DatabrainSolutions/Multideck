@@ -3,11 +3,13 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowRight, CheckCircle2, Menu, PencilEdit01, TriangleAlert, X, XCircle } from "@/components/icons/hugeicons"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { useSidebarCollapsed } from "@/lib/sidebar-preferences"
+import { SidebarDropdownProvider } from "@/lib/sidebar-dropdown-state"
 import { useLanguage } from "@/i18n/language-provider"
 import { Button } from "@/components/ui/button"
 import { moveTabToAdjacentField } from "@/components/ui/field-tab-navigation"
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { AppSidebar } from "./app-sidebar"
+import { AdminSectionsDockHost } from "./admin-sections-dock"
 import { SupportTicketDialog } from "./support-ticket-dialog"
 import { TopBar } from "./top-bar"
 import { MeetingDialogHost } from "./meeting-dialog"
@@ -271,14 +273,16 @@ export function AppShell({
   const shell = (
     <div className="md-app-shell h-dvh w-full max-w-full overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
       <div className="flex h-full w-full min-h-0 min-w-0 overflow-hidden">
-        <AppSidebar
-          route={route}
-          navigate={navigate}
-          currentUser={currentUser}
-          collapsed={sidebarCollapsed}
-          onCollapsedChange={setSidebarCollapsed}
-          className="hidden h-full min-h-0 lg:flex"
-        />
+        <div className="md-sidebar-cluster hidden min-h-0 shrink-0 lg:flex">
+          <AppSidebar
+            route={route}
+            navigate={navigate}
+            currentUser={currentUser}
+            collapsed={sidebarCollapsed}
+            onCollapsedChange={setSidebarCollapsed}
+          />
+          {currentUser?.actorType === "internal" ? <AdminSectionsDockHost route={route} navigate={navigate} /> : null}
+        </div>
         {isFullHeightRoute || isSignatureRoute ? (
           <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
             <SheetTrigger asChild>
@@ -297,6 +301,9 @@ export function AppShell({
               side={direction === "rtl" ? "right" : "left"}
               showCloseButton={false}
               className="gap-0 border-0 bg-[var(--md-sidebar-bg)] p-0 shadow-[var(--md-shadow-lift)] data-[side=left]:w-[min(var(--md-sidebar-width),calc(100vw-20px))] data-[side=left]:max-w-[var(--md-sidebar-width)] data-[side=right]:w-[min(var(--md-sidebar-width),calc(100vw-20px))] data-[side=right]:max-w-[var(--md-sidebar-width)]"
+              onEscapeKeyDown={(event) => {
+                if (event.target instanceof Element && event.target.closest('[data-sidebar-searching="true"]')) event.preventDefault()
+              }}
             >
               <SheetTitle className="sr-only">{t("Multideck navigation")}</SheetTitle>
               <SheetDescription className="sr-only">{t("Mobile navigation for Multideck")}</SheetDescription>
@@ -337,7 +344,7 @@ export function AppShell({
   // intent can prepare account metadata; thread rows load only on Inbox.
   return (
     <InboxWorkspaceProvider cacheScope={currentUser?.id ?? null} active={isInboxRoute}>
-      {shell}
+      <SidebarDropdownProvider>{shell}</SidebarDropdownProvider>
     </InboxWorkspaceProvider>
   )
 }

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { chooseWatchRecord, validateWatchRule } from '../functions/agent-dexter/watch-definition.ts'
+import { readFileSync } from 'node:fs'
+import { stripTypeScriptTypes } from 'node:module'
+
+const source = stripTypeScriptTypes(readFileSync(new URL('../functions/agent-dexter/watch-definition.ts', import.meta.url), 'utf8'))
+const { chooseWatchRecord, validateWatchRule } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 
 const label = record => record.name
 const records = [

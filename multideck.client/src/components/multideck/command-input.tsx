@@ -1,171 +1,143 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { FileText, Search, Ship } from "@/components/icons/hugeicons"
+import { Search } from "@/components/icons/hugeicons"
 import { Input } from "@/components/ui/input"
 import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
 import { useLanguage } from "@/i18n/language-provider"
 import { registerAppSearch } from "@/lib/app-commands"
+import { globalSearchMatchHint, globalSearchSources, rankGlobalSearchResults, type GlobalSearchResult } from "@/lib/global-search"
 import { bindingAriaKeyshortcuts } from "@/lib/keyboard-shortcut-binding"
 import { useShortcutBinding } from "@/lib/keyboard-shortcuts"
 import { cn } from "@/lib/utils"
 
-type SearchBooking = (typeof import("@/data/multideck-data"))["bookings"][number]
-type SearchQuote = (typeof import("@/data/quote-register-data"))["quoteRegisterRecords"][number]
-type CommandSearchData = {
-  bookings: SearchBooking[]
-  quotes: SearchQuote[]
-}
-
-let commandSearchDataPromise: Promise<CommandSearchData> | null = null
-
-function loadCommandSearchData() {
-  commandSearchDataPromise ??= Promise.all([
-    import("@/data/multideck-data"),
-    import("@/data/quote-register-data"),
-  ]).then(([multideckData, quoteData]) => ({
-    bookings: multideckData.bookings,
-    quotes: quoteData.quoteRegisterRecords,
-  }))
-
-  return commandSearchDataPromise
-}
-
-export function CommandInput({
-  placeholder = "Ask Multideck or jump to anything...",
-  className,
-  onNavigate,
-}: {
+export function CommandInput({ placeholder = "Search records across Multideck…", className, onNavigate }: {
   placeholder?: string
   className?: string
   onNavigate?: (path: string) => void
 }) {
   const { t } = useLanguage()
   const [query, setQuery] = useState("")
-  const [searchData, setSearchData] = useState<CommandSearchData | null>(null)
+  const [open, setOpen] = useState(false)
+  const [completedQuery, setCompletedQuery] = useState("")
+  const [results, setResults] = useState<GlobalSearchResult[]>([])
+  const [pending, setPending] = useState(0)
+  const [failed, setFailed] = useState(0)
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [retry, setRetry] = useState(0)
+  const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const searchShortcut = useShortcutBinding("search.focus")
-  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const searchQuery = query.trim()
+  const rankedResults = useMemo(() => rankGlobalSearchResults(results, searchQuery), [results, searchQuery])
+  const ready = completedQuery === searchQuery
+  const hasQuery = searchQuery.length >= 2
 
-  const prepareSearch = useCallback(() => {
-    if (searchData) return
-    void loadCommandSearchData().then(setSearchData)
-  }, [searchData])
+  const focusSearch = useCallback(() => {
+    setOpen(true)
+    inputRef.current?.focus({ preventScroll: true })
+    inputRef.current?.select()
+  }, [])
+  useEffect(() => registerAppSearch(focusSearch), [focusSearch])
 
-  // Claims the search shortcut while this bar is on screen, so the key handler
-  // never has to know which routes render a top bar.
-  useEffect(
-    () =>
-      registerAppSearch(() => {
-        prepareSearch()
-        const input = inputRef.current
-        if (!input) return
-
-        input.focus({ preventScroll: true })
-        input.select()
-      }),
-    [prepareSearch],
-  )
-
-  const results = useMemo(() => {
-    if (!normalizedQuery || !searchData) return { jobs: [], quotes: [] }
-
-    const matches = (values: readonly string[]) => values.some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
-    return {
-      jobs: searchData.bookings.filter((booking) => matches([booking.id, booking.jobRef, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.customerRef])).slice(0, 4),
-      quotes: searchData.quotes.filter((quote) => matches([quote.reference, quote.customer, quote.origin, quote.destination, quote.carrier, quote.customerPurchaseOrder, quote.shipperReference])).slice(0, 3),
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
     }
-  }, [normalizedQuery, searchData])
-  const hasResults = results.jobs.length > 0 || results.quotes.length > 0
+    document.addEventListener("pointerdown", onPointerDown)
+    return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [])
 
-  function open(path: string) {
+  useEffect(() => {
+    if (!open || !hasQuery) return
+    let current = true
+    const timer = window.setTimeout(() => {
+      setResults([])
+      setPending(globalSearchSources.length)
+      setFailed(0)
+      setCompletedQuery(searchQuery)
+      for (const source of globalSearchSources) {
+        void source.search(searchQuery).then((items) => {
+          if (current) setResults((previous) => [...previous, ...items])
+        }).catch((error) => {
+          console.error(`${source.name} search failed`, error)
+          if (current) setFailed((count) => count + 1)
+        }).finally(() => {
+          if (current) setPending((count) => count - 1)
+        })
+      }
+    }, 300)
+    return () => { current = false; window.clearTimeout(timer) }
+  }, [hasQuery, open, retry, searchQuery])
+
+  function select(item: GlobalSearchResult) {
     setQuery("")
-    onNavigate?.(path)
+    setOpen(false)
+    onNavigate?.(item.path)
   }
 
   return (
-    <div className={cn("md-command-input relative min-w-0 w-full", className)}>
-      <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.2} />
+    <div ref={rootRef} className={cn("md-command-input relative min-w-0 w-full", className)}>
+      <Search className="pointer-events-none absolute start-3 top-[18px] size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.2} />
       <Input
         ref={inputRef}
-        aria-label="Search Multideck"
-        aria-expanded={Boolean(normalizedQuery)}
+        role="combobox"
+        aria-label="Search Multideck records"
+        aria-autocomplete="list"
+        aria-expanded={open && Boolean(searchQuery)}
         aria-controls="multideck-command-results"
+        aria-activedescendant={open && ready && rankedResults[activeIndex] ? `multideck-search-${activeIndex}` : undefined}
         aria-keyshortcuts={bindingAriaKeyshortcuts(searchShortcut)}
         className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white/70 ps-9 pe-3 text-base md:pe-16 md:text-[13px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         placeholder={placeholder}
         value={query}
-        onFocus={prepareSearch}
-        onChange={(event) => {
-          setQuery(event.target.value)
-          prepareSearch()
-        }}
+        onFocus={() => setOpen(true)}
+        onChange={(event) => { setQuery(event.target.value); setActiveIndex(0); setOpen(true) }}
         onKeyDown={(event) => {
-          if (event.key !== "Escape") return
-          if (query) setQuery("")
-          else event.currentTarget.blur()
+          if (event.key === "Escape") {
+            if (open) setOpen(false)
+            else if (query) setQuery("")
+            else event.currentTarget.blur()
+            return
+          }
+          if (!open || !rankedResults.length || !ready) return
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault()
+            setActiveIndex((index) => (index + (event.key === "ArrowDown" ? 1 : -1) + rankedResults.length) % rankedResults.length)
+          } else if (event.key === "Enter") {
+            event.preventDefault()
+            select(rankedResults[activeIndex] ?? rankedResults[0])
+          }
         }}
       />
       <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 end-2 my-auto hidden h-fit md:flex items-center">
         <ShortcutKeys binding={searchShortcut} keyClassName="bg-[var(--md-surface-tint)]" emptyLabel="" />
       </span>
-      {normalizedQuery ? (
-        <div id="multideck-command-results" role="listbox" className="absolute inset-x-0 top-[calc(100%+8px)] z-50 max-h-[min(420px,60dvh)] overflow-y-auto overscroll-contain rounded-[var(--md-radius-xl)] bg-[rgba(255,255,255,0.98)] p-1.5 shadow-[var(--md-shadow-lift)] ring-1 ring-[rgba(11,20,19,0.08)] backdrop-blur-xl">
-          {!searchData ? (
-            <p className="px-3 py-4 text-center text-[12px] text-[var(--md-text)]">{t("Loading search results…")}</p>
-          ) : hasResults ? (
-            <>
-              {results.jobs.length ? (
-                <CommandResultGroup label={t("Jobs")}>
-                  {results.jobs.map((booking) => (
-                    <CommandResult
-                      key={booking.id}
-                      icon={<Ship className="size-4" strokeWidth={1.35} />}
-                      title={booking.id}
-                      badge={booking.status}
-                      detail={`${booking.customer} · ${booking.route}`}
-                      meta={`${booking.mode} · ${booking.container} · ${booking.carrier} · ${booking.eta}`}
-                      onSelect={() => open(`/bookings/${booking.id.toLowerCase()}`)}
-                    />
-                  ))}
-                </CommandResultGroup>
-              ) : null}
-              {results.quotes.length ? (
-                <CommandResultGroup label={t("Quotes")} className={results.jobs.length ? "mt-1.5 border-t border-[rgba(11,20,19,0.07)] pt-1.5" : undefined}>
-                  {results.quotes.map((quote) => (
-                    <CommandResult
-                      key={quote.reference}
-                      icon={<FileText className="size-4" strokeWidth={1.35} />}
-                      title={quote.reference}
-                      badge={quote.status}
-                      detail={`${quote.customer} · ${quote.origin} → ${quote.destination}`}
-                      meta={`${quote.transportMode} · ${quote.equipmentLoad} · ${quote.carrier} · ${quote.workflowStage}`}
-                      onSelect={() => open(`/quotes/${quote.reference.toLowerCase()}`)}
-                    />
-                  ))}
-                </CommandResultGroup>
-              ) : null}
-            </>
+      {open && searchQuery ? (
+        <div id="multideck-command-results" role="listbox" aria-label="Search results" className="absolute inset-x-0 top-[calc(100%+8px)] z-50 max-h-[min(460px,65dvh)] overflow-y-auto overscroll-contain rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-lift)] ring-1 ring-[var(--md-line)]">
+          {!hasQuery ? (
+            <p className="px-3 py-4 text-center text-[12px] text-[var(--md-text)]">{t("Enter at least two characters to search records.")}</p>
+          ) : !ready || (pending > 0 && !rankedResults.length) ? (
+            <p className="px-3 py-4 text-center text-[12px] text-[var(--md-text)]" role="status">{t("Searching records…")}</p>
           ) : (
-            <p className="px-3 py-4 text-center text-[12px] text-[var(--md-text)]">{t("No jobs or quotes match this search")}</p>
+            <>
+              {rankedResults.map((item, index) => (
+                <button key={item.key} id={`multideck-search-${index}`} type="button" role="option" aria-selected={index === activeIndex} onMouseEnter={() => setActiveIndex(index)} onClick={() => select(item)}
+                  className={cn("grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-[var(--md-radius-lg)] px-3 py-2.5 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]", index === activeIndex ? "bg-[var(--md-hover)]" : "hover:bg-[var(--md-hover)]")}>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{item.title}</span>
+                    <span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]" data-i18n-skip>{item.detail}</span>
+                    {item.meta ? <span className="mt-0.5 block truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip>{item.meta}</span> : null}
+                    {globalSearchMatchHint(item, searchQuery) ? <span className="mt-0.5 block truncate text-[11px] text-[var(--md-accent)]">{t("Match in")}: <span data-i18n-skip>{globalSearchMatchHint(item, searchQuery)}</span></span> : null}
+                  </span>
+                  <span className="rounded-full bg-[var(--md-surface-tint)] px-2 py-0.5 text-[10px] text-[var(--md-text)]">{t(item.area)}</span>
+                </button>
+              ))}
+              {!rankedResults.length && pending === 0 ? <p className="px-3 py-4 text-center text-[12px] text-[var(--md-text)]">{t(failed ? "No matches in the areas searched. Try again to check the others." : "No match here. Finance, tasks and reports have their own searches.")}</p> : null}
+              {pending > 0 && rankedResults.length ? <p className="px-3 py-2 text-[11px] text-[var(--md-subtle)]" role="status">{t("Searching other areas…")}</p> : null}
+              {failed > 0 && pending === 0 ? <div className="flex items-center justify-between gap-3 px-3 py-2 text-[11px] text-[var(--md-text)]" role="status"><span>{t("Some areas could not be searched.")}</span><button type="button" className="font-medium text-[var(--md-accent)] underline underline-offset-2" onClick={() => setRetry((value) => value + 1)}>{t("Retry")}</button></div> : null}
+            </>
           )}
         </div>
       ) : null}
     </div>
-  )
-}
-
-function CommandResultGroup({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
-  return <div className={className}><p className="px-2.5 pb-1 pt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]">{label}</p>{children}</div>
-}
-
-function CommandResult({ icon, title, badge, detail, meta, onSelect }: { icon: React.ReactNode; title: string; badge: string; detail: string; meta: string; onSelect: () => void }) {
-  return (
-    <button type="button" role="option" onClick={onSelect} className="grid w-full grid-cols-[32px_minmax(0,1fr)] gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]">
-      <span className="mt-0.5 grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span>
-      <span className="min-w-0">
-        <span className="flex items-center gap-2"><span dir="ltr" className="text-[12px] font-medium text-[var(--md-accent)]">{title}</span><span className="truncate rounded-full bg-[var(--md-surface-tint)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-text)]">{badge}</span></span>
-        <span className="mt-0.5 block truncate text-[12px] font-medium text-[var(--md-ink)]">{detail}</span>
-        <span className="mt-0.5 block truncate text-[11px] text-[var(--md-text)]">{meta}</span>
-      </span>
-    </button>
   )
 }

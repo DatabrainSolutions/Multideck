@@ -165,20 +165,28 @@ export async function listSalesQuotesCompatibilitySample(signal?: AbortSignal): 
   return (data ?? []).map((row) => mapQuote(row as unknown as SalesQuoteRow))
 }
 
-export async function listSalesQuotesPage(input: QuoteRegisterInput, signal?: AbortSignal): Promise<QuoteRegisterPage> {
-  const client = supabase
-  if (!client) throw new Error("Quotes are unavailable until this workspace is connected.")
-  const session = await getSupabaseSession()
-  if (!session?.user) throw new Error("Sign in again to view quotes.")
-
-  const normalizedInput = {
+function normalizeQuoteRegisterInput(input: QuoteRegisterInput) {
+  return {
     ...input,
     search: input.search?.trim() || undefined,
     filterQuery: filterQueryIsEmpty(input.filterQuery) ? null : input.filterQuery,
     limit: Math.max(1, Math.min(input.limit, 50)),
     offset: Math.max(0, input.offset),
   }
-  const resource = `quotes:page:${JSON.stringify(normalizedInput)}`
+}
+
+export function quoteRegisterResource(input: QuoteRegisterInput) {
+  return `quotes:page:${JSON.stringify(normalizeQuoteRegisterInput(input))}`
+}
+
+export async function listSalesQuotesPage(input: QuoteRegisterInput, signal?: AbortSignal): Promise<QuoteRegisterPage> {
+  const client = supabase
+  if (!client) throw new Error("Quotes are unavailable until this workspace is connected.")
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new Error("Sign in again to view quotes.")
+
+  const normalizedInput = normalizeQuoteRegisterInput(input)
+  const resource = quoteRegisterResource(input)
   return readCachedRegisterPage(session.user.id, resource, async (requestSignal) => {
     const { data, error } = await client.rpc("multideck_quote_register_page", {
       p_search: normalizedInput.search ?? null,

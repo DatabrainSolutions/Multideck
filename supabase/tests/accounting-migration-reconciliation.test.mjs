@@ -10,7 +10,7 @@ const accounts = [
   {id:'ap',code:'8210.00.00',active:true,control:'payables'},
   {id:'bank',code:'0010.00.00',active:true,control:null},
 ]
-const item = extra => ({sourceId:'inv1',partyCode:'C001',reference:'INV-1',accountCode:'6210.00.00',kind:'customer_invoice',documentDate:'2026-08-31',dueDate:'2026-09-30',currency:'GBP',originalAmount:'120',outstandingAmount:'100',outstandingBaseAmount:'100',...extra})
+const item = extra => ({sourceId:'inv1',partyCode:'C001',reference:'INV-1',accountCode:'6210.00.00',kind:'customer_invoice',documentDate:'2026-08-31',dueDate:'2026-09-30',currency:'GBP',originalAmount:'120',originalBaseAmount:'120',outstandingAmount:'100',outstandingBaseAmount:'100',...extra})
 const batch = extra => ({cutoffDate:'2026-09-01',baseCurrency:'GBP',trialBalance:[{accountCode:'6210.00.00',debit:'100',credit:'0'},{accountCode:'8210.00.00',debit:'0',credit:'60'},{accountCode:'0010.00.00',debit:'0',credit:'40'}],openItems:[item({}),item({sourceId:'sup1',partyCode:'S001',kind:'supplier_invoice',accountCode:'8210.00.00',outstandingAmount:'60',outstandingBaseAmount:'60'})],...extra})
 test('balanced TB reconciles each control without creating second GL postings for open items',()=>{
   const input=batch(),before=structuredClone(input),result=reconcile(input,accounts,'GBP')
@@ -23,7 +23,7 @@ test('credits and unapplied receipts/payments use the correct control signs',()=
   assert.equal(reconcile(input,accounts,'GBP').reconciled,true)
 })
 test('foreign currency retains source carrying value, not a newly calculated exchange rate',()=>{
-  const input=batch();input.openItems[0]=item({currency:'EUR',originalAmount:'150',outstandingAmount:'125',outstandingBaseAmount:'100'})
+  const input=batch();input.openItems[0]=item({currency:'EUR',originalAmount:'150',originalBaseAmount:'120',outstandingAmount:'125',outstandingBaseAmount:'100'})
   assert.equal(reconcile(input,accounts,'GBP').reconciled,true)
 })
 test('a globally balanced TB cannot conceal control mismatches or omitted open transactions',()=>{

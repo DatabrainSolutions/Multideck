@@ -54,6 +54,7 @@ import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-a
 import { ImageLightbox, type ImageLightboxControls } from "@/components/multideck/image-lightbox"
 import { ModelProviderGlyph, ModelStrengthMeter } from "@/components/multideck/model-glyphs"
 import { ProgressiveBlur } from "@/components/multideck/progressive-blur"
+import { ComposerTrayStrip, type DexterPromptPreset } from "@/components/multideck/dexter-prompt-presets"
 import { cn } from "@/lib/utils"
 import { findDexterMentionMatches } from "@/lib/dexter-mention-matcher"
 import type { StatusTone } from "@/data/operational-data"
@@ -1408,7 +1409,9 @@ export function DexterPromptComposer({
   onRetryUpload,
   mode = "chat",
   compact = false,
+  fadeBloomOnCompact = false,
   animateProgrammaticMentions = false,
+  presets,
   className,
 }: {
   value: string
@@ -1453,7 +1456,14 @@ export function DexterPromptComposer({
   /** Watch mode has one deterministic job, so it does not expose role routing. */
   mode?: "chat" | "watch"
   compact?: boolean
+  /** Fade the landing bloom while its shared layout moves into the conversation. */
+  fadeBloomOnCompact?: boolean
   animateProgrammaticMentions?: boolean
+  /**
+   * Starting points shelved in the tray beside the role, before anything has
+   * been sent. A conversation composer has no tray, so compact ignores them.
+   */
+  presets?: ReactNode
   className?: string
 }) {
   const { language, t } = useLanguage()
@@ -1464,6 +1474,24 @@ export function DexterPromptComposer({
   const dictationTarget = useRef<HTMLElement | null>(null)
   const microphoneLevel = useRef(0)
   const [dictation, setDictation] = useState<InlineDictationState>({ phase: "idle", level: 0, message: null })
+  const [showBloom, setShowBloom] = useState(!compact || fadeBloomOnCompact)
+  /**
+   * A composer taking over from the landing one arrives in the landing shape –
+   * tray, height and fill – and settles into its quiet shape from there, so the
+   * handover only has to move the box, never resize it. Everything visual keys
+   * off `shaped`; behaviour still keys off `compact`.
+   */
+  const [arriving, setArriving] = useState(compact && fadeBloomOnCompact && !shouldReduceMotion)
+  const shaped = compact && !arriving
+  useEffect(() => {
+    if (!arriving) return
+    // Two frames: the first paints the landing shape, the second lets the
+    // transitions run from it.
+    let second = 0
+    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => setArriving(false)) })
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second) }
+  }, [arriving])
+  useEffect(() => { if (!compact) setShowBloom(true) }, [compact])
   const dictating = ["requesting", "transcribing", "polishing"].includes(dictation.phase)
   const dictationActive = useRef(false)
 
@@ -1497,8 +1525,9 @@ export function DexterPromptComposer({
   const canSend = !dictating && value.trim().length > 0 && !isUploading && !hasFailedUploads && !updatePending && (!isSending || canUpdateRequest)
   const showVoiceAction = mode === "chat" && !taskAgentName && !value.trim() && Boolean(onStartVoice)
   const canStartVoice = showVoiceAction && !dictating && !voiceActive && !isUploading && !isSending && !updatePending && !hasFailedUploads && attachments.length === 0
-  const minRows = compact ? 52 : 76
-  const maxRows = compact ? 168 : 232
+  const minRows = shaped ? 52 : 76
+  const maxRows = shaped ? 168 : 232
+  const showTray = !shaped && !voicePanel && (arriving || Boolean(presets || taskAgentName))
   const activeMentions = selectedMentions ?? internalMentions
   const handleMentionsChange = onMentionsChange ?? setInternalMentions
   const imageLightboxItems = useMemo(() => attachments.flatMap((attachment) => attachment.previewUrl
@@ -1509,9 +1538,8 @@ export function DexterPromptComposer({
     <div
       ref={composerRef}
       className={cn(
-        // `overflow-hidden` keeps the shared Dexter shader inside the shell's
-        // rounded top corners.
-        "md-composer md-composer-bloom relative overflow-hidden rounded-[26px]",
+        "md-composer relative overflow-hidden rounded-[26px]",
+        shaped ? "md-composer--quiet" : "md-composer-bloom",
         className,
       )}
       onKeyDown={(event) => {
@@ -1522,22 +1550,21 @@ export function DexterPromptComposer({
         }
       }}
     >
-      <span aria-hidden="true" className="md-composer-bloom__shader">
-        <SpectralBloomShader shape="composer" />
-      </span>
-      <span aria-hidden="true" className="md-composer-bloom__contrast" />
+      {showBloom ? (
+        <motion.span
+          aria-hidden="true"
+          className="md-composer-bloom__effect"
+          initial={compact ? { opacity: 1 } : false}
+          animate={{ opacity: shaped ? 0 : 1 }}
+          transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)}
+          onAnimationComplete={() => { if (shaped) setShowBloom(false) }}
+        >
+          <span className="md-composer-bloom__shader"><SpectralBloomShader shape="composer" /></span>
+          <span className="md-composer-bloom__contrast" />
+        </motion.span>
+      ) : null}
 
-      <div className={cn("md-dexter-role-container relative z-[2] flex h-[44px] min-w-0 items-center px-3 sm:px-3.5", voicePanel && "hidden")}>
-        {mode === "watch" || taskAgentName ? (
-          <span className="md-composer-lead inline-flex h-8 items-center rounded-full px-2.5 text-[13px] font-medium text-white dark:text-[var(--md-ink)]">
-            {taskAgentName ?? t("Watcher")}
-          </span>
-        ) : (
-          <DexterRoleMenu specialists={specialists} selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />
-        )}
-      </div>
-
-      <div className={cn("relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)] shadow-[inset_0_0_0_1px_var(--md-composer-panel-line)]", voicePanel && "mt-1.5")}>
+      <div className={cn("md-composer-panel relative z-[2] rounded-[21px]", shaped ? "mx-1 mb-1 bg-[var(--md-composer-quiet-bg)]" : "m-1.5 bg-[var(--md-composer-panel-bg)] shadow-[inset_0_0_0_1px_var(--md-composer-panel-line)]", shaped && voicePanel && "mt-1.5", showTray && "mb-0")}>
         <div className="flex flex-col px-4 pb-3 pt-3.5 sm:px-5 sm:pb-3.5">
           <div>
           <AnimatePresence initial={false}>
@@ -1698,6 +1725,32 @@ export function DexterPromptComposer({
           </div>
         </div>
       </div>
+      {/* The tray: the strip of shader left showing under the prompt panel.
+          It shelves the prompts worth starting from, below the writing rather
+          than above it, so the first thing under the greeting is the place to
+          type. It collapses away once there is nothing to offer. */}
+      <AnimatePresence initial={false}>
+        {showTray ? (
+          <motion.div
+            key="composer-tray"
+            className="relative z-[2] overflow-hidden"
+            initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+            animate={{ height: 46, opacity: 1 }}
+            exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.panel)}
+          >
+            <div className="flex h-[46px] min-w-0 items-center gap-1.5 px-2">
+              {taskAgentName ? (
+                <span className="md-composer-lead inline-flex h-8 shrink-0 items-center rounded-full px-2.5 text-[13px] font-medium text-white dark:text-[var(--md-ink)]">
+                  {taskAgentName}
+                </span>
+              ) : null}
+              {presets ? <ComposerTrayStrip>{presets}</ComposerTrayStrip> : null}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
       {dictation.phase === "error" || dictation.phase === "allowance" ? <p role="alert" className="relative z-[2] px-5 pb-3 text-[12px] text-[var(--md-red)]">{dictation.message}</p> : null}
     </div>
   )
@@ -2742,6 +2795,40 @@ export function DexterRiskTable() {
   )
 }
 
+/**
+ * The starting prompts Dexter offers before a conversation. Anything the
+ * operator was just working on leads, then the standing jobs. Titles stay to a
+ * verb and its object so several fit on one line of the composer tray.
+ */
+export function dexterSuggestionPresets(
+  t: (text: string) => string,
+  { dealName, bookingId, limit = 5 }: { dealName?: string | null; bookingId?: string | null; limit?: number } = {},
+): DexterPromptPreset[] {
+  const personalised: DexterPromptPreset[] = [
+    dealName ? {
+      id: "close-deal",
+      title: `${t("Close")} ${dealName}`,
+      prompt: `${t("Review this deal and tell me the strongest next steps to close it")}: ${dealName}.`,
+      icon: Handshake,
+      specialistId: "sales",
+    } : null,
+    bookingId ? {
+      id: "chase-booking",
+      title: `${t("Chase")} ${bookingId}`,
+      prompt: `${t("Check what information is still missing and help me chase it up for booking")} ${bookingId}.`,
+      icon: MessageCircle,
+      specialistId: "ops",
+    } : null,
+  ].filter((preset): preset is DexterPromptPreset => Boolean(preset))
+  const standard: DexterPromptPreset[] = [
+    { id: "triage", title: t("Triage my day"), prompt: t("Which bookings need me first today?"), icon: Zap, specialistId: "ops" },
+    { id: "quote", title: t("Draft a quote"), prompt: t("Draft a quote for my next priority opportunity."), icon: PackageCheck, specialistId: "sales" },
+    { id: "at-risk", title: t("At-risk bookings"), prompt: t("Show me the bookings most at risk and what I should do next."), icon: BarChart3, specialistId: "analytics" },
+    { id: "customer-update", title: t("Customer update"), prompt: t("Draft an update for the customer who most needs one today."), icon: MessageCircle, specialistId: "customer" },
+  ]
+  return [...personalised, ...standard].slice(0, limit)
+}
+
 export function DexterSuggestionGrid({
   onPick,
   dealName,
@@ -2752,27 +2839,7 @@ export function DexterSuggestionGrid({
   bookingId?: string | null
 }) {
   const { t } = useLanguage()
-  const personalised = [
-    dealName ? {
-      title: `${t("How can I close")} ${dealName}?`,
-      prompt: `${t("Review this deal and tell me the strongest next steps to close it")}: ${dealName}.`,
-      icon: Handshake,
-      specialistId: "sales" as DexterSpecialistId,
-    } : null,
-    bookingId ? {
-      title: `${t("Chase up information on")} ${bookingId}`,
-      prompt: `${t("Check what information is still missing and help me chase it up for booking")} ${bookingId}.`,
-      icon: MessageCircle,
-      specialistId: "ops" as DexterSpecialistId,
-    } : null,
-  ].filter((suggestion): suggestion is NonNullable<typeof suggestion> => Boolean(suggestion))
-  const standard = [
-    { title: t("Triage my morning"), prompt: t("Which bookings need me first today?"), icon: Zap, specialistId: "ops" as DexterSpecialistId },
-    { title: t("Draft a quote"), prompt: t("Draft a quote for my next priority opportunity."), icon: PackageCheck, specialistId: "sales" as DexterSpecialistId },
-    { title: t("Review at-risk bookings"), prompt: t("Show me the bookings most at risk and what I should do next."), icon: BarChart3, specialistId: "analytics" as DexterSpecialistId },
-    { title: t("Prepare a customer update"), prompt: t("Draft an update for the customer who most needs one today."), icon: MessageCircle, specialistId: "customer" as DexterSpecialistId },
-  ]
-  const suggestions = [...personalised, ...standard].slice(0, 4)
+  const suggestions = dexterSuggestionPresets(t, { dealName, bookingId, limit: 4 })
 
   return (
     <div className="flex flex-wrap justify-center gap-2" aria-label={t("Recommended actions")}>
@@ -2781,7 +2848,7 @@ export function DexterSuggestionGrid({
 
         return (
           <button
-            key={suggestion.title}
+            key={suggestion.id}
             type="button"
             className="group inline-flex min-h-9 max-w-full items-center gap-2 rounded-full bg-[var(--md-surface)] px-3.5 py-2 text-start text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:-translate-y-px hover:bg-[var(--md-surface-raised)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-bg)] active:translate-y-0 motion-reduce:transform-none"
             onClick={() => onPick(suggestion.prompt, suggestion.specialistId)}
@@ -2796,12 +2863,12 @@ export function DexterSuggestionGrid({
 }
 
 export const defaultDexterSpecialists: DexterSpecialist[] = [
-  { id: "auto", name: "Auto", label: "Default", description: "Dexter reads the request and routes it to the right specialist.", icon: AiBrain },
-  { id: "sales", name: "Sales", description: "Rates, quotes, margins, win-back drafts", icon: PackageCheck },
-  { id: "customs", name: "Customs", description: "HS codes, holds, licences, document checks", icon: ShieldCheck },
-  { id: "ops", name: "Ops & exceptions", description: "Delays, reroutes, terminals, carrier escalations", icon: Zap },
-  { id: "customer", name: "Customer comms", description: "Updates and replies, in each customer's tone", icon: MessageCircle },
-  { id: "analytics", name: "Analytics & reporting", description: "Trends, carrier scorecards, spend deep-dives", icon: BarChart3 },
+  { id: "auto", name: "Auto", label: "Default", description: "Dexter chooses an approach for your request.", icon: AiBrain },
+  { id: "sales", name: "Sales", description: "Check quote evidence, pricing and next actions", icon: PackageCheck },
+  { id: "customs", name: "Customs", description: "Review declaration evidence and filing readiness", icon: ShieldCheck },
+  { id: "ops", name: "Ops & exceptions", description: "Prioritise verified risks, cut-offs and handovers", icon: Zap },
+  { id: "customer", name: "Customer comms", description: "Draft updates from confirmed shipment facts", icon: MessageCircle },
+  { id: "analytics", name: "Analytics & reporting", description: "Compare defined measures and source coverage", icon: BarChart3 },
 ]
 
 export const defaultDexterAttachments: DexterAttachment[] = [

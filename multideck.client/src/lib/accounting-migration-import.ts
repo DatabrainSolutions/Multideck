@@ -9,9 +9,9 @@ export type DateFormat = "iso" | "day-first" | "month-first"
 export const openingKinds = ["customer_invoice", "customer_credit", "customer_receipt", "supplier_invoice", "supplier_credit", "supplier_payment"] as const
 export type OpeningKind = typeof openingKinds[number]
 export type TrialBalanceInput = { accountCode: string; debit: string; credit: string }
-export type OpeningItemInput = { sourceId: string; partyCode: string; reference: string; accountCode: string; kind: OpeningKind; documentDate: string; dueDate?: string; currency: string; originalAmount: string; outstandingAmount: string; outstandingBaseAmount: string }
+export type OpeningItemInput = { sourceId: string; partyCode: string; reference: string; accountCode: string; kind: OpeningKind; documentDate: string; dueDate?: string; currency: string; originalAmount: string; originalBaseAmount: string; outstandingAmount: string; outstandingBaseAmount: string; historicalVatEvidenceRef?: string }
 export type TrialField = "accountCode" | "debit" | "credit" | "balance"
-export type ItemField = "sourceId" | "partyCode" | "reference" | "accountCode" | "kind" | "documentDate" | "dueDate" | "currency" | "originalAmount" | "outstandingAmount" | "outstandingBaseAmount"
+export type ItemField = "sourceId" | "partyCode" | "reference" | "accountCode" | "kind" | "documentDate" | "dueDate" | "currency" | "originalAmount" | "originalBaseAmount" | "outstandingAmount" | "outstandingBaseAmount" | "historicalVatEvidenceRef"
 export type ImportMapping<F extends string> = { headerRow: number; columns: Partial<Record<F, number>>; numberFormat: NumberFormat }
 export type TrialMapping = ImportMapping<TrialField> & { balanceMode: "debit-credit" | "signed" }
 export type ItemMapping = ImportMapping<ItemField> & { dateFormat: DateFormat; amountConvention: "positive" | "debit-positive"; fixedKind: OpeningKind; kindValues: Record<string, OpeningKind> }
@@ -112,7 +112,7 @@ export function trialBalanceFromUpload(upload: MigrationUpload, mapping: TrialMa
 }
 
 export function openItemsFromUpload(upload: MigrationUpload, mapping: ItemMapping): ImportResult<OpeningItemInput> {
-  return mappedRows<ItemField, OpeningItemInput>(upload, mapping, ["sourceId", "partyCode", "reference", "accountCode", "documentDate", "currency", "originalAmount", "outstandingAmount", "outstandingBaseAmount"], 50000, (read, numeric, dateCell) => {
+  return mappedRows<ItemField, OpeningItemInput>(upload, mapping, ["sourceId", "partyCode", "reference", "accountCode", "documentDate", "currency", "originalAmount", "originalBaseAmount", "outstandingAmount", "outstandingBaseAmount"], 50000, (read, numeric, dateCell) => {
     const sourceId = read("sourceId"), partyCode = read("partyCode"), reference = read("reference"), accountCode = read("accountCode")
     const sourceKind = mapping.columns.kind === undefined ? "" : read("kind")
     const kind = sourceKind ? mapping.kindValues[sourceKind] : mapping.fixedKind
@@ -124,13 +124,14 @@ export function openItemsFromUpload(upload: MigrationUpload, mapping: ItemMappin
     }
     const documentDate = date("documentDate")!, dueDate = date("dueDate", true), currency = read("currency").toUpperCase()
     if (!/^[A-Z]{3}$/.test(currency)) throw new Error("Use a three-letter currency code.")
-    const amount = (field: "originalAmount" | "outstandingAmount" | "outstandingBaseAmount") => {
+    const amount = (field: "originalAmount" | "originalBaseAmount" | "outstandingAmount" | "outstandingBaseAmount") => {
       const units = integer(migrationAmount(read(field), mapping.numberFormat, mapping.amountConvention === "debit-positive", numeric(field)))
       const positive = mapping.amountConvention === "debit-positive" ? units * sign(kind) : units
       if (positive <= 0n) throw new Error("Use a positive unpaid amount, with the correct sign for the selected transaction type and convention.")
       return decimal(positive)
     }
-    return { sourceId, partyCode, reference, accountCode, kind, documentDate, ...(dueDate ? { dueDate } : {}), currency, originalAmount: amount("originalAmount"), outstandingAmount: amount("outstandingAmount"), outstandingBaseAmount: amount("outstandingBaseAmount") }
+    const historicalVatEvidenceRef = read("historicalVatEvidenceRef", true)
+    return { sourceId, partyCode, reference, accountCode, kind, documentDate, ...(dueDate ? { dueDate } : {}), currency, originalAmount: amount("originalAmount"), originalBaseAmount: amount("originalBaseAmount"), outstandingAmount: amount("outstandingAmount"), outstandingBaseAmount: amount("outstandingBaseAmount"), ...(historicalVatEvidenceRef ? { historicalVatEvidenceRef } : {}) }
   })
 }
 

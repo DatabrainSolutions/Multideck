@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import { TicketAttachmentList } from "@/components/multideck/ticket-attachments"
 import type { TicketAttachment } from "@/lib/ticket-attachments"
 import { DexterApiError, previewDexterDocument } from "@/lib/dexter-api"
@@ -10,7 +11,7 @@ import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck
 import { shouldShowDexterJumpToLatest } from "@/lib/dexter-scroll-presentation"
 import { hasReachedDailyVoiceLimit } from "@/lib/dexter-voice-presentation"
 import { DexterRecordTable } from "@/components/multideck/dexter-record-table"
-import { dexterArtifactReferences, retainDexterRenderKeys, structureDexterMeetingBrief } from "@/lib/dexter-response-presentation"
+import { dexterArtifactReferences, latestDexterRecordTables, retainDexterRenderKeys, structureDexterMeetingBrief } from "@/lib/dexter-response-presentation"
 import {
   useEffect,
   memo,
@@ -57,7 +58,7 @@ import {
   DexterMentionText,
   DexterWatchRail,
   DexterPromptComposer,
-  DexterSuggestionGrid,
+  dexterSuggestionPresets,
   defaultDexterAttachments,
   defaultDexterSpecialists,
   type DexterAttachment,
@@ -85,6 +86,8 @@ import {
 import { peekDexterHomeHandoff, takeDexterHomeHandoff } from "@/lib/dexter-home-handoff"
 import { loadDexterMentionSources } from "@/lib/dexter-mention-sources"
 import { DexterBrandMark } from "@/components/multideck/dexter-brand-mark"
+import { DexterGreeting } from "@/components/multideck/dexter-greeting"
+import { DexterPromptPresets, type DexterPromptPreset } from "@/components/multideck/dexter-prompt-presets"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
 import { WatchModeAurora } from "@/components/multideck/aurora-background"
@@ -529,7 +532,7 @@ function DexterMarkdownTable({
     return (
       <div className="md-dexter-markdown__table-wrap my-4 w-full max-w-[1120px] overflow-hidden rounded-[var(--md-radius-lg)]">
         <div className="md-dexter-markdown__table-scroll md-scrollbar">
-          <table className="md-dexter-markdown__table">{children}</table>
+          <Table className="md-dexter-markdown__table">{children}</Table>
         </div>
       </div>
     )
@@ -562,7 +565,7 @@ function DexterMarkdownTable({
       )}
     >
       <div className="md-dexter-markdown__table-scroll md-scrollbar">
-        <table className="md-dexter-markdown__table">
+        <Table className="md-dexter-markdown__table">
           <thead>
             <tr>
               {columns.map((column, index) => (
@@ -611,7 +614,7 @@ function DexterMarkdownTable({
               </tr>
             ))}
           </tbody>
-        </table>
+        </Table>
       </div>
 
       <div className="md-dexter-markdown__records" role="list">
@@ -1326,7 +1329,7 @@ function ConversationStream({
             </p>)}
           </div> : null}
           <DexterResponseBody content={dexterArtifactReferences(message.content, Boolean(message.recordTables?.length))} reasoning={reasoning} activities={message.activities} isStreaming={isStreamingMessage}>
-          {message.recordTables?.map(table => <DexterRecordTable key={table.id} table={table} />)}
+          {latestDexterRecordTables(message.recordTables).map(table => <DexterRecordTable key={table.id} table={table} />)}
           {message.emailAttachments?.length ? (
             <div className="mt-3 grid gap-2" aria-label={t("Email attachments")}>
               {message.emailAttachments.map((attachment) => (
@@ -1682,6 +1685,12 @@ export function AgentDexterPage({
   const [stage, setStage] = useState<"landing" | "conversation">(
     initialConversationIdRef.current || homeHandoffRef.current ? "conversation" : "landing",
   )
+  // True only for the render that swaps the landing for the thread, so the
+  // conversation composer knows to arrive in the landing shape and settle. A
+  // composer remounted later – another thread opened – just appears.
+  const previousStageRef = useRef(stage)
+  const composerArrivesFromLanding = previousStageRef.current === "landing" && stage === "conversation"
+  useEffect(() => { previousStageRef.current = stage }, [stage])
   const [dexterMode, setDexterMode] = useState<"chat" | "watch">("chat")
   const [watches, setWatches] = useState<DexterWatch[]>([])
   const [isSending, setIsSending] = useState(false)
@@ -3351,6 +3360,15 @@ export function AgentDexterPage({
     }
   }
 
+  const chatPresets = useMemo(() => dexterSuggestionPresets(t, {
+    dealName: personalisedDeal?.name,
+    bookingId: recentWorkContext?.type === "booking" ? recentWorkContext.recordId : null,
+  }), [personalisedDeal?.name, recentWorkContext, t])
+  const watchPresets = useMemo<DexterPromptPreset[]>(() => [
+    { id: "watch-quote-accepted", title: t("Quote accepted"), prompt: t("Alert me when a live quote becomes accepted."), icon: Radar, specialistId: "auto" },
+    { id: "watch-customs-hold", title: t("Customs hold emails"), prompt: t("Watch for new emails mentioning a customs hold."), icon: Radar, specialistId: "auto" },
+  ], [t])
+
   function handleSuggestion(prompt: string, specialistId: DexterSpecialistId) {
     setComposerValue(prompt)
     setSelectedSpecialistId(specialistId)
@@ -3506,31 +3524,32 @@ export function AgentDexterPage({
               />
             </div>
 
-            <div className="relative z-10 mx-auto flex w-full max-w-[850px] flex-1 flex-col justify-center px-[var(--md-page-stack-gap)] py-[clamp(48px,8vw,64px)]">
+            {/* One composer width everywhere – here, in the thread and on Home –
+                so the handover between them only ever moves the box. */}
+            <div className="relative z-10 mx-auto flex w-full max-w-[calc(980px+2*var(--md-page-stack-gap))] flex-1 flex-col justify-center px-[var(--md-page-stack-gap)] py-[clamp(48px,8vw,64px)]">
               <motion.div
-                className="mx-auto overflow-hidden text-center"
+                className="overflow-hidden"
                 aria-hidden={dexterMode === "watch"}
                 initial={false}
                 animate={{
                   height: dexterMode === "watch" ? 0 : "auto",
                   opacity: dexterMode === "watch" ? 0 : 1,
-                  marginBottom: dexterMode === "watch" ? 0 : "var(--md-page-section-gap)",
+                  marginBottom: dexterMode === "watch" ? 0 : "var(--md-gap-xl)",
                 }}
                 transition={shouldReduceMotion ? { duration: 0 } : mdMotion.smooth}
               >
-                <div className="flex items-center justify-center gap-3">
-                  <DexterBrandMark className="size-6 shrink-0" />
-                  <h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)] sm:text-[30px]">
-                    {t("What can I help you with today?")}
-                  </h1>
-                </div>
-                <p className="mt-4 text-[15px] text-[var(--md-text)]">
-                  {t("Bookings, customers, documents, rates - or hand me the whole job.")}
-                </p>
+                <DexterGreeting
+                  title={t("What can I help you with today?")}
+                  standfirst={t("Bookings, customers, documents, rates – or hand me the whole job.")}
+                />
               </motion.div>
 
               <motion.div
                 layoutId="dexter-composer"
+                // Position only. The two composers share a width and the thread's
+                // one arrives in the landing shape, so there is nothing to scale –
+                // and scaling is what squashed the text mid-flight.
+                layout="position"
                 // Only the stage change may move this box. Without the gate, every
                 // unrelated re-render – collapsing the watch rail, which retimes the
                 // column widths in CSS – makes Motion measure a box mid-transition and
@@ -3543,6 +3562,15 @@ export function AgentDexterPage({
                 <DexterVoiceLimitNotice visible={voiceLimitReached} />
                 <DexterPromptComposer
                   value={composerValue}
+                  presets={showAttachments || isSending ? undefined : (
+                    <DexterPromptPresets
+                      key={dexterMode}
+                      delay={0.3}
+                      label={dexterMode === "watch" ? "Suggested watches" : "Suggested prompts"}
+                      presets={dexterMode === "watch" ? watchPresets : chatPresets}
+                      onPick={dexterMode === "watch" ? (prompt) => setComposerValue(prompt) : handleSuggestion}
+                    />
+                  )}
                   specialists={defaultDexterSpecialists}
                   selectedSpecialistId={selectedSpecialistId}
                   selectedModelId={selectedModelId}
@@ -3628,37 +3656,6 @@ export function AgentDexterPage({
                 ) : null}
               </AnimatePresence>
 
-              {!showAttachments && !isSending && dexterMode === "chat" ? (
-                <motion.div
-                  className="mt-[var(--md-gap-xl)]"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 8 }}
-                  transition={mdMotion.panel}
-                >
-                  <DexterSuggestionGrid
-                    onPick={handleSuggestion}
-                    dealName={personalisedDeal?.name}
-                    bookingId={recentWorkContext?.type === "booking" ? recentWorkContext.recordId : null}
-                  />
-                </motion.div>
-              ) : !showAttachments && !isSending ? (
-                <div className="mt-[var(--md-gap-xl)] flex flex-wrap justify-center gap-2" aria-label={t("Recommended actions")}>
-                  {[
-                    t("Alert me when a live quote becomes accepted."),
-                    t("Watch for new emails mentioning a customs hold."),
-                  ].map((example) => (
-                    <button
-                      key={example}
-                      type="button"
-                      className="group inline-flex min-h-9 max-w-full items-center rounded-full bg-[var(--md-surface)] px-3.5 py-2 text-start text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:-translate-y-px hover:bg-[var(--md-surface-raised)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-bg)] active:translate-y-0 motion-reduce:transform-none"
-                      onClick={() => setComposerValue(example)}
-                    >
-                      {example}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
             </div>
 
             <div className="relative z-10 hidden items-center justify-center gap-[clamp(32px,6vw,64px)] px-[var(--md-page-pad)] pb-[var(--md-page-pad)] text-[13px] text-[var(--md-text)] lg:flex">
@@ -3680,7 +3677,10 @@ export function AgentDexterPage({
           <motion.div
             key="dexter-conversation"
             className="grid h-[100dvh] min-h-0 grid-cols-1 overflow-hidden bg-[var(--md-bg)]"
-            initial={{ opacity: 0 }}
+            // Never faded in: the composer travelling into this view is inside
+            // it, and fading the view would blink the box out mid-journey. The
+            // thread brings its own entrance.
+            initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={mdMotion.smooth}
@@ -3837,9 +3837,10 @@ export function AgentDexterPage({
                   animate={{ y: 0, opacity: 1 }}
                   transition={mdMotion.smooth}
                 >
-                  <div className="relative mx-auto w-full">
+                  <div className="relative mx-auto w-full max-w-[980px]">
                     <motion.div
                       layoutId="dexter-composer"
+                      layout="position"
                       layoutDependency={stage}
                       className="relative z-30"
                       transition={mdMotion.spring}
@@ -3848,6 +3849,7 @@ export function AgentDexterPage({
                       <DexterVoiceLimitNotice visible={voiceLimitReached} />
                       <DexterPromptComposer
                         compact
+                        fadeBloomOnCompact={composerArrivesFromLanding}
                         value={composerValue}
                         specialists={defaultDexterSpecialists}
                         selectedSpecialistId={selectedSpecialistId}
@@ -3898,7 +3900,6 @@ export function AgentDexterPage({
                         canUpdateRequest={isSending && Boolean(activeRunId)}
                         updatePending={Boolean(isSending && steering && ["pending", "claimed", "submitted", "queued"].includes(steering.status))}
                         updateStatus={steeringStatusText}
-                        className="shadow-[0_0_0_1px_var(--md-accent-a42),0_16px_38px_rgba(42,52,50,0.16)]"
                       />
                     </motion.div>
 

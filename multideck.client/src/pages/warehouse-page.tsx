@@ -23,7 +23,7 @@ import { mdMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getWarehouseHeaderActions, getWarehouseWorkspaceData, rescheduleOperationalWarehouseOrder, type WarehouseHeaderAction, type WarehouseWorkspaceData } from "@/lib/warehouse"
 import { toast } from "sonner"
-import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
+import { CustomerWarehouseAccess } from "@/pages/warehouse-customer-access"
 
 type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Warehouse orders" | "Expected receipts" | "Calendar" | "Users" | "Default pricing"
 

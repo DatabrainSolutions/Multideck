@@ -11,7 +11,7 @@ const app = fs.readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8")
 const store = fs.readFileSync(new URL("../src/lib/contact-card-store.ts", import.meta.url), "utf8")
 
 test("Branding is a tenant-administrator route, not a personal settings tab", () => {
-  assert.match(productNavigation, /id: "admin-branding", label: "Branding", icon: Palette, route: "\/admin\/branding"/)
+  assert.match(productNavigation, /id: "settings",[\s\S]*?label: "Branding", route: "\/admin\/branding"/)
   assert.match(admin, /"\/admin\/branding": "Branding"/)
   assert.match(admin, /route === "\/admin\/branding"[\s\S]*AdminBrandingContent/)
   assert.match(app, /"\/admin\/branding"/)

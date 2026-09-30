@@ -20,7 +20,7 @@ test("warehouse purchase orders have an explicit customer inbound role", () => {
 })
 
 test("the finance purchase-order menu stays separate from expected receipts", () => {
-  assert.match(navigation, /label: "Supplier purchase orders", value: "Planned"/)
+  assert.match(navigation, /label: "Supplier purchase orders"[^\n]*route: "\/finance\/payables\/purchase-orders"/)
   assert.doesNotMatch(navigation, /label: "Supplier purchase orders"[^\n]*route: "\/warehouse\/purchase-orders"/)
   assert.match(navigation, /label: "Expected receipts"[^\n]*route: "\/warehouse\/purchase-orders"/)
 })

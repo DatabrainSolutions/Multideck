@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,7 +9,7 @@ import { SettingsPanel } from "@/components/multideck/settings-components"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { useLanguage } from "@/i18n/language-provider"
-import { createNominalGroup, getNominalStructure, mapChargeNominals, saveChargeCatalogueItem, type ChargeApplicability, type ChargeCatalogueItem, type NominalGroup, type NominalStructure } from "@/lib/finance-ledger-api"
+import { chargeMappingCutoverAction, createNominalGroup, getChargeMappingCutovers, getNominalStructure, mapChargeNominals, saveChargeCatalogueItem, type ChargeApplicability, type ChargeCatalogueItem, type ChargeMappingCutover, type NominalGroup, type NominalStructure } from "@/lib/finance-ledger-api"
 import type { FinanceAdministration } from "@/lib/finance-subledger-api"
 
 type GroupDraft = { code: string; name: string; kind: "cost" | "revenue"; actualAccountId: string; accruedAccountId: string; controlAccountId: string }
@@ -29,6 +30,9 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
 }) {
   const { t } = useLanguage()
   const [data, setData] = useState<NominalStructure | null>(null)
+  const [cutovers, setCutovers] = useState<ChargeMappingCutover[]>([])
+  const [effectiveDate, setEffectiveDate] = useState("")
+  const [cutoverReview, setCutoverReview] = useState<{ action: "approve" | "activate"; id: string } | null>(null)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [loading, setLoading] = useState(true)
@@ -43,9 +47,9 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
     const version = ++request.current
     setLoading(true); setError("")
     try {
-      const result = await getNominalStructure(entityId)
+      const [result, existingCutovers] = await Promise.all([getNominalStructure(entityId), getChargeMappingCutovers(entityId)])
       if (version === request.current) {
-        setData(result); setChargeId(""); setCostId(""); setRevenueId("")
+        setData(result); setCutovers(existingCutovers); setChargeId(""); setCostId(""); setRevenueId("")
       }
     } catch (err) { if (version === request.current) setError(message(err)) }
     finally { if (version === request.current) setLoading(false) }
@@ -77,7 +81,18 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
     setBusy(true); setError(""); setNotice("")
     try {
       await mapChargeNominals(entityId, { chargeId, costGroupId: costId || null, revenueGroupId: revenueId || null, version: data?.chargeMappings.find(row => row.charge_id === chargeId)?.version ?? 0 })
-      setNotice(t("Charge mapping saved. Existing postings have not changed.")); await load()
+      setNotice(t("Charge mapping saved. It takes effect after a separately approved dated cutover.")); await load()
+    } catch (err) { setError(message(err)) }
+    finally { setBusy(false) }
+  }
+  const runCutover = async (action: "propose" | "approve" | "activate", id?: string) => {
+    if (!editable) return
+    setBusy(true); setError(""); setNotice("")
+    try {
+      await chargeMappingCutoverAction(entityId, action, action === "propose" ? { effectiveDate } : { id })
+      setCutoverReview(null)
+      setNotice(t(action === "propose" ? "Cutover plan saved for independent review." : action === "approve" ? "Cutover plan approved. Activation is still required." : "Charge mapping cutover activated for documents dated on or after the effective date."))
+      await load()
     } catch (err) { setError(message(err)) }
     finally { setBusy(false) }
   }
@@ -94,6 +109,8 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
   const controlAccounts = scopedAccounts.filter(account => account.FINNom_IsActive && account.FINNom_IsControlAccount && account.FINNom_ReportCategoryCode === (group?.kind === "revenue" ? "asset" : "liability"))
   const mapping = data?.chargeMappings.find(row => row.charge_id === chargeId)
   const mappingChanged = costId !== (mapping?.cost_group_id ?? "") || revenueId !== (mapping?.revenue_group_id ?? "")
+  const activeCutover = cutovers.find(item => item.status === "active")
+  const pendingCutover = cutovers.find(item => item.status === "approved" || item.status === "proposed")
   const editCharge = (row?: ChargeCatalogueItem) => {
     setError(""); setNotice("")
     setChargeDraft(row ? {
@@ -162,6 +179,13 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
           {[costId, revenueId].filter(Boolean).map(id => <p key={id} className="text-[12px] text-[var(--md-text)]">{groupById.get(id)?.name}: {t("Actual")} {memberName(id, "actual")} · {t("Accrued")} {memberName(id, "accrued")} · {t("BS control")} {accountName(groupById.get(id)?.control_account_id)}</p>)}
           <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-[12px] text-[var(--md-subtle)]">{t("Each required direction needs a mapping. Missing accounts must be resolved before posting.")}</p><Button disabled={!editable || !chargeId || (!costId && !revenueId) || !mappingChanged} onClick={() => void saveMapping()}>{t("Save charge mapping")}</Button></div>
         </section>
+        <section aria-labelledby="mapping-cutover-heading" className="space-y-3 border-t border-[var(--md-line)] pt-4">
+          <h3 id="mapping-cutover-heading" className="text-[14px] font-medium">{t("Charge mapping cutover")}</h3>
+          <p className="text-[12px] text-[var(--md-text)]">{t("A second finance operator reviews the saved relationships before activation. Charge-linked documents dated from the cutover must use the mapped actual nominal; their chosen account and mapping version remain on the posted document.")}</p>
+          {activeCutover ? <p role="status" className="text-[13px] text-[var(--md-green)]">{t("Latest active plan from")} <span data-i18n-skip>{activeCutover.effective_date}</span> · {Object.keys(activeCutover.mapping_snapshot).length} {t("charge mappings in that approved plan")}</p> : null}
+          {pendingCutover ? <div className="flex flex-wrap items-center justify-between gap-3 text-[13px]"><p>{t(pendingCutover.status === "proposed" ? "Awaiting independent approval" : "Approved, awaiting activation")} · <span data-i18n-skip>{pendingCutover.effective_date}</span> · {Object.keys(pendingCutover.mapping_snapshot).length} {t("mapped charges")}</p><Button variant="outline" disabled={!editable} onClick={() => setCutoverReview({ action: pendingCutover.status === "proposed" ? "approve" : "activate", id: pendingCutover.id })}>{t(pendingCutover.status === "proposed" ? "Review and approve" : "Review and activate")}</Button></div> : <div className="flex flex-wrap items-end gap-3"><label className="space-y-1 text-[12px]">{t("Effective accounting date")}<Input type="date" value={effectiveDate} disabled={!editable} onChange={event => setEffectiveDate(event.target.value)} /></label><Button variant="outline" disabled={!editable || !effectiveDate || !data.chargeMappings.length} onClick={() => void runCutover("propose")}>{t("Propose cutover")}</Button></div>}
+          <p className="text-[12px] text-[var(--md-subtle)]">{t("Each active plan applies from its effective date. Existing postings are never remapped. Later mapping edits need another approved cutover; activation stops if charge documents have already posted on or after its proposed date.")}</p>
+        </section>
       </> : null}
     </div>
     <Dialog open={group !== null} onOpenChange={open => { if (!open && !busy) setGroup(null) }}><DialogContent><DialogHeader><DialogTitle>{t("Add nominal group")}</DialogTitle><DialogDescription>{t("Choose saved accounts for one P&L category. Account membership is retained permanently to protect historical reporting.")}</DialogDescription></DialogHeader>
@@ -174,6 +198,10 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
       </div> : null}
       <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setGroup(null)}>{t("Cancel")}</Button><Button disabled={!editable || !group || !Object.values(group).every(value => value.trim())} onClick={() => void saveGroup()}>{t("Save group")}</Button></DialogFooter>
     </DialogContent></Dialog>
+    <Dialog open={cutoverReview !== null} onOpenChange={open => { if (!open && !busy) setCutoverReview(null) }}><DialogContent><DialogHeader><DialogTitle>{t(cutoverReview?.action === "activate" ? "Activate charge mapping cutover" : "Approve charge mapping cutover")}</DialogTitle><DialogDescription>{t("Review the effective date and saved mappings before continuing. The service rechecks the current chart and requires a second finance operator.")}</DialogDescription></DialogHeader>
+      {cutoverReview ? <p className="text-[13px]">{t("Effective from")} <span data-i18n-skip>{cutovers.find(row => row.id === cutoverReview.id)?.effective_date}</span> · {Object.keys(cutovers.find(row => row.id === cutoverReview.id)?.mapping_snapshot ?? {}).length} {t("mapped charges")}</p> : null}
+      <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setCutoverReview(null)}>{t("Cancel")}</Button><Button disabled={!editable || !cutoverReview} onClick={() => { if (cutoverReview) void runCutover(cutoverReview.action, cutoverReview.id) }}>{t(cutoverReview?.action === "activate" ? "Activate cutover" : "Approve plan")}</Button></DialogFooter>
+    </DialogContent></Dialog>
     <Dialog open={chargeDraft !== null} onOpenChange={open => { if (!open && !busy) setChargeDraft(null) }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[760px]"><DialogHeader><DialogTitle>{t(chargeDraft?.id ? "Edit charge code" : "Add charge code")}</DialogTitle><DialogDescription>{t("Select the quote and booking combinations where this charge can be used. Existing codes remain available everywhere until their scope is saved.")}</DialogDescription></DialogHeader>
       {chargeDraft ? <div className="space-y-4">
         {error ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{t(error)}</p> : null}
@@ -181,7 +209,7 @@ export function FinanceNominalStructurePanel({ entityId, accounts, chartDirty }:
         <label className="block space-y-1 text-[12px]">{t("Description")}<Input value={chargeDraft.description} disabled={busy} onChange={event => setChargeDraft({ ...chargeDraft, description: event.target.value })} /></label>
         <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1"><label htmlFor="charge-category" className="text-[12px]">{t("Category")}</label><Select value={chargeDraft.category} disabled={busy} onValueChange={value => setChargeDraft({ ...chargeDraft, category: value })}><SelectTrigger id="charge-category"><SelectValue /></SelectTrigger><SelectContent>{categories.map(value => <SelectItem key={value} value={value}>{t(value.charAt(0).toUpperCase() + value.slice(1))}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><label htmlFor="charge-side" className="text-[12px]">{t("Financial side")}</label><Select value={chargeDraft.side} disabled={busy} onValueChange={value => setChargeDraft({ ...chargeDraft, side: value })}><SelectTrigger id="charge-side"><SelectValue /></SelectTrigger><SelectContent>{["both", "buy", "sell", "pass_through"].map(value => <SelectItem key={value} value={value}>{t(value === "buy" ? "Cost" : value === "sell" ? "Revenue" : value === "pass_through" ? "Pass through" : "Both")}</SelectItem>)}</SelectContent></Select></div></div>
         <label className="flex items-center gap-2 text-[13px]"><Checkbox checked={chargeDraft.active} disabled={busy} onCheckedChange={checked => setChargeDraft({ ...chargeDraft, active: checked === true })} />{t("Active")}</label>
-        {kinds.map(recordKind => <section key={recordKind} className="space-y-2 border-t border-[var(--md-line)] pt-3"><h4 className="text-[13px] font-medium">{t(recordKind === "quote" ? "Quotes" : "Bookings")}</h4><div className="overflow-x-auto"><table className="w-full min-w-[540px] text-[12px]"><thead><tr><th className="py-2 text-start">{t("Direction")}</th>{modes.map(mode => <th key={mode} className="py-2 text-center font-medium">{t(mode.charAt(0).toUpperCase() + mode.slice(1))}</th>)}</tr></thead><tbody>{directions.map(direction => <tr key={direction} className="border-t border-[var(--md-line)]"><th className="py-2 text-start font-medium">{t(direction === "cross_trade" ? "Cross trade" : direction.charAt(0).toUpperCase() + direction.slice(1))}</th>{modes.map(mode => { const scope = { recordKind, direction, mode }; const checked = chargeDraft.applicability.some(item => scopeKey(item) === scopeKey(scope)); return <td key={mode} className="py-2 text-center"><Checkbox aria-label={`${recordKind} ${direction} ${mode}`} checked={checked} disabled={busy} onCheckedChange={value => setChargeDraft({ ...chargeDraft, applicability: value === true ? [...chargeDraft.applicability, scope] : chargeDraft.applicability.filter(item => scopeKey(item) !== scopeKey(scope)) })} className="mx-auto" /></td> })}</tr>)}</tbody></table></div></section>)}
+        {kinds.map(recordKind => <section key={recordKind} className="space-y-2 border-t border-[var(--md-line)] pt-3"><h4 className="text-[13px] font-medium">{t(recordKind === "quote" ? "Quotes" : "Bookings")}</h4><div className="overflow-x-auto"><Table className="w-full min-w-[540px] text-[12px]"><thead><tr><th className="py-2 text-start">{t("Direction")}</th>{modes.map(mode => <th key={mode} className="py-2 text-center font-medium">{t(mode.charAt(0).toUpperCase() + mode.slice(1))}</th>)}</tr></thead><tbody>{directions.map(direction => <tr key={direction} className="border-t border-[var(--md-line)]"><th className="py-2 text-start font-medium">{t(direction === "cross_trade" ? "Cross trade" : direction.charAt(0).toUpperCase() + direction.slice(1))}</th>{modes.map(mode => { const scope = { recordKind, direction, mode }; const checked = chargeDraft.applicability.some(item => scopeKey(item) === scopeKey(scope)); return <td key={mode} className="py-2 text-center"><Checkbox aria-label={`${recordKind} ${direction} ${mode}`} checked={checked} disabled={busy} onCheckedChange={value => setChargeDraft({ ...chargeDraft, applicability: value === true ? [...chargeDraft.applicability, scope] : chargeDraft.applicability.filter(item => scopeKey(item) !== scopeKey(scope)) })} className="mx-auto" /></td> })}</tr>)}</tbody></Table></div></section>)}
       </div> : null}
       <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setChargeDraft(null)}>{t("Cancel")}</Button><Button disabled={!editable || !chargeDraft?.code.trim() || !chargeDraft?.name.trim() || !chargeDraft.applicability.length} onClick={() => void saveCharge()}>{t("Save charge code")}</Button></DialogFooter>
     </DialogContent></Dialog>

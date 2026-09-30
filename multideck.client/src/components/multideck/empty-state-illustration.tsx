@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils"
 import "./empty-state-illustration.css"
 
-export type EmptyStateIllustrationVariant = "search" | "tasks" | "documents" | "contacts" | "cargo" | "chart" | "calendar" | "mail" | "phone" | "route" | "activity"
+export type EmptyStateIllustrationVariant = "search" | "tasks" | "documents" | "contacts" | "cargo" | "chart" | "calendar" | "mail" | "phone" | "route" | "activity" | "settings"
 
 /** Decorative only: keep the real state, recovery action and explanation in the surrounding UI. */
 export function EmptyStateIllustration({ variant, compact = false, className }: {
@@ -99,6 +99,28 @@ function scene(variant: EmptyStateIllustrationVariant) {
       <path d="M53 79C55 59 77 81 87 65S117 68 124 49" pathLength="1" strokeDasharray="3 5" className="md-empty-art__accent" />
       <circle cx="53" cy="79" r="4" className="md-empty-art__wash md-empty-art__accent" />
       <g className="md-empty-art__float"><path d="M124 25A12 12 0 0 1 136 37C136 46 124 55 124 55S112 46 112 37A12 12 0 0 1 124 25Z" className="md-empty-art__paper md-empty-art__accent" /><circle cx="124" cy="37" r="4" className="md-empty-art__solid" stroke="none" /></g>
+    </>
+    // A small settings sidebar: the highlight steps down its rows and each
+    // row's switch turns on in turn, so an empty settings page points at the
+    // sidebar beside it.
+    case "settings": return <>
+      <rect x="30" y="16" width="116" height="88" rx="10" className="md-empty-art__paper" />
+      <path d="M40 16.75H66V103.25H40A9.25 9.25 0 0 1 30.75 94V26A9.25 9.25 0 0 1 40 16.75Z" className="md-empty-art__back" stroke="none" />
+      <path d="M66 17V103" className="md-empty-art__outline" />
+      <rect x="35" y="27" width="26" height="14" rx="5" className="md-empty-art__wash md-empty-art__accent md-empty-art__step" />
+      <path d="M40 34H56M40 52H53M40 70H56" className="md-empty-art__lines" />
+      <path d="M76 34H102M76 52H96M76 70H106M76 90H112" className="md-empty-art__lines" />
+      {[0, 1, 2].map((row) => {
+        const y = 34 + row * 18
+        const beat = row === 0 ? "" : ` md-empty-art__beat-${row + 1}`
+        return (
+          <g key={row}>
+            <rect x="116" y={y - 5} width="18" height="10" rx="5" className="md-empty-art__outline" />
+            <rect x="116" y={y - 5} width="18" height="10" rx="5" className={`md-empty-art__solid md-empty-art__switch${beat}`} stroke="none" />
+            <circle cx="121" cy={y} r="3" className={`md-empty-art__paper md-empty-art__knob${beat}`} />
+          </g>
+        )
+      })}
     </>
     case "activity": return <>
       <rect x="43" y="18" width="90" height="87" rx="10" className="md-empty-art__paper" />

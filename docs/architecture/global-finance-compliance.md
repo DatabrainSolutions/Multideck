@@ -51,7 +51,7 @@ The UI must display the actual status and must never call a foundation pack
   required fraud-prevention headers. Corporation Tax submissions require the
   relevant return plus iXBRL accounts and computations through approved
   software. Companies House software filing has its own presenter and format
-  requirements. Sources: [HMRC VAT API](https://developer.service.hmrc.gov.uk/api-documentation/docs/api/service/vat-api/2.0), [Company Tax Returns](https://www.gov.uk/company-tax-returns), [Companies House filing changes](https://www.gov.uk/government/news/changes-to-filing-annual-accounts-at-companies-house).
+  requirements. Sources: [HMRC VAT API](https://developer.service.hmrc.gov.uk/api-documentation/docs/api/service/vat-api/1.0), [Company Tax Returns](https://www.gov.uk/company-tax-returns), [Companies House filing changes](https://www.gov.uk/government/news/changes-to-filing-annual-accounts-at-companies-house).
 - US corporate Modernized e-File requires the applicable IRS-authorised
   software/provider lifecycle. State and local sales/use taxes remain
   jurisdiction-specific. Source: [IRS corporate e-file](https://www.irs.gov/e-file-providers/form-1120-1120-s-1120-f-1120-h-e-file).
@@ -103,6 +103,18 @@ Dexter has a tenant-safe finance domain for native financial summaries and
 compliance obligations with source identifiers and report routes. It has no
 generic SQL or ledger write access. High-impact posting, correction, filing and
 compliance registration changes remain explicit allowlisted workflows.
+UK VAT registration setup is currently an operator-only exception: Dexter may
+read existing compliance summaries, but must report registration creation or
+revision as unsupported until a dedicated approved action can reuse the VAT
+validation and audit boundary. The existing registration-status database event
+remains the Watching for you signal; no model polling is added.
+VAT transaction reconciliation dates, immutable source locks, credit-to-original
+links and filing are also operator-only. Dexter must direct users to the VAT
+account audit trail and say that direct chat actions and Watching for you are
+unsupported until tenant-safe adapters and deterministic event signals exist.
+The UK VAT calculator also blocks aged unpaid supplier invoices with recoverable
+input tax pending a reviewed clawback adjustment workflow. Dexter cannot
+calculate or post that adjustment, and Watching for you has no clawback signal.
 
 Watching for you reacts to real finance and compliance database events. Rules
 are deterministic and event-driven; ordinary evaluation performs no recurring

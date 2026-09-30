@@ -1,7 +1,8 @@
+import { registerReadCache } from "@/lib/register-read-cache"
 import type { StatusTone } from "@/data/operational-data"
 import type { DomesticRoadJob, RoadJobStageId } from "@/components/multideck/domestic-road-components"
 import { createEmptyFilterQuery, filterQueryIsEmpty, type FilterQuery } from "@/lib/advanced-filters"
-import { authSupabase, getClientAuth, authenticatedAccessChangedEvent, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
+import { authSupabase, getClientAuth, getSupabaseSession, supabase, supabaseFunctionsUrl } from "@/lib/supabase"
 
 import { freightBookingMode, type FreightBookingMode } from "@/lib/freight-field-policy"
 type BookingMode = FreightBookingMode
@@ -74,124 +75,9 @@ export type BookingRegisterInput = {
   offset: number
 }
 
-type RegisterCacheEntry<T> = {
-  value?: T
-  expiresAt: number
-  inFlight?: Promise<T>
-  controller?: AbortController
-  consumers: Set<symbol>
-  lastAccessedAt: number
-}
-
-const REGISTER_CACHE_TTL_MS = 15_000
-const REGISTER_CACHE_MAX_ENTRIES = 64
-const registerPageCache = new Map<string, RegisterCacheEntry<unknown>>()
-
-function registerAbortError() {
-  return typeof DOMException === "undefined"
-    ? Object.assign(new Error("The register request was cancelled."), { name: "AbortError" })
-    : new DOMException("The register request was cancelled.", "AbortError")
-}
-
-function pruneRegisterPageCache() {
-  const completed = [...registerPageCache.entries()]
-    .filter(([, entry]) => !entry.inFlight)
-    .sort((left, right) => left[1].lastAccessedAt - right[1].lastAccessedAt)
-  for (const [key] of completed.slice(0, Math.max(0, completed.length - REGISTER_CACHE_MAX_ENTRIES))) {
-    registerPageCache.delete(key)
-  }
-}
-
-/** Shares identical bounded reads while keeping abort ownership with active consumers. */
-export function readCachedRegisterPage<T>(
-  scope: string,
-  resource: string,
-  load: (signal: AbortSignal) => Promise<T>,
-  signal?: AbortSignal,
-): Promise<T> {
-  if (signal?.aborted) return Promise.reject(registerAbortError())
-
-  const key = `${supabaseFunctionsUrl}:${scope}\u0000${resource}`
-  const now = Date.now()
-  let entry = registerPageCache.get(key) as RegisterCacheEntry<T> | undefined
-  if (entry?.value !== undefined && entry.expiresAt > now) {
-    entry.lastAccessedAt = now
-    return Promise.resolve(entry.value)
-  }
-
-  if (!entry?.inFlight) {
-    const controller = new AbortController()
-    const next: RegisterCacheEntry<T> = { expiresAt: 0, controller, consumers: new Set(), lastAccessedAt: now }
-    const timeoutId = globalThis.setTimeout(() => controller.abort(), 15_000)
-    const inFlight = load(controller.signal)
-      .then((value) => {
-        globalThis.clearTimeout(timeoutId)
-        if (controller.signal.aborted || registerPageCache.get(key) !== next) throw registerAbortError()
-        registerPageCache.set(key, {
-          value,
-          expiresAt: Date.now() + REGISTER_CACHE_TTL_MS,
-          consumers: new Set(),
-          lastAccessedAt: Date.now(),
-        })
-        pruneRegisterPageCache()
-        return value
-      })
-      .catch((error) => {
-        globalThis.clearTimeout(timeoutId)
-        if (registerPageCache.get(key) === next) registerPageCache.delete(key)
-        throw error
-      })
-    next.inFlight = inFlight
-    registerPageCache.set(key, next)
-    entry = next
-  }
-
-  const activeEntry = entry
-  const consumer = Symbol(resource)
-  activeEntry.consumers.add(consumer)
-
-  return new Promise<T>((resolve, reject) => {
-    let settled = false
-    const release = () => {
-      activeEntry.consumers.delete(consumer)
-      signal?.removeEventListener("abort", abort)
-    }
-    const abort = () => {
-      if (settled) return
-      settled = true
-      release()
-      queueMicrotask(() => {
-        if (activeEntry.inFlight && activeEntry.consumers.size === 0) activeEntry.controller?.abort()
-      })
-      reject(registerAbortError())
-    }
-    signal?.addEventListener("abort", abort, { once: true })
-    activeEntry.inFlight!.then(
-      (value) => {
-        if (settled) return
-        settled = true
-        release()
-        resolve(value)
-      },
-      (error) => {
-        if (settled) return
-        settled = true
-        release()
-        reject(error)
-      },
-    )
-  })
-}
-
-export function invalidateRegisterPages(resourcePrefix: string) {
-  for (const [key, entry] of registerPageCache) {
-    if (!key.split("\u0000", 2)[1]?.startsWith(resourcePrefix)) continue
-    entry.controller?.abort()
-    registerPageCache.delete(key)
-  }
-}
-
-if (typeof window !== "undefined") window.addEventListener(authenticatedAccessChangedEvent, () => invalidateRegisterPages(""))
+export const readCachedRegisterPage = registerReadCache.read
+export const readRegisterPageSnapshot = registerReadCache.peek
+export const invalidateRegisterPages = registerReadCache.invalidate
 
 export async function setLiveJobStarred(bookingReference: string, starred: boolean) {
   const session = await getSupabaseSession()
@@ -334,11 +220,8 @@ export async function listLiveBookingsCompatibilitySample(signal?: AbortSignal):
   return (data ?? []).map((row) => toLiveBooking(row as unknown as Record<string, unknown>))
 }
 
-export async function listLiveBookingsPage(input: BookingRegisterInput, signal?: AbortSignal): Promise<BookingRegisterPage> {
-  const session = await getSupabaseSession()
-  if (!session?.user) throw new Error("Sign in again to view bookings.")
-
-  const normalizedInput = {
+function normalizeBookingRegisterInput(input: BookingRegisterInput) {
+  return {
     ...input,
     search: input.search?.trim() || undefined,
     direction: input.direction?.trim() || undefined,
@@ -348,7 +231,18 @@ export async function listLiveBookingsPage(input: BookingRegisterInput, signal?:
     limit: Math.max(1, Math.min(input.limit, 50)),
     offset: Math.max(0, input.offset),
   }
-  const resource = `bookings:page:${JSON.stringify(normalizedInput)}`
+}
+
+export function bookingRegisterResource(input: BookingRegisterInput) {
+  return `bookings:page:${JSON.stringify(normalizeBookingRegisterInput(input))}`
+}
+
+export async function listLiveBookingsPage(input: BookingRegisterInput, signal?: AbortSignal): Promise<BookingRegisterPage> {
+  const session = await getSupabaseSession()
+  if (!session?.user) throw new Error("Sign in again to view bookings.")
+
+  const normalizedInput = normalizeBookingRegisterInput(input)
+  const resource = bookingRegisterResource(input)
   return readCachedRegisterPage(session.user.id, resource, async (requestSignal) => {
     const { data, error } = await requireClient().rpc("multideck_booking_register_page", {
       p_search: normalizedInput.search ?? null,

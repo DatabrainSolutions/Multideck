@@ -3,7 +3,7 @@ import { processAccountingParties } from "../_shared/accounting-party-sync.ts";
 
 import { processErpNextInbound } from "../_shared/erpnext-inbound.ts";
 import { processErpNextCatchup } from "../_shared/erpnext-catchup.ts";
-import { processCostFinalisations } from "../_shared/cost-accrual-worker.ts";
+import { processChargeLifecycle, processChargeRecognition, processCostFinalisations } from "../_shared/cost-accrual-worker.ts";
 
 async function sameSecret(left: string, right: string) {
   const digest = async (s: string) =>
@@ -54,8 +54,10 @@ Deno.serve(async (request) => {
       }
     }
     const incoming = await processErpNextInbound(admin);
+    const chargeRecognition = await processChargeRecognition(admin);
     const costFinalisations = await processCostFinalisations(admin);
-    return Response.json({ parties, catchupFinance, incoming, costFinalisations }, { status: catchupFailed ? 503 : 200 });
+    const chargeLifecycle = await processChargeLifecycle(admin);
+    return Response.json({ parties, catchupFinance, incoming, chargeRecognition, costFinalisations, chargeLifecycle }, { status: catchupFailed ? 503 : 200 });
   } catch {
     // No provider payloads or secrets in responses; unfinished jobs retain leases
     // and can be recovered safely after expiry.

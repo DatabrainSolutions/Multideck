@@ -24,7 +24,13 @@ test("management accounting migration supplies guarded period, review, posting a
     "Approve this review before posting it", "Choose an open reversal period", "Accrued income and WIP",
   ])
   assert.match(migration, /FINPostLine_DebitAmount[^]*FINPostLine_CreditAmount/)
-  assert.match(baseline, /BEGIN MIGRATION 20260830204914_accrual_wip_management\.sql/)
+  includesEvery(baseline, [
+    'CREATE TABLE IF NOT EXISTS "public"."FIN_JobPeriodHistory"',
+    'CREATE TABLE IF NOT EXISTS "public"."FIN_PeriodCloseRuns"',
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_transition_accrual_wip"',
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_post_accrual_wip"',
+    'CREATE OR REPLACE FUNCTION "public"."multideck_finance_reverse_accrual_wip"',
+  ])
 })
 
 test("calculation endpoint keeps exact period and outside-period evidence", () => {

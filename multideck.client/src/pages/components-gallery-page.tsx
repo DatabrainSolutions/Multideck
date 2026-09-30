@@ -1,3 +1,9 @@
+import { EventAttendeeStrip, EventAudiencePicker, EventGuestList, EventTicket, EventsEmptyState, RsvpChoice, RsvpFormBuilder, RsvpFormFields } from "@/components/multideck/company-event-components"
+import { RefineFrame } from "@/components/multideck/refine-frame"
+import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
+import { AddressSearch } from "@/components/multideck/address-search"
+import { addressFieldsForCountry } from "@/lib/country-address-format"
+import { validateRsvpAnswers, type EventAttendee, type EventAudience, type EventsDirectory, type RsvpAnswers, type RsvpField, type RsvpStatus } from "@/lib/company-events-api"
 import { DexterActivityTrail } from "@/components/multideck/dexter-activity-trail"
 import dexterActivityTrailSource from "@/components/multideck/dexter-activity-trail.tsx?raw"
 import type { DexterActivity } from "../../../shared/dexter-activity"
@@ -10,6 +16,8 @@ import { BellToggle } from "@/components/multideck/bell-toggle"
 import { SpringCheck } from "@/components/multideck/spring-check"
 import { CodeSlots } from "@/components/multideck/code-slots"
 import { InlineNotice } from "@/components/multideck/inline-notice"
+import { NotificationCenter } from "@/components/multideck/notification-center"
+import type { WorkspaceNotification } from "@/lib/notification-api"
 import { SuggestedUpdateIllustration } from "@/components/multideck/suggested-update-illustration"
 import { SignatureBuilder } from "@/components/multideck/signature-builder"
 import { DexterVoiceLimitNotice, DexterVoicePanel } from "@/components/multideck/dexter-voice-controls"
@@ -31,11 +39,13 @@ import { defaultPaginationPageSize } from "@/lib/pagination"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { useTheme } from "@/lib/theme-provider"
-import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pen01, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, MessageCircle, Moon02, PackageCheck, Pen01, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, TriangleAlert, UserRound, Zap } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
 import toastSuccessIcon from "@/assets/toasts/toast-success.png"
+import gmailIntegrationLogo from "@/assets/integrations/gmail.svg"
+import outlookIntegrationLogo from "@/assets/integrations/outlook.png"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Iphone } from "@/components/ui/iphone"
@@ -78,7 +88,6 @@ import { Input } from "@/components/ui/input"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Textarea } from "@/components/ui/textarea"
 import { DriveFileTile, DriveFolderTile } from "@/components/multideck/drive-components"
 import { accentShiftDurationMs, useAccentPresetId } from "@/lib/accent-theme"
 import type { DriveFile, DriveFolder, DriveFolderStats } from "@/lib/drive-api"
@@ -100,11 +109,9 @@ import {
   ContactProfileModule,
   CustomerAvatar,
   CustomerActivityPanel,
-  CustomerDetailHero,
   CustomerFootprintMap,
   CustomerListTable,
   CustomerMetricCard,
-  CustomerMetricsGrid,
   customerViewOptions,
   type CustomerViewMode,
   LaneMixPanel,
@@ -169,6 +176,10 @@ import { DashboardPerformancePanel } from "@/components/multideck/dashboard-perf
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { DashboardCoveragePanel } from "@/components/multideck/dashboard-coverage-panel"
 import { DashboardBreakdownPanel } from "@/components/multideck/dashboard-breakdown-panel"
+import { DashboardColumnChart } from "@/components/multideck/dashboard-column-chart"
+import { DashboardForecastChart } from "@/components/multideck/dashboard-forecast-chart"
+import { FinanceProfitLossPanel } from "@/components/multideck/finance-profit-loss-panel"
+import { FinanceWorkingCapitalPanel } from "@/components/multideck/finance-working-capital-panel"
 import type { DashboardKpi, DashboardPriorityItem, DashboardTrendPoint } from "@/lib/dashboard-live-data"
 import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingSearchFieldOptions, bookingViewModes, bookingViewOptions, type BookingViewMode } from "@/components/multideck/booking-components"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
@@ -200,7 +211,8 @@ import {
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
 import { HomeDexterLauncher } from "@/components/multideck/home-dexter-launcher"
-import { HomePromptRail, type HomePromptSuggestion } from "@/components/multideck/home-prompt-rail"
+import { DexterPromptPresets, type DexterPromptPreset } from "@/components/multideck/dexter-prompt-presets"
+import { DexterGreeting } from "@/components/multideck/dexter-greeting"
 import {
   HomeDeckAction,
   HomeDeckPanel,
@@ -211,6 +223,8 @@ import {
 import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
 import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
 import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
+import { RecordProfileHeader, RecordProfileStat } from "@/components/multideck/record-profile-header"
+import { companyCovers } from "@/lib/company-covers"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
 import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
@@ -247,6 +261,7 @@ import {
   SettingsChoiceGroup,
   SettingsFieldRow,
   SettingsInput,
+  SettingsIntegrationCard,
   SettingsIntegrationRow,
   SettingsOptionCard,
   SettingsPanel,
@@ -320,6 +335,40 @@ import { ScreenshotCaptureEditor, SupportTicketAttachmentPreview } from "@/compo
 import { TicketAttachmentsPreview } from "@/components/multideck/ticket-attachments-preview"
 import { ImageLightbox } from "@/components/multideck/image-lightbox"
 import { useLanguage } from "@/i18n/language-provider"
+import { AdminSettingsExplorer, type ExplorerArea } from "@/components/multideck/admin-settings-explorer"
+import { adminHubs } from "@/data/navigation-data"
+
+const explorerPreviewAreas: ExplorerArea[] = adminHubs.map((hub) => ({
+  id: hub.id,
+  label: hub.label,
+  sections: hub.blocks.map((block) => ({ id: block.id, title: block.title, icon: block.icon, description: block.description, settings: block.links, comingSoon: block.comingSoon })),
+  groups: hub.groups?.map((group) => ({ id: group.id, title: group.title, sectionIds: group.blockIds })),
+}))
+
+function AdminSettingsExplorerPreview() {
+  const [query, setQuery] = useState("")
+  const [sectionId, setSectionId] = useState<string | null>("tax")
+  const [opened, setOpened] = useState<string | null>(null)
+  return (
+    <div className="grid w-full gap-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try vat, bank or users" aria-label="Filter the preview" className="h-9 w-full max-w-[260px]" />
+        <span className="text-[12px] text-[var(--md-subtle)]" role="status">{opened ? `Would open ${opened}` : "Links stay inside the preview"}</span>
+      </div>
+      <AdminSettingsExplorer areas={explorerPreviewAreas} areaId="finance" query={query} sectionId={sectionId} onSectionChange={(id) => { setSectionId(id); setQuery("") }} onOpen={({ setting }) => setOpened(setting.label)} empty={<p className="py-8 text-center text-[12px] text-[var(--md-text)]">No settings match that search.</p>} />
+    </div>
+  )
+}
+
+function LocationAutocompletePreview() {
+  const [location, setLocation] = useState("")
+  return <div className="mx-auto w-full max-w-[440px]"><LocationAutocomplete value={location} onChange={setLocation} /></div>
+}
+
+function AddressSearchPreview() {
+  const [address, setAddress] = useState({ line1: "", line2: "", townCity: "", countyState: "", postZipCode: "", countryCode: "" })
+  return <div className="mx-auto grid w-full max-w-[520px] grid-cols-2 gap-3">{addressFieldsForCountry(address.countryCode).map(field => field.key === "line1" || field.key === "postZipCode" ? <div key={field.key} className={field.key === "line1" ? "col-span-2" : ""}><AddressSearch field={field.key} label={field.label} value={address[field.key]} onChange={value => setAddress(current => ({ ...current, [field.key]: value }))} onSelect={setAddress} /></div> : <label key={field.key} className="grid gap-1 text-[12px]">{field.label}<Input value={address[field.key]} onChange={event => setAddress(current => ({ ...current, [field.key]: event.target.value }))} /></label>)}<label className="grid gap-1 text-[12px]">Country code<Input value={address.countryCode} onChange={event => setAddress(current => ({ ...current, countryCode: event.target.value.toUpperCase() }))} /></label></div>
+}
 
 function DexterActivityPreview({ completed = false }: { completed?: boolean }) {
   const [open, setOpen] = useState(true)
@@ -374,7 +423,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "bell-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "value-slider", "swatch-picker", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "bell-toggle", "page-settings-menu", "side-drawer", "date-range-picker", "meeting-time-picker", "working-hours-editor", "booking-link-kind-picker", "booking-host-picker", "booking-question-builder", "meeting-provider-select", "meeting-attendee-picker", "segmented-control", "admin-settings-explorer", "value-slider", "swatch-picker", "toggle-group", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "image-lightbox", "register-toolbar", "auto-populated-field", "tag-entry-field", "inline-fields", "wizard-dialog", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card", "todo-priority-picker"],
   },
   {
     label: "Auth components",
@@ -399,12 +448,12 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-greeting", "dexter-prompt-composer", "dexter-prompt-presets", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Home",
-    helper: "The launcher, its prompts, and the deck beneath it",
-    ids: ["home-dexter-launcher", "home-prompt-rail", "home-deck-panel"],
+    helper: "The launcher and the deck beneath it",
+    ids: ["home-dexter-launcher", "home-deck-panel"],
   },
   {
     label: "Support",
@@ -414,7 +463,17 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Feedback",
     helper: "Status and notifications",
-    ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast"],
+    ids: ["status-pill", "dictation-status-pill", "spring-check", "todo-completion-control", "todo-priority-pill", "todo-action-state-icon", "email-delivery-status", "empty-state-illustration", "inline-notice", "toast", "notification-center"],
+  },
+  {
+    label: "Events",
+    helper: "Company events and RSVPs",
+    ids: ["event-ticket", "refine-frame", "rsvp-choice", "event-audience-picker", "event-attendee-strip", "event-guest-list", "rsvp-form-builder", "rsvp-form-fields", "events-empty-state"],
+  },
+  {
+    label: "Addresses",
+    helper: "Worldwide address entry",
+    ids: ["location-autocomplete", "address-search"],
   },
   {
     label: "Warehouse",
@@ -424,7 +483,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Settings",
     helper: "Configuration surfaces",
-    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "usage-allowance-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
+    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-integration-card", "settings-summary-card", "usage-allowance-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
   },
   {
     label: "Inbox",
@@ -438,10 +497,64 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   },
 ]
 
-const previewHomeSuggestions: HomePromptSuggestion[] = [
-  { id: "triage", title: "Work through what is due before cutoff", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
-  { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
-  { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
+const galleryRsvpForm: RsvpField[] = [
+  { id: "meal", type: "single_choice", label: "Main course", required: true, options: [{ id: "fish", label: "Fish" }, { id: "veg", label: "Vegetarian" }] },
+  { id: "guest", type: "yes_no", label: "Bringing a guest?", required: false },
+  { id: "notes", type: "long_text", label: "Dietary requirements", required: false },
+]
+
+const galleryAttendees: EventAttendee[] = [
+  { userId: "a", name: "Priya Shah", status: "going", photoPath: null }, { userId: "b", name: "Tom Hughes", status: "going", photoPath: null },
+  { userId: "c", name: "Ana Costa", status: "going", photoPath: null }, { userId: "d", name: "Ben Okafor", status: "going", photoPath: null },
+  { userId: "g", name: "Mia Laurent", status: "going", photoPath: null }, { userId: "h", name: "Kofi Mensah", status: "going", photoPath: null },
+  { userId: "i", name: "Hana Sato", status: "going", photoPath: null }, { userId: "j", name: "Oliver Grant", status: "going", photoPath: null },
+  { userId: "k", name: "Zara Ali", status: "going", photoPath: null }, { userId: "e", name: "Lena Novak", status: "maybe", photoPath: null },
+  { userId: "f", name: "Sam Reid", status: "not_going", photoPath: null },
+]
+
+const galleryDirectory: EventsDirectory = {
+  departments: [{ id: "d1", name: "Operations", memberCount: 5 }, { id: "d2", name: "Warehouse", memberCount: 4 }, { id: "d3", name: "Finance", memberCount: 2 }],
+  people: galleryAttendees.map((person, index) => ({ userId: person.userId, name: person.name, jobTitle: ["Operations lead", "Customs specialist", "Warehouse supervisor", "Finance analyst"][index % 4], photoPath: null, departmentIds: [index < 5 ? "d1" : index < 9 ? "d2" : "d3"] })),
+}
+
+function GalleryAudiencePicker() {
+  const [value, setValue] = useState<{ audience: EventAudience; invitees: string[] }>({ audience: "everyone", invitees: [] })
+  return <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><EventAudiencePicker audience={value.audience} invitees={value.invitees} directory={galleryDirectory} onChange={setValue} /></div>
+}
+
+function GalleryGuestList() {
+  const [status, setStatus] = useState<RsvpStatus | "invited">("invited")
+  const invitedPeople = [...galleryAttendees, { userId: "pending", name: "Alex Morgan", photoPath: null }]
+  return <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]"><EventGuestList attendees={galleryAttendees} invitedCount={invitedPeople.length} invitedPeople={invitedPeople} status={status} onStatusChange={setStatus} listHeight={240} /></div>
+}
+
+function GalleryRsvpChoice() {
+  const [value, setValue] = useState<RsvpStatus | null>(null)
+  return <div className="grid justify-items-center gap-3"><RsvpChoice value={value} onChange={setValue} /><RsvpChoice value="maybe" pending="going" disabled onChange={() => undefined} /></div>
+}
+
+function GalleryRsvpBuilder() {
+  const [fields, setFields] = useState<RsvpField[]>(galleryRsvpForm)
+  return <div className="w-full max-w-[560px]"><RsvpFormBuilder fields={fields} onChange={setFields} answeredIds={["meal"]} /></div>
+}
+
+function GalleryRsvpFields() {
+  const [answers, setAnswers] = useState<RsvpAnswers>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  return (
+    <form className="grid w-full max-w-[520px] gap-4" noValidate onSubmit={(event) => { event.preventDefault(); setErrors(validateRsvpAnswers(galleryRsvpForm, answers)) }}>
+      <RsvpFormFields form={galleryRsvpForm} answers={answers} errors={errors} onChange={setAnswers} />
+      <Button type="submit" className="justify-self-end">Confirm RSVP</Button>
+    </form>
+  )
+}
+
+const previewHomeSuggestions: DexterPromptPreset[] = [
+  { id: "triage", title: "Clear today's cutoffs", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
+  { id: "lead", title: "Pick up MD-22455", prompt: "Review MD-22455 for Northwind GmbH – release the customs hold. Tell me the next action and draft it.", meta: "Northwind GmbH · On hold", icon: TriangleAlert, specialistId: "ops" },
+  { id: "quotes", title: "Send ready quotes", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
+  { id: "risk", title: "At-risk bookings", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
+  { id: "update", title: "Overdue customer update", prompt: "Draft an update for the customer who most needs one today.", icon: MessageCircle, specialistId: "customer" },
 ]
 
 function DealWorkflowPreview({ loss = false }: { loss?: boolean }) {
@@ -577,6 +690,12 @@ const previewPriorityItems: DashboardPriorityItem[] = [
   { id: "p4", kind: "quote-progress", reference: "Q-1051", task: "Progress carrier pricing", customer: "Bright Harbour Ltd", context: "SGSIN → NLRTM", status: "In progress", owner: "Tomas Berg", dueAt: previewNow + 5 * 60 * 60_000, dueKind: "cutoff", tone: "blue", quoteReference: "Q-1051" },
   { id: "p5", kind: "quote-progress", reference: "Q-1058", task: "Progress customer approval", customer: "Aster Components", context: "CNSHA → GBSOU", status: "Awaiting customer", owner: "Tomas Berg", dueAt: previewNow + 3 * 24 * 60 * 60_000, dueKind: "departure", tone: "neutral", quoteReference: "Q-1058" },
 ]
+
+const previewMoney = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 })
+const previewMoneyCompact = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", notation: "compact", maximumFractionDigits: 1 })
+const previewFinanceMonths = ["Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
+const previewFinanceRevenue = [362000, 388000, 402000, 351000, 372000, 391000, 418000, 409000, 426000, 431000, 447000, 428000, 212000]
+const previewFinanceCosts = [331000, 352000, 361000, 334000, 340000, 352000, 371000, 368000, 380000, 387000, 396000, 381000, 191000]
 
 const previewPerformanceKpis: DashboardKpi[] = [
   { label: "Active jobs", value: "24", change: "3 need action", detail: "3 need action", tone: "amber", series: [18, 19, 21, 20, 22, 23, 22, 24, 23, 24], delta: { direction: "up", text: "+33%", caption: "vs start of period" } },
@@ -1148,7 +1267,7 @@ const previewInboxSummary: ThreadSummaryState = {
   text: "Marlow Apparel is waiting on the dual-use licence reference for MD-22455 before the broker will release the declaration. Claire has asked twice and flagged that the Felixstowe free-time window closes on 2 August.",
   keyPoints: [],
   sourceMessageIds: ["msg-1", "msg-2"],
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   updatedAt: "2026-07-31T09:37:00Z",
   error: null,
 }
@@ -1790,6 +1909,60 @@ export function BookingRouteMilestonesPreview() {
   </div>
 }
 
+function previewNotification(id: string, minutesAgo: number, fields: Partial<WorkspaceNotification> & Pick<WorkspaceNotification, "title">): WorkspaceNotification {
+  return { id, body: "", priority: "normal", status: "unread", targetTable: null, targetId: null, metadata: {}, createdAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(), ...fields }
+}
+
+function previewNotifications(): WorkspaceNotification[] {
+  return [
+    previewNotification("n1", 4, { title: "Q-24018 customer response", body: "The customer accepted this quote. Its booking is ready.", targetTable: "CusQuote_Header", priority: "high", metadata: { event_type: "quote_response", decision: "accepted", eyebrow: "Customer quote response", action_label: "Open quote", action_url: "/quotes/Q-24018" } }),
+    previewNotification("n2", 38, { title: "Booking sent to Customs", body: "Sam Taylor sent booking MD-22481", targetTable: "Customs_Declarations", metadata: { event_type: "customs_handoff", eyebrow: "Customs handoff", action_label: "Open declaration", action_url: "/customs" } }),
+    previewNotification("n3", 95, { title: "Your task is ready to review", body: "# Kestrel air and ocean review\n\nThe overdue follow-up has been prepared for your approval. No workspace change has been made yet.", targetTable: "AI_DexterTaskAssignments", metadata: { action_url: "/agent-dexter" } }),
+    previewNotification("n4", 60 * 20, { title: "You were tagged in a note", body: "Alex Morgan tagged you on MD-22479: Can you confirm the revised cut-off with the haulier before 3pm?", status: "read", metadata: { event_type: "lifecycle_note_mention", eyebrow: "Operational note", action_label: "Open note", action_url: "/bookings" } }),
+    previewNotification("n5", 60 * 30, { title: "Mileage claim needs approval", body: "Jamie Patel · 23 Sep 2026 · GBP 42.60", targetTable: "mileage_trips", metadata: { event_type: "mileage_pending", action_label: "View trip", action_url: "/crm/trips" } }),
+    previewNotification("n6", 60 * 60 * 3, { title: "Inbox document needs a match", body: "Review Commercial invoice 4471.pdf in Suggested updates. Multideck could not find a booking with the reference on this invoice, so it is waiting for you to choose one.", targetTable: "AI_InboxSuggestedUpdates", status: "read" }),
+    previewNotification("n7", 60 * 24 * 12, { title: "You're invited: Winter team dinner", body: "Open Events to see the details and RSVP.", targetTable: "company_events", status: "read", metadata: { event_type: "company_event_invitation", eyebrow: "Company event", action_label: "View event", action_url: "/events" } }),
+  ]
+}
+
+function NotificationCenterPreview() {
+  const [scenario, setScenario] = useState<"Live" | "Loading" | "Error" | "Empty">("Live")
+  const [items, setItems] = useState(previewNotifications)
+  const [version, setVersion] = useState(0)
+  const unreadCount = items.filter((item) => item.status === "unread").length
+  const shown = scenario === "Live" ? items : []
+  return (
+    <div className="grid w-full justify-items-center gap-4">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <SegmentedControl ariaLabel="Preview state" options={["Live", "Loading", "Error", "Empty"] as const} value={scenario} onChange={(value) => { setScenario(value); setVersion((current) => current + 1) }} />
+        <Button type="button" variant="ghost" onClick={() => { setItems(previewNotifications()); setScenario("Live"); setVersion((current) => current + 1) }}>Reset</Button>
+      </div>
+      <div className="flex h-[600px] w-[400px] max-w-full flex-col overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
+        <NotificationCenter
+          key={version}
+          className="min-h-0 flex-1"
+          notifications={shown}
+          unreadCount={scenario === "Live" ? unreadCount : 0}
+          loaded={scenario !== "Loading"}
+          loading={scenario === "Loading"}
+          error={scenario === "Error" ? "Notifications could not be refreshed. Please try again." : null}
+          pending={false}
+          hasMore={false}
+          destinationFor={(notification) => typeof notification.metadata.action_url === "string" ? notification.metadata.action_url : null}
+          onOpen={(notification) => toast.info(`Preview opens ${notification.title}`)}
+          onToggleRead={(id, status) => setItems((current) => current.map((item) => item.id === id ? { ...item, status } : item))}
+          onDismiss={(id) => setItems((current) => current.filter((item) => item.id !== id))}
+          onMarkAllRead={() => setItems((current) => current.map((item) => ({ ...item, status: "read" })))}
+          onClearAll={() => setItems([])}
+          onLoadMore={() => undefined}
+          onRetry={() => setScenario("Live")}
+          onOpenSettings={() => toast.info("Preview opens notification settings")}
+        />
+      </div>
+    </div>
+  )
+}
+
 function CargoAllocationEditorPreview() {
   const cargoId = "00000000-0000-4000-8000-000000000001"
   const firstEquipment = "00000000-0000-4000-8000-000000000002"
@@ -2013,6 +2186,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewAuthCode, setPreviewAuthCode] = useState("742")
   const [previewSettingsTab, setPreviewSettingsTab] = useState("profile")
   const [previewSettingsChoice, setPreviewSettingsChoice] = useState("Always ask")
+  const [previewIntegrationActive, setPreviewIntegrationActive] = useState({ gmail: true, outlook: false })
   const [previewSettingsOption, setPreviewSettingsOption] = useState("Suggest")
   const [previewInlineCompany, setPreviewInlineCompany] = useState("Marlow Apparel")
   const [previewInlineType, setPreviewInlineType] = useState("Customer")
@@ -2370,7 +2544,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "app-breadcrumbs" ? (
-        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <AppBreadcrumbs
             route="/crm/leads/northstar-components/convert"
             leafLabel="Northstar Components"
@@ -2473,6 +2647,34 @@ function ComponentPreview({ id }: { id: string }) {
           <SpringCheck disabled label="Awaiting confirmation" />
           <SpringCheck checked busy label="Saving task" />
           <p className="text-[12px] text-[var(--md-text)]">Select a task to complete it. Select it again to reopen it.</p>
+        </div>
+      ) : null}
+
+      {id === "event-ticket" ? (
+        <div className="mx-auto grid w-full gap-5 md:w-1/2 md:min-w-[360px]">
+          <EventTicket title="Launching soon" startsAt="2099-06-20T16:30:00Z" endsAt={null} timezone="Europe/London" location="London office" imageUrl={null} imageFrameStatus="generating" onRetryImage={() => undefined} rsvp="none" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Summer social" startsAt="2099-07-03T17:30:00Z" endsAt="2099-07-03T21:00:00Z" timezone="Europe/London" location="Roof terrace, London office" imageUrl={null} goingCount={14} rsvp="none" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Quiz night" startsAt="2099-08-14T18:00:00Z" endsAt={null} timezone="Europe/London" location="Canteen" imageUrl={null} goingCount={9} rsvp="going" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Warehouse barbecue" startsAt="2099-09-02T11:00:00Z" endsAt={null} timezone="Europe/London" location="Felixstowe yard" imageUrl={null} rsvp="maybe" onOpen={() => undefined} onRsvp={() => undefined} />
+          <EventTicket title="Christmas lunch" startsAt="2099-12-18T12:00:00Z" endsAt={null} timezone="Europe/London" location="The Anchor" imageUrl={null} rsvp="none" closedLabel="Cancelled" onOpen={() => undefined} />
+        </div>
+      ) : null}
+
+      {id === "refine-frame" ? <div className="mx-auto aspect-[21/9] w-full max-w-[560px] overflow-hidden rounded-[var(--md-radius-lg)]"><RefineFrame status="generating" src={null} /></div> : null}
+      {id === "location-autocomplete" ? <LocationAutocompletePreview /> : null}
+      {id === "address-search" ? <AddressSearchPreview /> : null}
+
+      {id === "rsvp-choice" ? <GalleryRsvpChoice /> : null}
+      {id === "event-attendee-strip" ? (
+        <div className="grid w-full max-w-[340px] gap-3"><EventAttendeeStrip attendees={galleryAttendees} invitedCount={24} onOpen={() => undefined} /><EventAttendeeStrip attendees={[]} /></div>
+      ) : null}
+      {id === "event-guest-list" ? <GalleryGuestList /> : null}
+      {id === "event-audience-picker" ? <GalleryAudiencePicker /> : null}
+      {id === "rsvp-form-builder" ? <GalleryRsvpBuilder /> : null}
+      {id === "rsvp-form-fields" ? <GalleryRsvpFields /> : null}
+      {id === "events-empty-state" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+          <EventsEmptyState canCreate onCreate={() => undefined} title="No events yet" message="Create an event and publish it when it is ready for everyone." />
         </div>
       ) : null}
 
@@ -2668,7 +2870,7 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "empty-state-illustration" ? (
         <div className="grid w-full grid-cols-2 gap-x-6 gap-y-8 py-5 sm:grid-cols-3">
-          {(["search", "tasks", "documents", "contacts", "cargo", "chart", "calendar", "mail", "phone", "route", "activity"] as const).map((variant) => (
+          {(["search", "tasks", "documents", "contacts", "cargo", "chart", "calendar", "mail", "phone", "route", "activity", "settings"] as const).map((variant) => (
             <div key={variant} className="min-w-0 text-center">
               <EmptyStateIllustration variant={variant} />
               <p className="mt-3 text-[12px] capitalize text-[var(--md-text)]">{t(variant)}</p>
@@ -2700,6 +2902,7 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "notification-center" ? <NotificationCenterPreview /> : null}
       {id === "toast" ? (
         <div className="relative flex min-h-[300px] w-full max-w-[760px] items-start justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button
@@ -2857,10 +3060,6 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "command" ? (
         <div className="w-full max-w-[680px]">
           <CommandInput />
-          <Textarea
-            className="mt-3 min-h-[110px] rounded-[var(--md-radius-lg)] border-0 bg-white/70 text-[13px] shadow-[var(--md-shadow-line)]"
-            defaultValue="Ask: show bookings with customs risk today"
-          />
         </div>
       ) : null}
 
@@ -2875,20 +3074,15 @@ function ComponentPreview({ id }: { id: string }) {
           </div>
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
             <SidebarNavItem item={{ label: "Agent Dexter", icon: AiBrain }} accent="dexter" onClick={() => undefined} />
-            <div className="mb-3 flex items-center gap-2 px-2 text-[12px] font-medium text-[var(--md-subtle)]">
-              <ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.2} />
-              <span>Operations</span>
-            </div>
-            <SidebarNavItem
-              item={{ label: "Bookings & jobs", icon: Ship }}
-              onClick={() => undefined}
-              expanded
-              affordance="group"
-            />
-            <div className="mt-1 ps-4">
-              <div className="rounded-[var(--md-radius-lg)] bg-white/40 p-1 shadow-[var(--md-shadow-line)]">
-                <SidebarNavItem item={{ label: "Bookings overview", value: "7", icon: Ship }} isActive onClick={() => undefined} nested />
-                <SidebarNavItem item={{ label: "New booking", icon: FileText }} onClick={() => undefined} nested />
+            <header className="px-2.5 pb-4 pt-5">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]">Current area</p>
+              <h2 className="text-[22px] font-medium leading-tight tracking-[-0.02em] text-[var(--md-ink)]">Operations</h2>
+            </header>
+            <div className="md-sidebar-dropdown-group" data-expanded="true">
+              <SidebarNavItem item={{ label: "Bookings & jobs", icon: Ship }} onClick={() => undefined} expanded affordance="group" />
+              <div className="md-sidebar-expanded-options flex flex-col gap-1 px-1 pb-1">
+                <SidebarNavItem item={{ label: "Bookings overview", icon: Ship }} isActive onClick={() => undefined} nested />
+                <SidebarNavItem item={{ label: "Provisional bookings", icon: FileText }} onClick={() => undefined} nested />
               </div>
             </div>
           </div>
@@ -3346,6 +3540,8 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "admin-settings-explorer" ? <AdminSettingsExplorerPreview /> : null}
+
       {id === "choice-control" ? (
         <div className="grid w-full max-w-[620px] gap-5 rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div className="grid gap-2">
@@ -3420,6 +3616,15 @@ function ComponentPreview({ id }: { id: string }) {
             onChange={setPreviewBookingFilter}
             auxiliaryOptions={["+ Mode", "+ Carrier", "+ Customer", "+ Owner", "+ ETA range"]}
           />
+        </div>
+      ) : null}
+
+      {id === "table" ? (
+        <div className="w-full max-w-[920px] max-h-[360px] overflow-auto">
+          <Table aria-label="Customer balances preview" className="min-w-[1000px]">
+            <thead><tr>{["Company", "Balance due", "Overdue", "Credit limit", "Payment terms", "Account status"].map(label => <th key={label}>{label}</th>)}</tr></thead>
+            <tbody>{Array.from({ length: 12 }, (_, index) => <tr key={index}><td>Example customer {index + 1}</td><td>£1,240.00</td><td>£240.00</td><td>£5,000.00</td><td>30 days</td><td>Active</td></tr>)}</tbody>
+          </Table>
         </div>
       ) : null}
 
@@ -3549,8 +3754,22 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "record-header" ? (
         <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <CustomerDetailHero />
-          <CustomerMetricsGrid />
+          <RecordProfileHeader
+            back={{ label: "Companies", onClick: () => undefined }}
+            avatar={<CustomerAvatar initials="MA" tone="teal" className="size-full text-[22px] sm:text-[26px]" />}
+            title={<h3 className="text-[22px] font-medium leading-7 tracking-[-0.015em] text-[var(--md-ink)]">Marlow Apparel Ltd</h3>}
+            badges={<StatusPill kind="status" indicator={false} tone="blue">Key Account</StatusPill>}
+            meta={<><span className="font-medium text-[var(--md-ink)]">Customer, Consignee</span><span className="text-[var(--md-subtle)]">·</span><span>Apparel</span><span className="text-[var(--md-subtle)]">·</span><span>Leeds, GB</span></>}
+            actions={<><Button variant="outline" className="h-8 text-[12.5px]">Email</Button><Button variant="outline" className="h-8 text-[12.5px]">Call</Button></>}
+            bannerLabel="Ocean · Shanghai to Felixstowe"
+            bannerImageUrl={companyCovers[0]?.url}
+            stats={<>
+              <RecordProfileStat label="Active shipments" value={6} detail={<span className="text-[var(--md-amber)]">1 open exception</span>} />
+              <RecordProfileStat label="Balance due" value="£18,420" detail="Nothing overdue" />
+              <RecordProfileStat label="Credit available" value="£31,580" detail="of £50,000 limit" />
+              <RecordProfileStat label="Last contact" value="Yesterday" detail="Next action 2 Oct 2026" />
+            </>}
+          />
         </div>
       ) : null}
 
@@ -3640,6 +3859,16 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "breakdown-panel" ? (
         <div className="grid w-full max-w-[720px] gap-[var(--md-gap-lg)] sm:grid-cols-2">
           <DashboardBreakdownPanel
+            title="Shipping modes"
+            subtitle="Sales on jobs · Jun – Aug 2026"
+            variant="figures"
+            slices={[
+              { label: "Ocean", value: 24000, color: "var(--md-accent)", meta: "24% margin" },
+              { label: "Air", value: 12000, color: "var(--md-accent)", meta: "18% margin" },
+            ]}
+            formatValue={(value) => `£${value.toLocaleString("en-GB")}`}
+          />
+          <DashboardBreakdownPanel
             title="Mode mix"
             subtitle="Live bookings by transport mode"
             slices={[
@@ -3660,6 +3889,78 @@ function ComponentPreview({ id }: { id: string }) {
               { label: "Drafting", value: 1, color: "var(--md-blue)" },
             ]}
             variant="columns"
+          />
+        </div>
+      ) : null}
+
+      {id === "column-chart" ? (
+        <div className="md-finance-scope w-full max-w-[760px] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
+          <DashboardColumnChart
+            labels={previewFinanceMonths}
+            series={[
+              { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", values: previewFinanceRevenue },
+              { key: "costs", label: "Costs", color: "var(--md-fin-out)", values: previewFinanceCosts },
+            ]}
+            emphasis={previewFinanceMonths.map((_, index) => index >= 9 && index <= 11)}
+            partialIndex={12}
+            formatValue={(value) => previewMoney.format(value)}
+            formatAxis={(value) => previewMoneyCompact.format(value)}
+            tooltipExtra={(index) => ({ label: "Net profit", value: previewMoney.format(previewFinanceRevenue[index] - previewFinanceCosts[index]) })}
+            ariaLabel="Revenue and costs, last twelve months"
+          />
+        </div>
+      ) : null}
+
+      {id === "forecast-chart" ? (
+        <div className="md-finance-scope w-full max-w-[760px] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
+          <DashboardForecastChart
+            labels={[...previewFinanceMonths.slice(3, 12), "Sep", "Oct", "Nov"]}
+            series={[
+              { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", actual: previewFinanceRevenue.slice(3, 12), projected: [{ value: 452000, low: 418000, high: 486000 }, { value: 461000, low: 424000, high: 498000 }, { value: 470000, low: 429000, high: 511000 }] },
+              { key: "net", label: "Net profit", color: "var(--md-blue)", actual: previewFinanceRevenue.slice(3, 12).map((value, index) => value - previewFinanceCosts[index + 3]), projected: [{ value: 41000, low: 29000, high: 53000 }, { value: 43000, low: 30000, high: 56000 }, { value: 45000, low: 31000, high: 59000 }] },
+            ]}
+            formatValue={(value) => previewMoney.format(value)}
+            formatAxis={(value) => previewMoneyCompact.format(value)}
+            ariaLabel="Revenue and net profit, recorded and projected"
+          />
+        </div>
+      ) : null}
+
+      {id === "profit-loss-panel" ? (
+        <div className="md-finance-scope w-full max-w-[380px]">
+          <FinanceProfitLossPanel
+            title="Profit and loss"
+            subtitle="Jun – Aug 2026"
+            figures={{ revenue: 1306000, directCost: 1018000, overheads: 162000 }}
+            overheadAccounts={[
+              { code: "7000", name: "Salaries", amount: 104000 },
+              { code: "7100", name: "Office rent", amount: 27000 },
+              { code: "7300", name: "Software", amount: 14000 },
+            ]}
+            formatMoney={(value) => previewMoney.format(value)}
+            formatPercent={(value) => (value === null ? null : new Intl.NumberFormat("en-GB", { style: "percent" }).format(value))}
+          />
+        </div>
+      ) : null}
+
+      {id === "working-capital-panel" ? (
+        <div className="md-finance-scope grid w-full max-w-[800px] gap-5 xl:grid-cols-2">
+          <FinanceWorkingCapitalPanel
+            title="Cash and working capital"
+            subtitle="Today, across every open invoice and bill"
+            cashAtBank={286400}
+            receivables={{ total: 612000, buckets: [{ key: "current", amount: 402000 }, { key: "1-30", amount: 128000 }, { key: "31-60", amount: 54000 }, { key: "61-90", amount: 18000 }, { key: "90+", amount: 10000 }] }}
+            payables={{ total: 388000, buckets: [{ key: "current", amount: 341000 }, { key: "1-30", amount: 47000 }] }}
+            debtorDays={43}
+            formatMoney={(value) => previewMoney.format(value)}
+          />
+          <FinanceWorkingCapitalPanel
+            title="No outstanding balances"
+            subtitle="An account with no unpaid invoices or bills"
+            cashAtBank={null}
+            receivables={{ total: 0, buckets: [] }}
+            payables={{ total: 0, buckets: [] }}
+            formatMoney={(value) => previewMoney.format(value)}
           />
         </div>
       ) : null}
@@ -3961,7 +4262,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "swatch-picker" ? <SwatchPickerGallery /> : null}
       {id === "email-signature-control" ? <SignatureControlGallery /> : null}
       {id === "contact-email-action" ? <div className="w-full max-w-md p-6"><p className="text-[14px] font-medium">Alex Morgan</p><p className="mb-3 text-[12px] text-[var(--md-subtle)]">Operations manager</p><ContactEmailAction email="alex@example.test" name="Alex Morgan" preview /></div> : null}
-      {id === "contact-preferences-popover" ? <ContactPreferencesPopover contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /> : null}
+      {id === "contact-preferences-popover" ? <div className="flex items-center gap-3"><ContactPreferencesPopover contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /><ContactPreferencesPopover compact contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /></div> : null}
 
       {id === "dexter-email-compose-card" ? (
         <div className="w-full max-w-[720px]">
@@ -4009,16 +4310,28 @@ function ComponentPreview({ id }: { id: string }) {
             onAccessModeChange={setPreviewDexterAccessMode}
             onRemoveAttachment={togglePreviewDexterAttachment}
             onSend={() => toast.success("Dexter conversation started")}
+            presets={<DexterPromptPresets presets={previewHomeSuggestions} onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })} />}
           />
         </div>
       ) : null}
 
-      {id === "home-prompt-rail" ? (
-        <div className="w-full max-w-[620px]">
-          <HomePromptRail
-            suggestions={previewHomeSuggestions}
-            onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })}
-          />
+      {id === "dexter-prompt-presets" ? (
+        <div className="w-full max-w-[760px] overflow-hidden rounded-[26px] md-composer-bloom relative">
+          <span aria-hidden="true" className="md-composer-bloom__effect">
+            <span className="md-composer-bloom__contrast" />
+          </span>
+          <div className="relative z-[2] flex h-[46px] items-center overflow-x-auto px-2.5">
+            <DexterPromptPresets
+              presets={previewHomeSuggestions}
+              onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {id === "dexter-greeting" ? (
+        <div className="w-full max-w-[760px]">
+          <DexterGreeting title="Good afternoon, Harry" standfirst="Three jobs need you before today's cutoff." />
         </div>
       ) : null}
 
@@ -4645,6 +4958,13 @@ function ComponentPreview({ id }: { id: string }) {
               onAction={() => toast.success("Google Drive settings opened")}
             />
           </SettingsPanel>
+        </div>
+      ) : null}
+
+      {id === "settings-integration-card" ? (
+        <div className="grid w-full max-w-[760px] gap-4 sm:grid-cols-2">
+          <SettingsIntegrationCard logoSrc={gmailIntegrationLogo} title="Gmail" description="Find customer conversations in one Inbox, reply faster and prepare drafts with Dexter." status={previewIntegrationActive.gmail ? "Connected" : "Not connected"} statusTone={previewIntegrationActive.gmail ? "connected" : "ready"} onDetails={() => toast.info("Gmail connection details opened")} onSettings={() => toast.info("Gmail settings opened")} active={previewIntegrationActive.gmail} onActiveChange={(active) => setPreviewIntegrationActive((current) => ({ ...current, gmail: active }))} />
+          <SettingsIntegrationCard logoSrc={outlookIntegrationLogo} title="Outlook" description="Work from Microsoft 365 mail and shared mailboxes in one Inbox, with replies and Dexter drafts." status={previewIntegrationActive.outlook ? "Connected" : "Not connected"} statusTone={previewIntegrationActive.outlook ? "connected" : "ready"} onDetails={() => toast.info("Outlook connection details opened")} active={previewIntegrationActive.outlook} onActiveChange={(active) => setPreviewIntegrationActive((current) => ({ ...current, outlook: active }))} />
         </div>
       ) : null}
 

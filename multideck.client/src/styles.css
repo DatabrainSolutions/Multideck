@@ -3,13 +3,14 @@
    below `base`, so the preflight reset silently wins over any padding declared
    in it. Declaring a dedicated layer up front pins the dashboard's styles above
    `base` and `utilities` without disturbing the existing layer order. */
-@layer theme, base, components, utilities, md-dashboard;
+@layer theme, base, md-table-base, components, utilities, md-dashboard;
 
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "./feature-workspaces.css";
 @import "./dashboard.css";
+@import "./finance-dashboard.css";
 @import "./responsive.css";
 
 @custom-variant dark (&:is(.dark *));
@@ -517,6 +518,7 @@
      prompt field. */
   --md-composer-panel-bg: #ffffff;
   --md-composer-panel-line: rgba(11, 20, 19, 0.05);
+  --md-composer-quiet-bg: #e8ebea;
   --md-mention-bg: color-mix(in srgb, var(--md-accent-tint) 11%, #ffffff);
   --md-mention-stroke: var(--md-accent-deep);
   --md-mention-text: var(--md-accent-deep);
@@ -686,6 +688,7 @@
   --md-composer-shell-bg: #131618;
   --md-composer-panel-bg: #1e2123;
   --md-composer-panel-line: rgba(255, 255, 255, 0.075);
+  --md-composer-quiet-bg: #2a2e30;
   --md-mention-bg: color-mix(in srgb, var(--md-accent-deep) 78%, var(--md-surface));
   --md-mention-stroke: var(--md-accent);
   --md-mention-text: var(--md-accent-lift-strong);
@@ -1208,6 +1211,101 @@ button {
   will-change: transform, opacity, filter;
 }
 
+/* Ease the rail width while navigation rows take their final positions immediately. */
+.md-app-sidebar {
+  transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1), padding-inline 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The main rail and Admin navigation share one floating, rounded surface. */
+.md-sidebar-cluster {
+  height: calc(100% - 2 * var(--md-gap-sm));
+  margin-block: var(--md-gap-sm);
+  margin-inline-start: var(--md-gap-sm);
+  border-radius: var(--md-radius-2xl);
+  background: var(--md-surface);
+  overflow: clip;
+}
+
+.md-sidebar-cluster > .md-app-sidebar {
+  --md-sidebar-bg: transparent;
+  height: 100%;
+  box-shadow: none;
+}
+
+.md-admin-dock {
+  border-inline-start: 1px solid color-mix(in srgb, var(--md-hairline) 40%, transparent);
+}
+
+/* A disclosure title and its destinations share one continuous surface. */
+.md-sidebar-dropdown-group {
+  position: relative;
+  isolation: isolate;
+}
+
+.md-sidebar-dropdown-group::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--md-radius-xl);
+  background: var(--md-surface-soft);
+  opacity: 0;
+  transition: opacity var(--md-motion-fast);
+}
+
+.md-sidebar-dropdown-group[data-expanded="true"]::before {
+  opacity: 1;
+}
+
+.md-sidebar-dropdown-group[data-expanded="true"] > span > [data-sidebar-row] {
+  color: var(--md-ink);
+}
+
+.md-sidebar-expanded-options [data-sidebar-row] {
+  padding-inline-start: 1rem;
+  font-weight: 400;
+}
+
+[data-sidebar-collapsed="true"] .md-sidebar-expanded-options [data-sidebar-row] {
+  padding-inline: 0;
+}
+
+.md-sidebar-expanded-options [data-sidebar-active-surface] {
+  background: var(--md-accent);
+  box-shadow: none;
+}
+
+.md-sidebar-search {
+  --md-placeholder: var(--md-text);
+  --md-placeholder-opacity: 1;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: background-color var(--md-motion-fast);
+}
+
+.md-sidebar-search:focus-within {
+  outline-color: var(--md-accent);
+  background: var(--md-bg-strong);
+}
+
+.md-sidebar-search-result:active,
+.md-sidebar-search-clear:active {
+  background: var(--md-bg-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-sidebar-dropdown-group::before,
+  .md-sidebar-search {
+    transition-duration: 0ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-app-sidebar {
+    transition: none;
+  }
+}
+
 /* Ramps in quickly, overshoots by a hair, then eases into rest so the menu reads as alive. */
 .md-sidebar-menu[data-state="open"] {
   animation: md-sidebar-menu-in 280ms cubic-bezier(0.19, 1, 0.22, 1) both;
@@ -1347,6 +1445,31 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     inset 0 0 0 1px rgba(255, 255, 255, 0.12),
     0 0 0 1px var(--md-accent-deep-a16),
     0 18px 44px rgba(42, 52, 50, 0.12);
+}
+
+.md-composer-bloom__effect {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.md-composer--quiet {
+  isolation: isolate;
+  background: var(--md-composer-quiet-bg);
+  box-shadow: none;
+}
+
+.md-composer--quiet .md-composer-lead,
+.md-composer--quiet .md-composer-lead .md-composer-chip__caret {
+  color: var(--md-ink);
+}
+
+.md-composer--quiet .md-composer-lead:hover {
+  background: var(--md-hover);
+  box-shadow: none;
 }
 
 .md-composer-bloom__shader {
@@ -1515,6 +1638,127 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   mask-image: linear-gradient(to left, #000 0, #000 calc(100% - 28px), transparent 100%);
 }
 
+/* The tray's shelf fades only the edge that has more behind it, and the fade
+   eases in as the operator scrolls rather than switching on. */
+@property --md-strip-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --md-strip-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.md-composer-tray-strip {
+  --md-strip-fade-start: 0px;
+  --md-strip-fade-end: 0px;
+  scrollbar-width: none;
+  scroll-padding-inline: 28px;
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--md-strip-fade-start), #000 calc(100% - var(--md-strip-fade-end)), transparent 100%);
+  transition:
+    --md-strip-fade-start 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    --md-strip-fade-end 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-composer-tray-strip[data-fade-start="true"] {
+  --md-strip-fade-start: 28px;
+}
+
+.md-composer-tray-strip[data-fade-end="true"] {
+  --md-strip-fade-end: 28px;
+}
+
+.md-composer-tray-strip::-webkit-scrollbar {
+  display: none;
+}
+
+[dir="rtl"] .md-composer-tray-strip {
+  mask-image: linear-gradient(to left, transparent 0, #000 var(--md-strip-fade-start), #000 calc(100% - var(--md-strip-fade-end)), transparent 100%);
+}
+
+/* Prompt presets sit on the shader as a flat, translucent fill – no blur, no
+   gloss – so they read as quiet options rather than raised controls. Reaching
+   for one lifts it a pixel and raises the fill; pressing sinks it. */
+.md-composer-preset {
+  position: relative;
+  color: #000000;
+  background: rgba(255, 255, 255, 0.9);
+  outline: none;
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    translate 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark .md-composer-preset {
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.9);
+}
+
+.md-composer-preset__icon {
+  opacity: 0.92;
+  transition:
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    rotate 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .md-composer-preset:hover {
+    translate: 0 -1px;
+    background: rgba(255, 255, 255, 1);
+  }
+
+  .dark .md-composer-preset:hover {
+    background: rgba(0, 0, 0, 1);
+  }
+
+  .md-composer-preset:hover .md-composer-preset__icon {
+    opacity: 1;
+    rotate: -8deg;
+  }
+}
+
+.md-composer-preset:active {
+  translate: 0 0;
+  scale: 0.965;
+  transition-duration: 90ms;
+}
+
+.md-composer-preset:focus-visible {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+
+.dark .md-composer-preset:focus-visible {
+  background: rgba(0, 0, 0, 1);
+}
+
+.md-composer-preset:focus-visible .md-composer-preset__icon {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-composer-tray-strip,
+  .md-composer-preset,
+  .md-composer-preset__icon {
+    transition: none !important;
+  }
+
+  .md-composer-preset:hover,
+  .md-composer-preset:active {
+    translate: none;
+    scale: none;
+  }
+
+  .md-composer-preset:hover .md-composer-preset__icon {
+    rotate: none;
+  }
+}
+
 .md-dexter-role-option {
   color: rgba(255, 255, 255, 0.94);
   background: rgba(22, 27, 29, 0.68);
@@ -1554,7 +1798,45 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 /* The prompt box itself brightens its ring while the caret is in the field –
    the only cue that Enter is armed. */
 .md-composer {
-  transition: box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-composer-arrive {
+  animation: md-composer-arrive 560ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
+}
+
+@keyframes md-composer-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-composer-arrive {
+    animation: none;
+  }
+}
+
+/* Settling from the landing shape into the quiet one: the panel's inset, fill
+   and the writing area's height all ease together with the tray folding away,
+   timed to land with the composer's travel. */
+.md-composer-panel {
+  transition:
+    margin 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-composer-panel .md-dexter-mention-editor {
+  transition: min-height 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .md-composer:focus-within {
@@ -1569,6 +1851,11 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     0 0 0 1px var(--md-accent-a48),
     0 22px 52px rgba(0, 0, 0, 0.34),
     inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.md-composer--quiet:focus-within,
+.dark .md-composer--quiet:focus-within {
+  box-shadow: none;
 }
 
 /* ── Dexter inline mentions ──────────────────────────────────────────────────
@@ -1649,6 +1936,8 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   .md-composer-lead,
   .md-composer-chip__caret,
   .md-composer,
+  .md-composer-panel,
+  .md-composer-panel .md-dexter-mention-editor,
   .md-dexter-mention {
     transition: none !important;
     animation: none !important;
@@ -2396,6 +2685,13 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     @apply border-border outline-ring/50;
   }
 
+  /* Radix places visually hidden native inputs and selects beside controls.
+     Anchor them to their immediate wrapper so they cannot extend the document
+     beyond the app's own scroll region on long pages. */
+  :where(*:has(> :is(input, select)[aria-hidden="true"][tabindex="-1"])) {
+    position: relative;
+  }
+
   html {
     @apply font-sans;
   }
@@ -2737,6 +3033,10 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 
   .md-toast {
+    --md-toast-glow: var(--md-amber);
+    --md-toast-background:
+      radial-gradient(ellipse 44% 145% at 50% 120%, color-mix(in srgb, var(--md-toast-glow) 20%, transparent) 0%, color-mix(in srgb, var(--md-toast-glow) 8%, transparent) 45%, transparent 76%),
+      color-mix(in srgb, var(--md-surface) 94%, transparent);
     --md-toast-control-rest: color-mix(in srgb, var(--md-surface-tint) 82%, var(--md-surface));
     --md-toast-control-fill: color-mix(in srgb, var(--md-surface-tint) 68%, var(--md-surface));
     width: 100%;
@@ -2744,11 +3044,9 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     align-items: center;
     gap: 8px;
     border: 0;
-    border-radius: var(--md-radius-xl);
+    border-radius: var(--md-radius-2xl);
     padding: 6px 9px;
-    background:
-      linear-gradient(118deg, transparent 0 11%, color-mix(in srgb, #ffffff 5%, transparent) 11% 21%, transparent 26%),
-      color-mix(in srgb, var(--md-surface) 94%, transparent);
+    background: var(--md-toast-background);
     color: var(--md-ink);
     box-shadow: var(--md-premium-stroke), 0 16px 42px rgba(17, 24, 23, 0.16);
     backdrop-filter: blur(18px) saturate(118%);
@@ -2764,11 +3062,9 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     align-items: center !important;
     gap: 8px !important;
     border: 0 !important;
-    border-radius: var(--md-radius-xl) !important;
+    border-radius: var(--md-radius-2xl) !important;
     padding: 6px 9px !important;
-    background:
-      linear-gradient(118deg, transparent 0 11%, color-mix(in srgb, #ffffff 5%, transparent) 11% 21%, transparent 26%),
-      color-mix(in srgb, var(--md-surface) 94%, transparent) !important;
+    background: var(--md-toast-background) !important;
     color: var(--md-ink) !important;
     box-shadow: var(--md-premium-stroke), 0 16px 42px rgba(17, 24, 23, 0.16) !important;
     backdrop-filter: blur(18px) saturate(118%);
@@ -2790,9 +3086,6 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   [data-sonner-toaster][data-sonner-theme="dark"] .md-toast,
   [data-theme="dark"] .md-toast,
   .dark .md-toast {
-    background:
-      linear-gradient(118deg, transparent 0 11%, rgba(255, 255, 255, 0.04) 11% 21%, transparent 26%),
-      color-mix(in srgb, var(--md-surface) 93%, transparent) !important;
     box-shadow: var(--md-premium-stroke), 0 18px 48px rgba(0, 0, 0, 0.38) !important;
   }
 
@@ -2943,6 +3236,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 
   .md-toast[data-type="success"] {
+    --md-toast-glow: var(--md-green);
     --md-toast-control-rest: #ecf8ef;
     --md-toast-control-fill: #a9ddb7;
   }
@@ -2953,6 +3247,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 
   .md-toast[data-type="error"] {
+    --md-toast-glow: var(--md-red);
     --md-toast-control-rest: #fceded;
     --md-toast-control-fill: #f2b1b1;
   }
@@ -5963,6 +6258,10 @@ html.md-summon-picking {
   grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
 }
 
+.md-drive-folder-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 200px));
+}
+
 /* --------------------------------------------------------------- folder tile */
 
 /* Two thin sheets sit behind the top edge, so the tile reads as something that
@@ -6694,4 +6993,48 @@ html.md-summon-picking {
 .contact-compose-dialog > section { border: 0; box-shadow: none; background: transparent; }
 @media (prefers-reduced-motion: reduce) {
   .contact-compose-dialog[data-state] { animation: none; }
+}
+
+/* Shared register design, including reports and editable detail tables. */
+@layer md-table-base {
+  .md-standard-table table {
+    border-collapse: collapse;
+    color: var(--md-ink);
+    font-size: 13px;
+  }
+  .md-standard-table thead {
+    background: var(--md-surface-soft);
+  }
+  .md-standard-table th {
+    height: 40px;
+    padding: 8px 12px;
+    background: var(--md-surface-soft);
+    color: var(--md-text);
+    font-size: 12px;
+    font-weight: 500;
+    text-align: start;
+    white-space: nowrap;
+  }
+  .md-standard-table td {
+    padding: 8px;
+    vertical-align: middle;
+  }
+  .md-standard-table tr {
+    border-bottom: 1px solid var(--md-line);
+  }
+  .md-standard-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .md-standard-table tbody tr:hover {
+    background: var(--md-hover);
+  }
+  .md-standard-table th:has([data-table-viewport-scroll-rail]) {
+    height: 12px;
+    padding: 0;
+  }
+}
+@media print {
+  [data-table-sticky-header], [data-table-scroll-rail-row], [role="separator"][aria-orientation="vertical"] { display: none !important; }
+  .md-standard-table { overflow: visible; box-shadow: none; }
+  .md-standard-table [data-slot="table-container"] { overflow: visible; }
 }

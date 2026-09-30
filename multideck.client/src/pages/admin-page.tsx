@@ -2,11 +2,11 @@ import { InlineNotice } from "@/components/multideck/inline-notice"
 import { defaultPaginationPageSize } from "@/lib/pagination"
 import { AdminCustomsPreferences } from "@/pages/admin-customs-preferences"
 import { collectExportPages } from "@/lib/table-export"
-import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { LockKeyIcon as LockKeyholeIcon } from "@hugeicons/core-free-icons"
-import { ChevronDown, Image, ImageUp, LoaderCircle, RotateCcw } from "@/components/icons/hugeicons"
+import { ChevronDown, ChevronLeft, Image, ImageUp, LoaderCircle, RotateCcw } from "@/components/icons/hugeicons"
 import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { getDateKey, MultideckDateRangePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
@@ -23,6 +23,39 @@ import { getAdminAudit, type AdminActiveUser, type AdminAuditResponse, type Admi
 import { draftQuoteReferenceRule, getQuoteBranding, getQuoteFollowUpSettings, getQuoteReferenceSettings, saveQuoteFollowUpSettings, saveQuoteReferenceSettings, uploadQuoteBrandingLogo, type QuoteBranding, type QuoteFollowUpSettings, type QuoteReferenceSettings, type ReferenceRuleDraft, type ReferenceRuleTarget } from "@/lib/quote-workflow-api"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
+import { adminHubForRoute, adminHubs } from "@/data/navigation-data"
+import { AdminHubPage } from "@/pages/admin-hub-page"
+import { useDockedAdminSections } from "@/lib/admin-explorer-state"
+import { Switch } from "@/components/ui/switch"
+import { EventsApiError, getEventsSettings, setEventsEnabled } from "@/lib/company-events-api"
+
+function AdminEventsPreference() {
+  const { t } = useLanguage()
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    getEventsSettings(true).then((settings) => setEnabled(settings.enabled), (loadError) => setError(loadError instanceof EventsApiError ? loadError.message : t("Events settings could not be loaded.")))
+  }, [t])
+  const change = async (next: boolean) => {
+    setSaving(true); setError(null)
+    try { setEnabled((await setEventsEnabled(next)).enabled) }
+    catch (saveError) { setError(saveError instanceof Error ? saveError.message : t("The setting could not be saved.")) }
+    finally { setSaving(false) }
+  }
+  return (
+    <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
+      <label className="flex items-center justify-between gap-4">
+        <span className="min-w-0">
+          <span className="block text-[14px] font-medium text-[var(--md-ink)]">{t("Events")}</span>
+          <span className="mt-1 block max-w-[62ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Company events and RSVPs for everyone. When off, Events is hidden and its data is unavailable.")}</span>
+        </span>
+        <Switch checked={enabled === true} disabled={enabled === null || saving} onCheckedChange={(next) => void change(next)} aria-label={t("Events")} />
+      </label>
+      {error ? <p className="mt-3 text-[12px] text-[var(--md-red)]" role="alert">{error}</p> : null}
+    </section>
+  )
+}
 
 const AdminUsersContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminUsersContent })))
 const AdminAiUsageContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminAiUsageContent })))
@@ -128,16 +161,16 @@ function referencePatternError(pattern: string, target: ReferenceRuleTarget, com
   return null
 }
 
-export type AdminRoute = "/admin/users" | "/admin/usage" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/branding" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
+export type AdminRoute = "/admin" | "/admin/settings" | "/admin/finance" | "/admin/sales-crm" | "/admin/operations" | "/admin/warehouse" | "/admin/general-reporting" | "/admin/documents-storage" | "/admin/customs-compliance" | "/admin/users" | "/admin/usage" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/branding" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
 type AuditCategory = "all" | "authentication" | "application"
 const auditRefreshIntervalMs = 60_000
 
-const adminRouteTitles: Record<AdminRoute, string> = {
+const adminRouteTitles: Partial<Record<AdminRoute, string>> = {
   "/admin/users": "Users",
-  "/admin/usage": "Usage",
-  "/admin/ai-usage": "Usage",
+  "/admin/usage": "AI & Usage",
+  "/admin/ai-usage": "AI & Usage",
   "/admin/broadcast": "Broadcast",
-  "/admin/billing": "Billing",
+  "/admin/billing": "Plan & Subscription",
   "/admin/branding": "Branding",
   "/admin/system-preferences": "System Preferences",
   "/admin/activity": "Active log",
@@ -246,7 +279,7 @@ function ActiveUsers({ users, currentUser }: { users: AdminActiveUser[]; current
   )
 }
 
-function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: AuthUserSummary | null }) {
+function AuditLog({ view, currentUser, trail }: { view: AdminAuditView; currentUser: AuthUserSummary | null; trail?: ReactNode }) {
   const { t } = useLanguage()
   const [result, setResult] = useState<AdminAuditResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -326,7 +359,7 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
 
   useEffect(() => { document.title = `${title} · Admin · Multideck` }, [title])
 
-  const header = <SettingsPageHeader title={title} descriptionPlacement="under-title" actions={view === "activity" ? <ActiveUsers users={result?.activeUsers ?? []} currentUser={currentUser} /> : undefined} />
+  const header = <div>{trail}<SettingsPageHeader title={title} descriptionPlacement="under-title" actions={view === "activity" ? <ActiveUsers users={result?.activeUsers ?? []} currentUser={currentUser} /> : undefined} /></div>
   if (loading && !result) return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[1440px]">{header}<p className="mt-8 text-[13px] text-[var(--md-text)]" role="status">{t("Loading audit log…")}</p></div></div>
   if (error && !result) return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[1440px]">{header}<div className="mt-6 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 text-[13px] shadow-[var(--md-shadow-soft)]" role="alert"><p className="font-medium text-[var(--md-red)]">{t("The audit log could not be loaded.")}</p><p className="mt-1 text-[var(--md-text)]">{error}</p></div></div></div>
 
@@ -361,7 +394,7 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
   )
 }
 
-function SystemPreferencesContent() {
+function SystemPreferencesContent({ trail }: { trail?: ReactNode }) {
   const { language, t } = useLanguage()
   const reduceMotion = useReducedMotion()
   const [companyName, setCompanyName] = useState("Multideck")
@@ -769,15 +802,31 @@ function SystemPreferencesContent() {
     )
   }
 
-  const header = <SettingsPageHeader title={t("System Preferences")} description={t("These settings apply company-wide. Existing references stay unchanged.")} descriptionPlacement="under-title" />
+  // Settings links from an Admin hub land on one section of this page. Bring it
+  // into view and ring it once, so the eye lands on the setting that was asked for.
+  const [arrivedSection, setArrivedSection] = useState<string | null>(null)
+  useEffect(() => {
+    if (loading) return
+    const id = decodeURIComponent(window.location.hash.slice(1))
+    const target = id ? document.getElementById(id) : null
+    if (!target) return
+    target.scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" })
+    setArrivedSection(id)
+    const timer = window.setTimeout(() => setArrivedSection(null), 1600)
+    return () => window.clearTimeout(timer)
+  }, [loading, reduceMotion])
+  const anchorClass = (id: string) => cn("scroll-mt-6 rounded-[var(--md-radius-xl)] transition-shadow duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", arrivedSection === id && "ring-[3px] ring-[var(--md-accent-a14)]")
+
+  const header = <div>{trail}<SettingsPageHeader title={t("System Preferences")} description={t("These settings apply company-wide. Existing references stay unchanged.")} descriptionPlacement="under-title" /></div>
   if (loading) return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[760px]">{header}<p className="mt-8 text-[13px] text-[var(--md-text)]" role="status">{t("Loading system preferences…")}</p></div></div>
 
   return (
     <div className="min-w-0 px-[var(--md-page-pad)] py-[var(--md-page-pad)]">
       <div className="mx-auto max-w-[960px] space-y-5 pb-[var(--md-page-bottom-pad)]">
         {header}
-        <AdminCustomsPreferences />
-        <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
+        <div id="customs" className={anchorClass("customs")}><AdminCustomsPreferences /></div>
+        <div id="events" className={anchorClass("events")}><AdminEventsPreference /></div>
+        <section id="quote-documents" className={cn("bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]", anchorClass("quote-documents"))}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Quote documents")}</h2>
@@ -808,7 +857,7 @@ function SystemPreferencesContent() {
           {brandingError ? <p className="mt-3 text-[12px] text-[var(--md-red)]" role="alert">{t(brandingError)}</p> : null}
           {brandingFeedback ? <p className="mt-3 text-[12px] text-[var(--md-green)]" role="status">{t(brandingFeedback)}</p> : null}
         </section>
-        <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
+        <section id="quote-follow-up" className={cn("bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]", anchorClass("quote-follow-up"))}>
           <div>
             <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Quote follow-up")}</h2>
             <p className="mt-1 max-w-[68ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Send one reminder for unanswered quotes. Customer-specific delays override this setting; customers who disallow follow-ups are excluded.")}</p>
@@ -843,7 +892,7 @@ function SystemPreferencesContent() {
             </label>
           </div>
         </section>
-        <motion.section layout={!reduceMotion} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">
+        <motion.section id="reference-rules" layout={!reduceMotion} className={cn("bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]", anchorClass("reference-rules"))}>
           <div className="border-b border-[var(--md-hairline)] pb-4">
             <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Reference rules")}</h2>
           </div>
@@ -896,10 +945,38 @@ function SystemPreferencesContent() {
   )
 }
 
-export function AdminPage({ route, currentUser }: { route: AdminRoute; currentUser: AuthUserSummary | null }) {
+/** The way back to the hub a leaf page was opened from, above the page's own heading. */
+function AdminHubTrail({ route, navigate }: { route: string; navigate: (path: string) => void }) {
+  const { t } = useLanguage()
+  const docked = useDockedAdminSections()
+  const hub = adminHubForRoute(route)
+  // Beside the second sidebar the way back is already on screen.
+  if (!hub || docked) return null
+  return (
+    <nav aria-label={t("Breadcrumb")} className="mb-3">
+      <a
+        href={hub.route}
+        className="group/trail inline-flex h-7 items-center gap-1 rounded-full px-2 -ms-2 text-[12px] text-[var(--md-text)] transition-[background-color,color] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none"
+        onClick={(event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+          event.preventDefault()
+          navigate(hub.route)
+        }}
+      >
+        <ChevronLeft aria-hidden="true" className="size-3.5 transition-transform duration-150 group-hover/trail:-translate-x-0.5 motion-reduce:transition-none rtl:-scale-x-100" strokeWidth={1.6} />
+        {t(hub.label)}
+      </a>
+    </nav>
+  )
+}
+
+export function AdminPage({ route, currentUser, navigate }: { route: AdminRoute; currentUser: AuthUserSummary | null; navigate: (path: string) => void }) {
+  const hub = adminHubs.find((candidate) => candidate.display === "hub" && candidate.route === route)
   useEffect(() => {
-    document.title = `${adminRouteTitles[route]} · Admin · Multideck`
-  }, [route])
+    document.title = `${route === "/admin" ? "Dashboard" : hub?.label ?? adminRouteTitles[route as keyof typeof adminRouteTitles] ?? "Admin"} · Admin · Multideck`
+  }, [hub, route])
+
+  if (hub) return <AdminHubPage hub={hub} navigate={navigate} />
 
   const content = route === "/admin/users"
     ? <AdminUsersContent />
@@ -915,8 +992,9 @@ export function AdminPage({ route, currentUser }: { route: AdminRoute; currentUs
           ? <SystemPreferencesContent />
         : null
 
+  const trail = <AdminHubTrail route={route} navigate={navigate} />
   if (content) {
-    return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[1180px] pb-[var(--md-page-bottom-pad)]">{content}</div></div>
+    return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[1180px] pb-[var(--md-page-bottom-pad)]">{route === "/admin/system-preferences" ? <SystemPreferencesContent trail={trail} /> : <>{trail}{content}</>}</div></div>
   }
-  return <AuditLog view={route === "/admin/detailed-log" ? "detailed" : "activity"} currentUser={currentUser} />
+  return <AuditLog view={route === "/admin/detailed-log" ? "detailed" : "activity"} currentUser={currentUser} trail={trail} />
 }

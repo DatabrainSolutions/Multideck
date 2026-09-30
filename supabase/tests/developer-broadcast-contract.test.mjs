@@ -35,7 +35,7 @@ test("only developer administrators receive broadcast permissions", () => {
 })
 
 test("AI can draft only with the requested model and cannot send", () => {
-  assert.match(edge, /model: "gpt-5\.6-luna"/)
+  assert.match(edge, /model: "gpt-6-luna"/)
   assert.match(edge, /Do not invent dates, incidents, promises, recipients, links or completed actions/)
   assert.match(edge, /administrator must review and explicitly send it later/i)
   assert.match(edge, /requirePermission\(admin, current\.User_ID, "Broadcasts\.Manage"\)/)

@@ -146,7 +146,7 @@ const modelGateway = read("supabase/functions/_shared/model-gateway.ts")
 const dexterDocumentOcr = read("supabase/functions/_shared/dexter-document-ocr.ts")
 const dexterDocumentOcrMigration = read("supabase/migrations/20260810141116_dexter_mistral_document_ocr.sql")
 const customerApi = read("multideck.client/src/lib/customer-api.ts")
-const customerPage = read("multideck.client/src/pages/customer-detail-page.tsx")
+const customerPage = read("multideck.client/src/components/multideck/account-operations-workspace.tsx")
 const emailWatchWorker = read(
   "supabase/functions/email-watch-worker/index.ts",
 )
@@ -195,7 +195,7 @@ test("Dexter action tools stay OpenAI strict-schema compatible", () => {
 })
 
 test("Dexter redirects off-topic requests without narrowing useful freight work", () => {
-  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-09-01-finance-support"/)
+  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-09-26-specialist-reliability"/)
   assert.match(edgeFunction, /# Scope boundary/)
   assert.match(edgeFunction, /Dexter is for freight forwarding and the work required to operate a freight-forwarding business/)
   assert.match(edgeFunction, /Examples include sports fixtures, recipes and cooking, entertainment, celebrity news, general trivia/)
@@ -442,8 +442,8 @@ test("Dexter sends only the current response version into the next model turn", 
 test("the Edge Function keeps secrets server-side and uses the requested model lanes", () => {
   assert.match(edgeFunction, /Deno\.env\.get\("OPEN_API_KEY"\)/)
   assert.doesNotMatch(edgeFunction, /sk-proj-/)
-  assert.match(edgeFunction, /fast: \{ model: "gpt-5\.6-luna", effort: "medium" \}/)
-  assert.match(edgeFunction, /smart: ASTRA_RESPONSES_ENABLED \? \{ model: "gpt-6-astra", effort: "medium" \} : \{ model: "gpt-5\.6-luna", effort: "high" \}/)
+  assert.match(edgeFunction, /fast: \{ model: "gpt-6-luna", effort: "medium" \}/)
+  assert.match(edgeFunction, /smart: ASTRA_RESPONSES_ENABLED \? \{ model: "gpt-6-astra", effort: "medium" \} : \{ model: "gpt-6-luna", effort: "high" \}/)
   assert.match(edgeFunction, /worker: ASTRA_RESPONSES_ENABLED \? \{ model: "gpt-6-astra", effort: "high" \} : \{ model: "gpt-5\.6-terra", effort: "medium" \}/)
   assert.match(edgeFunction, /store: false/)
   assert.match(edgeFunction, /userClient\.auth\.getUser\(\)/)
@@ -698,7 +698,7 @@ test("customer documents list and open only through the authenticated Supabase E
   assert.match(customerDocumentsRuntime, /createSignedUrl/)
   assert.match(customerApi, /supabaseFunctionsUrl}\/customer-documents/)
   assert.doesNotMatch(customerApi, /api\/v1\/customers\/.*documents/)
-  assert.match(customerPage, /<CustomerDocuments customerId=\{customer\.id\}/)
+  assert.match(customerPage, /listCustomerDocuments\(account\.id, \{ limit: documentPageSize/)
 })
 
 test("Approve and Deny stay explicit, single-submit, and recoverable", () => {
@@ -762,7 +762,7 @@ test("Dexter attaches clickable inline citations only to records returned by its
   assert.match(edgeFunction, /\/crm\/leads\/\$\{encodeURIComponent\(recordId\)\}/)
   assert.match(edgeFunction, /\/crm\/deals\?record=/)
   assert.match(edgeFunction, /\/quotes\?search=/)
-  assert.match(edgeFunction, /\/customers\/\$\{encodeURIComponent\(recordId\)\}/)
+  assert.match(edgeFunction, /\/crm\/accounts\/\$\{encodeURIComponent\(recordId\)\}`, "Company record"/)
   assert.match(edgeFunction, /\/warehouse\/orders\?/)
   assert.match(edgeFunction, /\/warehouse\/inventory\?search=/)
   assert.match(edgeFunction, /domain === "warehouse_reference"/)
@@ -847,8 +847,8 @@ test("each Dexter role has a distinct freight-specialist operating brief", () =>
   assert.match(edgeFunction, /# Active specialist/)
   assert.match(edgeFunction, /Never invent rates, surcharges, capacity/)
   assert.match(edgeFunction, /Never infer clearance, admissibility, duty/)
-  assert.match(edgeFunction, /Rank exceptions by urgency, operational consequence and customer impact/)
-  assert.match(edgeFunction, /Never claim a message was sent unless a connected action confirms it/)
+  assert.match(edgeFunction, /Rank exceptions by the next irreversible deadline, operational consequence and customer impact/)
+  assert.match(edgeFunction, /never claim delivery without a successful connected action/)
   assert.match(edgeFunction, /Never present correlation as causation/)
 })
 

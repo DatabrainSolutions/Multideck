@@ -5,7 +5,7 @@ import type { OpeningItemInput, TrialBalanceInput } from "./accounting-migration
 export type GlEntity = { LegalEntity_ID: string; LegalEntity_Name: string; LegalEntity_BaseCurrencyCodeSnapshot: string }
 export type GlAccount = { FINNom_ID: string; FINNom_Code: string; FINNom_Name: string; FINNom_IsControlAccount: boolean; FINNom_AllowManualPosting: boolean; FINNom_IsActive: boolean }
 export type JournalLine = { accountId: string; description: string; debit: string; credit: string }
-export type Journal = { id: string; number?: number; accounting_date: string; reference: string; description: string; currency: string; lines: JournalLine[]; status: "draft" | "posted"; version?: number; mirror_status: string; mirror_error?: string; external_id?: string; deliveryNotice?: string; posted_at?: string }
+export type Journal = { id: string; number?: number; accounting_date: string; reference: string; description: string; currency: string; lines: JournalLine[]; status: "draft" | "posted"; version?: number; mirror_status: string; mirror_error?: string; external_id?: string; deliveryNotice?: string; posted_at?: string; reversal_of_id?: string | null; reversal_reason?: string | null }
 export type GlEntry = { id: string; batchId: string; number: string; period: string; postedAt: string; accountId: string; accountCode: string; accountName: string; description: string; debit: number; credit: number; source: string; sourceId: string }
 export type GlWorkspace = { accounts: GlAccount[]; journals: Journal[]; enquiry: { rows: GlEntry[]; count: number; opening: number; debit: number; credit: number; closing: number } }
 export type GlTransaction = { number: string; source: string; postedAt: string; currency: string; lines: Array<{ id: string; account: string; description: string; debit: number; credit: number }> }
@@ -20,6 +20,8 @@ export const getGlEntities = () => call<{ entities: GlEntity[] }>("/entities")
 export const getGlTransaction = (legalEntityId: string, id: string) => call<GlTransaction>(`/transaction?${new URLSearchParams({ legalEntityId, id })}`)
 export const getGlWorkspace = (params: Record<string, string>) => call<GlWorkspace>(`/workspace?${new URLSearchParams(params)}`)
 export const journalAction = (action: "save" | "post" | "retry", legalEntityId: string, journal: Journal) => call<Journal>(`/journals/${action}`, { ...journal, legalEntityId, accountingDate: journal.accounting_date })
+export const createJournalReversal = (legalEntityId: string, sourceJournalId: string, reason: string) =>
+  call<Journal>("/journals/reverse", { legalEntityId, id: sourceJournalId, reason })
 
 export type NominalGroup = { id: string; legal_entity_id: string; code: string; name: string; kind: "cost" | "revenue"; control_account_id: string; created_by: string; created_at: string }
 export type NominalGroupMember = { account_id: string; group_id: string; role: "actual" | "accrued" }
@@ -38,6 +40,12 @@ export const saveChargeCatalogueItem = (legalEntityId: string, input: { id?: str
 export const resolveChargeNominals = (legalEntityId: string, chargeId: string) =>
   call<{ version: number; chargeId: string; legalEntityId: string; cost: ResolvedNominalGroup | null; revenue: ResolvedNominalGroup | null }>(`/charge-nominals?${new URLSearchParams({ legalEntityId, chargeId })}`)
 
+export type ChargeMappingCutover = { id: string; legal_entity_id: string; effective_date: string; status: "proposed" | "approved" | "active"; mapping_snapshot: Record<string, unknown>; proposed_by: string; proposed_at: string; approved_by: string | null; approved_at: string | null; activated_by: string | null; activated_at: string | null }
+export const getChargeMappingCutovers = (legalEntityId: string) =>
+  call<ChargeMappingCutover[]>(`/charge-mapping-cutover?${new URLSearchParams({ legalEntityId })}`)
+export const chargeMappingCutoverAction = (legalEntityId: string, action: "propose" | "approve" | "activate", input: { id?: string; effectiveDate?: string }) =>
+  call<ChargeMappingCutover>("/charge-mapping-cutover", { legalEntityId, action, ...input })
+
 export type MigrationReconciliation = {
   reconciled: boolean; postingAuthorised: false
   issues: Array<{ area: "batch" | "trial_balance" | "open_items" | "control"; row?: number; message: string }>
@@ -47,6 +55,26 @@ export type MigrationReconciliation = {
 }
 export const reconcileMigration = (legalEntityId: string, input: { cutoffDate: string; baseCurrency: string; trialBalance: TrialBalanceInput[]; openItems: OpeningItemInput[] }) =>
   call<MigrationReconciliation>("/migration/reconcile", { ...input, legalEntityId })
+
+export type OpeningBalancePackage = { id: string; legal_entity_id: string; source_file_name: string; source_sha256: string; source_items_file_name: string | null; source_items_sha256: string | null; source_items_count: number; package_kind: "gl_only" | "full_open_items"; closing_date: string; opening_date: string; base_currency: string; debit_total: string; credit_total: string; evidence: { bank: string; tax: string; accrualWip: string; sourceReconciliation: string; partyMapping?: string; openItems?: string; fx?: string }; status: "staged" | "approved" | "posted"; staged_by: string; approved_by: string | null; posted_by: string | null; posting_batch_id: string | null }
+export type OpeningBalanceRecord = { package: OpeningBalancePackage; rowCount: number; rows: Array<{ source_row_number: number; source_account_code: string; nominal_code_snapshot: string; nominal_name_snapshot: string; debit: string; credit: string }> }
+export type OpeningSourceItem = { source_row_number: number; source_id: string; source_party_code: string; party_org_id: string; source_reference: string; kind: string; document_date: string; due_date: string | null; currency_code: string; original_amount: string; original_base_amount: string; outstanding_amount: string; outstanding_base_amount: string; historical_vat_evidence_ref: string | null; control_nominal_id: string }
+export const getOpeningSourceItems = (legalEntityId: string, id: string, offset = 0) =>
+  call<{ rows: OpeningSourceItem[]; total: number; offset: number }>(`/opening-balances/items?${new URLSearchParams({ legalEntityId, id, offset: String(offset) })}`)
+export const getOpeningBalances = (legalEntityId: string) =>
+  call<OpeningBalanceRecord[]>(`/opening-balances?${new URLSearchParams({ legalEntityId })}`)
+export const getOpeningBalancePackage = (legalEntityId: string, id: string) =>
+  call<OpeningBalanceRecord[]>(`/opening-balances?${new URLSearchParams({ legalEntityId, id })}`)
+export const openingBalanceAction = (legalEntityId: string, action: "stage" | "approve" | "post", input: { id?: string; packageKind?: "gl_only" | "full_open_items"; sourceSystem?: "CargoWise"; sourceFileName?: string; sourceSha256?: string; sourceItemsFileName?: string; sourceItemsSha256?: string; sourceItemsSheetName?: string; cutoffDate?: string; baseCurrency?: string; evidence?: { bank: string; tax: string; accrualWip: string; sourceReconciliation: string; partyMapping?: string; openItems?: string; fx?: string }; trialBalance?: Array<TrialBalanceInput & { sourceRow: number }>; openItems?: Array<OpeningItemInput & { sourceRow: number; partyOrgId: string }> | OpeningItemInput[] }) =>
+  call<OpeningBalancePackage>("/opening-balances", { legalEntityId, action, ...input })
+export type OpeningFXSettlement = { id: string; status: "proposed" | "posted"; allocation_id: string; cash_control_nominal_id: string; source_control_nominal_id: string; fx_nominal_id: string | null; cash_local: string; document_local: string; gain_loss_amount: string; proposed_by: string; posted_by: string | null; posting_batch_id: string | null }
+export type OpeningFXWorkItem = { allocationId: string; packageId: string; cashId: string; cashReference: string; documentId: string; sourceReference: string; cashControlNominalId: string; cashControlCode: string; sourceControlNominalId: string; sourceControlCode: string; sourceAmount: number; cashLocal: number; documentLocal: number; gainLoss: number; currency: string; needed: boolean; settlement: OpeningFXSettlement | null }
+export const getOpeningFXWorklist = (legalEntityId: string, packageId: string, offset = 0) =>
+  call<{ rows: OpeningFXWorkItem[]; total: number; offset: number }>(`/opening-balances/fx?${new URLSearchParams({ legalEntityId, packageId, offset: String(offset) })}`)
+export const getOpeningFXNominals = (legalEntityId: string) =>
+  call<Array<{ FINNom_ID: string; FINNom_Code: string; FINNom_Name: string; FINNom_ReportCategoryCode: string }>>(`/opening-balances/fx-nominals?${new URLSearchParams({ legalEntityId })}`)
+export const openingFXAction = (legalEntityId: string, action: "propose" | "post", input: { allocationId?: string; fxNominalId?: string; reason?: string; id?: string; correctionDate?: string }) =>
+  call<OpeningFXSettlement>("/opening-balances/fx", { legalEntityId, action, ...input })
 
 export function journalTotal(lines: JournalLine[], side: "debit" | "credit"): bigint | null {
   let total = 0n

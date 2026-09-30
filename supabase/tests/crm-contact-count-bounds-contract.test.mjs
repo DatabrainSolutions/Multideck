@@ -4,7 +4,7 @@ import test from "node:test"
 
 const source = readFileSync(new URL("../functions/customers/index.ts", import.meta.url), "utf8")
 const migration = readFileSync(new URL("../migrations/20260819132000_crm_contact_counts_read.sql", import.meta.url), "utf8")
-const detailPage = readFileSync(new URL("../../multideck.client/src/pages/customer-detail-page.tsx", import.meta.url), "utf8")
+const detailPage = readFileSync(new URL("../../multideck.client/src/components/multideck/account-operations-workspace.tsx", import.meta.url), "utf8")
 
 test("account hydration aggregates contact totals without loading contact IDs", () => {
   assert.match(source, /rpc\("multideck_crm_contact_counts", \{ p_account_ids: ids \}\)/)
@@ -25,8 +25,9 @@ test("the count helper is indexed and service-role-only", () => {
   assert.match(migration, /grant execute on function public\.multideck_crm_contact_counts[\s\S]*service_role/)
 })
 
-test("customer detail contact UI pages the bounded contact register", () => {
-  assert.match(detailPage, /listContactsPage\(\{[\s\S]*accountId: customerId[\s\S]*limit: 20[\s\S]*offset: \(contactPage - 1\) \* 20/)
-  assert.match(detailPage, /<Pagination page=\{contactPage\}[\s\S]*totalItems=\{contactListing\.total\}/)
-  assert.doesNotMatch(detailPage, /customer\.contacts\.map/)
+test("company record contacts page the bounded contact register", () => {
+  const contactsTab = detailPage.slice(detailPage.indexOf("function Contacts("), detailPage.indexOf("function Addresses("))
+  assert.match(contactsTab, /listContactsPage\(\{[\s\S]*accountId: account\.id[\s\S]*limit: contactPageSize[\s\S]*offset: \(contactPage - 1\) \* contactPageSize/)
+  assert.match(contactsTab, /<Pagination[^>]*page=\{contactPage\}[\s\S]*totalItems=\{contactListing\.total\}/)
+  assert.doesNotMatch(contactsTab, /account\.contacts\.map/)
 })

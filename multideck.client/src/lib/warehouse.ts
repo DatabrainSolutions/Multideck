@@ -733,10 +733,12 @@ export type WarehouseOperationalOrder = {
   sealNumber: string | null
   instructions: string | null
   createdAt: string
+  /** Staff names are returned to the warehouse team only; customer portal users receive null. */
+  createdByName?: string | null
   updatedAt: string
   lines: WarehouseOrderLine[]
-  receipts: { id: string; receiptNumber: string; statusCode: string; receivedAt: string | null; hasDiscrepancy: boolean; notes: string | null }[]
-  dispatches: { id: string; dispatchNumber: string; statusCode: string; dispatchedAt: string | null; vehicleReg: string | null; containerNumber: string | null; sealNumber: string | null }[]
+  receipts: { id: string; receiptNumber: string; statusCode: string; receivedAt: string | null; receivedByName?: string | null; hasDiscrepancy: boolean; notes: string | null }[]
+  dispatches: { id: string; dispatchNumber: string; statusCode: string; dispatchedAt: string | null; dispatchedByName?: string | null; vehicleReg: string | null; containerNumber: string | null; sealNumber: string | null }[]
   tasks?: WarehouseTask[]
 }
 
@@ -768,6 +770,7 @@ export type WarehouseTask = {
   createdAt: string
   completedAt: string | null
   completedBy: string | null
+  completedByName?: string | null
 }
 
 export type WarehouseInboundSourceTypeCode = "customer_purchase_order" | "asn" | "transfer" | "return" | "manual_exception"

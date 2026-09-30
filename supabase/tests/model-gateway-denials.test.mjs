@@ -5,7 +5,7 @@ import test from "node:test"
 
 const source = await readFile(new URL("../functions/_shared/model-gateway.ts", import.meta.url), "utf8")
 const code = stripTypeScriptTypes(source, { mode: "strip" }).replace(/^export /gm, "")
-const { reserveModelEgress } = new Function("Deno", `${code}\nreturn { reserveModelEgress };`)({ env: { get: () => undefined } })
+const { reserveModelEgress, settleModelEgress } = new Function("Deno", `${code}\nreturn { reserveModelEgress, settleModelEgress };`)({ env: { get: () => undefined } })
 
 for (const [message, dbCode, expected] of [
   ["ocr_concurrency_limit", "P0001", "ocr_concurrency_limit"],
@@ -24,3 +24,20 @@ for (const [message, dbCode, expected] of [
     assert.equal(events[0].AIDexterSecurityEvent_Kind, expected)
   })
 }
+
+
+test("Responses settlement retains cache usage and tenant scope; legacy settlement stays compatible", async () => {
+  const calls = []
+  const context = { companyId: "company-a", userId: "user-a", admin: {
+    rpc: async (name, args) => { calls.push({ name, args }); return { error: null } },
+  } }
+  const usage = { input_tokens: 100, output_tokens: 10, input_tokens_details: { cached_tokens: 80, cache_write_tokens: 5 } }
+  await settleModelEgress(context, { reservationId: "reservation", outcome: "succeeded", responseUsage: usage })
+  assert.equal(calls[0].name, "multideck_dexter_settle_responses_egress")
+  assert.deepEqual(calls[0].args.p_usage, usage)
+  assert.equal(calls[0].args.p_company_id, "company-a")
+  assert.equal(calls[0].args.p_user_id, "user-a")
+  await settleModelEgress(context, { reservationId: "legacy", outcome: "succeeded", inputUnits: 2, outputUnits: 0 })
+  assert.equal(calls[1].name, "multideck_dexter_settle_model_egress")
+  assert.equal(calls[1].args.p_input_units, 2)
+})

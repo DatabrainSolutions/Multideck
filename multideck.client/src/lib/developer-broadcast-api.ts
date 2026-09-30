@@ -136,7 +136,7 @@ export async function previewBroadcastAudience(accessToken: string, audience: Br
 }
 
 export async function draftBroadcastWithAI(accessToken: string, payload: { direction: string; subject: string; body: string }) {
-  return responseJson<{ draft: { subject: string; body: string }; model: "gpt-5.6-luna" }>(await edgeFetch("developer-broadcasts", "/ai-draft", accessToken, {
+  return responseJson<{ draft: { subject: string; body: string }; model: "gpt-6-luna" }>(await edgeFetch("developer-broadcasts", "/ai-draft", accessToken, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   }))
 }

@@ -1,3 +1,5 @@
+import { Table } from "@/components/ui/table"
+import { AddressSearch } from "@/components/multideck/address-search"
 import { useEffect, useMemo, useState } from "react"
 import { Building2, Clock, MapPin, Plus, RefreshCw, Trash2 } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
@@ -11,16 +13,13 @@ import { useLanguage } from "@/i18n/language-provider"
 import { addressFieldsForCountry, completeCountryOptions } from "@/lib/country-address-format"
 import {
   archiveOrganisationAddress,
-  getOnlineAddress,
   getCustomer,
   listAccountsPage,
   saveOrganisationAddress,
   saveRelatedPartyDefault,
-  searchOnlineAddresses,
   updateOrganisationFoundation,
   type ApiCustomer,
   type ApiCustomerDetail,
-  type AddressSearchSuggestion,
   type CustomerReference,
   type OrganisationAddress,
   type OrganisationOpeningOverride,
@@ -106,11 +105,6 @@ export function OrganisationFoundationPanel({
   const [addressOpen, setAddressOpen] = useState(false)
   const [editingAddress, setEditingAddress] = useState<OrganisationAddress | null>(null)
   const [address, setAddress] = useState<AddressDraft>(() => addressDraft())
-  const [addressSearchQuery, setAddressSearchQuery] = useState("")
-  const [addressSuggestions, setAddressSuggestions] = useState<AddressSearchSuggestion[]>([])
-  const [addressSearchState, setAddressSearchState] = useState<"idle" | "loading" | "error">("idle")
-  const [addressSearchMessage, setAddressSearchMessage] = useState<string | null>(null)
-  const [addressSearchSession, setAddressSearchSession] = useState(() => crypto.randomUUID())
   const [archiveTarget, setArchiveTarget] = useState<OrganisationAddress | null>(null)
   const [relatedOpen, setRelatedOpen] = useState(false)
   const [editingRelated, setEditingRelated] = useState<RelatedPartyDefault | null>(null)
@@ -141,34 +135,6 @@ export function OrganisationFoundationPanel({
     return () => { active = false }
   }, [related.targetOrganisationId, relatedOpen])
 
-  useEffect(() => {
-    const selectedCountry = address.countryCode ?? ""
-    if (!addressOpen || selectedCountry.length !== 2 || addressSearchQuery.trim().length < 3) {
-      setAddressSuggestions([])
-      setAddressSearchState("idle")
-      return
-    }
-    let active = true
-    const timer = window.setTimeout(() => {
-      setAddressSearchState("loading")
-      setAddressSearchMessage(null)
-      searchOnlineAddresses({ query: addressSearchQuery.trim(), countryCode: selectedCountry, sessionToken: addressSearchSession })
-        .then(({ items }) => {
-          if (!active) return
-          setAddressSuggestions(items)
-          setAddressSearchState("idle")
-          if (!items.length) setAddressSearchMessage(t("No matching addresses were found. You can still enter it manually."))
-        })
-        .catch((cause) => {
-          if (!active) return
-          setAddressSuggestions([])
-          setAddressSearchState("error")
-          setAddressSearchMessage(cause instanceof Error ? cause.message : t("Online address search is unavailable. Enter the address manually."))
-        })
-    }, 350)
-    return () => { active = false; window.clearTimeout(timer) }
-  }, [address.countryCode, addressOpen, addressSearchQuery, addressSearchSession, t])
-
   const primaryOffice = account.officeAssignments.find((item) => item.isPrimary)
   const mainAddress = account.addresses.find((item) => item.capabilities.some((capability) => capability.code === "main" && capability.isDefault)) ?? account.addresses.find((item) => item.capabilities.some((capability) => capability.code === "main")) ?? account.addresses[0] ?? null
   const countryOptions = useMemo(() => completeCountryOptions(reference.countries ?? [], language), [language, reference.countries])
@@ -178,39 +144,7 @@ export function OrganisationFoundationPanel({
     setEditingAddress(next ?? null)
     setAddress(addressDraft(next))
     setError(null)
-    setAddressSearchQuery("")
-    setAddressSuggestions([])
-    setAddressSearchMessage(null)
-    setAddressSearchState("idle")
-    setAddressSearchSession(crypto.randomUUID())
     setAddressOpen(true)
-  }
-
-  async function chooseAddressSuggestion(suggestion: AddressSearchSuggestion) {
-    setAddressSearchState("loading")
-    setAddressSearchMessage(null)
-    try {
-      const result = await getOnlineAddress(suggestion.id, addressSearchSession)
-      setAddress((current) => ({
-        ...current,
-        name: result.name || current.name,
-        line1: result.line1 || current.line1,
-        line2: result.line2 || "",
-        townCity: result.townCity || "",
-        countyState: result.countyState || "",
-        postZipCode: result.postZipCode || "",
-        countryCode: result.countryCode || current.countryCode,
-        phone: result.phone || current.phone,
-      }))
-      setAddressSearchQuery(result.formattedAddress || suggestion.label)
-      setAddressSuggestions([])
-      setAddressSearchState("idle")
-      setAddressSearchMessage(t("Address populated from Google Places. Review it and assign its operational purposes before saving."))
-      setAddressSearchSession(crypto.randomUUID())
-    } catch (cause) {
-      setAddressSearchState("error")
-      setAddressSearchMessage(cause instanceof Error ? cause.message : t("The selected address could not be loaded."))
-    }
   }
 
   function openRelated(next?: RelatedPartyDefault) {
@@ -302,7 +236,7 @@ export function OrganisationFoundationPanel({
         </div>
         {account.addresses.length ? (
           <div className="mt-3 overflow-x-auto rounded-[var(--md-radius-lg)] shadow-[var(--md-shadow-line)]">
-            <table className="w-full min-w-[680px] text-start text-[12px]">
+            <Table className="w-full min-w-[680px] text-start text-[12px]">
               <thead className="bg-[var(--md-surface-soft)] text-[10.5px] text-[var(--md-subtle)]"><tr><th className="px-3 py-2 text-start font-medium">{t("Name")}</th><th className="px-3 py-2 text-start font-medium">{t("Address")}</th><th className="px-3 py-2 text-start font-medium">{t("Purposes")}</th><th className="px-3 py-2 text-start font-medium">{t("Opening hours")}</th></tr></thead>
               <tbody>{account.addresses.map((item) => {
                 const selected = editingAddress?.id === item.id
@@ -313,7 +247,7 @@ export function OrganisationFoundationPanel({
                   <td className="px-3 py-2.5 text-[var(--md-subtle)]">{item.weeklyHours.length ? t("Recorded") : t("Not recorded")}</td>
                 </tr>
               })}</tbody>
-            </table>
+            </Table>
           </div>
         ) : <EmptyFoundation icon={MapPin} text={t("Add the company's main, office, postal, pickup, delivery or billing addresses.")} />}
       </section> : null}
@@ -358,21 +292,13 @@ export function OrganisationFoundationPanel({
       {view === "addresses" && addressOpen ? <section className="border-t border-[var(--md-line)] px-4 py-4 sm:px-5" aria-labelledby={`address-form-${account.id}`}>
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3"><div><h3 id={`address-form-${account.id}`} className="text-[13px] font-medium text-[var(--md-ink)]">{t(editingAddress ? "Edit operational address" : "Add operational address")}</h3><p className="mt-1 text-[11.5px] leading-4 text-[var(--md-subtle)]">{t("Select another table row to change the address shown here. Assign every purpose this address serves, then mark defaults and local opening hours.")}</p></div><Button variant="ghost" className="h-8" onClick={() => { setAddressOpen(false); setEditingAddress(null); setError(null) }} disabled={saving}>{t("Close form")}</Button></div>
           <div className="grid gap-5">
-            <section className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]" aria-label={t("Find an address online")}>
-              <div className="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)]">
-                <Field label="Country"><select value={address.countryCode ?? ""} onChange={(event) => { setAddress((value) => ({ ...value, countryCode: event.target.value })); setAddressSearchQuery(""); setAddressSuggestions([]) }} className={selectClass}><option value="">{t("Choose country first")}</option>{countryOptions.map((country) => <option key={country.code} value={country.code}>{country.name} · {country.code}</option>)}</select></Field>
-                <Field label="Postcode, address or business"><Input value={addressSearchQuery} onChange={(event) => setAddressSearchQuery(event.target.value)} disabled={!address.countryCode} placeholder={address.countryCode ? t("Start typing to search online") : t("Choose a country first")} className={fieldClass} autoComplete="off" /></Field>
-              </div>
-              {addressSearchState === "loading" ? <p role="status" className="mt-2 text-[11px] text-[var(--md-subtle)]">{t("Searching addresses…")}</p> : null}
-              {addressSearchMessage ? <p role={addressSearchState === "error" ? "alert" : "status"} className={cn("mt-2 text-[11px] leading-4", addressSearchState === "error" ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]")}>{addressSearchMessage}</p> : null}
-              {addressSuggestions.length ? <div className="mt-2 divide-y divide-[var(--md-line)] overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">{addressSuggestions.map((suggestion) => <button key={suggestion.id} type="button" className="block w-full px-3 py-2 text-start hover:bg-[var(--md-surface-tint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent)]" onClick={() => void chooseAddressSuggestion(suggestion)}><span className="block text-[12px] font-medium text-[var(--md-ink)]">{suggestion.label}</span><span className="block text-[11px] text-[var(--md-subtle)]">{suggestion.detail}</span></button>)}</div> : null}
-            </section>
+            <Field label="Country"><select value={address.countryCode ?? ""} onChange={event => setAddress(current => ({ ...current, countryCode: event.target.value }))} className={selectClass}><option value="">{t("Choose country")}</option>{countryOptions.map(country => <option key={country.code} value={country.code}>{country.name} · {country.code}</option>)}</select></Field>
             <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(270px,2fr)]">
               <section aria-labelledby={`address-details-${account.id}`}>
                 <h4 id={`address-details-${account.id}`} className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Address details")}</h4>
                 <div className="grid gap-1.5">
                   <InlineField label="Address name"><Input value={address.name ?? ""} onChange={(event) => setAddress((value) => ({ ...value, name: event.target.value }))} className={compactFieldClass} /></InlineField>
-                  {formattedAddressFields.map((field) => <InlineField key={field.key} label={field.label}><Input value={address[field.key] ?? ""} onChange={(event) => setAddress((value) => ({ ...value, [field.key]: event.target.value }))} className={compactFieldClass} dir={field.dir} /></InlineField>)}
+                  {formattedAddressFields.map((field) => <InlineField key={field.key} label={field.label}>{field.key === "line1" || field.key === "postZipCode" ? <AddressSearch field={field.key} label={field.label} hideLabel value={address[field.key] ?? ""} disabled={saving} onChange={text => setAddress(current => ({ ...current, [field.key]: text }))} onSelect={selected => setAddress(current => ({ ...current, ...selected }))} inputClassName={compactFieldClass} /> : <Input value={address[field.key] ?? ""} onChange={(event) => setAddress((value) => ({ ...value, [field.key]: event.target.value }))} className={compactFieldClass} dir={field.dir} />}</InlineField>)}
                   <InlineField label="Time zone"><Input value={address.timeZone} onChange={(event) => setAddress((value) => ({ ...value, timeZone: event.target.value }))} className={compactFieldClass} dir="ltr" /></InlineField>
                   <InlineField label="UN/LOCODE"><Input value={address.unlocode ?? ""} maxLength={5} onChange={(event) => setAddress((value) => ({ ...value, unlocode: event.target.value.toUpperCase() }))} className={compactFieldClass} dir="ltr" /></InlineField>
                   <InlineField label="Switchboard phone"><Input value={address.phone ?? ""} onChange={(event) => setAddress((value) => ({ ...value, phone: event.target.value }))} className={compactFieldClass} dir="ltr" /></InlineField>

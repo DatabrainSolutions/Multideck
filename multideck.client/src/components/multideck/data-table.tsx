@@ -1,3 +1,4 @@
+import { TableScrollRail, getTableStickyBounds } from "@/components/ui/table-viewport"
 import { Fragment, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
@@ -36,7 +37,10 @@ export type DataTableColumn<Row> = {
   cellClassName?: string
   canHide?: boolean
   canPin?: boolean
+  /** Keep this control column after all movable columns. Opt-in per table. */
+  fixedEnd?: boolean
   defaultHidden?: boolean
+  /** Enabled by default for data columns; set false for a fixed control column. */
   resizable?: boolean
   sortValue?: (row: Row) => string | number | null | undefined
   /** Exact CSV value for a displayed column. Falls back to the row value, sort value, then rendered text. */
@@ -98,6 +102,22 @@ type RowContextMenu<Row> = {
   y: number
 }
 
+type StickyHeaderLayout = {
+  visible: boolean
+  left: number
+  maskLeft: number
+  maskWidth: number
+  top: number
+  width: number
+  tableWidth: number
+  scrollLeft: number
+  columnWidths: number[]
+  nested: boolean
+  dialog: boolean
+}
+
+const hiddenStickyHeader: StickyHeaderLayout = { visible: false, left: 0, maskLeft: 0, maskWidth: 0, top: 0, width: 0, tableWidth: 0, scrollLeft: 0, columnWidths: [], dialog: false, nested: false }
+
 type DataTableProps<Row> = {
   columns: DataTableColumn<Row>[]
   rows: Row[]
@@ -119,6 +139,10 @@ type DataTableProps<Row> = {
   contentBeforeTable?: ReactNode
   /** Lets an intentionally compact register keep its controls on one desktop row. */
   compactToolbar?: boolean
+  /** Let a register without view tabs spread its search and filters across the toolbar. */
+  fillToolbarSpace?: boolean
+  /** Keep a draggable horizontal rail in view while scrolling through a wide table. */
+  viewportScrollRail?: boolean
   emptyState?: ReactNode
   minimumWidth?: number
   showToolbar?: boolean
@@ -226,6 +250,8 @@ export function DataTable<Row>({
   toolbarOptions,
   contentBeforeTable,
   compactToolbar = false,
+  fillToolbarSpace = false,
+  viewportScrollRail = true,
   emptyState,
   minimumWidth: minimumWidthOverride,
   showToolbar = true,
@@ -278,6 +304,8 @@ export function DataTable<Row>({
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null)
   const tableContainerRef = useRef<HTMLDivElement>(null)
+  const stickyHeaderScrollRef = useRef<HTMLDivElement>(null)
+  const [stickyHeaderLayout, setStickyHeaderLayout] = useState<StickyHeaderLayout>(hiddenStickyHeader)
   const [containerWidth, setContainerWidth] = useState(0)
   // A tablet with its sidebar open, or a table inside a drawer, can have much
   // less room than the viewport. Adapt to the space the register actually owns.
@@ -317,6 +345,60 @@ export function DataTable<Row>({
     observer.observe(container)
     return () => observer.disconnect()
   }, [])
+
+  useLayoutEffect(() => {
+    if (!viewportScrollRail) return
+    const scrollArea = tableContainerRef.current?.querySelector<HTMLElement>('[data-slot="table-container"]')
+    const table = scrollArea?.querySelector("table")
+    const header = table?.querySelector("thead")
+    if (!scrollArea || !table || !header) return
+
+    let frame = 0
+    const sync = () => {
+      frame = 0
+      const rect = scrollArea.getBoundingClientRect()
+      const mainRect = scrollArea.closest("main")?.getBoundingClientRect()
+      const headerHeight = header.getBoundingClientRect().height
+      const bounds = getTableStickyBounds(scrollArea)
+      const top = bounds.top
+      const columnWidths = [...header.querySelectorAll<HTMLElement>("tr:first-child th")].map((cell) => cell.getBoundingClientRect().width)
+      const next: StickyHeaderLayout = {
+        visible: rect.top < top && Math.min(rect.bottom, bounds.bottom) > top + headerHeight && rect.right > bounds.left && rect.left < bounds.right,
+        left: rect.left,
+        maskLeft: mainRect?.left ?? rect.left,
+        maskWidth: mainRect?.width ?? rect.width,
+        top,
+        width: rect.width,
+        tableWidth: table.getBoundingClientRect().width,
+        scrollLeft: scrollArea.scrollLeft,
+        columnWidths,
+        dialog: bounds.dialog,
+        nested: bounds.nested,
+      }
+      setStickyHeaderLayout((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next)
+    }
+    const queueSync = () => { if (!frame) frame = window.requestAnimationFrame(sync) }
+    const observer = new ResizeObserver(queueSync)
+    observer.observe(scrollArea)
+    observer.observe(table)
+    observer.observe(header)
+    header.querySelectorAll("tr:first-child th").forEach((cell) => observer.observe(cell))
+    scrollArea.addEventListener("scroll", queueSync, { passive: true })
+    document.addEventListener("scroll", queueSync, true)
+    window.addEventListener("resize", queueSync)
+    sync()
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      observer.disconnect()
+      scrollArea.removeEventListener("scroll", queueSync)
+      document.removeEventListener("scroll", queueSync, true)
+      window.removeEventListener("resize", queueSync)
+    }
+  }, [viewportScrollRail, widths, order, hidden, pinned])
+
+  useLayoutEffect(() => {
+    if (stickyHeaderScrollRef.current) stickyHeaderScrollRef.current.scrollLeft = stickyHeaderLayout.scrollLeft
+  }, [stickyHeaderLayout])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -420,7 +502,7 @@ export function DataTable<Row>({
   const orderedColumns = useMemo(() => {
     const lookup = new Map(columns.map((column) => [column.id, column]))
     const resolved = order.map((id) => lookup.get(id)).filter((column): column is DataTableColumn<Row> => Boolean(column))
-    return [...resolved.filter((column) => pinned.has(column.id)), ...resolved.filter((column) => !pinned.has(column.id))]
+    return [...resolved.filter((column) => !column.fixedEnd && pinned.has(column.id)), ...resolved.filter((column) => !column.fixedEnd && !pinned.has(column.id)), ...resolved.filter((column) => column.fixedEnd)]
   }, [columns, order, pinned])
 
   const visibleColumns = orderedColumns.filter((column) => !hidden.has(column.id))
@@ -429,7 +511,7 @@ export function DataTable<Row>({
   const pinnedOffsets = new Map<string, number>()
   let nextOffset = selectionColumnWidth
   visibleColumns.forEach((column) => {
-    if (!pinned.has(column.id)) return
+    if (column.fixedEnd || !pinned.has(column.id)) return
     pinnedOffsets.set(column.id, nextOffset)
     nextOffset += columnWidth(column)
   })
@@ -437,7 +519,17 @@ export function DataTable<Row>({
   // Saved pins are retained and return when the register has room again.
   const stickyColumnsEnabled = containerWidth >= 768 && nextOffset <= containerWidth * 0.5
 
-  const minimumWidth = (minimumWidthOverride ?? Math.max(visibleColumns.reduce((width, column) => width + columnWidth(column), 0), 720)) + selectionColumnWidth
+  const contentWidth = visibleColumns.reduce((width, column) => width + columnWidth(column), 0) + selectionColumnWidth
+  // Once a column is resized, keep the widths that were actually on
+  // screen. Auto table layout otherwise redistributes spare room across every
+  // column, so a dragged edge appears to move from both sides.
+  const fixedColumnLayout = viewportScrollRail && visibleColumns.every((column) => widths[column.id] !== undefined)
+  const minimumWidth = fixedColumnLayout
+    ? Math.max(minimumWidthOverride ?? 720, contentWidth)
+    : (minimumWidthOverride ?? Math.max(contentWidth - selectionColumnWidth, 720)) + selectionColumnWidth
+  const trailingSpace = fixedColumnLayout ? Math.max(0, Math.max(containerWidth, minimumWidth) - contentWidth) : 0
+  const spacerBeforeId = visibleColumns.find((column) => column.fixedEnd)?.id
+  const fixedTableWidth = fixedColumnLayout ? contentWidth + trailingSpace : undefined
   const hasCustomLayout = Boolean(sort) || hidden.size !== defaultHidden.length || [...hidden].some((id) => !defaultHidden.includes(id)) || Object.keys(widths).length > 0 || pinned.size > 0 || order.some((id, index) => id !== columnIds[index])
   const contextColumn = contextMenu ? columns.find((column) => column.id === contextMenu.columnId) : undefined
   const sortedRows = useMemo(() => {
@@ -615,7 +707,7 @@ export function DataTable<Row>({
   }
 
   function moveColumn(sourceId: string, targetId: string) {
-    if (sourceId === targetId) return
+    if (sourceId === targetId || columns.find((column) => column.id === sourceId)?.fixedEnd) return
     setOrder((current) => {
       const next = current.filter((id) => id !== sourceId)
       const targetIndex = next.indexOf(targetId)
@@ -625,9 +717,10 @@ export function DataTable<Row>({
   }
 
   function moveColumnByStep(columnId: string, step: -1 | 1) {
+    if (columns.find((column) => column.id === columnId)?.fixedEnd) return
     const columnIsPinned = pinned.has(columnId)
     const groupOrder = orderedColumns
-      .filter((column) => pinned.has(column.id) === columnIsPinned)
+      .filter((column) => !column.fixedEnd && pinned.has(column.id) === columnIsPinned)
       .map((column) => column.id)
     const currentIndex = groupOrder.indexOf(columnId)
     const targetIndex = currentIndex + step
@@ -656,7 +749,7 @@ export function DataTable<Row>({
   }
 
   function togglePinned(column: DataTableColumn<Row>) {
-    if (column.canPin === false) return
+    if (column.canPin === false || column.fixedEnd) return
     const next = new Set(pinned)
     if (next.has(column.id)) next.delete(column.id)
     else {
@@ -700,6 +793,7 @@ export function DataTable<Row>({
   }
 
   function openColumnContextMenu(column: DataTableColumn<Row>, event: ReactMouseEvent<HTMLTableCellElement>) {
+    if (column.fixedEnd) return
     event.preventDefault()
     const menuWidth = 252
     const menuHeight = sort?.id === column.id ? 304 : 264
@@ -714,10 +808,12 @@ export function DataTable<Row>({
     event.preventDefault()
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
+    const renderedWidths = viewportScrollRail ? captureRenderedColumnWidths() : null
+    if (renderedWidths) setWidths((current) => ({ ...current, ...renderedWidths }))
     resizeStart.current = {
       columnId: column.id,
       x: event.clientX,
-      width: columnWidth(column),
+      width: renderedWidths?.[column.id] ?? columnWidth(column),
       min: column.minWidth ?? 84,
       max: column.maxWidth ?? 480,
     }
@@ -727,7 +823,8 @@ export function DataTable<Row>({
   function resizeColumnFromKeyboard(column: DataTableColumn<Row>, event: React.KeyboardEvent<HTMLElement>) {
     const min = column.minWidth ?? 84
     const max = column.maxWidth ?? 480
-    const currentWidth = columnWidth(column)
+    const renderedWidths = viewportScrollRail ? captureRenderedColumnWidths() : null
+    const currentWidth = renderedWidths?.[column.id] ?? columnWidth(column)
     const step = event.shiftKey ? 24 : 8
     let nextWidth = currentWidth
 
@@ -739,7 +836,15 @@ export function DataTable<Row>({
 
     event.preventDefault()
     event.stopPropagation()
-    setWidths((current) => ({ ...current, [column.id]: Math.max(min, Math.min(max, nextWidth)) }))
+    setWidths((current) => ({ ...current, ...renderedWidths, [column.id]: Math.max(min, Math.min(max, nextWidth)) }))
+  }
+
+  function captureRenderedColumnWidths() {
+    const cells = tableContainerRef.current?.querySelectorAll<HTMLElement>('[data-slot="table-container"] thead tr:first-child th:not([data-table-spacer])')
+    if (!cells) return null
+    const offset = selectionMode ? 1 : 0
+    if (cells.length < visibleColumns.length + offset) return null
+    return Object.fromEntries(visibleColumns.map((column, index) => [column.id, Math.round(cells[index + offset].getBoundingClientRect().width)]))
   }
 
   function stickyStyle(column: DataTableColumn<Row>): CSSProperties | undefined {
@@ -815,6 +920,96 @@ export function DataTable<Row>({
     </motion.div>
   ) : null
 
+  const renderTableHeader = (hiddenHeader: boolean) => (
+        <TableHeader aria-hidden={hiddenHeader || undefined} inert={hiddenHeader || undefined}>
+          <TableRow className="border-[var(--md-line)] bg-[var(--md-surface-soft)] hover:bg-[var(--md-surface-soft)]">
+            {selectionMode ? (
+              <TableHead
+                data-table-selection-column
+                style={{
+                  width: selectionColumnWidth,
+                  minWidth: selectionColumnWidth,
+                  position: "sticky",
+                  ...(direction === "rtl" ? { right: 0 } : { left: 0 }),
+                }}
+                className={cn("z-[5] bg-[var(--md-surface-soft)] p-0 text-center", direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]")}
+              >
+                <motion.div
+                  initial={reduceMotion ? false : { opacity: 0, x: direction === "rtl" ? 8 : -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  className="grid h-full min-h-10 place-items-center"
+                >
+                  <Checkbox
+                    checked={allRowsSelected ? true : pageRows.some((row) => selectionKeys.has(getRowKey(row))) ? "indeterminate" : false}
+                    onCheckedChange={toggleAllRows}
+                    aria-label={t(allRowsSelected ? "Deselect all rows" : "Select all rows")}
+                    className="size-[18px] rounded-[var(--md-radius-xs)]"
+                  />
+                </motion.div>
+              </TableHead>
+            ) : null}
+            {visibleColumns.map((column) => {
+              const isPinned = stickyColumnsEnabled && !column.fixedEnd && pinned.has(column.id)
+              return (
+                <Fragment key={`${column.id}:${isPinned ? "pinned" : "unpinned"}`}>
+                {trailingSpace > 0 && column.id === spacerBeforeId ? <TableHead aria-hidden="true" data-table-spacer className="bg-[var(--md-surface-soft)] p-0" style={{ width: trailingSpace }} /> : null}
+                <TableHead
+                  draggable={!column.fixedEnd}
+                  onDragStart={(event) => {
+                    if (resizeStart.current || column.fixedEnd) {
+                      event.preventDefault()
+                      return
+                    }
+                    setDraggingId(column.id)
+                  }}
+                  onDragEnd={() => setDraggingId(null)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragEnter={() => draggingId && moveColumn(draggingId, column.id)}
+                  onContextMenu={(event) => openColumnContextMenu(column, event)}
+                  aria-sort={sort?.id === column.id ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}
+                  style={{ width: columnWidth(column), minWidth: columnWidth(column), ...stickyStyle(column) }}
+                  className={cn("group/header relative z-[1] bg-[var(--md-surface-soft)] pe-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,box-shadow,opacity] duration-200", columnAlignment(column), isPinned && "z-[3] bg-[var(--md-table-pinned-bg)]", isPinned && (direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]"), draggingId === column.id && "opacity-40", resizingId === column.id && "bg-[var(--md-surface-tint)]", column.headerClassName)}
+                >
+                  <span className={cn(
+                    "inline-flex min-w-0 items-center gap-1.5",
+                    columnAlignment(column) === "text-end" && "w-full justify-end",
+                    columnAlignment(column) === "text-center" && "w-full justify-center",
+                  )}>
+                    {!column.fixedEnd ? <GripVertical className="size-3 -ms-1 text-[var(--md-subtle)] opacity-0 transition-opacity group-hover/header:opacity-70" strokeWidth={1.3} aria-hidden="true" /> : null}
+                    {column.sortValue ? (
+                      <button type="button" onClick={() => toggleSort(column)} className="inline-flex min-h-6 min-w-0 items-center gap-1.5 rounded-[var(--md-radius-xs)] text-start outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_24%,transparent)]" aria-label={`${t("Sort column")}: ${t(column.label)}`}>
+                        <span className="truncate">{column.headerContent ?? t(column.label)}</span>
+                        {sort?.id === column.id ? (sort.direction === "asc" ? <ArrowUp className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} /> : <ArrowDown className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} />) : <ArrowUpDown className="size-3 shrink-0 text-[var(--md-subtle)] opacity-55" strokeWidth={1.35} />}
+                      </button>
+                    ) : <span className="truncate">{column.headerContent ?? t(column.label)}</span>}
+                    {isPinned ? <Pin className="size-3 text-[var(--md-accent)]" strokeWidth={1.3} aria-label={t("Pinned column")} /> : null}
+                  </span>
+                  {(column.resizable ?? column.kind !== "actions") ? (
+                    <span
+                      role="separator"
+                      tabIndex={0}
+                      aria-orientation="vertical"
+                      aria-valuemin={column.minWidth ?? 84}
+                      aria-valuemax={column.maxWidth ?? 480}
+                      aria-valuenow={columnWidth(column)}
+                      draggable={false}
+                      className={cn("absolute inset-y-0 end-0 z-[5] w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:start-1/2 after:w-px after:-translate-x-1/2 after:bg-[var(--md-accent)] after:opacity-0 after:transition-opacity hover:after:opacity-100 focus-visible:after:opacity-100", viewportScrollRail && "before:absolute before:inset-y-0 before:start-1/2 before:w-px before:bg-[var(--md-hairline)]", resizingId === column.id && "after:opacity-100")}
+                      aria-label={`${t("Resize column")}: ${t(column.label)}`}
+                      onPointerDown={(event) => startResize(column, event)}
+                      onKeyDown={(event) => resizeColumnFromKeyboard(column, event)}
+                    />
+                  ) : null}
+                </TableHead>
+                </Fragment>
+              )
+            })}
+            {trailingSpace > 0 && !spacerBeforeId ? <TableHead data-table-spacer aria-hidden="true" className="bg-[var(--md-surface-soft)] p-0" style={{ width: trailingSpace }} /> : null}
+          </TableRow>
+          {viewportScrollRail ? <TableScrollRail tableRef={tableContainerRef} colSpan={visibleColumns.length + (selectionMode ? 1 : 0) + (trailingSpace > 0 ? 1 : 0)} /> : null}
+        </TableHeader>
+  )
+
   return (
     <div ref={tableContainerRef} data-table-compact={mobileToolbarControls || undefined} className={cn("md-data-table w-full min-w-0", className)}>
       {/* The toolbar wraps by group, never by control. A register with a view
@@ -826,7 +1021,7 @@ export function DataTable<Row>({
         {/* The minimum width is what makes the trailing controls drop to their own
             line as one block. Without it they wrap control by control around the
             leading group and the row loses its reading order. */}
-        {hasTrailingToolbar ? <div data-table-trailing-controls className={cn("ms-auto flex flex-none max-w-full flex-nowrap items-center justify-end gap-1.5 sm:flex-wrap", compactToolbar ? "sm:min-w-[min(100%,520px)]" : "sm:min-w-[min(100%,560px)]")}>
+        {hasTrailingToolbar ? <div data-table-trailing-controls className={cn("ms-auto flex flex-none max-w-full flex-nowrap items-center justify-end gap-1.5 sm:flex-wrap", compactToolbar ? "sm:min-w-[min(100%,520px)]" : "sm:min-w-[min(100%,560px)]", fillToolbarSpace && "sm:w-full sm:flex-1")}>
           <AnimatePresence initial={false}>{selectionControls}</AnimatePresence>
           {mobileToolbarControls && (toolbarSearch || toolbarFilters || toolbarOptions) ? <Popover>
             <PopoverTrigger asChild>
@@ -852,8 +1047,8 @@ export function DataTable<Row>({
             </PopoverContent>
           </Popover> : (
             <>
-              {toolbarSearch ? <div className="order-1 flex min-w-0 items-center [&_input]:!rounded-[var(--md-radius-lg)]">{toolbarSearch}</div> : null}
-              {toolbarFilters ? <div className="order-2 flex min-w-0 flex-wrap items-center justify-end gap-1.5 [&_button]:!rounded-[var(--md-radius-lg)]">{toolbarFilters}</div> : null}
+              {toolbarSearch ? <div className={cn("order-1 flex min-w-0 items-center [&_input]:!rounded-[var(--md-radius-lg)]", fillToolbarSpace && "sm:flex-1")}>{toolbarSearch}</div> : null}
+              {toolbarFilters ? <div className={cn("order-2 flex min-w-0 flex-wrap items-center justify-end gap-1.5 [&_button]:!rounded-[var(--md-radius-lg)]", fillToolbarSpace && "sm:flex-1")}>{toolbarFilters}</div> : null}
               {toolbarOptions ? <div className="order-4 flex min-w-0 flex-wrap items-center justify-end gap-1.5">{toolbarOptions}</div> : null}
             </>
           )}
@@ -891,7 +1086,7 @@ export function DataTable<Row>({
             </div>
             <div className="max-h-[360px] overflow-y-auto p-1 md-scrollbar">
               <AnimatePresence initial={false}>
-                {orderedColumns.map((column) => {
+                {orderedColumns.filter((column) => !column.fixedEnd).map((column) => {
                   const isHidden = hidden.has(column.id)
                   const isPinned = pinned.has(column.id)
                   return (
@@ -908,13 +1103,13 @@ export function DataTable<Row>({
                     >
                       <GripVertical className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
                       <span className={cn("min-w-0 flex-1 truncate font-medium text-[var(--md-ink)]", isHidden && "text-[var(--md-subtle)]")}>{t(column.label)}</span>
-                      <button type="button" disabled={orderedColumns.filter((candidate) => pinned.has(candidate.id) === isPinned)[0]?.id === column.id} onClick={() => moveColumnByStep(column.id, -1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column earlier")}: ${t(column.label)}`}>
+                      <button type="button" disabled={column.fixedEnd || orderedColumns.filter((candidate) => !candidate.fixedEnd && pinned.has(candidate.id) === isPinned)[0]?.id === column.id} onClick={() => moveColumnByStep(column.id, -1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column earlier")}: ${t(column.label)}`}>
                         <ChevronUp className="size-3.5" strokeWidth={1.4} />
                       </button>
-                      <button type="button" disabled={orderedColumns.filter((candidate) => pinned.has(candidate.id) === isPinned).at(-1)?.id === column.id} onClick={() => moveColumnByStep(column.id, 1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column later")}: ${t(column.label)}`}>
+                      <button type="button" disabled={column.fixedEnd || orderedColumns.filter((candidate) => !candidate.fixedEnd && pinned.has(candidate.id) === isPinned).at(-1)?.id === column.id} onClick={() => moveColumnByStep(column.id, 1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column later")}: ${t(column.label)}`}>
                         <ChevronDown className="size-3.5" strokeWidth={1.4} />
                       </button>
-                      <button type="button" disabled={column.canPin === false} onClick={() => togglePinned(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", isPinned ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)]", column.canPin === false && "cursor-not-allowed opacity-25")} aria-label={`${t(isPinned ? "Unpin column" : "Pin column")}: ${t(column.label)}`}>
+                      <button type="button" disabled={column.canPin === false || column.fixedEnd} onClick={() => togglePinned(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", isPinned ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)]", column.canPin === false && "cursor-not-allowed opacity-25")} aria-label={`${t(isPinned ? "Unpin column" : "Pin column")}: ${t(column.label)}`}>
                         <MorphingIcon from={Pin} to={PinOff} active={isPinned} className="size-3.5" strokeWidth={1.4} />
                       </button>
                       <button type="button" disabled={column.canHide === false || (!isHidden && visibleColumns.length <= 1)} onClick={() => toggleHidden(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", !isHidden ? "text-[var(--md-ink)]" : "text-[var(--md-subtle)]", (column.canHide === false || (!isHidden && visibleColumns.length <= 1)) ? "cursor-not-allowed opacity-25" : "hover:bg-[var(--md-surface)]")} aria-label={`${t(isHidden ? "Show column" : "Hide column")}: ${t(column.label)}`}>
@@ -934,90 +1129,13 @@ export function DataTable<Row>({
       {!showToolbar && selectionMode ? <div className="mb-2 flex justify-end"><AnimatePresence initial={false}>{selectionControls}</AnimatePresence></div> : null}
 
       <div data-table-surface className={cn("overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", !showToolbar && "h-full", pageRows.length === 0 && "[container-type:inline-size]")}>
-      <Table aria-label={ariaLabel ? t(ariaLabel) : undefined} className={tableClassName} style={{ minWidth: minimumWidth }}>
-        <TableHeader>
-          <TableRow className="border-[var(--md-line)] bg-[var(--md-surface-soft)] hover:bg-[var(--md-surface-soft)]">
-            {selectionMode ? (
-              <TableHead
-                data-table-selection-column
-                style={{
-                  width: selectionColumnWidth,
-                  minWidth: selectionColumnWidth,
-                  position: "sticky",
-                  ...(direction === "rtl" ? { right: 0 } : { left: 0 }),
-                }}
-                className={cn("z-[5] bg-[var(--md-surface-soft)] p-0 text-center", direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]")}
-              >
-                <motion.div
-                  initial={reduceMotion ? false : { opacity: 0, x: direction === "rtl" ? 8 : -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
-                  className="grid h-full min-h-10 place-items-center"
-                >
-                  <Checkbox
-                    checked={allRowsSelected ? true : pageRows.some((row) => selectionKeys.has(getRowKey(row))) ? "indeterminate" : false}
-                    onCheckedChange={toggleAllRows}
-                    aria-label={t(allRowsSelected ? "Deselect all rows" : "Select all rows")}
-                    className="size-[18px] rounded-[var(--md-radius-xs)]"
-                  />
-                </motion.div>
-              </TableHead>
-            ) : null}
-            {visibleColumns.map((column) => {
-              const isPinned = stickyColumnsEnabled && pinned.has(column.id)
-              return (
-                <TableHead
-                  key={`${column.id}:${isPinned ? "pinned" : "unpinned"}`}
-                  draggable
-                  onDragStart={(event) => {
-                    if (resizeStart.current) {
-                      event.preventDefault()
-                      return
-                    }
-                    setDraggingId(column.id)
-                  }}
-                  onDragEnd={() => setDraggingId(null)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDragEnter={() => draggingId && moveColumn(draggingId, column.id)}
-                  onContextMenu={(event) => openColumnContextMenu(column, event)}
-                  aria-sort={sort?.id === column.id ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}
-                  style={{ width: columnWidth(column), minWidth: columnWidth(column), ...stickyStyle(column) }}
-                  className={cn("group/header relative z-[1] bg-[var(--md-surface-soft)] pe-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,box-shadow,opacity] duration-200", columnAlignment(column), isPinned && "z-[3] bg-[var(--md-table-pinned-bg)]", isPinned && (direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]"), draggingId === column.id && "opacity-40", resizingId === column.id && "bg-[var(--md-surface-tint)]", column.headerClassName)}
-                >
-                  <span className={cn(
-                    "inline-flex min-w-0 items-center gap-1.5",
-                    columnAlignment(column) === "text-end" && "w-full justify-end",
-                    columnAlignment(column) === "text-center" && "w-full justify-center",
-                  )}>
-                    <GripVertical className="size-3 -ms-1 text-[var(--md-subtle)] opacity-0 transition-opacity group-hover/header:opacity-70" strokeWidth={1.3} aria-hidden="true" />
-                    {column.sortValue ? (
-                      <button type="button" onClick={() => toggleSort(column)} className="inline-flex min-h-6 min-w-0 items-center gap-1.5 rounded-[var(--md-radius-xs)] text-start outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_24%,transparent)]" aria-label={`${t("Sort column")}: ${t(column.label)}`}>
-                        <span className="truncate">{column.headerContent ?? t(column.label)}</span>
-                        {sort?.id === column.id ? (sort.direction === "asc" ? <ArrowUp className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} /> : <ArrowDown className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} />) : <ArrowUpDown className="size-3 shrink-0 text-[var(--md-subtle)] opacity-55" strokeWidth={1.35} />}
-                      </button>
-                    ) : <span className="truncate">{column.headerContent ?? t(column.label)}</span>}
-                    {isPinned ? <Pin className="size-3 text-[var(--md-accent)]" strokeWidth={1.3} aria-label={t("Pinned column")} /> : null}
-                  </span>
-                  {column.resizable ? (
-                    <span
-                      role="separator"
-                      tabIndex={0}
-                      aria-orientation="vertical"
-                      aria-valuemin={column.minWidth ?? 84}
-                      aria-valuemax={column.maxWidth ?? 480}
-                      aria-valuenow={columnWidth(column)}
-                      draggable={false}
-                      className={cn("absolute inset-y-0 end-0 z-[5] w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:start-1/2 after:w-px after:-translate-x-1/2 after:bg-[var(--md-accent)] after:opacity-0 after:transition-opacity hover:after:opacity-100 focus-visible:after:opacity-100", resizingId === column.id && "after:opacity-100")}
-                      aria-label={`${t("Resize column")}: ${t(column.label)}`}
-                      onPointerDown={(event) => startResize(column, event)}
-                      onKeyDown={(event) => resizeColumnFromKeyboard(column, event)}
-                    />
-                  ) : null}
-                </TableHead>
-              )
-            })}
-          </TableRow>
-        </TableHeader>
+      <Table enhanced={false} aria-label={ariaLabel ? t(ariaLabel) : undefined} className={tableClassName} style={{ minWidth: minimumWidth, width: fixedTableWidth, tableLayout: fixedColumnLayout ? "fixed" : undefined }}>
+        {fixedColumnLayout ? <colgroup>
+          {selectionMode ? <col style={{ width: selectionColumnWidth }} /> : null}
+          {visibleColumns.map((column) => <Fragment key={column.id}>{trailingSpace > 0 && column.id === spacerBeforeId ? <col style={{ width: trailingSpace }} /> : null}<col style={{ width: columnWidth(column) }} /></Fragment>)}
+          {trailingSpace > 0 && !spacerBeforeId ? <col style={{ width: trailingSpace }} /> : null}
+        </colgroup> : null}
+        {renderTableHeader(stickyHeaderLayout.visible)}
         <TableBody>
           {pageRows.length ? pageRows.map((row) => {
             const rowKey = getRowKey(row)
@@ -1108,8 +1226,10 @@ export function DataTable<Row>({
                   </TableCell>
                 ) : null}
                 {visibleColumns.map((column) => {
-                  const isPinned = stickyColumnsEnabled && pinned.has(column.id)
+                  const isPinned = stickyColumnsEnabled && !column.fixedEnd && pinned.has(column.id)
                   return (
+                    <Fragment key={`${column.id}:${isPinned ? "pinned" : "unpinned"}`}>
+                    {trailingSpace > 0 && column.id === spacerBeforeId ? <TableCell aria-hidden="true" className="p-0" style={{ width: trailingSpace }} /> : null}
                     <TableCell
                       // Recreate the cell when it crosses the sticky boundary. Chromium
                       // can otherwise keep the former sticky layer painted until hover.
@@ -1118,7 +1238,7 @@ export function DataTable<Row>({
                       title={column.cellTitle?.(row)}
                       data-column-kind={column.kind}
                       className={cn(
-                        "transition-[background,box-shadow,opacity] duration-200",
+                        "overflow-hidden text-ellipsis transition-[background,box-shadow,opacity] duration-200",
                         columnAlignment(column),
                         columnDataClass(column),
                         // The pinned colour is opaque. A backdrop filter here creates a
@@ -1137,19 +1257,21 @@ export function DataTable<Row>({
                         {column.cell(row)}
                       </TablePillKindContext.Provider>
                     </TableCell>
+                    </Fragment>
                   )
                 })}
+                {trailingSpace > 0 && !spacerBeforeId ? <TableCell aria-hidden="true" className="p-0" style={{ width: trailingSpace }} /> : null}
               </TableRow>
             )
             return (
               <Fragment key={rowKey}>
                 {wrapRow ? wrapRow(row, rowElement) : rowElement}
-                {renderAfterRow?.(row, visibleColumns.length + (selectionMode ? 1 : 0))}
+                {renderAfterRow?.(row, visibleColumns.length + (selectionMode ? 1 : 0) + (trailingSpace > 0 ? 1 : 0))}
               </Fragment>
             )
           }) : (
             <TableRow className="h-[180px] border-[var(--md-line)] bg-[var(--md-surface)] hover:bg-transparent">
-              <TableCell colSpan={visibleColumns.length + (selectionMode ? 1 : 0)} className="p-0 text-center">
+              <TableCell colSpan={visibleColumns.length + (selectionMode ? 1 : 0) + (trailingSpace > 0 ? 1 : 0)} className="p-0 text-center">
                 <div data-table-empty className="sticky start-0 w-[100cqw] max-w-full px-4 py-4">
                   {emptyState ?? <p className="text-[13px] text-[var(--md-text)]">{t("No records to show")}</p>}
                 </div>
@@ -1174,6 +1296,30 @@ export function DataTable<Row>({
         />
       ) : null}
       </div>
+      {viewportScrollRail && stickyHeaderLayout.visible && typeof document !== "undefined" ? createPortal(
+        <>
+          {!stickyHeaderLayout.dialog && !stickyHeaderLayout.nested ? <div
+            aria-hidden="true"
+            className="pointer-events-none fixed top-0 z-[9] bg-[var(--md-bg)]"
+            style={{ left: stickyHeaderLayout.maskLeft, width: stickyHeaderLayout.maskWidth, height: stickyHeaderLayout.top }}
+          /> : null}
+          <div
+            data-table-sticky-header
+            className="fixed z-20 bg-[var(--md-bg)]"
+            style={{ left: stickyHeaderLayout.left, top: stickyHeaderLayout.top, width: stickyHeaderLayout.width, zIndex: stickyHeaderLayout.dialog ? 60 : 20 }}
+          >
+            <div className="overflow-hidden rounded-t-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
+              <div ref={stickyHeaderScrollRef} className="overflow-x-hidden">
+                <table className={cn("caption-bottom text-sm", tableClassName)} style={{ width: stickyHeaderLayout.tableWidth, tableLayout: "fixed" }}>
+                  <colgroup>{stickyHeaderLayout.columnWidths.map((width, index) => <col key={index} style={{ width }} />)}</colgroup>
+                  {renderTableHeader(false)}
+                </table>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body,
+      ) : null}
       {typeof document !== "undefined" ? createPortal(
         <AnimatePresence>
           {contextMenu && contextColumn ? (

@@ -7,7 +7,7 @@ type FeedState = { loading: boolean; loaded: boolean; error: string | null; pend
 /** One live feed for every mounted notification control. */
 export function createNotificationStore(dependencies: {
   load: () => Promise<Notifications | NotificationFeed>
-  connect: (changed: () => void) => () => void
+  connect: (changed: () => void, revalidate: () => void) => () => void
   onError: (error: unknown, operation: "load" | "save") => void
   onNew?: (notification: WorkspaceNotification) => void
 }) {
@@ -21,16 +21,19 @@ export function createNotificationStore(dependencies: {
   let disconnect: (() => void) | null = null
   const listeners = new Set<() => void>()
   const emit = () => listeners.forEach((listener) => listener())
-  const publish = (next: Notifications) => { notifications = next; emit() }
-  const updateState = (next: Partial<FeedState>) => { state = { ...state, ...next }; emit() }
+  const sameRows = (next: Notifications) => JSON.stringify(next) === JSON.stringify(notifications)
+  const updateState = (next: Partial<FeedState>) => {
+    if (Object.entries(next).every(([key, value]) => state[key as keyof FeedState] === value)) return
+    state = { ...state, ...next }; emit()
+  }
   const unread = (rows: Notifications) => rows.filter((row) => row.status === "unread").length
 
-  function refresh() {
+  function refresh(invalidate = false) {
     if (!listeners.size) return Promise.resolve()
-    if (inFlight || mutations) { needsRefresh = true; return inFlight ?? Promise.resolve() }
+    if (inFlight || mutations) { if (invalidate) needsRefresh = true; return inFlight ?? Promise.resolve() }
     const requestGeneration = generation
     needsRefresh = false
-    updateState({ loading: true })
+    updateState({ loading: !state.loaded })
     const request = dependencies.load()
       .then((result) => {
         if (requestGeneration !== generation || needsRefresh || mutations) return
@@ -40,8 +43,11 @@ export function createNotificationStore(dependencies: {
         const newlyArrived = state.loaded ? feed.notifications.filter((notification) =>
           notification.status === "unread" && !knownIds.has(notification.id) && Date.parse(notification.createdAt) > latestKnownAt,
         ) : []
-        state = { ...state, loaded: true, error: null, unreadCount: feed.unreadCount, total: feed.total }
-        publish(feed.notifications)
+        const rowsChanged = !sameRows(feed.notifications)
+        const stateChanged = !state.loaded || state.error !== null || state.unreadCount !== feed.unreadCount || state.total !== feed.total
+        if (rowsChanged) notifications = feed.notifications
+        if (stateChanged) state = { ...state, loaded: true, error: null, unreadCount: feed.unreadCount, total: feed.total }
+        if (rowsChanged || stateChanged) emit()
         for (const notification of newlyArrived) dependencies.onNew?.(notification)
       })
       .catch((error) => {
@@ -61,7 +67,10 @@ export function createNotificationStore(dependencies: {
 
   function start() {
     const connectionGeneration = generation
-    disconnect = dependencies.connect(() => { if (connectionGeneration === generation) void refresh() })
+    disconnect = dependencies.connect(
+      () => { if (connectionGeneration === generation) void refresh(true) },
+      () => { if (connectionGeneration === generation) void refresh() },
+    )
     void refresh()
   }
 
@@ -85,7 +94,8 @@ export function createNotificationStore(dependencies: {
     reset(preserveVisible = false) {
       stop()
       state = preserveVisible ? { ...state, loading: false, pending: false } : emptyState
-      publish(preserveVisible ? notifications : [])
+      notifications = preserveVisible ? notifications : []
+      emit()
       queueMicrotask(() => { if (listeners.size && !disconnect) start() })
     },
     async mutate(update: (current: Notifications) => Notifications, request: () => Promise<void>, all = false) {
@@ -100,12 +110,14 @@ export function createNotificationStore(dependencies: {
       state = { ...state, pending: true, error: null,
         unreadCount: all ? 0 : Math.max(0, state.unreadCount + unread(next) - unread(previous)),
         total: all && !next.length ? 0 : Math.max(0, state.total + next.length - previous.length) }
-      publish(next)
+      notifications = next
+      emit()
       try { await request(); return requestGeneration === generation }
       catch (error) {
         if (requestGeneration === generation) {
           state = { ...previousState, pending: true, error: "Your notification change could not be saved. Please try again." }
-          publish(previous)
+          notifications = previous
+          emit()
           dependencies.onError(error, "save")
         }
         return false
@@ -118,6 +130,7 @@ export function createNotificationStore(dependencies: {
         }
       }
     },
-    refresh,
+    refresh: () => refresh(),
+    invalidate: () => refresh(true),
   }
 }

@@ -16,6 +16,7 @@ const demoTaxControls = read("../migrations/20260829200354_guard_demo_finance_ta
 const demoReadinessControls = read("../migrations/20260829202112_normalise_demo_finance_readiness.sql")
 const documentRecovery = read("../migrations/20260830111301_finance_document_recovery.sql")
 const tenantOwnedFinanceDocuments = read("../migrations/20260901103000_tenant_owned_finance_documents.sql")
+const multiEntityDexterDrafts = read("../migrations/20260925102000_finance_multi_entity_dexter_drafts.sql")
 const providerPartyBulkSync = read("../migrations/20260902113000_provider_party_bulk_sync.sql")
 const atomicExport = read("../migrations/20260917212723_finance_export_atomic_completion.sql")
 const functionSource = read("../functions/finance-subledger/index.ts")
@@ -398,25 +399,36 @@ test("Dexter has evidence-backed finance reads, allowlisted drafts and event-dri
   assert.doesNotMatch(lifecycle, /openai|anthropic|chat\/completions|generateText/i)
 })
 
-test("finance drafts derive their company from the signed-in tenant", () => {
+test("finance drafts validate a selected active entity inside the signed-in tenant", () => {
   includesEvery(functionSource, [
     "async function tenantLegalEntity",
     '.eq("Company_ID", current.Company_ID)',
-    'if (data.length !== 1) throw new HttpError(409, "This tenant must have exactly one active company before creating finance records.")',
+    '.eq("LegalEntity_ID", requestedId)',
+    '.eq("LegalEntity_IsActive", true)',
+    'if (data.length !== 1) throw new HttpError(400, "Choose the legal entity for this finance record.")',
+    "tenantLegalEntity(admin, current, input.legalEntityId)",
     "const tenantInput: ControlledDraftInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }",
     "const controlledInput: ControlledCashInput = { ...input, legalEntityId: tenantEntity.LegalEntity_ID }",
   ])
   assert.doesNotMatch(tenantOwnedFinanceDocuments, /legalEntityId/)
   assert.doesNotMatch(documentPageSource, /finance-detail-entity|legalEntityId:/)
-  assert.doesNotMatch(appSource, /finance-document-entity|finance-cash-entity/)
-  assert.doesNotMatch(purchaseIntakeSource, /t\("Legal entity"\)|legalEntityId: item\.legalEntityId/)
+  includesEvery(purchaseIntakeSource, ["finance-intake-entity", "legalEntityId: entityId", "Finish or remove this batch before changing legal entity."])
   includesEvery(dexterSource, [
-    "The signed-in tenant company is used automatically.",
-    "type: cleanString(args.type, 40), partyOrgId",
+    "Choose the exact active legal entity before preparing the Finance draft.",
+    "type: cleanString(args.type, 40), legalEntityId, partyOrgId",
+    "FINANCE_EDGE_ACTIONS.has(actionCode) ||",
+    "financeDraftActionChanges(actionCode, argumentsValue)",
+    "Require the exact active legal entity ID within the signed-in company",
+  ])
+  includesEvery(multiEntityDexterDrafts, [
+    "'{properties,legalEntityId}'",
+    "? 'legalEntityId'",
+    "'create_finance_document_draft', 'create_finance_cash_draft'",
+    "AIDexterWatchCapability_Description",
   ])
 })
 
-test("the operator UI covers both ledgers, cash and manual ad hoc sources", () => {
+test("the operator UI covers both ledgers, cash, ad hoc and job sources", () => {
   includesEvery(appSource, [
     "Sales ledger",
     "Purchase ledger",
@@ -428,7 +440,7 @@ test("the operator UI covers both ledgers, cash and manual ad hoc sources", () =
     "Supplier payment",
     "Open document allocations",
     "Exchange rate to",
-    "Send for review",
+    't("Submit")',
     "Approve",
     "unallocatedCashTotals",
     "FINDoc_NativePostingStatusCode",
@@ -439,7 +451,7 @@ test("the operator UI covers both ledgers, cash and manual ad hoc sources", () =
     "text-end",
     "dir=\"ltr\"",
   ])
-  assert.doesNotMatch(appSource, /Ad hoc or ancillary|Freight job|setSourceKind|setSourceJobId/)
+  includesEvery(appSource, ["finance-document-entity", "finance-cash-entity", "legalEntityId: tenantEntityId", "setSourceJobId", "jobChargeOptions={jobChargeOptions}", "!jobLinesReady"])
   includesEvery(financeLineEditorSource, ["Charge code", "Description", "Qty", "Rate", "Tax", "Invoice amount", "Net", "text-end", "dir=\"ltr\""])
   assert.doesNotMatch(financeLineEditorSource, /t\("Line type"\)|t\("Ancillary"\)/)
   assert.doesNotMatch(appSource, /font-mono|ui-monospace|SF Mono/)

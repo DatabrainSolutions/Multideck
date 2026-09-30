@@ -63,6 +63,14 @@
       "destination": "/index.html"
     },
     {
+      "source": "/events",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/events/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/customs/:path*",
       "destination": "/index.html"
     },

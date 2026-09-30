@@ -1,4 +1,4 @@
-import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
+import { Component, startTransition, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "@/lib/theme-provider"
@@ -20,7 +20,7 @@ import { defaultLanguage, isLanguageCode } from "@/i18n/languages"
 import { translateText } from "@/i18n/translate"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
-import { isTenantAdministrator, summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
+import { hasPermission, isTenantAdministrator, summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
 import { recordWorkspacePresence } from "@/lib/admin-audit-api"
 import { getApiAuthSession } from "@/lib/api"
 import {
@@ -33,57 +33,61 @@ import { ThemeProfileSync, themeStorageKey } from "@/lib/theme-preferences"
 import { LanguageProfileSync } from "@/lib/language-preferences"
 import { rememberRecentWorkContext } from "@/lib/recent-work-context"
 import { invalidateWorkspaceBootstrap } from "@/lib/workspace-bootstrap"
+import { useEventsSettings } from "@/lib/company-events-api"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
-const HomePage = lazy(() => import("@/pages/home-page").then((module) => ({ default: module.HomePage })))
-const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
-const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) => ({ default: module.AuthFlowPage })))
-const AccountOnboardingPage = lazy(() => import("@/pages/account-onboarding-page").then((module) => ({ default: module.AccountOnboardingPage })))
-const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
-const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
-const SignatureTeamPage = lazy(() => import("@/pages/signature-team-page").then(module => ({ default: module.SignatureTeamPage })))
-const EmailSignaturesPage = lazy(() => import("@/pages/email-signatures-page").then(module => ({ default: module.EmailSignaturesPage })))
-const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
-const ToDoPage = lazy(() => import("@/pages/to-do-page").then((module) => ({ default: module.ToDoPage })))
-const CalendarPage = lazy(() => import("@/pages/calendar-page").then((module) => ({ default: module.CalendarPage })))
-const MeetingsPage = lazy(() => import("@/pages/meetings-page").then((module) => ({ default: module.MeetingsPage })))
-const PublicBookingPage = lazy(() => import("@/pages/public-booking-page").then((module) => ({ default: module.PublicBookingPage })))
-const MeetingManagePage = lazy(() => import("@/pages/meeting-manage-page").then((module) => ({ default: module.MeetingManagePage })))
-const DocumentsPage = lazy(() => import("@/pages/documents-page").then((module) => ({ default: module.DocumentsPage })))
-const CustomsDeclarationsPage = lazy(() => import("@/pages/customs-declarations-page").then((module) => ({ default: module.CustomsDeclarationsPage })))
-const ScreeningPage = lazy(() => import("@/pages/screening-page").then((module) => ({ default: module.ScreeningPage })))
-const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
-const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then((module) => ({ default: module.NavigationLabPage })))
-const QuoteDetailPage = lazy(() => import("@/pages/quotes-page").then((module) => ({ default: module.QuoteDetailPage })))
-const QuotesRegisterPage = lazy(() => import("@/pages/quotes-register-page").then((module) => ({ default: module.QuotesRegisterPage })))
-const RatesPage = lazy(() => import("@/pages/rates-page").then((module) => ({ default: module.RatesPage })))
-const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.SettingsPage })))
-const AdminPage = lazy(() => import("@/pages/admin-page").then((module) => ({ default: module.AdminPage })))
-const WarehousePage = lazy(() => import("@/pages/warehouse-page").then((module) => ({ default: module.WarehousePage })))
-const BookingDetailPage = lazy(() => import("@/pages/booking-detail-page").then((module) => ({ default: module.BookingDetailPage })))
-const BookingOpenPage = lazy(() => import("@/pages/booking-open-page").then((module) => ({ default: module.BookingOpenPage })))
-const BookingsPage = lazy(() => import("@/pages/bookings-page").then((module) => ({ default: module.BookingsPage })))
-const RoadControlPage = lazy(() => import("@/pages/road-control-page").then((module) => ({ default: module.RoadControlPage })))
-const DomesticRoadBookingPage = lazy(() => import("@/pages/domestic-road-booking-page").then((module) => ({ default: module.DomesticRoadBookingPage })))
-const CrmOverviewPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmOverviewPage })))
-const CrmPhoneCallsPage = lazy(() => import("@/pages/crm-phone-calls-page").then((module) => ({ default: module.CrmPhoneCallsPage })))
-const CrmAccountsPage = lazy(() => import("@/pages/crm-accounts-page").then((module) => ({ default: module.CrmAccountsPage })))
-const CrmAccountDetailPage = lazy(() => import("@/pages/crm-account-detail-page").then((module) => ({ default: module.CrmAccountDetailPage })))
-const CrmLeadsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadsPage })))
-const CrmLeadDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadDetailPage })))
-const LeadConversionPage = lazy(() => import("@/pages/lead-conversion-page").then((module) => ({ default: module.LeadConversionPage })))
-const CrmContactsPage = lazy(() => import("@/pages/crm-contacts-page").then((module) => ({ default: module.CrmContactsPage })))
-const CrmContactDetailPage = lazy(() => import("@/pages/crm-contact-detail-page").then((module) => ({ default: module.CrmContactDetailPage })))
-const CrmDealsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmDealsPage })))
-const CrmDealDetailPage = lazy(() => import("@/pages/crm-deal-detail-page").then((module) => ({ default: module.CrmDealDetailPage })))
-const CrmDrivePage = lazy(() => import("@/pages/crm-drive-page").then((module) => ({ default: module.CrmDrivePage })))
-const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmSettingsPage })))
-const ContactCardsPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardsPage })))
-const ContactCardDetailPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardDetailPage })))
-const ContactCardPublicPage = lazy(() => import("@/pages/contact-card-public-page").then((module) => ({ default: module.ContactCardPublicPage })))
-const QuoteResponsePage = lazy(() => import("@/pages/quote-response-page").then((module) => ({ default: module.QuoteResponsePage })))
-const MileagePage = lazy(() => import("@/pages/mileage-page").then((module) => ({ default: module.MileagePage })))
-const FinancePage = lazy(() => import("@/pages/finance-page").then((module) => ({ default: module.FinancePage })))
+import {
+  HomePage,
+  AgentDexterPage,
+  AuthFlowPage,
+  AccountOnboardingPage,
+  ComponentsGalleryPage,
+  SignatureTeamPage,
+  EmailSignaturesPage,
+  InboxPage,
+  EventsPage,
+  ToDoPage,
+  CalendarPage,
+  MeetingsPage,
+  PublicBookingPage,
+  MeetingManagePage,
+  DocumentsPage,
+  CustomsDeclarationsPage,
+  ScreeningPage,
+  ReportsPage,
+  NavigationLabPage,
+  QuoteDetailPage,
+  QuotesRegisterPage,
+  RatesPage,
+  SettingsPage,
+  AdminPage,
+  WarehousePage,
+  BookingDetailPage,
+  BookingOpenPage,
+  BookingsPage,
+  RoadControlPage,
+  DomesticRoadBookingPage,
+  CrmOverviewPage,
+  CrmPhoneCallsPage,
+  CrmAccountsPage,
+  CrmAccountDetailPage,
+  CrmLeadsPage,
+  CrmLeadDetailPage,
+  LeadConversionPage,
+  CrmContactsPage,
+  CrmContactDetailPage,
+  CrmDealsPage,
+  CrmDealDetailPage,
+  CrmDrivePage,
+  CrmSettingsPage,
+  ContactCardsPage,
+  ContactCardDetailPage,
+  ContactCardPublicPage,
+  QuoteResponsePage,
+  MileagePage,
+  FinancePage,
+  FinanceDirectorDashboardPage,
+} from "@/lib/route-pages"
 
 type AuthStatus = "checking" | "authenticated" | "unauthenticated"
 type ProfileMediaUrls = {
@@ -109,10 +113,25 @@ function preloadImage(url: string) {
   })
 }
 
+/** Admin is for tenant administrators; Finance Directors may open its dashboard. */
+function canOpenAdminRoute(user: AuthUserSummary | null, route: string) {
+  if (route === "/admin" || route === "/admin/finance-dashboard") return hasPermission(user, "Finance.Director.Dashboard.View")
+  if (isTenantAdministrator(user)) return true
+  return ["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) && hasPermission(user, "Email.Signatures.Manage")
+}
+
 const validRoutes = new Set([
   "/onboarding",
   "/",
   "/agent-dexter",
+  "/admin",
+  "/admin/settings",
+  "/admin/sales-crm",
+  "/admin/operations",
+  "/admin/warehouse",
+  "/admin/general-reporting",
+  "/admin/documents-storage",
+  "/admin/customs-compliance",
   "/admin/users",
   "/admin/usage",
   "/admin/finance",
@@ -122,6 +141,7 @@ const validRoutes = new Set([
   "/admin/branding",
   "/admin/email-signatures",
   "/admin/email-signatures/team",
+  "/admin/finance-dashboard",
   "/inbox/signatures",
   "/admin/system-preferences",
   "/admin/activity",
@@ -137,10 +157,9 @@ const validRoutes = new Set([
   "/crm/leads",
   "/crm/drive",
   "/crm/settings",
-  "/customers",
-  "/suppliers",
   "/inbox",
   "/to-do",
+  "/events",
   "/calendar",
   "/calendar/booking-links",
   "/calendar/meetings",
@@ -170,12 +189,19 @@ const validRoutes = new Set([
   "/finance/receivables/approvals",
   "/finance/receivables/cash",
   "/finance/receivables/credit-control",
+  "/finance/receivables/collections",
+  "/finance/receivables/statements",
   "/finance/payables",
   "/finance/payables/approvals",
   "/finance/payables/cash",
   "/finance/payables/intake",
+  "/finance/payables/purchase-orders",
+  "/finance/payables/matching",
+  "/finance/payables/payment-runs",
   "/finance/cash",
   "/finance/cash/reconciliation",
+  "/finance/bank-reconciliation",
+  "/finance/provider-reconciliation",
   "/finance/administration",
   "/finance/systems",
   "/finance/currencies",
@@ -185,12 +211,14 @@ const validRoutes = new Set([
   "/finance/general-ledger/accounts",
   "/finance/general-ledger/journals",
   "/finance/tax",
+  "/finance/vat",
   "/finance/documents",
   "/finance/mappings",
   "/finance/compliance",
   "/finance/controls",
   "/finance/reports",
   "/finance/management/accruals-wip",
+  "/finance/management/profitability",
   "/settings",
   "/warehouse",
   "/warehouse/calendar",
@@ -249,11 +277,26 @@ function isCustomsDeclarationEditRoute(path: string) {
 function getLegacyCrmRoute(path: string) {
   if (path === "/crm/insights") return "/crm"
   if (path === "/crm/marketing") return "/crm/drive"
-  if (path === "/crm/suppliers") return "/suppliers"
-  const supplierDetail = path.match(/^\/crm\/suppliers\/([^/]+)$/)
-  if (supplierDetail) return `/suppliers/${supplierDetail[1]}`
+  // Customers and suppliers are companies with a role: one register, one record.
+  if (/^\/(customers|suppliers|crm\/suppliers)$/.test(path)) return "/crm/accounts"
+  const partyDetail = path.match(/^\/(?:customers|suppliers|crm\/suppliers)\/([^/]+)$/)
+  if (partyDetail) return `/crm/accounts/${partyDetail[1]}`
   return null
 }
+
+/** The full address a legacy CRM link lands on, keeping its query and selecting the matching register view. */
+function getLegacyCrmUrl(pathname: string, search: string) {
+  const route = getLegacyCrmRoute(pathname)
+  if (!route) return null
+  const params = new URLSearchParams(search)
+  const view = /^\/customers$/.test(pathname) ? "customers" : /^\/(suppliers|crm\/suppliers)$/.test(pathname) ? "suppliers" : null
+  if (view && !params.has("view")) params.set("view", view)
+  const query = params.toString()
+  return `${route}${query ? `?${query}` : ""}`
+}
+
+/** Routes that keep their view in the query string, so Back and in-app links must carry it. */
+const queryViewRoutes = new Set(["/crm/accounts"])
 
 const unavailableCrmRoutePrefixes = [
   "/crm/activity",
@@ -330,16 +373,12 @@ function isCrmLeadConversionRoute(path: string) {
   return /^\/crm\/leads\/[^/]+\/convert$/.test(path)
 }
 
-function isCustomerDetailRoute(path: string) {
-  return /^\/(customers|suppliers)\/[^/]+$/.test(path)
-}
-
 function getRoute() {
   if (window.location.pathname === "/app" || window.location.pathname === "/app/") return "/"
   // Home lives at the workspace root. `/home` is the address people type, so it
   // resolves to the same screen rather than a second identity for it.
   if (window.location.pathname === "/home" || window.location.pathname === "/home/") return "/"
-  if (window.location.pathname === "/finance/setup" || window.location.pathname === "/admin/finance") return "/finance/administration"
+  if (window.location.pathname === "/finance/setup") return "/finance/administration"
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
   const legacyCrmRoute = getLegacyCrmRoute(window.location.pathname)
@@ -356,7 +395,6 @@ function getRoute() {
   if (isWarehouseOrderDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehousePurchaseOrderDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehouseItemDetailRoute(window.location.pathname)) return window.location.pathname
-  if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmAccountDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmPhoneCallDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmContactDetailRoute(window.location.pathname)) return window.location.pathname
@@ -368,6 +406,7 @@ function getRoute() {
   if (isQuoteResponseRoute(window.location.pathname)) return window.location.pathname
   if (isPublicBookingRoute(window.location.pathname)) return window.location.pathname
   if (isMeetingManageRoute(window.location.pathname)) return window.location.pathname
+  if (/^\/events\/[0-9a-f-]{36}$/.test(window.location.pathname)) return window.location.pathname
   return validRoutes.has(window.location.pathname) ? window.location.pathname : "/"
 }
 
@@ -401,7 +440,7 @@ function ExternalRouteFallback() {
   )
 }
 
-function WorkspaceFailureFallback({ error }: { error?: Error | null }) {
+function WorkspaceFailureFallback({ error, contained = false }: { error?: Error | null; contained?: boolean }) {
   // Keep the last-resort recovery view independent from React context. During
   // provider teardown (for example after an HMR failure), asking the fallback
   // to read LanguageContext can make the error boundary fail a second time.
@@ -414,8 +453,9 @@ function WorkspaceFailureFallback({ error }: { error?: Error | null }) {
       : defaultLanguage
   const t = (text: string) => translateText(text, language)
 
+  const Container = contained ? "div" : "main"
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--md-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
+    <Container className={`${contained ? "min-h-[360px]" : "min-h-screen"} grid place-items-center bg-[var(--md-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]`}>
       <section className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-[clamp(24px,5vw,48px)] shadow-[var(--md-shadow-soft)]" role="alert">
         <div className="flex items-center gap-3" data-i18n-skip dir="ltr">
           <img src={multideckLogoMark} alt="" className="size-6" />
@@ -434,13 +474,14 @@ function WorkspaceFailureFallback({ error }: { error?: Error | null }) {
           {t("Reload page")}
         </button>
       </section>
-    </main>
+    </Container>
   )
 }
 
 class WorkspaceErrorBoundary extends Component<{
   children: ReactNode
   resetKey: string
+  contained?: boolean
 }, { error: Error | null }> {
   state = { error: null as Error | null }
 
@@ -459,7 +500,7 @@ class WorkspaceErrorBoundary extends Component<{
   }
 
   render() {
-    return this.state.error ? <WorkspaceFailureFallback error={this.state.error} /> : this.props.children
+    return this.state.error ? <WorkspaceFailureFallback error={this.state.error} contained={this.props.contained} /> : this.props.children
   }
 }
 
@@ -581,7 +622,7 @@ export default function App() {
       const destination = getRoute()
       // Settings keeps its active panel in the query/hash. Preserve it when
       // the sidebar dispatches popstate, before panel listeners read the URL.
-      const destinationUrl = ['/agent-dexter','/to-do','/settings'].includes(destination) && window.location.pathname === destination
+      const destinationUrl = (['/agent-dexter','/to-do','/settings'].includes(destination) || queryViewRoutes.has(destination)) && window.location.pathname === destination
         ? `${destination}${window.location.search}${window.location.hash}` : destination
       const proceed = () => {
         window.history.replaceState(window.history.state, "", destinationUrl)
@@ -746,10 +787,23 @@ export default function App() {
     startTransition(() => setRoute(getRoute()))
   }, [authStatus, currentUser, route])
 
+  const isEventsRoute = route === "/events" || route.startsWith("/events/")
+  const { settings: eventsSettings, resolved: eventsResolved } = useEventsSettings(authStatus === "authenticated" && currentUser?.actorType === "internal")
+  // Events is a company-wide opt-in. The server refuses every read when it is
+  // off; this keeps the route from being opened by address as well.
   useEffect(() => {
-    if (authStatus !== "authenticated" || !route.startsWith("/admin") || isTenantAdministrator(currentUser) || (["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) && currentUser?.permissions.includes("Email.Signatures.Manage"))) return
+    if (!isEventsRoute || authStatus !== "authenticated" || !eventsResolved || eventsSettings?.enabled) return
+    if (currentUser?.actorType === "internal" && eventsSettings === null) return
     window.history.replaceState({}, "", "/app")
     startTransition(() => setRoute("/"))
+  }, [authStatus, currentUser?.actorType, eventsResolved, eventsSettings, isEventsRoute])
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || !route.startsWith("/admin") || canOpenAdminRoute(currentUser, route)) return
+    // An administrator without the Finance Director role goes back to Admin.
+    const fallback = isTenantAdministrator(currentUser) ? "/admin/settings" : "/"
+    window.history.replaceState({}, "", fallback === "/" ? "/app" : fallback)
+    startTransition(() => setRoute(fallback))
   }, [authStatus, currentUser, route])
 
   useEffect(() => {
@@ -769,17 +823,22 @@ export default function App() {
   // Old and prototype-only CRM bookmarks are rewritten in place, so the address
   // bar only shows routes that operators can genuinely use.
   useEffect(() => {
-    if (window.location.pathname === "/finance/setup" || window.location.pathname === "/admin/finance" || getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname)) {
+    const legacyCrmUrl = getLegacyCrmUrl(window.location.pathname, window.location.search)
+    if (legacyCrmUrl) {
+      window.history.replaceState(window.history.state, "", legacyCrmUrl)
+    } else if (window.location.pathname === "/finance/setup" || getUnavailableCrmRoute(window.location.pathname)) {
       window.history.replaceState(window.history.state, "", `${route}${window.location.search}`)
     }
   }, [route])
 
   function navigate(path: string) {
     path = getUnavailableCrmRoute(path) ?? path
+    const [requestedPath, requestedQuery = ""] = path.split("?", 2)
+    path = getLegacyCrmUrl(requestedPath, requestedQuery) ?? path
     if (currentUser?.actorType === "customer" && !canCustomerOpenRoute(currentUser, path)) {
       path = currentUser.landingPath
     }
-    if (path.startsWith("/admin") && !isTenantAdministrator(currentUser) && !(["/admin/email-signatures", "/admin/email-signatures/team"].includes(path) && currentUser?.permissions.includes("Email.Signatures.Manage"))) path = "/"
+    if (path.startsWith("/admin") && !canOpenAdminRoute(currentUser, path.split(/[?#]/, 1)[0])) path = isTenantAdministrator(currentUser) ? "/admin/settings" : "/"
     if (path !== route && !window.dispatchEvent(new CustomEvent("multideck:before-navigate", { cancelable: true, detail: { proceed: () => navigate(path) } }))) return
     if (path === "/bookings/new" || path === "/bookings/provisional" || path === "/road-control/new") {
       bookingCreationTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -787,10 +846,13 @@ export default function App() {
       return
     }
     setBookingCreation(null)
-    if (path === route) return
+    const sameQueryView = queryViewRoutes.has(route) && path.split("?", 1)[0] === route
+    if (sameQueryView ? path === `${window.location.pathname}${window.location.search}` : path === route) return
     rememberRecentWorkContext(route)
     window.history.pushState({}, "", path === "/" ? "/app" : path)
     startTransition(() => setRoute(getRoute()))
+    // The route itself is unchanged, so let the register re-read its view from the address.
+    if (sameQueryView) window.dispatchEvent(new PopStateEvent("popstate"))
   }
 
   return (
@@ -849,6 +911,7 @@ export default function App() {
             ) : (
               <AppShell route={directBookingCreation ? (route === "/road-control/new" ? "/road-control" : "/bookings") : route} navigate={navigate} currentUser={currentUser}>
                 <div className="contents" inert={bookingCreationMode ? true : undefined} aria-hidden={bookingCreationMode ? true : undefined}>
+                <WorkspaceErrorBoundary resetKey={route} contained>
                 <Suspense fallback={<RouteFallback />}>
                   {route === "/components" ? <ComponentsGalleryPage /> : null}
                   {route === "/agent-dexter" ? (
@@ -874,14 +937,12 @@ export default function App() {
                   {isCrmDealDetailRoute(route) ? <CrmDealDetailPage key={route} dealId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
                   {route === "/crm/drive" ? <CrmDrivePage currentUser={currentUser} /> : null}
                   {route === "/crm/settings" ? <CrmSettingsPage currentUser={currentUser} /> : null}
-                  {route === "/customers" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} organisationType="customer" /> : null}
-                  {route === "/suppliers" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} organisationType="supplier" /> : null}
-                  {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
                   {route === "/inbox/signatures" ? <EmailSignaturesPage personal navigate={navigate} /> : null}
                   {route === "/admin/email-signatures/team" ? <SignatureTeamPage navigate={navigate} /> : null}
                   {route === "/admin/email-signatures" ? <EmailSignaturesPage navigate={navigate} /> : null}
                   {route === "/to-do" ? <ToDoPage operatorName={currentUser?.name} /> : null}
+                  {(route === "/events" || route.startsWith("/events/")) && currentUser?.actorType === "internal" ? <EventsPage route={route} navigate={navigate} /> : null}
                   {route === "/calendar" ? <CalendarPage navigate={navigate} /> : null}
                   {route === "/calendar/meetings" || route === "/calendar/booking-links" ? <MeetingsPage navigate={navigate} view={route === "/calendar/booking-links" ? "Booking links" : "Appointments"} /> : null}
                   {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}
@@ -906,7 +967,8 @@ export default function App() {
                       onCoverPhotoChange={handleCoverPhotoChange}
                     />
                   ) : null}
-                  {route.startsWith("/admin") && !["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) ? <AdminPage route={route as AdminRoute} currentUser={currentUser} /> : null}
+                  {(route === "/admin" || route === "/admin/finance-dashboard") && canOpenAdminRoute(currentUser, route) ? <FinanceDirectorDashboardPage /> : null}
+                  {route.startsWith("/admin") && !["/admin", "/admin/email-signatures", "/admin/email-signatures/team", "/admin/finance-dashboard"].includes(route) ? <AdminPage route={route as AdminRoute} currentUser={currentUser} navigate={navigate} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
                   {route === "/bookings" || route === "/bookings/new" || route === "/bookings/provisional" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} currentUser={currentUser} /> : null}
@@ -914,6 +976,7 @@ export default function App() {
                   {isRoadJobDetailRoute(route) ? <DomesticRoadBookingPage key={route} navigate={navigate} roadJobId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/" ? <HomePage navigate={navigate} currentUser={currentUser} /> : null}
                 </Suspense>
+                </WorkspaceErrorBoundary>
                 </div>
                 {bookingCreationMode ? <Suspense fallback={null}>
                   <BookingOpenPage

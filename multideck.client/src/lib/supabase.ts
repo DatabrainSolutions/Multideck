@@ -1,3 +1,4 @@
+import { registerReadCache } from "@/lib/register-read-cache"
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js"
 import { isTrainingWorkspace, trainingConfigurationError, trainingSupabaseUrl, trainingSupabaseKey } from "@/lib/workspace-environment"
 import { createTrainingAccessCache } from "@/lib/training-access"
@@ -108,6 +109,7 @@ export async function refreshWorkspaceSession() {
 }
 
 setCrmReadCacheScope(dataSupabaseUrl, null)
+registerReadCache.setScope(dataSupabaseUrl, null)
 let previousAuthUserId: string | null = null
 authSupabase?.auth.onAuthStateChange((event, session) => {
   // Keep this callback synchronous: awaiting another Auth method here can
@@ -117,6 +119,7 @@ authSupabase?.auth.onAuthStateChange((event, session) => {
   const userId = session?.user.id ?? null
   const identityChanged = previousAuthUserId !== userId
   previousAuthUserId = userId
+  registerReadCache.setScope(dataSupabaseUrl, userId, event === "TOKEN_REFRESHED" || event === "USER_UPDATED")
   const changed = setCrmReadCacheScope(dataSupabaseUrl, userId, event === "TOKEN_REFRESHED" || event === "USER_UPDATED")
   if (changed && typeof window !== "undefined") window.dispatchEvent(new CustomEvent(authenticatedAccessChangedEvent, { detail: { identityChanged } }))
 })

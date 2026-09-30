@@ -29,7 +29,7 @@ test("the invoice header leads with bill-to identity and document fields without
     'debit_note: "Supplier credit note information"',
     'ledger === "receivables" ? "Bill to" : "Supplier"',
     '"No billing address is saved for this account."',
-    '"Job reference (optional)"',
+    'sourceKind === "job" ? <InvoiceInformationField htmlFor="finance-detail-job" label={t("Job reference")}',
     'disabled={!editable}',
     "detail?.billingAddress ?? null",
   ]) assert.ok(page.includes(evidence), `Missing invoice header evidence: ${evidence}`)

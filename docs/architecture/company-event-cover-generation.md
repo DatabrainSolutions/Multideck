@@ -1,0 +1,7 @@
+# Company event covers
+
+The Events wizard creates one Muse Image cover when an organiser saves a new event without an uploaded image. The request includes the title, location, date and a shortened version of the details. It asks for a 21:9 photographic scene with no printed text or logos. Uploaded images always take precedence, and editing an existing event does not trigger a new generation.
+
+The browser calls the authenticated `company-event-image` Edge Function. It checks the active internal user, `Events.Manage` permission and Events enablement before using the tenant's `FAL_API_KEY`. The function requests one WebP image from `meta/muse-image/text-to-image`, downloads it only from a fal media host, verifies the bytes and size, and stores it in the private `company-event-images` bucket. A stable request ID lets a lost response reuse an already stored image. The wizard then saves the ordinary event record with that storage path; a failed provider call leaves the form ready to retry.
+
+Dexter chat can already inspect company events and create an approval-gated text draft. Automatic cover generation is deliberately limited to the Events wizard because chat's draft action has no image review step and generating an image is a billed provider action. Watching for you remains tied to saved event changes; image generation completes before the event is saved, so it creates no separate watch event.
