@@ -2,6 +2,8 @@
 
 Research checked 1 October 2026. This is a product workflow recommendation, not an assertion that every freight document follows one legal rule.
 
+Current checkpoint note: the transaction evidence below records renderer v60/v61 and studio v71. A later readback found shared-development renderer v62 and studio v73, with transport Draft generation blocked and a newer template-review identity contract. Do not use the historic successful generation as proof of current availability. See [the current dev checkpoint](../verification/2026-10-01-dev-merge-checkpoint.md) and [Harry's handover](../handovers/2026-10-01-harry-freight-handover.md). The previously date-dependent Finance dashboard fixture has also been corrected locally; the mandatory runner now passes 141 PostgreSQL checks plus 9 contracts.
+
 ## Two independent lifecycles
 
 - A template is Draft or Published: whether its layout has been reviewed for use.
