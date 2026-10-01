@@ -1487,6 +1487,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     details: "Use wherever extracted values need to be trusted before they are accepted. Boxes are page fractions, so they stay aligned at any zoom, and an interpolated box such as one row of a table is drawn with a dashed edge to show it is approximate. Selecting a row elsewhere scrolls its box into view, and selecting a box reports back so the two panels stay in step.",
     foundOn: [
       { label: "Invoice import", route: "/customs" },
+      { label: "Supplier document intake", route: "/finance/payables/intake" },
       { label: "Components", route: "/components?component=document-evidence-viewer" },
     ],
     componentCode: `export function DocumentEvidenceViewer({ pages, boxes, activeBoxId, onSelectBox, title }) {
