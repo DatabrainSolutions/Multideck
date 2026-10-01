@@ -1,0 +1,29 @@
+{
+  "meta": {"schemaVersion": 1, "languageCode": "en"},
+  "job": {
+    "number": "DEMO-001", "period": "2026", "direction": "export", "transportMode": "air",
+    "legalEntityName": "Example Freight Company Ltd",
+    "origin": {"unlocode": "GBLHR", "name": "Example Departure Airport"},
+    "destination": {"unlocode": "NLAMS", "name": "Example Arrival Airport"}
+  },
+  "shipper": {
+    "name": "Example Manufacturing Ltd",
+    "address": {"line1": "1 Example Lane", "line2": "Demo Business Park", "city": "Exampletown", "countyOrState": "", "postalCode": "DEMO 1AA", "countryCode": "GB"}
+  },
+  "consignee": {
+    "name": "Example Trading Ltd",
+    "address": {"line1": "2 Sample Street", "line2": "Demo Industrial Park", "city": "Sample City", "countyOrState": "", "postalCode": "DEMO 2BB", "countryCode": "NL"}
+  },
+  "cargo": [{
+    "lineNumber": 1, "commodity": "Fictional machine components", "description": "Demonstration goods only", "packageType": "CTN", "packageQuantity": 24,
+    "grossWeight": 300, "netWeight": 250, "weightUnit": "KGM", "volume": 1.5, "volumeUnit": "MTQ", "marksAndNumbers": "DEMO-CARGO-001", "hsCode": "DEMO", "countryOfOrigin": "GB", "isHazardous": false
+  }],
+  "routing": [{
+    "sequence": 1, "mode": "AIR", "isMainCarriage": true,
+    "origin": {"unlocode": "GBLHR", "name": "Example Departure Airport"},
+    "destination": {"unlocode": "NLAMS", "name": "Example Arrival Airport"},
+    "plannedDepartureAt": "2026-10-20T09:00:00Z", "flightNumber": "EX001", "carrierBookingReference": "DEMO-BOOKING-001",
+    "masterTransportReference": "000-00000001", "houseTransportReference": "DEMO-HAWB-001", "carrierName": "Example Demo Airlines",
+    "carrierAddressLine1": "3 Fictional Avenue", "carrierAddressCity": "Example City"
+  }]
+}

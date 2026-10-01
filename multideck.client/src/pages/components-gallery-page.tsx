@@ -53,6 +53,7 @@ import { BookingCustomerPanel, type BookingCustomer } from "@/components/multide
 import { CargoHandlingEditor } from "@/components/multideck/quote-details/cargo-handling-editor"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { CargoAllocationEditor } from "@/components/multideck/cargo-allocation-editor"
+import { BookingCargoLoadPlanSheet } from "@/components/multideck/booking-cargo-load-plan-sheet"
 import { BookingRouteMilestones } from "@/components/multideck/booking-route-milestones"
 import { BookingDangerousGoodsEditor } from "@/components/multideck/booking-dangerous-goods"
 import { BookingSecurityEvidenceEditor } from "@/components/multideck/booking-security-evidence"
@@ -1981,6 +1982,25 @@ function CargoAllocationEditorPreview() {
   </div>
 }
 
+function BookingCargoLoadPlanSheetPreview() {
+  const cargoId = "00000000-0000-4000-8000-000000000101"
+  const firstId = "00000000-0000-4000-8000-000000000102"
+  const secondId = "00000000-0000-4000-8000-000000000103"
+  const cargo = { id: cargoId, description: "Car parts", packageQuantity: "40", packageType: "Pallets", grossWeightKg: "40000" }
+  const equipment = [{ id: firstId, type: "40GP", equipmentKind: "container" }, { id: secondId, type: "40GP", equipmentKind: "container" }]
+  const [open, setOpen] = useState(false)
+  const [allocations, setAllocations] = useState<BookingCargoAllocation[]>([
+    { id: "00000000-0000-4000-8000-000000000104", cargoId, containerId: firstId, routeId: null, packageQuantity: "20", grossWeightKg: null, volumeCbm: null, notes: null, archived: false },
+    { id: "00000000-0000-4000-8000-000000000105", cargoId, containerId: secondId, routeId: null, packageQuantity: "20", grossWeightKg: null, volumeCbm: null, notes: null, archived: false },
+  ])
+  return <div className="grid gap-3">
+    <p className="text-[13px]">Car parts · {allocations.map(line => line.packageQuantity || "?").join(" + ")} pallets in 2 containers</p>
+    <Button className="w-fit" onClick={() => setOpen(true)}>Open load plan</Button>
+    {open ? <BookingCargoLoadPlanSheet cargo={cargo} cargoIndex={0} cargoLines={[cargo]} equipment={equipment} routes={[]}
+      allocations={allocations} editable onClose={() => setOpen(false)} onSave={setAllocations} /> : null}
+  </div>
+}
+
 const previewCustomer: BookingCustomer = {
   id: "preview-customer", name: "Northstar Engineering", accountCode: "NORTH01", metadata: {},
   address: { id: "preview-address", line1: null, line2: null, townCity: "Leeds", countyState: null, postZipCode: null, countryCode: "GB", mainEmail: "logistics@example.com", mainPhone: "+44 113 555 0100" },
@@ -2261,6 +2281,7 @@ function ComponentPreview({ id }: { id: string }) {
   }
   const [previewDictionaryTerms, setPreviewDictionaryTerms] = useState(["Multideck", "Jenkar", "UN/LOCODE", "Incoterms"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
+  const [previewIssuedCharges, setPreviewIssuedCharges] = useState(false)
   const previewNow = useLiveNow()
   const countPreviewBookingMatches = useCallback((query: FilterQuery) => (
     bookings.filter((booking) => matchesFilterQuery(booking, query, previewBookingFilterValue)).length
@@ -2606,6 +2627,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
       {id === "cargo-handling-editor" ? <CargoHandlingEditorPreview /> : null}
       {id === "cargo-allocation-editor" ? <CargoAllocationEditorPreview /> : null}
+      {id === "booking-cargo-load-plan-sheet" ? <BookingCargoLoadPlanSheetPreview /> : null}
       {id === "booking-route-milestones" ? <BookingRouteMilestonesPreview /> : null}
       {id === "booking-customer-panel" ? <BookingCustomerPanelPreview /> : null}
       {id === "booking-dangerous-goods" ? <BookingDangerousGoodsPreview /> : null}
@@ -3628,8 +3650,12 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "unified-quote-charges-workspace" ? (
-        <div className="w-full max-w-[1320px]">
-          <UnifiedQuoteChargesWorkspace rows={previewUnifiedChargeRows} onRowsChange={setPreviewUnifiedChargeRows} storageKey="gallery-unified-quote-charges" />
+        <div className="grid w-full max-w-[1320px] gap-3">
+          <SegmentedControl options={["Working draft", "Issued version"]} value={previewIssuedCharges ? "Issued version" : "Working draft"} onChange={value => setPreviewIssuedCharges(value === "Issued version")} ariaLabel="Charge preview state" />
+          <UnifiedQuoteChargesWorkspace
+            rows={previewIssuedCharges ? previewUnifiedChargeRowsSeed.map(row => ({ ...row, baseCost: row.cost / (row.costRoe ?? 1), baseSell: row.sell / (row.sellRoe ?? 1), showToCustomer: true, calculationBasis: "fixed", quantity: 1 })) : previewUnifiedChargeRows}
+            onRowsChange={setPreviewUnifiedChargeRows} storageKey="gallery-unified-quote-charges" savedValues={previewIssuedCharges}
+            rowReadOnlyReason={previewIssuedCharges ? undefined : rowId => rowId === previewUnifiedChargeRows[0]?.id ? "Example protected line: financial evidence prevents changes." : undefined} />
         </div>
       ) : null}
 

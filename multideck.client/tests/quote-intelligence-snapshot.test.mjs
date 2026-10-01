@@ -1,7 +1,13 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { readFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import { intelligenceFromRealtimeRow } from "../src/lib/quote-intelligence-snapshot.ts"
-import { buildQuoteIntelligence } from "../../supabase/functions/quote-intelligence/core.ts"
+
+const require = createRequire(new URL("../package.json", import.meta.url))
+const { transformSync } = require("esbuild")
+const core = readFileSync(new URL("../../supabase/functions/quote-intelligence/core.ts", import.meta.url), "utf8")
+const { buildQuoteIntelligence } = await import(`data:text/javascript,${encodeURIComponent(transformSync(core, { loader: "ts", format: "esm" }).code)}`)
 
 function row() {
   const quote = { id: "quote", reference: "PERF", customerId: null, lifecycle: "draft", jobId: null, currency: "GBP", origin: "", destination: "", mode: "", shipmentType: "", createdAt: "2026-09-01", updatedAt: "2026-09-01", validTo: null, deadline: null, cost: 0, sell: 0, profit: 0, marginPct: null, fxComplete: true, activityCodes: [] }

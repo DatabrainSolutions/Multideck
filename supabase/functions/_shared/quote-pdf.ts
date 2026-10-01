@@ -30,6 +30,8 @@ export type QuotePdfDataset = {
     billedToAddress: string
     billedToContact: string
     billedToEmail: string
+    senderName: string
+    senderEmail: string
   }
   journey: Array<{ label: string; value: string }>
   routes: Array<{ leg: string; mode: string; movement: string; schedule: string; carrierService: string }>
@@ -141,7 +143,7 @@ export const quotePdfTemplate = `<!DOCTYPE html>
   <table class="identity"><tr>
     <td><div class="label">Billed to</div><div class="value">{d.quote.billedToName}</div><p>{d.quote.billedToAddress}</p><p>{d.quote.billedToContact}<br />{d.quote.billedToEmail}</p></td>
     <td><div class="label">From</div><div class="value">{d.company.name}</div><p>{d.company.address}</p><p>Registration {d.company.registration}<br />VAT {d.company.vatNumber}</p></td>
-    <td><div class="label">Contact</div><div class="value">Customer ref {d.quote.customerReference}</div><p>{d.company.email}<br />{d.company.website}</p><p class="muted">Quote version {d.quote.version}</p></td>
+    <td><div class="label">Contact</div><div class="value">{d.quote.senderName}</div><p>{d.quote.senderEmail}<br />{d.company.website}</p><p class="muted">Quote version {d.quote.version}</p></td>
   </tr></table>
 
   <table class="journey"><tr>

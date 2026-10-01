@@ -6,6 +6,8 @@ const booking = await readFile(new URL("../src/components/multideck/booking-comp
 const customs = await readFile(new URL("../src/pages/customs-declarations-page.tsx", import.meta.url), "utf8")
 const quote = await readFile(new URL("../src/pages/quotes-page.tsx", import.meta.url), "utf8")
 const shared = await readFile(new URL("../src/components/multideck/customs-readiness-review.tsx", import.meta.url), "utf8")
+const source = await readFile(new URL("../src/lib/booking-customs-source.ts", import.meta.url), "utf8")
+const importerMigration = await readFile(new URL("../../supabase/migrations/20260928131554_booking_customs_importer_party.sql", import.meta.url), "utf8")
 const documentsWorkspaceStart = booking.indexOf("function BookingDocumentsWorkspace")
 const documentsWorkspaceEnd = booking.indexOf("function BookingCustomsSourceEditor", documentsWorkspaceStart)
 const documentsWorkspace = booking.slice(documentsWorkspaceStart, documentsWorkspaceEnd)
@@ -30,12 +32,49 @@ test("booking and declaration review share the same actionable readiness compone
   assert.match(booking, /void saveSourceData\(\)\.then\(\(saved\).*if \(saved\) close\(\)/u)
   assert.match(booking, /getBookingCustomsReadiness\(workspace\.booking\.jobId\)/u)
   for (const key of ["direction", "exporter_eori", "importer_identifier", "goods_description", "gross_weight", "commercial_invoice"]) {
-    assert.match(booking, new RegExp(`issue\\.key === "${key}"`, "u"))
+    assert.match(booking, new RegExp(`"${key}"`, "u"))
   }
-  assert.match(booking, /role: "consignor"/u)
-  assert.match(booking, /role: "consignee"/u)
-  assert.doesNotMatch(booking, /role: "exporter"/u)
-  assert.doesNotMatch(booking, /role: "importer"/u)
+  assert.match(booking, /parties: customsPartiesForSave\(workspace\.parties, form\)/u)
+  assert.match(source, /role: "consignor"/u)
+  assert.match(source, /role: "importer"/u)
+  assert.match(source, /role: "consignee"/u)
+})
+
+test("Customs source edits target the main carriage without replacing other routing legs", () => {
+  const editor = booking.slice(documentsWorkspaceEnd, booking.indexOf("function BookingCustomsWorkspace", documentsWorkspaceEnd))
+  assert.match(editor, /workspace\.routes\.findIndex\(\(leg\) => leg\.isMainCarriage\)/u)
+  assert.match(editor, /const route = workspace\.routes\[mainRouteIndex\]/u)
+  assert.match(editor, /origin: String\(route\.originUnlocode \|\| route\.origin \|\| booking\.origin/u)
+  assert.match(editor, /destination: String\(route\.destinationUnlocode \|\| route\.destination \|\| booking\.destination/u)
+  assert.match(editor, /origin: workspace\.routes\.length > 1 \? booking\.origin : form\.origin/u)
+  assert.match(editor, /destination: workspace\.routes\.length > 1 \? booking\.destination : form\.destination/u)
+  assert.match(editor, /routes: workspace\.routes\.map\(\(leg, index\) => index === mainRouteIndex \? updatedRoute : leg\)/u)
+  assert.match(editor, /: \{ route: updatedRoute \}/u)
+  assert.match(editor, /voyageNumber: mode === "sea" \? form\.transportReference/u)
+  assert.match(editor, /cargo: customsCargoForSave\(workspace\.cargo, cargoRows\)/u)
+})
+
+test("Customs shows and saves each cargo line without dropping its Booking identity", () => {
+  const editor = booking.slice(documentsWorkspaceEnd, booking.indexOf("function BookingCustomsWorkspace", documentsWorkspaceEnd))
+  assert.match(editor, /customsCargoRows\(workspace\.cargo\)/u)
+  assert.match(editor, /cargoRows\.map\(\(row, index\) => <tr/u)
+  assert.match(editor, /key=\{workspace\.cargo\[index\]\?\.id \?\? index\}/u)
+  for (const field of ["description", "packageQuantity", "packageType", "grossWeightKg", "netWeightKg", "hsCode", "countryOfOrigin", "declaredValue", "declaredValueCurrency"]) {
+    assert.match(source, new RegExp(`rows\\[index\\]\\.${field}`, "u"))
+  }
+  assert.doesNotMatch(source, /cargo\.slice\(1\)/u)
+})
+
+test("Customs registration stays distinct from operational party account codes", () => {
+  const editor = booking.slice(documentsWorkspaceEnd, booking.indexOf("function BookingCustomsWorkspace", documentsWorkspaceEnd))
+  assert.match(source, /\["eori", "vat", "eori_or_vat"\]\.includes/u)
+  assert.match(source, /direction\.toLowerCase\(\) === "import" \? "importer" : "consignee"/u)
+  assert.match(source, /role: "importer", sequence: 1/u)
+  assert.match(source, /role: "consignor", sequence: 1/u)
+  assert.match(editor, /Use consignee details/u)
+  assert.match(editor, /field\("importerIdentifierType", "Registration type"/u)
+  assert.match(importerMigration, /insert into public\."sys_JobPartyRoles"/u)
+  assert.match(importerMigration, /'importer', 'Importer'/u)
 })
 
 test("booking documents use the top-bar attachment action without a redundant document-set header", () => {
@@ -65,7 +104,7 @@ test("booking finance uses clean section titles instead of section-header banner
 test("booking audit renders the real workspace event feed", () => {
   assert.match(activityWorkspace, /const events = record\.workspace\?\.events \?\? \[\]/u)
   assert.match(activityWorkspace, /events\.map\(\(event\)/u)
-  assert.match(activityWorkspace, /Booking updates, document attachments and Customs handoffs will appear here\./u)
+  assert.match(activityWorkspace, /No activity recorded yet/u)
 })
 
 test("old booking and quote paths redirect to their canonical references", () => {

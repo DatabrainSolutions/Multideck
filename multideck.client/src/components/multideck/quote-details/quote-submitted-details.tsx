@@ -254,6 +254,13 @@ export function QuoteSubmittedDetails({
               ["Customer PO", facts.customerPO],
             ],
           )}
+          {Object.keys(record(quote.payer)).length > 0 &&
+            (record(quote.payer).name !== quote.customerName || record(quote.payer).address !== facts.customerAddress) ? (
+            <details className="space-y-3">
+              <summary className="cursor-pointer text-[13px] font-medium">{t("Historical billing details")}</summary>
+              {party("Saved payer", record(quote.payer))}
+            </details>
+          ) : null}
           {facts.leadSourceParty === "agent" ? party(
             "Overseas agent · RFQ source",
             {

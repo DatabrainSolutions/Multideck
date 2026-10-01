@@ -18,7 +18,9 @@ test("manual acceptance selects the latest submitted version and preserves a new
   assert.match(migration, /'outcomeSource'.*'manual'/)
 })
 
-test("the Mark won confirmation identifies the booking source version", () => {
+test("manual acceptance is available after delivery and identifies the booking source version", () => {
+  assert.match(page, /latestIssue\?\.deliveryStatus === "sent" && latestSubmittedVersion && lifecycle !== "accepted"/)
+  assert.match(page, /Accept manually/)
   assert.match(page, /latestSubmittedVersion/)
   assert.match(page, /Booking source/)
   assert.match(page, /An unsubmitted working draft is never applied/)

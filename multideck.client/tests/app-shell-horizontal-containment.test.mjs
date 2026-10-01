@@ -16,7 +16,7 @@ test("the shared application shell cannot become a horizontal page scroller", ()
 test("quote detail adapts to its available shell width instead of viewport breakpoints", () => {
   assert.match(quoteSource, /className="md-quote-workspace min-h-full min-w-0 max-w-full overflow-x-clip/u)
   assert.match(quoteSource, /md-quote-workspace-header grid min-w-0/u)
-  assert.match(quoteSource, /md-quote-record-header flex min-w-0 gap-2/u)
+  assert.match(quoteSource, /md-quote-record-header flex min-w-0 flex-col gap-2/u)
   assert.match(quoteSource, /md-quote-cargowise-primary-grid grid min-w-0/u)
   assert.match(quoteSource, /md-quote-cargowise-intelligence-grid grid min-w-0/u)
   assert.match(quoteStyles, /container-name: quote-workspace/u)

@@ -119,6 +119,7 @@ test('the real page uses snapshot-only panels for every submitted content tab an
   }
   assert.match(renderSelectedPanel(state,'details'),/Snapshot cargo/)
   assert.match(renderSelectedPanel(state,'charges'),/Snapshot charge/)
+  assert.match(renderSelectedPanel(state,'charges'),/data-shared-quote-charges/)
   for(const variant of ['cargowise','ai','standard']) {
     const html=renderSelectedPanel(state,'overview',variant)
     assert.match(html,/data-shared-quote-overview/)
@@ -140,4 +141,28 @@ test('neither copy nor blank revision silently uses a different Quote when the s
   const errors=await attemptRevisionWithUnavailableSnapshot()
   assert.equal(errors.length,2)
   for(const error of errors) assert.match(error,/selected version’s saved details are unavailable/)
+})
+
+test('every mode, direction and issued outcome keeps the shared charges layout for current and historical versions', () => {
+  for (const mode of ['sea', 'air', 'road', 'rail']) {
+    for (const direction of ['import', 'export', 'domestic', 'cross trade']) {
+      for (const lifecycle of ['sent', 'accepted', 'converted', 'declined']) {
+        const savedCharge = { id: 'saved-line', description: `${mode} ${direction} freight`, costLocal: 200, sellLocal: 275, costRoe: 1, sellRoe: 1 }
+        const versions = [1, 2].map(number => makeVersion(number, { mode, direction, lifecycle, charges: [savedCharge] }))
+        const workspace = makeWorkspace(versions)
+        workspace.quote.lifecycle = lifecycle
+        for (const selectedVersion of [null, 'version-1']) {
+          const context = `${mode}/${direction}/${lifecycle}/${selectedVersion ?? 'current'}`
+          const state = selectVersion(workspace, selectedVersion, { terms: 'CURRENT DRAFT' }, [{ description: 'CURRENT CHARGE' }], null)
+          assert.equal(state.workspaceEditable, false, context)
+          const html = renderSelectedPanel(state, 'charges')
+          assert.match(html, /data-shared-quote-charges/, context)
+          assert.ok(html.includes(savedCharge.description), context)
+          assert.doesNotMatch(html, /Saved charge lines|CURRENT CHARGE|CURRENT DRAFT|Draft panel/, context)
+          assert.equal(state.activeCharges[0].localCost, 200, context)
+          assert.equal(state.activeCharges[0].localSell, 275, context)
+        }
+      }
+    }
+  }
 })

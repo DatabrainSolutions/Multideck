@@ -49,10 +49,13 @@ test("both usage and finance retain recognised routes and their real page handle
 
 test("quote lookups retain manual overrides, provenance and the location directory", () => {
   const page = read("multideck.client/src/pages/quotes-page.tsx")
-  assert.match(page, /Promise\.all\(\[loadUnlocodeDirectory\(\), loadUnlocodeDirectoryMetadata\(\)\]\)/)
+  assert.match(page, /void loadUnlocodeDirectory\(\)[\s\S]*?setUnlocodeDirectory\(records\)[\s\S]*?setUnlocodeDirectoryStatus\("ready"\)[\s\S]*?setUnlocodeDirectoryStatus\("error"\)/)
+  assert.match(page, /<LocationFields mode=\{quote\.mode\} label="Origin from"[^\n]+directoryStatus=\{unlocodeDirectoryStatus\}/)
+  assert.match(page, /<LocationFields mode=\{quote\.mode\} label="Destination to"[^\n]+directoryStatus=\{unlocodeDirectoryStatus\}/)
   assert.match(page, /<CompactCombobox label="Account code"[^\n]+selectOrganisationByCode/)
   assert.match(page, /<CompactCombobox label="Address"[^\n]+autoPopulated=[^\n]+selectAddress\(role, option.id\)[^\n]+onValueChange=/)
-  assert.match(page, /<CompactCombobox label="Operational contact"[^\n]+selectContact\("customer", option.id\)[^\n]+onQuoteChange\("contactId", ""\)/)
+  assert.match(page, /<CompactCombobox label="Billing contact"[^\n]+selectContact\("customer", option.id\)[^\n]+onQuotePatch\(\{ customerContact: value, payerContact: value,[^\n]+contactId: ""/)
+  assert.match(page, /<CompactCombobox label="Operational contact"[^\n]+selectContact\(role, option.id\)/)
   assert.match(page, /const customerSourceContact = customerOrganisation\?\.contacts\?\.find\(\(contact\) => contact.isOperational\)/)
   assert.match(page, /label="Customer PO"[^\n]+onQuoteChange\("customerPO", value\)/)
 })

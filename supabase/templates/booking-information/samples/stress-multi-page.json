@@ -1,0 +1,335 @@
+{
+  "meta": {
+    "schemaVersion": 2
+  },
+  "customer": {
+    "name": "Example International Industrial Components and Equipment Distribution Limited"
+  },
+  "bookingConfirmation": {
+    "bookingReference": "DEMO-SEA-EXPORT",
+    "direction": "Export",
+    "mode": "Sea",
+    "shipmentType": "FCL",
+    "incoterm": "FCA Sample Place",
+    "customerReference": "PO-SEA-001",
+    "preparedBy": "Demo Operator",
+    "provisional": false,
+    "shipper": {
+      "name": "Example International Industrial Components and Equipment Distribution Limited",
+      "address": "1 Sample Road, Example City"
+    },
+    "consignee": {
+      "name": "Example Receiver Ltd",
+      "address": "2 Sample Street, Destination City"
+    },
+    "scope": {
+      "collection": true,
+      "mainTransport": true,
+      "delivery": true
+    },
+    "collection": {
+      "address": "1 Sample Road, Example City",
+      "plannedAtLabel": "07 Oct 2026",
+      "remarks": "Collect during normal opening hours."
+    },
+    "mainTransport": [
+      {
+        "mode": "SEA",
+        "origin": "Southampton",
+        "destination": "Rotterdam",
+        "plannedDepartureAt": "2026-10-08T09:00:00Z",
+        "plannedArrivalAt": "2026-10-09T14:00:00Z",
+        "details": "Carrier: Example Shipping · Booking ref: SEA-BOOK-01 · Vessel: Example Star · Voyage: 042E · MBL: MBL-001 · HBL: HBL-001"
+      }
+    ],
+    "equipment": [
+      {
+        "kind": "Container",
+        "number": "EXAU1234567",
+        "type": "40HC"
+      }
+    ],
+    "hasEquipment": true,
+    "delivery": {
+      "address": "2 Sample Street, Destination City",
+      "plannedAtLabel": "12 Oct 2026",
+      "remarks": "Book a delivery slot."
+    },
+    "cargo": [
+      {
+        "description": "Fictional machinery component line 01 with a longer description",
+        "marksAndNumbers": "DEMO-001",
+        "packages": 1,
+        "packageType": "Cartons",
+        "grossWeightKg": 12.5
+      },
+      {
+        "description": "Fictional machinery component line 02 with a longer description",
+        "marksAndNumbers": "DEMO-002",
+        "packages": 2,
+        "packageType": "Cartons",
+        "grossWeightKg": 25.0
+      },
+      {
+        "description": "Fictional machinery component line 03 with a longer description",
+        "marksAndNumbers": "DEMO-003",
+        "packages": 3,
+        "packageType": "Cartons",
+        "grossWeightKg": 37.5
+      },
+      {
+        "description": "Fictional machinery component line 04 with a longer description",
+        "marksAndNumbers": "DEMO-004",
+        "packages": 4,
+        "packageType": "Cartons",
+        "grossWeightKg": 50.0
+      },
+      {
+        "description": "Fictional machinery component line 05 with a longer description",
+        "marksAndNumbers": "DEMO-005",
+        "packages": 5,
+        "packageType": "Cartons",
+        "grossWeightKg": 62.5
+      },
+      {
+        "description": "Fictional machinery component line 06 with a longer description",
+        "marksAndNumbers": "DEMO-006",
+        "packages": 6,
+        "packageType": "Cartons",
+        "grossWeightKg": 75.0
+      },
+      {
+        "description": "Fictional machinery component line 07 with a longer description",
+        "marksAndNumbers": "DEMO-007",
+        "packages": 7,
+        "packageType": "Cartons",
+        "grossWeightKg": 87.5
+      },
+      {
+        "description": "Fictional machinery component line 08 with a longer description",
+        "marksAndNumbers": "DEMO-008",
+        "packages": 8,
+        "packageType": "Cartons",
+        "grossWeightKg": 100.0
+      },
+      {
+        "description": "Fictional machinery component line 09 with a longer description",
+        "marksAndNumbers": "DEMO-009",
+        "packages": 9,
+        "packageType": "Cartons",
+        "grossWeightKg": 112.5
+      },
+      {
+        "description": "Fictional machinery component line 10 with a longer description",
+        "marksAndNumbers": "DEMO-010",
+        "packages": 10,
+        "packageType": "Cartons",
+        "grossWeightKg": 125.0
+      },
+      {
+        "description": "Fictional machinery component line 11 with a longer description",
+        "marksAndNumbers": "DEMO-011",
+        "packages": 11,
+        "packageType": "Cartons",
+        "grossWeightKg": 137.5
+      },
+      {
+        "description": "Fictional machinery component line 12 with a longer description",
+        "marksAndNumbers": "DEMO-012",
+        "packages": 12,
+        "packageType": "Cartons",
+        "grossWeightKg": 150.0
+      },
+      {
+        "description": "Fictional machinery component line 13 with a longer description",
+        "marksAndNumbers": "DEMO-013",
+        "packages": 13,
+        "packageType": "Cartons",
+        "grossWeightKg": 162.5
+      },
+      {
+        "description": "Fictional machinery component line 14 with a longer description",
+        "marksAndNumbers": "DEMO-014",
+        "packages": 14,
+        "packageType": "Cartons",
+        "grossWeightKg": 175.0
+      },
+      {
+        "description": "Fictional machinery component line 15 with a longer description",
+        "marksAndNumbers": "DEMO-015",
+        "packages": 15,
+        "packageType": "Cartons",
+        "grossWeightKg": 187.5
+      },
+      {
+        "description": "Fictional machinery component line 16 with a longer description",
+        "marksAndNumbers": "DEMO-016",
+        "packages": 16,
+        "packageType": "Cartons",
+        "grossWeightKg": 200.0
+      },
+      {
+        "description": "Fictional machinery component line 17 with a longer description",
+        "marksAndNumbers": "DEMO-017",
+        "packages": 17,
+        "packageType": "Cartons",
+        "grossWeightKg": 212.5
+      },
+      {
+        "description": "Fictional machinery component line 18 with a longer description",
+        "marksAndNumbers": "DEMO-018",
+        "packages": 18,
+        "packageType": "Cartons",
+        "grossWeightKg": 225.0
+      },
+      {
+        "description": "Fictional machinery component line 19 with a longer description",
+        "marksAndNumbers": "DEMO-019",
+        "packages": 19,
+        "packageType": "Cartons",
+        "grossWeightKg": 237.5
+      },
+      {
+        "description": "Fictional machinery component line 20 with a longer description",
+        "marksAndNumbers": "DEMO-020",
+        "packages": 20,
+        "packageType": "Cartons",
+        "grossWeightKg": 250.0
+      },
+      {
+        "description": "Fictional machinery component line 21 with a longer description",
+        "marksAndNumbers": "DEMO-021",
+        "packages": 21,
+        "packageType": "Cartons",
+        "grossWeightKg": 262.5
+      },
+      {
+        "description": "Fictional machinery component line 22 with a longer description",
+        "marksAndNumbers": "DEMO-022",
+        "packages": 22,
+        "packageType": "Cartons",
+        "grossWeightKg": 275.0
+      },
+      {
+        "description": "Fictional machinery component line 23 with a longer description",
+        "marksAndNumbers": "DEMO-023",
+        "packages": 23,
+        "packageType": "Cartons",
+        "grossWeightKg": 287.5
+      },
+      {
+        "description": "Fictional machinery component line 24 with a longer description",
+        "marksAndNumbers": "DEMO-024",
+        "packages": 24,
+        "packageType": "Cartons",
+        "grossWeightKg": 300.0
+      },
+      {
+        "description": "Fictional machinery component line 25 with a longer description",
+        "marksAndNumbers": "DEMO-025",
+        "packages": 25,
+        "packageType": "Cartons",
+        "grossWeightKg": 312.5
+      },
+      {
+        "description": "Fictional machinery component line 26 with a longer description",
+        "marksAndNumbers": "DEMO-026",
+        "packages": 26,
+        "packageType": "Cartons",
+        "grossWeightKg": 325.0
+      },
+      {
+        "description": "Fictional machinery component line 27 with a longer description",
+        "marksAndNumbers": "DEMO-027",
+        "packages": 27,
+        "packageType": "Cartons",
+        "grossWeightKg": 337.5
+      },
+      {
+        "description": "Fictional machinery component line 28 with a longer description",
+        "marksAndNumbers": "DEMO-028",
+        "packages": 28,
+        "packageType": "Cartons",
+        "grossWeightKg": 350.0
+      },
+      {
+        "description": "Fictional machinery component line 29 with a longer description",
+        "marksAndNumbers": "DEMO-029",
+        "packages": 29,
+        "packageType": "Cartons",
+        "grossWeightKg": 362.5
+      },
+      {
+        "description": "Fictional machinery component line 30 with a longer description",
+        "marksAndNumbers": "DEMO-030",
+        "packages": 30,
+        "packageType": "Cartons",
+        "grossWeightKg": 375.0
+      },
+      {
+        "description": "Fictional machinery component line 31 with a longer description",
+        "marksAndNumbers": "DEMO-031",
+        "packages": 31,
+        "packageType": "Cartons",
+        "grossWeightKg": 387.5
+      },
+      {
+        "description": "Fictional machinery component line 32 with a longer description",
+        "marksAndNumbers": "DEMO-032",
+        "packages": 32,
+        "packageType": "Cartons",
+        "grossWeightKg": 400.0
+      },
+      {
+        "description": "Fictional machinery component line 33 with a longer description",
+        "marksAndNumbers": "DEMO-033",
+        "packages": 33,
+        "packageType": "Cartons",
+        "grossWeightKg": 412.5
+      },
+      {
+        "description": "Fictional machinery component line 34 with a longer description",
+        "marksAndNumbers": "DEMO-034",
+        "packages": 34,
+        "packageType": "Cartons",
+        "grossWeightKg": 425.0
+      },
+      {
+        "description": "Fictional machinery component line 35 with a longer description",
+        "marksAndNumbers": "DEMO-035",
+        "packages": 35,
+        "packageType": "Cartons",
+        "grossWeightKg": 437.5
+      }
+    ],
+    "specialInstructions": "This is fictional preview data; do not dispatch.",
+    "priceStatus": "confirmed",
+    "chargeLines": [
+      {
+        "description": "Freight",
+        "currency": "GBP",
+        "sellAmount": 1250
+      },
+      {
+        "description": "Handling",
+        "currency": "GBP",
+        "sellAmount": 85
+      },
+      {
+        "description": "Destination service",
+        "currency": "EUR",
+        "sellAmount": 110
+      }
+    ],
+    "chargeTotals": [
+      {
+        "currency": "EUR",
+        "amount": 110
+      },
+      {
+        "currency": "GBP",
+        "amount": 1335
+      }
+    ]
+  }
+}

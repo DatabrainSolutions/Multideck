@@ -29,7 +29,7 @@ test('actual audit view displays escaped before/after references with their own 
   const wrapper=({children})=>React.createElement('div',null,children)
   const asRecord=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{}
   const recordText=(value,key)=>typeof value[key]==='string'?value[key]:''
-  const View=new Function('React','useLanguage','Surface','BookingWorkspaceSectionTitle','asRecord','recordText','freightRouteOperationalFields','bookingWorkspaceMode','routeSharedReferenceFields',`${code};return BookingActivityWorkspace`)(React,()=>({language:'en-GB',t:value=>value}),wrapper,wrapper,asRecord,recordText,freightRouteOperationalFields,freightBookingMode,routeSharedReferenceFields)
+  const View=new Function('React','useLanguage','Surface','BookingWorkspaceSectionTitle','asRecord','recordText','freightRouteOperationalFields','bookingWorkspaceMode','routeSharedReferenceFields','ChevronDown',`${code};return BookingActivityWorkspace`)(React,()=>({language:'en-GB',t:value=>value}),wrapper,wrapper,asRecord,recordText,freightRouteOperationalFields,freightBookingMode,routeSharedReferenceFields,()=>null)
   const html=renderToStaticMarkup(React.createElement(View,{record:{workspace:{events:[{id:'event',occurredAt:'2026-09-05T12:00:00Z',type:'route_mode_changed',summary:'Mode changed',actor:'Operator',metadata:{fromMode:'sea',toMode:'air',beforeReferences:{houseTransportReference:'HBL <script>bad</script>'},afterReferences:{masterTransportReference:'125-12345675'}}}]}}}))
   assert.match(html,/House bill of lading/)
   assert.match(html,/Master air waybill/)

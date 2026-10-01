@@ -6,6 +6,10 @@ const migration = await readFile(
   new URL("../migrations/20260904161000_quote_booking_container_allocation.sql", import.meta.url),
   "utf8",
 )
+const weightCorrection = await readFile(
+  new URL("../migrations/20260925095733_stop_quote_cargo_weight_copy_to_container.sql", import.meta.url),
+  "utf8",
+)
 
 test("structured quote quantities become one booking line per physical container", () => {
   assert.match(migration, /quote_container_rows/u)
@@ -20,6 +24,12 @@ test("only one requested container inherits quote-level goods totals", () => {
   assert.match(migration, /'packageType', case when total_quantity = 1 then package_type end/u)
   assert.match(migration, /'grossWeightKg', case when total_quantity = 1 then gross_weight end/u)
   assert.match(migration, /'volumeCbm', case when total_quantity = 1 then volume_cbm end/u)
+})
+
+test("later conversion correction leaves packages but stops copying cargo weight to loaded container weight", () => {
+  assert.match(weightCorrection, /quote_container_rows\(jsonb,text,uuid\)/u)
+  assert.match(weightCorrection, /quote_container_rows weight projection changed: review before release/u)
+  assert.match(weightCorrection, /'grossWeightKg'', NULL::text'/u)
 })
 
 test("initial conversion and later accepted quote application share the allocator", () => {

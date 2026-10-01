@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   AiBrain,
+  MoreHorizontal,
   ArrowLeft,
   Copy,
   Download,
@@ -30,6 +31,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import {
   Select,
   SelectContent,
@@ -42,14 +44,23 @@ import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { useLanguage } from "@/i18n/language-provider"
 import {
+  approveDocumentStudioTemplate,
+  updateTemplateLibrary,
+  type TemplateLibrarySettings,
   bootstrapDocumentStudioTemplate,
+  createDocumentStudioTemplate,
+  duplicateBookingConfirmationTemplate,
   getDocumentBuilderWorkspace,
+  getDocumentStudioDraftSource,
+  getDocumentStudioTemplateSource,
+  previewDraftDocumentStudioTemplate,
   getGeneratedDocumentsPage,
   getDocumentStudioComponent,
   getDocumentStudioSession,
   getGeneratedDocumentDownload,
   renderDocument,
   renderDocumentStudioPreview,
+  isBookingConfirmationTemplateCode,
   saveDocumentStudioTemplate,
   type DocumentBuilderWorkspace,
   type DocumentContentSectionCode,
@@ -61,6 +72,7 @@ import {
   type GeneratedDocumentSummary,
   type RenderDocumentResponse,
 } from "@/lib/document-builder-api"
+import bookingConfirmationPreview from "@/data/booking-confirmation-preview.json"
 import { handGeneratedDocumentToDexter } from "@/lib/generated-document-handoff"
 import {
   clearDocumentBuilderDraft,
@@ -88,6 +100,7 @@ type CreateDocumentWorkspaceProps = {
   resumeActiveDraft: boolean
   onClose: () => void
   onRendered: () => Promise<void>
+  onTemplateCreated: (code: string) => Promise<void>
   preview: boolean
 }
 
@@ -103,8 +116,10 @@ const templatePreviewRequests = new Map<string, Promise<RenderedPdfPage | null>>
 const maxCachedTemplatePreviews = 24
 let documentWorkspaceCache: DocumentBuilderWorkspace | null = null
 
-function templatePreviewKey(template: DocumentTemplateSummary, document: GeneratedDocumentSummary | null) {
-  return `${template.id}:${template.version}:${document?.id ?? "live"}`
+const previewPrivacyMessage = "Preview hidden for privacy. This source has not been checked for embedded customer details. Use a clean, privacy-reviewed template source."
+
+function templatePreviewKey(template: DocumentTemplateSummary) {
+  return `fictional-v1:${template.id}:${template.version}:${template.updatedAt}`
 }
 
 function rememberTemplatePreview(key: string, page: RenderedPdfPage) {
@@ -128,43 +143,22 @@ async function renderTemplateThumbnail(blob: Blob, fileName: string) {
   return page ?? null
 }
 
-function loadTemplatePreview(
-  template: DocumentTemplateSummary,
-  previewDocument: GeneratedDocumentSummary | null,
-  previewJobNumber: string | null,
-) {
-  const key = templatePreviewKey(template, previewDocument)
+function loadTemplatePreview(template: DocumentTemplateSummary) {
+  const key = templatePreviewKey(template)
   const cached = templatePreviewCache.get(key)
   if (cached) return Promise.resolve(cached)
-
   const pending = templatePreviewRequests.get(key)
   if (pending) return pending
 
   const previewRequest = (async () => {
-    if (previewDocument) {
-      try {
-        const download = await getGeneratedDocumentDownload(previewDocument.id)
-        const blob = await fetchSignedDocument(download.signedUrl)
-        const page = await renderTemplateThumbnail(blob, download.fileName)
-        if (page) {
-          rememberTemplatePreview(key, page)
-          return page
-        }
-      } catch {
-        // A recently generated document is the fast path. If its signed link
-        // is unavailable, fall through to a fresh template render.
-      }
-    }
-
-    if (!previewJobNumber) return null
-    const request: DocumentStudioRequest = {
-      templateCode: template.code,
-      jobNumber: previewJobNumber,
-      contentSections: template.contentSections.map((section) => section.code),
-    }
-    const session = await getDocumentStudioSession(request)
-    const response = await renderDocumentStudioPreview({ ...request, templateBase64: session.templateBase64, sampleData: {} })
-    const page = await renderTemplateThumbnail(await response.blob(), `${template.id}.pdf`)
+    const source = template.status === "draft"
+      ? await getDocumentStudioDraftSource(template.id)
+      : await getDocumentStudioTemplateSource(template.id)
+    if (!source?.previewSafe || !source.previewSampleData) throw new Error(previewPrivacyMessage)
+    const blob = await previewDraftDocumentStudioTemplate(
+      template.id, source.templateBase64, source.previewSampleData, source.templateFileName,
+    )
+    const page = await renderTemplateThumbnail(blob, `${template.code}.pdf`)
     if (page) rememberTemplatePreview(key, page)
     return page
   })().finally(() => templatePreviewRequests.delete(key))
@@ -173,72 +167,63 @@ function loadTemplatePreview(
   return previewRequest
 }
 
-function DocumentTemplatePreview({
-  template,
-  previewDocument,
-  previewJobNumber,
-}: {
+function DocumentTemplatePreview({ template, canManageTemplates }: {
   template: DocumentTemplateSummary
-  previewDocument: GeneratedDocumentSummary | null
-  previewJobNumber: string | null
+  canManageTemplates: boolean
 }) {
   const { t } = useLanguage()
-  const cacheKey = templatePreviewKey(template, previewDocument)
-  const [page, setPage] = useState<RenderedPdfPage | null>(() => templatePreviewCache.get(cacheKey) ?? null)
+  const cacheKey = templatePreviewKey(template)
+  const [page, setPage] = useState<RenderedPdfPage | null>(null)
   const [failed, setFailed] = useState(false)
+  const [privacyBlocked, setPrivacyBlocked] = useState(false)
+  const previewRef = useRef<HTMLSpanElement>(null)
+  const [inView, setInView] = useState(false)
 
   useEffect(() => {
+    const element = previewRef.current
+    if (!element) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setInView(true)
+        observer.disconnect()
+      }
+    }, { rootMargin: "160px" })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!inView) return
     let cancelled = false
-    setPage(templatePreviewCache.get(cacheKey) ?? null)
-    setFailed(false)
+    setPage(canManageTemplates ? templatePreviewCache.get(cacheKey) ?? null : null)
+    setFailed(!canManageTemplates)
+    setPrivacyBlocked(false)
+    if (!canManageTemplates) return
 
-    if (!previewJobNumber) {
+    void loadTemplatePreview(template).then((loadedPage) => {
+      if (cancelled) return
+      if (loadedPage) setPage(loadedPage)
+      else setFailed(true)
+    }).catch((cause) => {
+      if (cancelled) return
       setFailed(true)
-      return undefined
-    }
-
-    void loadTemplatePreview(template, previewDocument, previewJobNumber)
-      .then((loadedPage) => {
-        if (cancelled) return
-        if (loadedPage) setPage(loadedPage)
-        else setFailed(true)
-      })
-      .catch((previewError) => {
-        if (!cancelled && !(previewError instanceof DOMException && previewError.name === "AbortError")) setFailed(true)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [cacheKey, previewDocument, previewJobNumber, template])
-
-  if (page) {
-    return <img src={page.url} alt="" decoding="async" fetchPriority="high" className="size-full object-cover object-top" />
-  }
+      setPrivacyBlocked(cause instanceof Error && cause.message.includes("Preview hidden for privacy"))
+    })
+    return () => { cancelled = true }
+  }, [cacheKey, inView, canManageTemplates, template])
 
   return (
-    <span className="grid size-full place-items-center bg-[var(--md-surface-tint)]">
-      {failed
-        ? <FileText className="size-5 text-[var(--md-subtle)]" strokeWidth={1.25} aria-hidden="true" />
+    <span ref={previewRef} className="grid size-full place-items-center bg-[var(--md-surface-tint)]">
+      {page
+        ? <img src={page.url} alt="" decoding="async" className="size-full object-cover object-top" />
+        : failed
+        ? <span className="flex max-w-[180px] flex-col items-center gap-2 px-4 text-center text-[12px] leading-5 text-[var(--md-subtle)]">
+            <FileText className="size-5" strokeWidth={1.25} aria-hidden="true" />
+            {t(privacyBlocked ? "Preview hidden for privacy" : "Preview unavailable")}
+          </span>
         : <LoaderCircle className="size-4 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" aria-label={t("Loading preview…")} />}
     </span>
   )
-}
-
-function previewJobNumber(document: GeneratedDocumentSummary | undefined) {
-  if (!document) return null
-  const separatorIndex = document.targetReference.indexOf("-")
-  return separatorIndex >= 0 ? document.targetReference.slice(separatorIndex + 1) : document.targetReference
-}
-
-function currentPreviewDocument(template: DocumentTemplateSummary, documents: GeneratedDocumentSummary[]) {
-  const matching = documents.find((document) => document.status === "ready" && document.templateCode === template.code)
-  if (!matching) return null
-  const documentCreatedAt = Date.parse(matching.createdAt)
-  const templateUpdatedAt = Date.parse(template.updatedAt)
-  return Number.isNaN(documentCreatedAt) || Number.isNaN(templateUpdatedAt) || documentCreatedAt >= templateUpdatedAt
-    ? matching
-    : null
 }
 
 async function startSignedDownload(url: string, fileName: string) {
@@ -347,11 +332,11 @@ function base64FromDataUri(value: unknown) {
   return /^[A-Za-z0-9+/]*={0,2}$/.test(base64) ? base64 : null
 }
 
-function templateBlobFromBase64(base64: string) {
+function templateBlobFromBase64(base64: string, mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
   const binary = atob(base64)
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
-  return new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })
+  return new Blob([bytes], { type: mimeType })
 }
 
 function readTemplateFile(file: File) {
@@ -392,6 +377,7 @@ function DocumentStudioWorkspace({
   sampleData,
   onDataChange,
   onError,
+  onPreviewChange,
 }: {
   session: DocumentStudioSession | null
   request: DocumentStudioRequest | null
@@ -399,6 +385,7 @@ function DocumentStudioWorkspace({
   sampleData: Record<string, unknown> | null
   onDataChange: (data: Record<string, unknown>) => void
   onError: (message: string | null) => void
+  onPreviewChange: (ready: boolean) => void
 }) {
   const { t } = useLanguage()
   const hostRef = useRef<HTMLDivElement>(null)
@@ -406,10 +393,12 @@ function DocumentStudioWorkspace({
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const onDataChangeRef = useRef(onDataChange)
+  const onPreviewChangeRef = useRef(onPreviewChange)
 
   useEffect(() => {
     onDataChangeRef.current = onDataChange
   }, [onDataChange])
+  useEffect(() => { onPreviewChangeRef.current = onPreviewChange }, [onPreviewChange])
 
   useEffect(() => {
     if (!session || !request || !templateBase64 || !hostRef.current) return
@@ -448,6 +437,7 @@ function DocumentStudioWorkspace({
           const currentRequestId = ++previewRequestId
           latestSampleData = sampleData
           setPreviewLoading(true)
+          onPreviewChangeRef.current(false)
           try {
             const response = await renderDocumentStudioPreview({
               ...activeRequest,
@@ -461,10 +451,12 @@ function DocumentStudioWorkspace({
             if (activePreviewUrl) URL.revokeObjectURL(activePreviewUrl)
             activePreviewUrl = URL.createObjectURL(new Blob([bytes], { type: contentType }))
             setPreviewUrl(activePreviewUrl)
+            onPreviewChangeRef.current(true)
             onError(null)
             return { bytes, contentType }
           } catch (previewError) {
             if (!disposed && currentRequestId === previewRequestId) {
+              onPreviewChangeRef.current(false)
               onError(previewError instanceof Error ? previewError.message : t("The Studio preview could not be created."))
             }
             throw previewError
@@ -632,6 +624,7 @@ function DocumentStudioWorkspace({
     const startTimer = window.setTimeout(() => void startStudio(), 0)
     return () => {
       disposed = true
+      onPreviewChangeRef.current(false)
       window.clearTimeout(startTimer)
       previewRequestId += 1
       studioDataObserver?.disconnect()
@@ -740,7 +733,7 @@ function QuickCreateDocumentWorkspace({
     setOutputFormat(template?.defaultOutputFormat ?? "pdf")
     setJobNumber("")
     setError(null)
-  }, [initialTemplateCode, templates])
+  }, [initialTemplateCode, templates[0]?.code])
 
   useEffect(() => () => {
     if (generatedDocument) URL.revokeObjectURL(generatedDocument.previewUrl)
@@ -765,8 +758,16 @@ function QuickCreateDocumentWorkspace({
       return
     }
     if (!isJobNumber(jobNumber.trim())) {
-      setError(t("Enter the job number to continue."))
+      setError(t(isBookingConfirmationTemplateCode(selectedTemplate.code) ? "Enter the Booking reference to continue." : "Enter the job number to continue."))
       jobInputRef.current?.focus()
+      return
+    }
+    if (isBookingConfirmationTemplateCode(selectedTemplate.code)) {
+      if (!navigate) {
+        setError(t("Open the Booking and use its Documents tab to review the confirmation."))
+        return
+      }
+      navigate(`/bookings/${encodeURIComponent(jobNumber.trim().toLowerCase())}?tab=documents`)
       return
     }
 
@@ -850,18 +851,18 @@ function QuickCreateDocumentWorkspace({
       <main className="grid min-h-0 flex-1 place-items-start overflow-y-auto bg-[var(--md-bg)] px-4 py-8 sm:px-8">
         <form onSubmit={(event) => void submit(event)} className="w-full max-w-2xl">
           <div className="mb-6 max-w-xl">
-            <h2 className="text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t("Generate a document for a job")}</h2>
-            <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{t("Choose a template, enter the job number and get the populated document. Template editing lives in Manage templates.")}</p>
+            <h2 className="text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t(isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? "Open Booking Documents" : "Generate a document for a job")}</h2>
+            <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{t(isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? "Enter the Booking reference to review its details and customer prices before saving the PDF." : "Choose a template, enter the job number and get the populated document. Template editing lives in Manage templates.")}</p>
           </div>
           <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
             <div className="grid gap-5 p-5 sm:p-6">
               <label className="text-[12px] font-medium text-[var(--md-ink)]">{t("Template")}<Select value={templateCode} onValueChange={chooseTemplate}><SelectTrigger className="mt-2 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]"><SelectValue /></SelectTrigger><SelectContent>{templates.map((template) => <SelectItem key={template.code} value={template.code}>{t(template.name)}</SelectItem>)}</SelectContent></Select></label>
-              <label className="text-[12px] font-medium text-[var(--md-ink)]" htmlFor="document-job-number">{t("Job number")}<Input ref={jobInputRef} id="document-job-number" value={jobNumber} onChange={(event) => setJobNumber(event.target.value.toUpperCase())} placeholder={t("For example, JOB-24018")} autoComplete="off" className="mt-2 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]" /></label>
-              <label className="text-[12px] font-medium text-[var(--md-ink)]">{t("Format")}<Select value={outputFormat} onValueChange={(value) => setOutputFormat(value as DocumentOutputFormat)}><SelectTrigger className="mt-2 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]"><SelectValue /></SelectTrigger><SelectContent>{(selectedTemplate?.outputFormats ?? ["pdf"]).map((format) => <SelectItem key={format} value={format}>{format.toUpperCase()}</SelectItem>)}</SelectContent></Select></label>
+              <label className="text-[12px] font-medium text-[var(--md-ink)]" htmlFor="document-job-number">{t(isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? "Booking reference" : "Job number")}<Input ref={jobInputRef} id="document-job-number" value={jobNumber} onChange={(event) => setJobNumber(event.target.value.toUpperCase())} placeholder={t(isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? "For example, JI0991152" : "For example, JOB-24018")} autoComplete="off" className="mt-2 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]" /></label>
+              {!isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? <label className="text-[12px] font-medium text-[var(--md-ink)]">{t("Format")}<Select value={outputFormat} onValueChange={(value) => setOutputFormat(value as DocumentOutputFormat)}><SelectTrigger className="mt-2 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]"><SelectValue /></SelectTrigger><SelectContent>{(selectedTemplate?.outputFormats ?? ["pdf"]).map((format) => <SelectItem key={format} value={format}>{format.toUpperCase()}</SelectItem>)}</SelectContent></Select></label> : null}
             </div>
             <div className="flex flex-col gap-3 bg-[var(--md-surface-tint)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <p className="text-[10.5px] leading-5 text-[var(--md-text)]">{t("Job data is checked and snapshotted for audit before rendering.")}</p>
-              <Button type="submit" disabled={submitting || !selectedTemplate} className="h-10 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[12px] text-white">{submitting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <FilePlus2 className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}{submitting ? t("Generating…") : t("Generate document")}</Button>
+              <p className="text-[10.5px] leading-5 text-[var(--md-text)]">{t(isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? "The Booking Documents tab reviews and saves the customer PDF." : "Job data is checked and snapshotted for audit before rendering.")}</p>
+              <Button type="submit" disabled={submitting || !selectedTemplate} className="h-10 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[12px] text-white">{submitting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <FilePlus2 className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}{submitting ? t("Generating…") : t(isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? "Open Booking Documents" : "Generate document")}</Button>
             </div>
           </Surface>
           {error ? <div role="alert" className="mt-3 flex gap-2 rounded-[var(--md-radius-md)] bg-[rgba(190,70,60,0.08)] p-3 text-[11px] text-[var(--md-red)]"><TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" /><span>{error}</span></div> : null}
@@ -878,6 +879,7 @@ function CreateDocumentWorkspace({
   resumeActiveDraft,
   onClose,
   onRendered,
+  onTemplateCreated,
   preview,
 }: CreateDocumentWorkspaceProps) {
   const { t } = useLanguage()
@@ -885,7 +887,7 @@ function CreateDocumentWorkspace({
   const jobInputRef = useRef<HTMLInputElement>(null)
   const templateUploadRef = useRef<HTMLInputElement>(null)
   const sourceUploadRef = useRef<HTMLInputElement>(null)
-  const [templateCode, setTemplateCode] = useState("")
+  const [templateCode, setTemplateCode] = useState(() => templates.find((item) => item.code === initialTemplateCode)?.code ?? templates[0]?.code ?? "")
   const [jobNumber, setJobNumber] = useState("")
   const [outputFormat, setOutputFormat] = useState<DocumentOutputFormat>("pdf")
   const [contentSections, setContentSections] = useState<DocumentContentSectionCode[]>([])
@@ -894,12 +896,32 @@ function CreateDocumentWorkspace({
   const [studioSession, setStudioSession] = useState<DocumentStudioSession | null>(null)
   const [studioRequest, setStudioRequest] = useState<DocumentStudioRequest | null>(null)
   const [studioTemplateBase64, setStudioTemplateBase64] = useState<string | null>(null)
+  const [studioTemplateFileName, setStudioTemplateFileName] = useState("template.docx")
+  const [studioTemplateMimeType, setStudioTemplateMimeType] = useState("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
   const [studioData, setStudioData] = useState<Record<string, unknown> | null>(null)
   const [studioLoading, setStudioLoading] = useState(false)
   const [studioError, setStudioError] = useState<string | null>(null)
+  const [studioPreviewReady, setStudioPreviewReady] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [publishingSource, setPublishingSource] = useState(false)
+  const [sourceLoading, setSourceLoading] = useState(false)
+  const [sourceReloadKey, setSourceReloadKey] = useState(0)
   const [savedTemplate, setSavedTemplate] = useState<SaveDocumentStudioTemplateResponse | null>(null)
+  const [newTemplateCode, setNewTemplateCode] = useState("")
+  const [newTemplateName, setNewTemplateName] = useState("")
+  const [createTemplateOpen, setCreateTemplateOpen] = useState(false)
+  const [copyTemplateOpen, setCopyTemplateOpen] = useState(false)
+  const [copyTemplateCode, setCopyTemplateCode] = useState("")
+  const [copyTemplateName, setCopyTemplateName] = useState("")
+  const [creatingTemplate, setCreatingTemplate] = useState(false)
+  const [approvingTemplate, setApprovingTemplate] = useState(false)
+  const [draftSampleJson, setDraftSampleJson] = useState('{\n  "job": {\n    "reference": "DEMO-001",\n    "mode": "sea",\n    "origin": "London",\n    "destination": "Rotterdam"\n  },\n  "customer": { "name": "Example Customer Ltd" }\n}')
+  const [draftPreviewUrl, setDraftPreviewUrl] = useState<string | null>(null)
+  const [draftPreviewBusy, setDraftPreviewBusy] = useState(false)
+  const [sourcePreviewSafe, setSourcePreviewSafe] = useState(false)
+  const previewRequestRef = useRef(0)
+  const [reviewedSource, setReviewedSource] = useState<{ templateId: string; version: number; sha256: string; base64: string } | null>(null)
+  const [draftReviewed, setDraftReviewed] = useState(false)
   const [draftUserId, setDraftUserId] = useState<string | null>(null)
   const latestDraftRef = useRef<{ userId: string; draft: DocumentBuilderDraft } | null>(null)
   const restoringDraftRef = useRef(!preview)
@@ -907,6 +929,7 @@ function CreateDocumentWorkspace({
   useEffect(() => {
     const template = templates.find((item) => item.code === initialTemplateCode) ?? templates[0]
     setTemplateCode(template?.code ?? "")
+    if (template && isBookingConfirmationTemplateCode(template.code)) setDraftSampleJson(JSON.stringify(bookingConfirmationPreview, null, 2))
     setOutputFormat(template?.defaultOutputFormat ?? "pdf")
     setContentSections(template?.contentSections.filter((section) => section.required || section.defaultSelected).map((section) => section.code) ?? [])
     setJobNumber("")
@@ -914,15 +937,22 @@ function CreateDocumentWorkspace({
     setStudioSession(null)
     setStudioRequest(null)
     setStudioTemplateBase64(null)
+    setStudioTemplateFileName("template.docx")
+    setStudioTemplateMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     setStudioData(null)
     setStudioError(null)
+    setStudioPreviewReady(false)
     setSavedTemplate(null)
-  }, [initialTemplateCode, templates])
+    setDraftPreviewUrl(null)
+    setDraftReviewed(false)
+  }, [initialTemplateCode, templates[0]?.code])
 
   useEffect(() => {
+    const initialTemplate = templates.find((item) => item.code === initialTemplateCode) ?? templates[0]
+    if (initialTemplate && ["draft", "published"].includes(initialTemplate.status)) return
     const focusFrame = window.requestAnimationFrame(() => jobInputRef.current?.focus())
     return () => window.cancelAnimationFrame(focusFrame)
-  }, [])
+  }, [initialTemplateCode, templates])
 
   useEffect(() => {
     if (preview) return
@@ -930,6 +960,7 @@ function CreateDocumentWorkspace({
 
     async function restoreDraft() {
       try {
+        if (!resumeActiveDraft) return
         const authSession = await getSupabaseSession()
         if (!authSession || disposed) return
         setDraftUserId(authSession.user.id)
@@ -1034,23 +1065,159 @@ function CreateDocumentWorkspace({
   }, [preview])
 
   const selectedTemplate = templates.find((template) => template.code === templateCode)
+
+  function openBookingTemplateCopy() {
+    if (!selectedTemplate || !isBookingConfirmationTemplateCode(selectedTemplate.code)) return
+    let number = 2
+    while (templates.some((template) => template.code === `JOB_CONFIRMATION_LAYOUT_${number}`)) number += 1
+    setCopyTemplateCode(`JOB_CONFIRMATION_LAYOUT_${number}`)
+    setCopyTemplateName(`Booking confirmation · layout ${number}`)
+    setError(null)
+    setCopyTemplateOpen(true)
+  }
+
+  async function copyBookingTemplate() {
+    if (!selectedTemplate) return
+    setCreatingTemplate(true)
+    setError(null)
+    try {
+      const result = await duplicateBookingConfirmationTemplate(selectedTemplate.id, copyTemplateCode.trim().toUpperCase(), copyTemplateName.trim())
+      setCopyTemplateOpen(false)
+      await onTemplateCreated(result.templateCode)
+      setTemplateCode(result.templateCode)
+      setDraftSampleJson(JSON.stringify(bookingConfirmationPreview, null, 2))
+      toast.success(t("Booking template copied"), { description: t("Edit its Word layout, preview the draft, then publish it when approved.") })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("The Booking template could not be copied."))
+    } finally { setCreatingTemplate(false) }
+  }
+
+  useEffect(() => () => { if (draftPreviewUrl) URL.revokeObjectURL(draftPreviewUrl) }, [draftPreviewUrl])
+
+  useEffect(() => {
+    if (preview || !canManageTemplates || !selectedTemplate || !["draft", "published"].includes(selectedTemplate.status)) return
+    let cancelled = false
+    setSourceLoading(true)
+    setSourcePreviewSafe(false)
+    previewRequestRef.current += 1
+    setReviewedSource(null)
+    setDraftSampleJson("{}")
+    setStudioError(null)
+    setStudioTemplateBase64(null)
+    setStudioTemplateFileName("template.docx")
+    setStudioTemplateMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    setSavedTemplate(null)
+    setDraftPreviewUrl(null)
+    setDraftReviewed(false)
+    const sourceRequest = selectedTemplate.status === "draft"
+      ? getDocumentStudioDraftSource(selectedTemplate.id)
+      : getDocumentStudioTemplateSource(selectedTemplate.id)
+    void sourceRequest.then((source) => {
+      if (cancelled) return
+      if (!source) {
+        if (selectedTemplate.status === "published") setStudioError(t("The published template source is unavailable."))
+        return
+      }
+      setSourcePreviewSafe(source.previewSafe === true)
+      setDraftSampleJson(JSON.stringify(source.previewSampleData ?? {}, null, 2))
+      setStudioTemplateBase64(source.templateBase64)
+      setStudioTemplateFileName(source.templateFileName)
+      setStudioTemplateMimeType(source.templateMimeType)
+      setSavedTemplate(source)
+    }).catch((cause) => {
+      if (!cancelled) setStudioError(cause instanceof Error ? cause.message : t("The saved template source could not be opened."))
+    }).finally(() => { if (!cancelled) setSourceLoading(false) })
+    return () => { cancelled = true }
+  }, [canManageTemplates, preview, selectedTemplate?.id, selectedTemplate?.status, sourceReloadKey, t])
+
+  async function createTemplate() {
+    setCreatingTemplate(true)
+    setError(null)
+    try {
+      const result = await createDocumentStudioTemplate(newTemplateCode.trim().toUpperCase(), newTemplateName.trim())
+      setNewTemplateCode("")
+      setNewTemplateName("")
+      setCreateTemplateOpen(false)
+      await onTemplateCreated(result.templateCode)
+      toast.success(t("Draft template created"))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("The template could not be created."))
+    } finally { setCreatingTemplate(false) }
+  }
+
+  async function previewDraft() {
+    if (!selectedTemplate || !studioTemplateBase64) return
+    if (!sourcePreviewSafe) { setStudioError(t(previewPrivacyMessage)); return }
+    const requestId = ++previewRequestRef.current
+    setDraftPreviewUrl(null)
+    setDraftPreviewBusy(true)
+    setStudioError(null)
+    setDraftReviewed(false)
+    setReviewedSource(null)
+    const source = savedTemplate
+    const base64 = studioTemplateBase64
+    const templateId = selectedTemplate.id
+    try {
+      const parsed = JSON.parse(draftSampleJson) as unknown
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(t("Sample data must be a JSON object."))
+      const blob = await previewDraftDocumentStudioTemplate(selectedTemplate.id, studioTemplateBase64, parsed as Record<string, unknown>, studioTemplateFileName)
+      if (requestId === previewRequestRef.current) {
+        setDraftPreviewUrl(URL.createObjectURL(blob))
+        if (source?.sourceSha256 && source.multideckTemplateId === templateId) {
+          setReviewedSource({ templateId, version: source.multideckVersion, sha256: source.sourceSha256, base64 })
+        }
+      }
+    } catch (cause) {
+      if (requestId === previewRequestRef.current) setStudioError(cause instanceof Error ? cause.message : t("The draft preview could not be created."))
+    } finally { if (requestId === previewRequestRef.current) setDraftPreviewBusy(false) }
+  }
+
+  async function approveTemplate() {
+    if (!selectedTemplate || !draftReviewed || !savedTemplate || savedTemplate.status !== "draft") return
+    if (!reviewedSource || reviewedSource.templateId !== selectedTemplate.id
+      || reviewedSource.version !== savedTemplate.multideckVersion
+      || reviewedSource.sha256 !== savedTemplate.sourceSha256 || reviewedSource.base64 !== studioTemplateBase64) {
+      setStudioError(t("Preview the latest saved draft before publishing it."))
+      return
+    }
+    setApprovingTemplate(true)
+    setStudioError(null)
+    try {
+      await approveDocumentStudioTemplate(selectedTemplate.id, reviewedSource.version, reviewedSource.sha256)
+      await onRendered()
+      setSavedTemplate(null)
+      setDraftReviewed(false)
+      clearStudio()
+      setSourceReloadKey((current) => current + 1)
+      toast.success(t("Template published"), { description: t("The reviewed version is now available for document creation.") })
+    } catch (cause) {
+      setStudioError(cause instanceof Error ? cause.message : t("The template could not be published."))
+    } finally { setApprovingTemplate(false) }
+  }
   const selectedModuleName = studioSession?.dataModuleName ?? (selectedTemplate?.targetType === "Job_Header" ? "Jobs" : "")
 
   function chooseTemplate(nextTemplateCode: string) {
+    if (publishingSource || draftPreviewBusy || approvingTemplate) return
     const template = templates.find((item) => item.code === nextTemplateCode)
     setTemplateCode(nextTemplateCode)
+    if (isBookingConfirmationTemplateCode(nextTemplateCode)) setDraftSampleJson(JSON.stringify(bookingConfirmationPreview, null, 2))
     setOutputFormat(template?.defaultOutputFormat ?? "pdf")
     setContentSections(template?.contentSections.filter((section) => section.required || section.defaultSelected).map((section) => section.code) ?? [])
     setError(null)
+    setDraftPreviewUrl(null)
+    setDraftReviewed(false)
+    setStudioPreviewReady(false)
     clearStudio()
   }
 
   function clearStudio({ preserveTemplate = false }: { preserveTemplate?: boolean } = {}) {
+    setReviewedSource(null)
     setStudioSession(null)
     setStudioRequest(null)
     if (!preserveTemplate) setStudioTemplateBase64(null)
     setStudioData(null)
     setStudioError(null)
+    setStudioPreviewReady(false)
     if (!preserveTemplate) setSavedTemplate(null)
   }
 
@@ -1091,13 +1258,20 @@ function CreateDocumentWorkspace({
         return
       }
       const session = await getDocumentStudioSession(request)
-      const activeTemplateBase64 = studioTemplateBase64 ?? session.templateBase64
+      let pendingDraft: Awaited<ReturnType<typeof getDocumentStudioDraftSource>> = null
+      let draftSourceError: string | null = null
+      if (canManageTemplates && !studioTemplateBase64) {
+        try { pendingDraft = await getDocumentStudioDraftSource(selectedTemplate.id) }
+        catch (cause) { draftSourceError = cause instanceof Error ? cause.message : t("A saved draft could not be reopened.") }
+      }
+      const activeTemplateBase64 = studioTemplateBase64 ?? pendingDraft?.templateBase64 ?? session.templateBase64
       const activeStudioData = studioData ?? session.renderOptions.data
       setStudioRequest(request)
       setStudioSession(session)
       setStudioTemplateBase64(activeTemplateBase64)
+      if (draftSourceError) toast.error(draftSourceError)
       setStudioData(activeStudioData)
-      setSavedTemplate(savedTemplate ?? (activeTemplateBase64 === session.templateBase64 && session.carboneTemplateId && session.carboneVersionId && session.multideckTemplateId
+      setSavedTemplate(savedTemplate ?? pendingDraft ?? (activeTemplateBase64 === session.templateBase64 && session.carboneTemplateId && session.carboneVersionId && session.multideckTemplateId
         ? {
             multideckTemplateId: session.multideckTemplateId,
             templateCode: selectedTemplate.code,
@@ -1116,10 +1290,11 @@ function CreateDocumentWorkspace({
 
   async function downloadTemplateForLocalEditing() {
     if (!selectedTemplate || !studioTemplateBase64) return
-    const url = URL.createObjectURL(templateBlobFromBase64(studioTemplateBase64))
-    await startSignedDownload(url, `${selectedTemplate.code.toLowerCase()}-template.docx`)
+    const url = URL.createObjectURL(templateBlobFromBase64(studioTemplateBase64, studioTemplateMimeType))
+    const extension = studioTemplateFileName.split(".").pop() ?? "docx"
+    await startSignedDownload(url, `${selectedTemplate.code.toLowerCase()}-template.${extension}`)
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-    toast.info(t("Template downloaded"), { description: t("Edit the Word file locally, then upload it here to refresh the preview.") })
+    toast.info(t("Template downloaded"))
   }
 
   async function uploadEditedTemplate(file: File | undefined) {
@@ -1128,7 +1303,10 @@ function CreateDocumentWorkspace({
     try {
       const base64 = await readTemplateFile(file)
       setStudioTemplateBase64(base64)
+      setStudioTemplateFileName(file.name)
+      setStudioTemplateMimeType(file.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
       setSavedTemplate(null)
+      setStudioPreviewReady(false)
       toast.success(t("Edited template loaded"), { description: t("The live preview is updating with your current JSON data.") })
     } catch (uploadError) {
       setStudioError(uploadError instanceof Error ? uploadError.message : t("The edited template could not be loaded."))
@@ -1139,6 +1317,11 @@ function CreateDocumentWorkspace({
 
   async function publishTemplateSource(file: File | undefined) {
     if (!file || !selectedTemplate || !canManageTemplates) return
+    previewRequestRef.current += 1
+    setSourcePreviewSafe(false)
+    setDraftSampleJson("{}")
+    setDraftPreviewUrl(null)
+    setDraftReviewed(false)
     setPublishingSource(true)
     setStudioError(null)
     setError(null)
@@ -1146,13 +1329,18 @@ function CreateDocumentWorkspace({
       const base64 = await readTemplateFile(file)
       const result = await bootstrapDocumentStudioTemplate(selectedTemplate.id, base64)
       setStudioTemplateBase64(base64)
+      setStudioTemplateFileName(file.name)
+      setStudioTemplateMimeType(file.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
       setSavedTemplate(result)
+      setDraftPreviewUrl(null)
+      setDraftReviewed(false)
       await onRendered()
-      toast.success(t("Template source published"), {
-        description: t("The published template now uses this Word source."),
+      setSourceReloadKey((current) => current + 1)
+      toast.success(t("Template source saved"), {
+        description: t("The source needs a privacy check before it can appear in template previews."),
       })
     } catch (uploadError) {
-      setStudioError(uploadError instanceof Error ? uploadError.message : t("The template source could not be published."))
+      setStudioError(uploadError instanceof Error ? uploadError.message : t("The template source could not be saved."))
     } finally {
       setPublishingSource(false)
       if (sourceUploadRef.current) sourceUploadRef.current.value = ""
@@ -1166,10 +1354,11 @@ function CreateDocumentWorkspace({
     try {
       const result = await saveDocumentStudioTemplate({ ...studioRequest, templateBase64: studioTemplateBase64 })
       setSavedTemplate(result)
+      setDraftReviewed(false)
       toast.success(t("Template version saved"), {
         description: result.status === "draft"
           ? t("The edited file is a draft. Publishing remains a separate approval.")
-          : t("The existing published version now has its stable Carbone template ID."),
+          : t("The template version is saved."),
       })
     } catch (saveError) {
       setStudioError(saveError instanceof Error ? saveError.message : t("The template version could not be saved."))
@@ -1235,6 +1424,7 @@ function CreateDocumentWorkspace({
   }
 
   const studioReady = Boolean(studioSession && studioRequest)
+  const pendingTemplateEdit = Boolean(studioSession && studioTemplateBase64 !== studioSession.templateBase64)
   const contextError = error ?? studioError
 
   return (
@@ -1245,13 +1435,14 @@ function CreateDocumentWorkspace({
             <ArrowLeft className="size-4 rtl:-scale-x-100" strokeWidth={1.5} aria-hidden="true" />
           </Button>
           <div className="min-w-0">
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-accent)]">{t("Document builder")}</p>
-            <h1 id="document-editor-title" className="mt-0.5 truncate text-[18px] font-medium leading-tight tracking-[-0.02em] text-[var(--md-ink)]">{t("Create a document")}</h1>
+            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-accent)]">{t("Documents")}</p>
+            <h1 id="document-editor-title" className="mt-0.5 truncate text-[18px] font-medium leading-tight tracking-[-0.02em] text-[var(--md-ink)]">{t("Manage templates")}</h1>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {canManageTemplates ? <Button type="button" variant="ghost" disabled={publishingSource || draftPreviewBusy || approvingTemplate} onClick={() => setCreateTemplateOpen(true)} className="h-9 text-[11px]"><FilePlus2 className="size-3.5" aria-hidden="true" />{t("New template")}</Button> : null}
           <Badge className={cn("hidden h-7 border-0 px-2.5 text-[11px] font-medium shadow-none sm:inline-flex", studioReady ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[var(--md-surface-tint)] text-[var(--md-subtle)]")}>
-            {studioLoading ? t("Checking job access…") : savedTemplate ? `${t("Template ID")} ${savedTemplate.carboneTemplateId}` : studioReady ? t("JSON and preview ready") : t("Choose document context")}
+            {sourceLoading ? t("Opening template source…") : studioLoading ? t("Checking job access…") : studioReady ? t("JSON and preview ready") : savedTemplate?.status === "draft" || selectedTemplate?.status === "draft" ? t("Draft template") : selectedTemplate?.status === "published" ? t("Published template") : t("Choose document context")}
           </Badge>
           {studioReady ? (
             <>
@@ -1261,7 +1452,7 @@ function CreateDocumentWorkspace({
               <Button type="button" variant="ghost" size="icon-lg" onClick={downloadTemplateForLocalEditing} aria-label={t("Download template to edit locally")} title={t("Download template to edit locally")} className="rounded-[var(--md-radius-md)]">
                 <Download className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
               </Button>
-              <input
+              {!isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? <><input
                 ref={templateUploadRef}
                 type="file"
                 accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -1272,13 +1463,18 @@ function CreateDocumentWorkspace({
               />
               <Button type="button" variant="ghost" size="icon-lg" onClick={() => templateUploadRef.current?.click()} aria-label={t("Upload edited Word template and refresh preview")} title={t("Upload edited Word template and refresh preview")} className="rounded-[var(--md-radius-md)]">
                 <FileUp className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
-              </Button>
-              {canManageTemplates ? (
+              </Button></> : null}
+              {canManageTemplates && !isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? (
                 <Button type="button" variant="ghost" onClick={() => void saveTemplateVersion()} disabled={savingTemplate} className="h-9 rounded-[var(--md-radius-md)] px-2.5 text-[11px]">
                   {savingTemplate ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Save className="size-3.5" strokeWidth={1.6} aria-hidden="true" />}
                   <span className="hidden xl:inline">{savingTemplate ? t("Saving…") : t("Save template")}</span>
                 </Button>
               ) : null}
+              {canManageTemplates && savedTemplate?.status === "draft" ? <>
+                <label className="flex items-center gap-1.5 text-[11px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} disabled={!studioPreviewReady || !reviewedSource} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label>
+                <Button type="button" variant="ghost" disabled={!studioPreviewReady || !reviewedSource || !draftReviewed || approvingTemplate} onClick={() => void approveTemplate()} className="h-9 text-[11px]">{approvingTemplate ? t("Publishing…") : t("Publish version")}</Button>
+                {!reviewedSource ? <p className="text-[11px] text-[var(--md-subtle)]">{t("Publish from Manage templates after reviewing a fictional-data preview.")}</p> : null}
+              </> : null}
               {savedTemplate ? (
                 <Button type="button" variant="ghost" size="icon-lg" onClick={() => void copyTemplateId()} aria-label={t("Copy Carbone template ID")} title={t("Copy Carbone template ID")} className="rounded-[var(--md-radius-md)]">
                   <Copy className="size-3.5" strokeWidth={1.6} aria-hidden="true" />
@@ -1286,14 +1482,36 @@ function CreateDocumentWorkspace({
               ) : null}
             </>
           ) : null}
-          {studioReady ? (
-            <Button type="button" onClick={() => void submit()} disabled={submitting} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3.5 text-[12px] text-white shadow-[0_8px_20px_var(--md-accent-a14)]">
+          {studioReady && !isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? (
+            <Button type="button" onClick={() => void submit()} disabled={submitting || pendingTemplateEdit || savedTemplate?.status === "draft"} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3.5 text-[12px] text-white shadow-[0_8px_20px_var(--md-accent-a14)]">
               {submitting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <FilePlus2 className="size-3.5" strokeWidth={1.8} aria-hidden="true" />}
               <span className="hidden sm:inline">{submitting ? t("Preparing document…") : t("Create and download")}</span>
             </Button>
           ) : null}
         </div>
       </header>
+
+      <Dialog open={createTemplateOpen} onOpenChange={setCreateTemplateOpen}>
+        <DialogContent className="max-w-md border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
+          <DialogHeader><DialogTitle>{t("New document template")}</DialogTitle><DialogDescription>{t("Create a draft, then upload its Word source and inspect a preview before publishing.")}</DialogDescription></DialogHeader>
+          <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void createTemplate() }}>
+            <label className="block text-[12px] text-[var(--md-ink)]">{t("Name")}<Input value={newTemplateName} onChange={(event) => setNewTemplateName(event.target.value)} maxLength={180} required minLength={2} className="mt-1.5" /></label>
+            <label className="block text-[12px] text-[var(--md-ink)]">{t("Code")}<Input value={newTemplateCode} onChange={(event) => setNewTemplateCode(event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))} maxLength={100} required minLength={2} placeholder="BOOKING_CONFIRMATION" className="mt-1.5" /></label>
+            <Button type="submit" disabled={creatingTemplate}>{creatingTemplate ? t("Creating…") : t("Create draft")}</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={copyTemplateOpen} onOpenChange={setCopyTemplateOpen}>
+        <DialogContent className="max-w-md border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
+          <DialogHeader><DialogTitle>{t("Create editable copy")}</DialogTitle><DialogDescription>{t("The current Booking confirmation stays available. Your copy remains a draft until you preview and publish it.")}</DialogDescription></DialogHeader>
+          <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void copyBookingTemplate() }}>
+            <label className="block text-[12px] text-[var(--md-ink)]">{t("Name")}<Input value={copyTemplateName} onChange={(event) => setCopyTemplateName(event.target.value)} maxLength={180} required minLength={2} className="mt-1.5" /></label>
+            {error ? <p role="alert" className="text-[12px] text-[var(--md-status-red-ink)]">{error}</p> : null}
+            <Button type="submit" disabled={creatingTemplate}>{creatingTemplate ? t("Creating…") : t("Create editable copy")}</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {studioReady ? (
       <div className="md-document-editor__workspace" data-studio-ready="true">
@@ -1328,6 +1546,7 @@ function CreateDocumentWorkspace({
               sampleData={studioData}
               onDataChange={setStudioData}
               onError={setStudioError}
+              onPreviewChange={(ready) => { setStudioPreviewReady(ready); if (!ready) setDraftReviewed(false) }}
             />
           </div>
           <div className="sr-only" role="status" aria-live="polite">
@@ -1335,6 +1554,29 @@ function CreateDocumentWorkspace({
           </div>
         </section>
       </div>
+      ) : selectedTemplate && ["draft", "published"].includes(selectedTemplate.status) ? (
+        <main className="min-h-0 flex-1 overflow-y-auto bg-[var(--md-bg-strong)] px-4 py-8 sm:px-6">
+          <div className="mx-auto max-w-5xl space-y-5">
+            <label className="block max-w-sm text-[12px] font-medium text-[var(--md-ink)]">{t("Template")}<Select value={templateCode} onValueChange={chooseTemplate}><SelectTrigger className="mt-1.5 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] font-normal shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger><SelectContent>{templates.map((template) => <SelectItem key={template.id} value={template.code}>{t(template.name)}{template.status === "draft" ? ` · ${t("Draft")}` : ""}</SelectItem>)}</SelectContent></Select></label>
+            <div>
+              <p className="text-[11px] font-medium text-[var(--md-accent)]">{t(savedTemplate?.status === "draft" || selectedTemplate.status === "draft" ? "Draft template" : "Published template")} · v{savedTemplate?.multideckVersion ?? selectedTemplate.version}</p>
+              <h2 className="mt-1 text-[18px] font-medium text-[var(--md-ink)]" data-i18n-skip>{selectedTemplate.name}</h2>
+              <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(selectedTemplate.status === "published" ? "Download and edit the Word layout, then upload a draft revision. The published layout stays in use until you preview, review and publish the changes." : "Upload a Word source, preview it with safe sample data, then publish the reviewed version.")}</p>
+            </div>
+            {studioError ? <InlineNotice tone="error" action={!studioTemplateBase64 ? <Button type="button" variant="ghost" disabled={sourceLoading} onClick={() => setSourceReloadKey((current) => current + 1)}>{t("Try again")}</Button> : undefined}>{studioError}</InlineNotice> : null}
+            <input ref={sourceUploadRef} type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" onChange={(event) => void publishTemplateSource(event.target.files?.[0])} />
+            <div className="flex flex-wrap items-center gap-3">
+              {studioTemplateBase64 ? <Button type="button" variant="ghost" disabled={publishingSource || draftPreviewBusy} onClick={() => void downloadTemplateForLocalEditing()}><Download className="size-4" aria-hidden="true" />{t("Download template source")}</Button> : null}
+              <Button type="button" variant="ghost" disabled={!canManageTemplates || sourceLoading || publishingSource || draftPreviewBusy || approvingTemplate} onClick={() => sourceUploadRef.current?.click()}><FileUp className="size-4" aria-hidden="true" />{publishingSource ? t("Saving source…") : t("Upload edited Word source")}</Button>
+              {selectedTemplate.status === "published" && isBookingConfirmationTemplateCode(selectedTemplate.code) ? <Button type="button" variant="ghost" disabled={!canManageTemplates || sourceLoading || publishingSource || draftPreviewBusy || approvingTemplate} onClick={openBookingTemplateCopy}><Copy className="size-4" aria-hidden="true" />{t("Edit as new template")}</Button> : null}
+              <span role="status" className="text-[11px] text-[var(--md-subtle)]">{sourceLoading ? t("Opening template source…") : savedTemplate ? `${t(savedTemplate.status === "draft" ? "Saved draft" : "Published source")} · v${savedTemplate.multideckVersion}` : t("No source loaded in this session")}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={sourceLoading || !studioTemplateBase64 || !sourcePreviewSafe || publishingSource || draftPreviewBusy || approvingTemplate} onClick={() => void previewDraft()}>{draftPreviewBusy ? t("Rendering…") : t("Preview template")}</Button><span className="text-[11px] text-[var(--md-subtle)]">{t("Uses fictional sample data; no Job number is needed.")}</span></div>
+            <div className="min-h-[440px] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">{draftPreviewUrl ? <iframe src={draftPreviewUrl} title={t("Template preview")} className="h-full min-h-[440px] w-full bg-white" /> : <div className="grid h-full min-h-[440px] place-items-center text-[12px] text-[var(--md-subtle)]">{t(!sourceLoading && studioTemplateBase64 && !sourcePreviewSafe ? previewPrivacyMessage : "Preview will appear here")}</div>}</div>
+            <div className="flex flex-wrap items-center gap-3"><label className="flex items-center gap-2 text-[12px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} disabled={!canManageTemplates || !reviewedSource || !draftPreviewUrl || draftPreviewBusy || savedTemplate?.status !== "draft"} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label><Button type="button" variant="ghost" disabled={!canManageTemplates || !reviewedSource || !draftReviewed || draftPreviewBusy || savedTemplate?.status !== "draft" || approvingTemplate} onClick={() => void approveTemplate()}>{approvingTemplate ? t("Publishing…") : t("Publish reviewed version")}</Button></div>
+            <details className="max-w-3xl text-[12px] text-[var(--md-text)]"><summary className="cursor-pointer rounded-[var(--md-radius-md)] py-2 font-medium text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]">{t("Preview sample data (advanced)")}</summary><label className="mt-2 block">{t("Safe sample data (JSON)")}<textarea value={draftSampleJson} readOnly spellCheck={false} className="mt-2 h-[360px] w-full resize-y rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] p-4 font-sans text-[12px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" /><span className="mt-1 block text-[11px] text-[var(--md-subtle)]">{t("Fixed fictional examples. Real customer data cannot be entered in template previews.")}</span></label></details>
+          </div>
+        </main>
       ) : (
         <main data-document-context-step className="min-h-0 flex-1 overflow-y-auto bg-[var(--md-bg-strong)] px-4 py-8 sm:px-6 sm:py-10">
           <form
@@ -1468,7 +1710,7 @@ function CreateDocumentWorkspace({
                   <p>{t("The exact source data is snapshotted for audit before the document is rendered.")}</p>
                 </div>
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-                  {canManageTemplates ? (
+                  {canManageTemplates && !isBookingConfirmationTemplateCode(selectedTemplate?.code ?? "") ? (
                     <>
                       <input
                         ref={sourceUploadRef}
@@ -1528,6 +1770,16 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const [workspace, setWorkspace] = useState<DocumentBuilderWorkspace | null>(initialWorkspace ?? documentWorkspaceCache)
   const [loading, setLoading] = useState(!initialWorkspace && !documentWorkspaceCache)
   const [error, setError] = useState<string | null>(null)
+  const [library, setLibrary] = useState<TemplateLibrarySettings>({ order: [], removedTemplates: [] })
+  const [libraryReady, setLibraryReady] = useState(preview)
+  const [libraryError, setLibraryError] = useState<string | null>(null)
+  const [libraryBusy, setLibraryBusy] = useState(false)
+  const [removeTemplate, setRemoveTemplate] = useState<DocumentTemplateSummary | null>(null)
+  const [removedOpen, setRemovedOpen] = useState(false)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropId, setDropId] = useState<string | null>(null)
+  const [libraryAnnouncement, setLibraryAnnouncement] = useState("")
+  const removalFocusId = useRef<string | null>(null)
   const [documentOffset, setDocumentOffset] = useState(0)
   const [documentPageSize, setDocumentPageSize] = useState(defaultPaginationPageSize)
   const [documentQuery, setDocumentQuery] = useState(initialDocumentSearch)
@@ -1550,6 +1802,53 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const [previewDocumentError, setPreviewDocumentError] = useState<string | null>(null)
   const createTriggerTemplateRef = useRef<string | null>(null)
   const previewRequestIdRef = useRef(0)
+
+  async function loadLibrary() {
+    if (preview) return
+    try {
+      setLibrary(await updateTemplateLibrary())
+      setLibraryReady(true)
+      setLibraryError(null)
+    } catch (failure) {
+      setLibraryError(failure instanceof Error ? failure.message : t("Template controls could not be loaded."))
+    }
+  }
+  useEffect(() => { void loadLibrary() }, [])
+
+  async function moveTemplate(id: string, targetId: string) {
+    if (libraryBusy || !libraryReady || id === targetId) return
+    const nextOrder = libraryTemplates.map((template) => template.id)
+    const from = nextOrder.indexOf(id)
+    const to = nextOrder.indexOf(targetId)
+    if (from < 0 || to < 0) return
+    nextOrder.splice(to, 0, nextOrder.splice(from, 1)[0])
+    const previous = library
+    setLibrary({ ...library, order: nextOrder })
+    setLibraryBusy(true)
+    setLibraryError(null)
+    try {
+      if (!preview) setLibrary(await updateTemplateLibrary("reorder", undefined, nextOrder))
+      setLibraryAnnouncement(`${libraryTemplates[from].name} ${t("moved to position")} ${to + 1}.`)
+    } catch (failure) {
+      setLibrary(previous)
+      setLibraryError(failure instanceof Error ? failure.message : t("Your template order could not be saved."))
+    } finally { setLibraryBusy(false) }
+  }
+
+  async function changeTemplateAvailability(templateId: string, action: "remove" | "restore") {
+    if (libraryBusy) return
+    setLibraryBusy(true)
+    setLibraryError(null)
+    try {
+      if (preview) throw new Error(t("Template removal is unavailable in this preview."))
+      setLibrary(await updateTemplateLibrary(action, templateId))
+      setRemoveTemplate(null)
+      await loadWorkspace()
+      setLibraryAnnouncement(t(action === "remove" ? "Template removed. It can be restored from Removed templates." : "Template restored."))
+    } catch (failure) {
+      setLibraryError(failure instanceof Error ? failure.message : t("The template could not be updated."))
+    } finally { setLibraryBusy(false) }
+  }
 
   const dateFormatter = useMemo(
     () => new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
@@ -1641,7 +1940,8 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     })
   }
 
-  function openManage() {
+  function openManage(templateCode: string | null = null) {
+    setSelectedTemplateCode(templateCode)
     setManageOpen(true)
     navigate?.("/documents/templates")
   }
@@ -1649,6 +1949,11 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   function closeManage() {
     setManageOpen(false)
     navigate?.("/documents")
+  }
+
+  async function selectCreatedTemplate(code: string) {
+    await loadWorkspace()
+    setSelectedTemplateCode(code)
   }
 
   async function download(document: GeneratedDocumentSummary) {
@@ -1707,7 +2012,14 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     }
   }
 
+  // Booking confirmation remains in the library; its action opens the Booking review.
   const publishedTemplates = workspace?.templates.filter((template) => template.status === "published") ?? []
+  const libraryTemplates = (workspace?.templates.filter((template) => template.status === "published"
+    || (workspace.permissions.canManageTemplates && template.status === "draft")) ?? []).sort((left, right) => {
+      const leftIndex = library.order.indexOf(left.id)
+      const rightIndex = library.order.indexOf(right.id)
+      return (leftIndex < 0 ? library.order.length : leftIndex) - (rightIndex < 0 ? library.order.length : rightIndex)
+    })
   const generatedDocuments = workspace?.generatedDocuments ?? []
   const generatedDocumentTotal = workspace?.generatedDocumentTotal ?? generatedDocuments.length
   const generatedDocumentColumns = useMemo<DataTableColumn<GeneratedDocumentSummary>[]>(() => [
@@ -1722,12 +2034,13 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   if (manageOpen && workspace) {
     return (
       <CreateDocumentWorkspace
-        templates={publishedTemplates}
+        templates={workspace.templates}
         canManageTemplates={workspace.permissions.canManageTemplates}
         initialTemplateCode={selectedTemplateCode}
         resumeActiveDraft={false}
         onClose={closeManage}
         onRendered={loadWorkspace}
+        onTemplateCreated={selectCreatedTemplate}
         preview={preview}
       />
     )
@@ -1736,7 +2049,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   if (createOpen && workspace) {
     return (
       <QuickCreateDocumentWorkspace
-        templates={workspace.templates.filter((template) => template.status === "published")}
+        templates={publishedTemplates}
         initialTemplateCode={selectedTemplateCode}
         onClose={closeCreate}
         onRendered={loadWorkspace}
@@ -1755,9 +2068,9 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-2xl">
           <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-accent)]">{t("Documents")}</p>
-          <h1 className="mt-1 text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t("Create the right document in seconds")}</h1>
+          <h1 className="mt-1 text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t("Document templates")}</h1>
           <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
-            {t("Choose a template and a job. Multideck takes care of the data, audit trail and secure delivery.")}
+            {t("Manage reusable templates here, then create a document from the relevant job or workflow.")}
           </p>
         </div>
         <Button
@@ -1782,47 +2095,55 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
       ) : null}
 
       <section className="md-section-stack">
+        <p className="sr-only" role="status">{libraryAnnouncement}</p>
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Templates")}</h2>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Choose a template to create a customer document.")}</p>
+            <h2 id="template-library-heading" tabIndex={-1} className="text-[17px] font-medium text-[var(--md-ink)]">{t("Templates")}</h2>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(workspace?.permissions.canManageTemplates ? "Open a template to edit its layout." : "Choose a template to create a customer document.")}</p>
           </div>
+          <div className="flex flex-wrap items-center justify-end gap-1">
+          {workspace?.permissions.canManageTemplates ? <Button type="button" variant="ghost" onClick={() => setRemovedOpen(true)} disabled={!libraryReady} className="text-[12px]">{t("Removed templates")}{library.removedTemplates.length ? ` (${library.removedTemplates.length})` : ""}</Button> : null}
           {workspace?.permissions.canManageTemplates && navigate ? (
-            <Button type="button" variant="ghost" onClick={openManage} className="text-[12px]">
+            <Button type="button" variant="ghost" onClick={() => openManage()} className="text-[12px]">
               {t("Manage templates")}
             </Button>
           ) : null}
+          </div>
         </div>
+        <p className="text-[12px] text-[var(--md-subtle)]">{t("Drag templates into your preferred order, or use their menu. Your order is saved to your profile.")}</p>
+        {libraryError ? <InlineNotice tone="error" action={<Button variant="ghost" onClick={() => void loadLibrary()} disabled={libraryBusy}>{t("Try again")}</Button>}>{libraryError}</InlineNotice> : null}
 
         {loading && !workspace ? (
           <Surface tone="soft" className="grid min-h-36 place-items-center">
             <LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" aria-label={t("Loading templates")} />
           </Surface>
-        ) : publishedTemplates.length ? (
+        ) : libraryTemplates.length ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {publishedTemplates.map((template) => {
-              const previewDocument = currentPreviewDocument(template, workspace?.generatedDocuments ?? [])
-              const jobSource = previewDocument
-                ?? workspace?.generatedDocuments.find((document) => document.status === "ready" && document.templateCode === template.code)
-                ?? workspace?.generatedDocuments.find((document) => document.status === "ready")
+            {libraryTemplates.map((template, index) => {
               return (
+              <div key={template.id} data-template-id={template.id}
+                onDragOver={(event) => { if (draggingId && !libraryBusy) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropId(template.id) } }}
+                onDrop={(event) => { event.preventDefault(); if (draggingId) void moveTemplate(draggingId, template.id); setDraggingId(null); setDropId(null) }}
+                className={cn("relative min-w-0 rounded-[var(--md-radius-sm)]", draggingId === template.id && "opacity-50", dropId === template.id && draggingId !== template.id && "outline-2 outline-offset-4 outline-[var(--md-accent)]")}>
               <button
-                key={template.id}
                 type="button"
-                onClick={() => openCreate(template.code)}
+                draggable={libraryReady && !libraryBusy}
+                onDragStart={(event) => { event.dataTransfer.setData("text/plain", template.id); event.dataTransfer.effectAllowed = "move"; setDraggingId(template.id) }}
+                onDragEnd={() => { setDraggingId(null); setDropId(null) }}
+                onClick={() => workspace?.permissions.canManageTemplates ? openManage(template.code) : openCreate(template.code)}
                 data-document-template-code={template.code}
-                disabled={!workspace?.permissions.canGenerate || template.status !== "published"}
-                aria-label={`${t("Use template")}: ${t(template.name)}`}
-                className="group min-w-0 text-start outline-none disabled:cursor-not-allowed disabled:opacity-45"
+                disabled={!workspace?.permissions.canManageTemplates && !workspace?.permissions.canGenerate}
+                aria-label={`${t(workspace?.permissions.canManageTemplates ? "Edit template" : "Use template")}: ${t(template.name)}`}
+                className="group w-full min-w-0 text-start outline-none disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <span className="block aspect-[210/297] overflow-hidden rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-0.5 group-hover:shadow-[var(--md-shadow-soft)] group-focus-visible:ring-[3px] group-focus-visible:ring-[var(--md-accent-a14)] group-active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none" aria-hidden="true">
                   <DocumentTemplatePreview
                     template={template}
-                    previewDocument={previewDocument}
-                    previewJobNumber={previewJobNumber(jobSource)}
+                    canManageTemplates={Boolean(workspace?.permissions.canManageTemplates)}
                   />
                 </span>
                 <span className="mt-2.5 block min-w-0 text-center">
+                  <span className="mb-1 block text-[11px] text-[var(--md-subtle)]">{t(template.status === "draft" ? "Draft" : "Published")} · v{template.version}</span>
                   <span className="relative inline-block pb-1 text-[13px] font-medium leading-5 text-[var(--md-ink)]">
                     {t(template.name)}
                     <svg aria-hidden="true" className="absolute inset-x-0 -bottom-0.5 h-1 w-full overflow-visible" viewBox="0 0 100 4" preserveAspectRatio="none">
@@ -1839,6 +2160,17 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
                   </span>
                 </span>
               </button>
+              <div className="absolute end-1 top-1">
+                <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="secondary" className="size-10 p-0" aria-label={`${t("Template options")}: ${template.name}`} disabled={libraryBusy}><MoreHorizontal className="size-4" aria-hidden="true" /></Button></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem disabled={!libraryReady || index === 0} onSelect={() => void moveTemplate(template.id, libraryTemplates[0].id)}>{t("Move to top")}</DropdownMenuItem>
+                    <DropdownMenuItem disabled={!libraryReady || index === 0} onSelect={() => void moveTemplate(template.id, libraryTemplates[index - 1].id)}>{t("Move earlier")}</DropdownMenuItem>
+                    <DropdownMenuItem disabled={!libraryReady || index === libraryTemplates.length - 1} onSelect={() => void moveTemplate(template.id, libraryTemplates[index + 1].id)}>{t("Move later")}</DropdownMenuItem>
+                    {workspace?.permissions.canManageTemplates ? <><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" disabled={!libraryReady} onSelect={() => { removalFocusId.current = template.id; setRemoveTemplate(template) }}>{t("Remove template")}</DropdownMenuItem></> : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              </div>
               )
             })}
           </div>
@@ -1851,11 +2183,24 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
         )}
       </section>
 
-      <section className="md-section-stack">
-        <div>
-          <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Recent documents")}</h2>
-          <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Every file is private and downloaded through a short-lived secure link.")}</p>
-        </div>
+      <Dialog open={Boolean(removeTemplate)} onOpenChange={(open) => { if (!open && !libraryBusy) setRemoveTemplate(null) }}>
+        <DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); const tile = document.querySelector<HTMLElement>(`[data-template-id="${removalFocusId.current}"] button[aria-haspopup="menu"]`); (tile ?? document.getElementById("template-library-heading"))?.focus() }}><DialogHeader><DialogTitle>{t("Remove template?")}</DialogTitle><DialogDescription>{removeTemplate?.name}. {t("This removes it from the library and new document choices for everyone. Existing documents and version history stay intact. You can restore it later.")}</DialogDescription></DialogHeader>
+          {libraryError ? <p role="alert" className="text-[13px]">{libraryError}</p> : null}
+          <div className="flex justify-end gap-2"><Button variant="ghost" disabled={libraryBusy} onClick={() => setRemoveTemplate(null)}>{t("Cancel")}</Button><Button disabled={libraryBusy} onClick={() => removeTemplate && void changeTemplateAvailability(removeTemplate.id, "remove")}>{libraryBusy ? t("Removing…") : t("Remove template")}</Button></div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={removedOpen} onOpenChange={setRemovedOpen}>
+        <DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); document.getElementById("template-library-heading")?.focus() }}><DialogHeader><DialogTitle>{t("Removed templates")}</DialogTitle><DialogDescription>{t("Restore a template to its previous draft or published state. Its files and history have not been deleted.")}</DialogDescription></DialogHeader>
+          {libraryError ? <p role="alert" className="text-[13px]">{libraryError}</p> : null}
+          <div className="max-h-96 overflow-y-auto">{library.removedTemplates.length ? library.removedTemplates.map((template) => <div key={template.id} className="flex items-center justify-between gap-4 py-2"><span className="text-[13px]">{template.name}</span><Button variant="ghost" disabled={libraryBusy} onClick={() => void changeTemplateAvailability(template.id, "restore")} aria-label={`${t("Restore")}: ${template.name}`}>{t("Restore")}</Button></div>) : <p className="py-4 text-[13px] text-[var(--md-subtle)]">{t("No removed templates.")}</p>}</div>
+        </DialogContent>
+      </Dialog>
+
+      <details className="md-section-stack group">
+        <summary className="cursor-pointer text-[13px] font-medium text-[var(--md-text)] marker:text-[var(--md-subtle)]">
+          {t("Recent Job files")}
+          <span className="ms-2 text-[11px] font-normal text-[var(--md-subtle)]">{t("Files previously generated from this workspace")}</span>
+        </summary>
         {documentPageError ? <InlineNotice tone="error" className="mb-3" action={<Button type="button" variant="ghost" onClick={() => { lastDocumentPageKeyRef.current = null; setDocumentSort((current) => current ? { ...current } : { id: "created", direction: "desc" }) }}>{t("Try again")}</Button>}>{documentPageError}</InlineNotice> : null}
         <DataTable
           ariaLabel="Recent documents"
@@ -1881,7 +2226,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           toolbarSearch={<label className="relative min-w-0 sm:w-[240px]"><span className="sr-only">{t("Search documents")}</span><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" /><Input value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className="h-8 ps-9 text-base sm:text-[12px]" placeholder={t("Document, job or customer…")} /></label>}
           emptyState={<div className="py-4 text-center">{!documentPageLoading && !documentPageError ? <EmptyStateIllustration variant={debouncedDocumentQuery ? "search" : "documents"} className="mb-3" /> : null}<p className="text-[11px] text-[var(--md-subtle)]">{documentPageLoading ? t("Loading documents…") : debouncedDocumentQuery ? t("No documents match this search.") : t("No documents have been generated yet.")}</p></div>}
         />
-      </section>
+      </details>
 
       <Dialog open={Boolean(previewDocument)} onOpenChange={(open) => { if (!open) closeDocumentPreview() }}>
         <DialogContent

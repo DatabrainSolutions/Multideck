@@ -103,10 +103,12 @@ test('Admin dashboard reads the right figures only for users holding Finance Dir
         ('00000000-0000-4000-8000-00000000b002',1,'${income}',0,1300),('00000000-0000-4000-8000-00000000b002',2,'${overhead}',250,0),
         ('00000000-0000-4000-8000-00000000b002',3,'${bank}',1050,0),
         ('00000000-0000-4000-8000-00000000b003',1,'${income}',0,99999);
-      insert into "FIN_CashTransactions"("FINCash_ID","FINCash_TypeCode","FINCash_StatusCode","FINCash_LegalEntityID","FINCash_TransactionDate","FINCash_LocalAmount") values
-        (gen_random_uuid(),'customer_receipt','approved','${entity}','2026-09-10',800),
-        (gen_random_uuid(),'supplier_payment','submitted','${entity}','2026-09-12',-300),
-        (gen_random_uuid(),'customer_receipt','draft','${entity}','2026-09-12',5000);
+      -- The schema defaults AccountingDate to CURRENT_DATE. Pin both dates to
+      -- the reporting example so this fixture also runs after September ends.
+      insert into "FIN_CashTransactions"("FINCash_ID","FINCash_TypeCode","FINCash_StatusCode","FINCash_LegalEntityID","FINCash_TransactionDate","FINCash_AccountingDate","FINCash_LocalAmount") values
+        (gen_random_uuid(),'customer_receipt','approved','${entity}','2026-09-10','2026-09-10',800),
+        (gen_random_uuid(),'supplier_payment','submitted','${entity}','2026-09-12','2026-09-12',-300),
+        (gen_random_uuid(),'customer_receipt','draft','${entity}','2026-09-12','2026-09-12',5000);
       insert into "Org_Master"("Org_id","Org_Name") values ('${orgA}','Acme Imports'),('${orgB}','Blue Harbour');
       insert into "Job_Header"("Job_ID","Job_Customer","Job_TransportModeSummary","Job_OriginUNLocode","Job_DestinationUNLocode") values
         ('${jobSea}','${orgA}','sea','GBFXT','CNSHA'),('${jobAir}','${orgB}','Air','USNYC','GBLHR');

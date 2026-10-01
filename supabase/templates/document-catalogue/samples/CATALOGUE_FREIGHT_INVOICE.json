@@ -1,0 +1,74 @@
+{
+  "document": {
+    "issuer": {
+      "name": "Example Freight Ltd",
+      "address": "Example office address",
+      "email": "operator@example.test",
+      "phone": "Not recorded"
+    },
+    "reference": "DEMO-001",
+    "issuedAt": "30 Sep 2026",
+    "fields": {
+      "invoiceNumber": "DEMO-001",
+      "invoiceDate": "30 Oct 2026",
+      "dueDate": "30 Oct 2026",
+      "customerReference": "DEMO-001",
+      "jobReference": "DEMO-001",
+      "currency": "GBP",
+      "vatRegistration": "Not recorded"
+    },
+    "instructions": "Handle with care. Dates shown are planned unless explicitly recorded as actual.",
+    "handling": "Fragile",
+    "terms": "Not recorded",
+    "totals": {
+      "net": "GBP 200.00",
+      "tax": "GBP 40.00",
+      "total": "GBP 240.00"
+    },
+    "paymentInstructions": "Use the verified Finance payment instructions",
+    "preparedBy": "Example Operator",
+    "customer": {
+      "name": "Example Customer",
+      "address": "Fictional address for template review",
+      "registration": "Not recorded"
+    },
+    "shipper": {
+      "name": "Example Exporter",
+      "address": "Fictional address for template review",
+      "registration": "Not recorded"
+    },
+    "consignee": {
+      "name": "Example Importer",
+      "address": "Fictional address for template review",
+      "registration": "Not recorded"
+    },
+    "notify": {
+      "name": "Example Agent",
+      "address": "Fictional address for template review",
+      "registration": "Not recorded"
+    },
+    "collection": {
+      "address": "Explicit fictional collection location",
+      "date": "30 Oct 2026"
+    },
+    "delivery": {
+      "address": "Explicit fictional delivery location",
+      "date": "28 Nov 2026"
+    },
+    "route": {
+      "origin": "GBFXT",
+      "destination": "INNSA",
+      "mode": "Sea"
+    },
+    "invoiceLines": [
+      {
+        "description": "Fictional freight service",
+        "quantity": "1",
+        "net": "200.00",
+        "taxRate": "20%",
+        "tax": "40.00",
+        "total": "240.00"
+      }
+    ]
+  }
+}
