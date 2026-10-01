@@ -397,6 +397,10 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null, 
   }
 
   if (route.startsWith("/finance/")) {
+    if (/^\/finance\/payables\/cash\/[^/]+$/.test(route)) return [
+      { label: "Home", route: "/" }, { label: "Finance", route: "/finance/receivables" },
+      { label: "Supplier payments & allocation", route: "/finance/payables/cash" }, { label: "Supplier payment" },
+    ]
     const documentMatch = route.match(/^\/finance\/(receivables|payables)\/documents\/[^/]+$/)
     if (documentMatch) {
       const registerRoute = documentMatch[1] === "receivables" ? "/finance/receivables" : "/finance/payables"
