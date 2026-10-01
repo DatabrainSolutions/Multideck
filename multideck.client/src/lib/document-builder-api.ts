@@ -4,6 +4,25 @@ import { getSupabaseSession, supabase, supabaseFunctionsUrl, supabasePublicApiKe
 export type DocumentOutputFormat = "pdf" | "docx"
 export const isBookingConfirmationTemplateCode = (code: string) => /^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(code)
 export type DocumentTemplateStatus = "draft" | "published" | "retired"
+export type TemplateLibrarySettings = {
+  order: string[]
+  removedTemplates: { id: string; code: string; name: string; removedAt: string }[]
+}
+
+export async function updateTemplateLibrary(action: "read" | "reorder" | "remove" | "restore" = "read", templateId?: string, order?: string[]): Promise<TemplateLibrarySettings> {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new Error("Sign in to manage your template library.")
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey ?? "", "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "library", libraryAction: action, multideckTemplateId: templateId, templateOrder: order }),
+  })
+  const data = await response.json() as TemplateLibrarySettings & { error?: string }
+  if (!response.ok) throw new Error(data.error === "Choose a valid document template."
+    ? "Template library controls need a document-service update. Ask an administrator to update the service, then try again."
+    : data.error || "The template library could not be updated.")
+  return data
+}
 export type DocumentRenderStatus = "queued" | "rendering" | "ready" | "failed"
 export type DocumentContentSectionCode = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 

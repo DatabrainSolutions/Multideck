@@ -66,6 +66,10 @@ test('saving a published template keeps the approved version current until revie
     sql(`do $$begin perform document_api.studio_booking_published_source('${id(102)}','${id(10)}'); raise exception 'Expected denial'; exception when insufficient_privilege then null; end$$;`)
 
     // All published layouts open without operational Job tables or a Job number.
+    sql(`alter table public."cmp_Users" add column "Company_ID" uuid default '${id(500)}';
+      alter table public."DOCB_DocumentTemplates" add column "DOCBT_OrgOfficeID" uuid;
+      create table public."cmp_Offices"("Office_ID" uuid,"Company_ID" uuid);
+      create table public."cmp_Users_Offices"("User_ID" uuid,"Office_ID" uuid);`)
     sql(readFileSync(new URL('../migrations/20261001093644_read_published_template_layout_source.sql', import.meta.url), 'utf8'))
     for (const code of ['JOB_CONFIRMATION', 'FIATA_BOL', 'MAWB', 'MNG_AWB']) {
       sql(`update public."DOCB_DocumentTemplates" set "DOCBT_Code"='${code}' where "DOCBT_ID"='${id(10)}';`)
@@ -108,6 +112,50 @@ test('saving a published template keeps the approved version current until revie
     assert.equal(sql(`select "DOCBT_CurrentVersionNo" from public."DOCB_DocumentTemplates" where "DOCBT_ID"='${id(10)}'`), '2')
     sql(`update public."DOCB_DocumentTemplates" set "DOCBT_StatusCode"='draft' where "DOCBT_ID"='${id(10)}';`)
     assert.equal(JSON.parse(sql(`select document_api.studio_template_layout_source('${id(101)}','${id(10)}')`)).status, 'draft')
+
+    // Template library ordering is personal; removal is manager-only and
+    // reversible without touching the approved pointer, versions or sources.
+    sql(`alter table public."cmp_Users" add primary key ("User_ID");
+      alter table public."DOCB_DocumentTemplates" add primary key ("DOCBT_ID");
+      create or replace function document_api.has_permission(actor uuid, code text) returns boolean language sql as $$
+        select (code='Documents.Read' and actor = any(array['${id(101)}','${id(102)}','${id(103)}','${id(104)}','${id(105)}']::uuid[]))
+          or (code='Documents.Manage' and actor = any(array['${id(101)}','${id(103)}','${id(104)}','${id(105)}']::uuid[]))$$;`)
+    sql(`insert into public."cmp_Users"("User_ID","Auth_User_ID","User_AccessStatus") values('${id(2)}','${id(102)}','active'),('${id(6)}','${id(106)}','active');
+      create function document_api.workspace_overview(actor uuid) returns jsonb language sql as $$select jsonb_build_object('templates',coalesce(jsonb_agg(jsonb_build_object('id',"DOCBT_ID")),'[]')) from public."DOCB_DocumentTemplates" where "DOCBT_IsActive" and ("DOCBT_StatusCode"='published' or document_api.has_permission(actor,'Documents.Manage')) and "DOCBT_OrgOfficeID" is null$$;
+      ${readFileSync(new URL('../migrations/20261001100836_document_template_library_controls.sql', import.meta.url), 'utf8')}`)
+    sql(`update public."DOCB_DocumentTemplates" set "DOCBT_StatusCode"='published';`)
+    assert.deepEqual(JSON.parse(sql(`select document_api.template_library('${id(102)}','reorder',null,'["${id(10)}"]')`)).order, [id(10)])
+    assert.deepEqual(JSON.parse(sql(`select document_api.template_library('${id(103)}')`)).order, [])
+    for (const order of [`["${id(10)}","${id(10)}"]`, `["${id(999)}"]`, '{}', '[1]', 'null']) {
+      sql(`do $$begin perform document_api.template_library('${id(101)}','reorder',null,'${order}'); raise exception 'Expected invalid order'; exception when invalid_parameter_value then null; end$$;`)
+    }
+    for (const actor of [id(102),id(104),id(105),id(106),null]) {
+      sql(`do $$begin perform document_api.template_library(${actor ? `'${actor}'` : 'null'},'remove','${id(10)}'); raise exception 'Expected denial'; exception when insufficient_privilege then null; end$$;`)
+    }
+    for (const role of ['anon','authenticated']) {
+      sql(`set role ${role}; do $$begin perform document_api.template_library('${id(101)}'); raise exception 'Expected denial'; exception when insufficient_privilege then null; end$$;`)
+    }
+    const versionsBefore = sql(`select count(*) from public."DOCB_TemplateVersions"`)
+    const sourcesBefore = sql(`select count(*) from public."DOC_StoredObjects"`)
+    const removed = JSON.parse(sql(`set role service_role; select document_api.template_library('${id(103)}','remove','${id(10)}')`))
+    assert.equal(removed.removedTemplates[0].id, id(10))
+    assert.deepEqual(JSON.parse(sql(`select document_api.template_library('${id(102)}')`)).removedTemplates, [])
+    assert.equal(sql(`select document_api.workspace_overview('${id(103)}')->'templates'`),'[]')
+    assert.equal(sql(`select document_api.studio_template_layout_source('${id(101)}','${id(10)}') is null`),'t')
+    sql(`do $$begin perform document_api.template_library('${id(103)}','remove','${id(10)}'); raise exception 'Expected concurrent-state denial'; exception when insufficient_privilege then null; end$$;`)
+    assert.deepEqual(JSON.parse(sql(`select document_api.template_library('${id(101)}','restore','${id(10)}')`)).removedTemplates, [])
+    assert.equal(sql(`select "DOCBT_StatusCode" || ':' || "DOCBT_CurrentVersionNo" from public."DOCB_DocumentTemplates"`),'published:2')
+    assert.equal(sql(`select count(*) from public."DOCB_TemplateVersions"`), versionsBefore)
+    assert.equal(sql(`select count(*) from public."DOC_StoredObjects"`), sourcesBefore)
+    assert.equal(sql(`select string_agg(action,',' order by created_at) from document_api.template_library_changes`),'remove,restore')
+    // A manager cannot restore or remove a different company's office template.
+    sql(`insert into public."cmp_Offices" values('${id(700)}','${id(501)}');
+      insert into public."cmp_Users_Offices" values('${id(1)}','${id(700)}');
+      update public."DOCB_DocumentTemplates" set "DOCBT_OrgOfficeID"='${id(700)}';
+      do $$begin perform document_api.template_library('${id(101)}','remove','${id(10)}'); raise exception 'Expected office denial'; exception when insufficient_privilege then null; end$$;`)
+    assert.equal(sql(`select document_api.studio_template_layout_source('${id(101)}','${id(10)}') is null`),'t')
+    sql(`update public."cmp_Offices" set "Company_ID"='${id(500)}' where "Office_ID"='${id(700)}';`)
+    assert.equal(JSON.parse(sql(`select document_api.studio_template_layout_source('${id(101)}','${id(10)}')`)).multideckVersion, 3)
   } finally {
     if (started) run('pg_ctl', ['-D', join(directory, 'data'), '-m', 'immediate', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

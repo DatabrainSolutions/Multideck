@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   AiBrain,
+  GripVertical,
+  MoreHorizontal,
   ArrowLeft,
   Copy,
   Download,
@@ -30,6 +32,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import {
   Select,
   SelectContent,
@@ -43,6 +46,8 @@ import { StatusPill } from "@/components/multideck/status-pill"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   approveDocumentStudioTemplate,
+  updateTemplateLibrary,
+  type TemplateLibrarySettings,
   bootstrapDocumentStudioTemplate,
   createDocumentStudioTemplate,
   duplicateBookingConfirmationTemplate,
@@ -1768,6 +1773,17 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const [workspace, setWorkspace] = useState<DocumentBuilderWorkspace | null>(initialWorkspace ?? documentWorkspaceCache)
   const [loading, setLoading] = useState(!initialWorkspace && !documentWorkspaceCache)
   const [error, setError] = useState<string | null>(null)
+  const [library, setLibrary] = useState<TemplateLibrarySettings>({ order: [], removedTemplates: [] })
+  const [libraryReady, setLibraryReady] = useState(preview)
+  const [libraryError, setLibraryError] = useState<string | null>(null)
+  const [libraryBusy, setLibraryBusy] = useState(false)
+  const [removeTemplate, setRemoveTemplate] = useState<DocumentTemplateSummary | null>(null)
+  const [removedOpen, setRemovedOpen] = useState(false)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropId, setDropId] = useState<string | null>(null)
+  const [libraryAnnouncement, setLibraryAnnouncement] = useState("")
+  const touchDrag = useRef<{ id: string; timer: number; active: boolean; target: string | null } | null>(null)
+  const removalFocusId = useRef<string | null>(null)
   const [documentOffset, setDocumentOffset] = useState(0)
   const [documentPageSize, setDocumentPageSize] = useState(defaultPaginationPageSize)
   const [documentQuery, setDocumentQuery] = useState(initialDocumentSearch)
@@ -1790,6 +1806,63 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const [previewDocumentError, setPreviewDocumentError] = useState<string | null>(null)
   const createTriggerTemplateRef = useRef<string | null>(null)
   const previewRequestIdRef = useRef(0)
+
+  async function loadLibrary() {
+    if (preview) return
+    try {
+      setLibrary(await updateTemplateLibrary())
+      setLibraryReady(true)
+      setLibraryError(null)
+    } catch (failure) {
+      setLibraryError(failure instanceof Error ? failure.message : t("Template controls could not be loaded."))
+    }
+  }
+  useEffect(() => { void loadLibrary(); return () => { if (touchDrag.current) window.clearTimeout(touchDrag.current.timer) } }, [])
+
+  async function moveTemplate(id: string, targetId: string) {
+    if (libraryBusy || !libraryReady || id === targetId) return
+    const nextOrder = libraryTemplates.map((template) => template.id)
+    const from = nextOrder.indexOf(id)
+    const to = nextOrder.indexOf(targetId)
+    if (from < 0 || to < 0) return
+    nextOrder.splice(to, 0, nextOrder.splice(from, 1)[0])
+    const previous = library
+    setLibrary({ ...library, order: nextOrder })
+    setLibraryBusy(true)
+    setLibraryError(null)
+    try {
+      if (!preview) setLibrary(await updateTemplateLibrary("reorder", undefined, nextOrder))
+      setLibraryAnnouncement(`${libraryTemplates[from].name} ${t("moved to position")} ${to + 1}.`)
+    } catch (failure) {
+      setLibrary(previous)
+      setLibraryError(failure instanceof Error ? failure.message : t("Your template order could not be saved."))
+    } finally { setLibraryBusy(false) }
+  }
+
+  async function changeTemplateAvailability(templateId: string, action: "remove" | "restore") {
+    if (libraryBusy) return
+    setLibraryBusy(true)
+    setLibraryError(null)
+    try {
+      if (preview) throw new Error(t("Template removal is unavailable in this preview."))
+      setLibrary(await updateTemplateLibrary(action, templateId))
+      setRemoveTemplate(null)
+      await loadWorkspace()
+      setLibraryAnnouncement(t(action === "remove" ? "Template removed. It can be restored from Removed templates." : "Template restored."))
+    } catch (failure) {
+      setLibraryError(failure instanceof Error ? failure.message : t("The template could not be updated."))
+    } finally { setLibraryBusy(false) }
+  }
+
+  function finishTouchDrag(cancelled = false) {
+    const current = touchDrag.current
+    if (!current) return
+    window.clearTimeout(current.timer)
+    touchDrag.current = null
+    setDraggingId(null)
+    setDropId(null)
+    if (!cancelled && current.active && current.target) void moveTemplate(current.id, current.target)
+  }
 
   const dateFormatter = useMemo(
     () => new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
@@ -1955,8 +2028,12 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
 
   // Booking confirmation remains in the library; its action opens the Booking review.
   const publishedTemplates = workspace?.templates.filter((template) => template.status === "published") ?? []
-  const libraryTemplates = workspace?.templates.filter((template) => template.status === "published"
-    || (workspace.permissions.canManageTemplates && template.status === "draft")) ?? []
+  const libraryTemplates = (workspace?.templates.filter((template) => template.status === "published"
+    || (workspace.permissions.canManageTemplates && template.status === "draft")) ?? []).sort((left, right) => {
+      const leftIndex = library.order.indexOf(left.id)
+      const rightIndex = library.order.indexOf(right.id)
+      return (leftIndex < 0 ? library.order.length : leftIndex) - (rightIndex < 0 ? library.order.length : rightIndex)
+    })
   const generatedDocuments = workspace?.generatedDocuments ?? []
   const generatedDocumentTotal = workspace?.generatedDocumentTotal ?? generatedDocuments.length
   const generatedDocumentColumns = useMemo<DataTableColumn<GeneratedDocumentSummary>[]>(() => [
@@ -2032,17 +2109,23 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
       ) : null}
 
       <section className="md-section-stack">
+        <p className="sr-only" role="status">{libraryAnnouncement}</p>
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Templates")}</h2>
+            <h2 id="template-library-heading" tabIndex={-1} className="text-[17px] font-medium text-[var(--md-ink)]">{t("Templates")}</h2>
             <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(workspace?.permissions.canManageTemplates ? "Open a template to edit its layout." : "Choose a template to create a customer document.")}</p>
           </div>
+          <div className="flex flex-wrap items-center justify-end gap-1">
+          {workspace?.permissions.canManageTemplates ? <Button type="button" variant="ghost" onClick={() => setRemovedOpen(true)} disabled={!libraryReady} className="text-[12px]">{t("Removed templates")}{library.removedTemplates.length ? ` (${library.removedTemplates.length})` : ""}</Button> : null}
           {workspace?.permissions.canManageTemplates && navigate ? (
             <Button type="button" variant="ghost" onClick={() => openManage()} className="text-[12px]">
               {t("Manage templates")}
             </Button>
           ) : null}
+          </div>
         </div>
+        <p className="text-[12px] text-[var(--md-subtle)]">{t("Drag templates into your preferred order, or use their menu. Your order is saved to your profile.")}</p>
+        {libraryError ? <InlineNotice tone="error" action={<Button variant="ghost" onClick={() => void loadLibrary()} disabled={libraryBusy}>{t("Try again")}</Button>}>{libraryError}</InlineNotice> : null}
 
         {loading && !workspace ? (
           <Surface tone="soft" className="grid min-h-36 place-items-center">
@@ -2050,20 +2133,26 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           </Surface>
         ) : libraryTemplates.length ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {libraryTemplates.map((template) => {
+            {libraryTemplates.map((template, index) => {
               const previewDocument = currentPreviewDocument(template, workspace?.generatedDocuments ?? [])
               const jobSource = previewDocument
                 ?? workspace?.generatedDocuments.find((document) => document.status === "ready" && document.templateCode === template.code)
                 ?? workspace?.generatedDocuments.find((document) => document.status === "ready")
               return (
+              <div key={template.id} data-template-id={template.id}
+                onDragOver={(event) => { if (draggingId && !libraryBusy) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropId(template.id) } }}
+                onDrop={(event) => { event.preventDefault(); if (draggingId) void moveTemplate(draggingId, template.id); setDraggingId(null); setDropId(null) }}
+                className={cn("relative min-w-0 rounded-[var(--md-radius-sm)]", draggingId === template.id && "opacity-50", dropId === template.id && draggingId !== template.id && "outline-2 outline-offset-4 outline-[var(--md-accent)]")}>
               <button
-                key={template.id}
                 type="button"
+                draggable={libraryReady && !libraryBusy}
+                onDragStart={(event) => { event.dataTransfer.setData("text/plain", template.id); event.dataTransfer.effectAllowed = "move"; setDraggingId(template.id) }}
+                onDragEnd={() => { setDraggingId(null); setDropId(null) }}
                 onClick={() => workspace?.permissions.canManageTemplates ? openManage(template.code) : openCreate(template.code)}
                 data-document-template-code={template.code}
                 disabled={!workspace?.permissions.canManageTemplates && !workspace?.permissions.canGenerate}
                 aria-label={`${t(workspace?.permissions.canManageTemplates ? "Edit template" : "Use template")}: ${t(template.name)}`}
-                className="group min-w-0 text-start outline-none disabled:cursor-not-allowed disabled:opacity-45"
+                className="group w-full min-w-0 text-start outline-none disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <span className="block aspect-[210/297] overflow-hidden rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-0.5 group-hover:shadow-[var(--md-shadow-soft)] group-focus-visible:ring-[3px] group-focus-visible:ring-[var(--md-accent-a14)] group-active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none" aria-hidden="true">
                   <DocumentTemplatePreview
@@ -2090,6 +2179,40 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
                   </span>
                 </span>
               </button>
+              <div className="absolute inset-x-1 top-1 flex justify-between">
+                <Button type="button" variant="secondary" className="size-10 touch-none cursor-grab p-0 active:cursor-grabbing" disabled={!libraryReady || libraryBusy} aria-label={`${t("Move template")}: ${template.name}`} title={t("Drag to move; use the menu for keyboard controls")}
+                  onKeyDown={(event) => { const offset = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : 0; if (offset && libraryTemplates[index + offset]) { event.preventDefault(); void moveTemplate(template.id, libraryTemplates[index + offset].id) } }}
+                  draggable={libraryReady && !libraryBusy}
+                  onDragStart={(event) => { event.dataTransfer.setData("text/plain", template.id); event.dataTransfer.effectAllowed = "move"; setDraggingId(template.id) }}
+                  onDragEnd={() => { setDraggingId(null); setDropId(null) }}
+                  onPointerDown={(event) => {
+                    if (event.pointerType !== "touch" || libraryBusy || !libraryReady) return
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    touchDrag.current = { id: template.id, active: false, target: null, timer: window.setTimeout(() => { if (touchDrag.current) { touchDrag.current.active = true; setDraggingId(template.id) } }, 180) }
+                  }}
+                  onPointerMove={(event) => {
+                    const current = touchDrag.current
+                    if (!current?.active) return
+                    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-template-id]")?.dataset.templateId ?? null
+                    current.target = target
+                    setDropId(target)
+                    const scroller = event.currentTarget.closest<HTMLElement>("[data-document-page-scroll]")
+                    const bounds = scroller?.getBoundingClientRect()
+                    if (scroller && bounds) { if (event.clientY > bounds.bottom - 60) scroller.scrollBy(0, 16); else if (event.clientY < bounds.top + 60) scroller.scrollBy(0, -16) }
+                  }}
+                  onPointerUp={() => finishTouchDrag()}
+                  onPointerCancel={() => finishTouchDrag(true)}
+                ><GripVertical className="size-4" aria-hidden="true" /></Button>
+                <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="secondary" className="size-10 p-0" aria-label={`${t("Template options")}: ${template.name}`} disabled={libraryBusy}><MoreHorizontal className="size-4" aria-hidden="true" /></Button></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem disabled={!libraryReady || index === 0} onSelect={() => void moveTemplate(template.id, libraryTemplates[0].id)}>{t("Move to top")}</DropdownMenuItem>
+                    <DropdownMenuItem disabled={!libraryReady || index === 0} onSelect={() => void moveTemplate(template.id, libraryTemplates[index - 1].id)}>{t("Move earlier")}</DropdownMenuItem>
+                    <DropdownMenuItem disabled={!libraryReady || index === libraryTemplates.length - 1} onSelect={() => void moveTemplate(template.id, libraryTemplates[index + 1].id)}>{t("Move later")}</DropdownMenuItem>
+                    {workspace?.permissions.canManageTemplates ? <><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" disabled={!libraryReady} onSelect={() => { removalFocusId.current = template.id; setRemoveTemplate(template) }}>{t("Remove template")}</DropdownMenuItem></> : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              </div>
               )
             })}
           </div>
@@ -2101,6 +2224,19 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           </Surface>
         )}
       </section>
+
+      <Dialog open={Boolean(removeTemplate)} onOpenChange={(open) => { if (!open && !libraryBusy) setRemoveTemplate(null) }}>
+        <DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); const tile = document.querySelector<HTMLElement>(`[data-template-id="${removalFocusId.current}"] button[aria-haspopup="menu"]`); (tile ?? document.getElementById("template-library-heading"))?.focus() }}><DialogHeader><DialogTitle>{t("Remove template?")}</DialogTitle><DialogDescription>{removeTemplate?.name}. {t("This removes it from the library and new document choices for everyone. Existing documents and version history stay intact. You can restore it later.")}</DialogDescription></DialogHeader>
+          {libraryError ? <p role="alert" className="text-[13px]">{libraryError}</p> : null}
+          <div className="flex justify-end gap-2"><Button variant="ghost" disabled={libraryBusy} onClick={() => setRemoveTemplate(null)}>{t("Cancel")}</Button><Button disabled={libraryBusy} onClick={() => removeTemplate && void changeTemplateAvailability(removeTemplate.id, "remove")}>{libraryBusy ? t("Removing…") : t("Remove template")}</Button></div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={removedOpen} onOpenChange={setRemovedOpen}>
+        <DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); document.getElementById("template-library-heading")?.focus() }}><DialogHeader><DialogTitle>{t("Removed templates")}</DialogTitle><DialogDescription>{t("Restore a template to its previous draft or published state. Its files and history have not been deleted.")}</DialogDescription></DialogHeader>
+          {libraryError ? <p role="alert" className="text-[13px]">{libraryError}</p> : null}
+          <div className="max-h-96 overflow-y-auto">{library.removedTemplates.length ? library.removedTemplates.map((template) => <div key={template.id} className="flex items-center justify-between gap-4 py-2"><span className="text-[13px]">{template.name}</span><Button variant="ghost" disabled={libraryBusy} onClick={() => void changeTemplateAvailability(template.id, "restore")} aria-label={`${t("Restore")}: ${template.name}`}>{t("Restore")}</Button></div>) : <p className="py-4 text-[13px] text-[var(--md-subtle)]">{t("No removed templates.")}</p>}</div>
+        </DialogContent>
+      </Dialog>
 
       <details className="md-section-stack group">
         <summary className="cursor-pointer text-[13px] font-medium text-[var(--md-text)] marker:text-[var(--md-subtle)]">

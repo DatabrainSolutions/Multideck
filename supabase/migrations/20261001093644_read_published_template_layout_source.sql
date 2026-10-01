@@ -44,6 +44,14 @@ begin
     and template."DOCBT_IsActive" and template."DOCBT_IsUserEditable"
     and template."DOCBT_DefaultRenderEngineCode" = 'carbone'
     and template."DOCBT_StatusCode" in ('draft', 'published')
+    and (template."DOCBT_OrgOfficeID" is null or exists (
+      select 1 from public."cmp_Users" actor
+      join public."cmp_Users_Offices" membership on membership."User_ID" = actor."User_ID"
+      join public."cmp_Offices" office on office."Office_ID" = membership."Office_ID"
+      where actor."Auth_User_ID" = caller_auth_user_id
+        and office."Company_ID" = actor."Company_ID"
+        and office."Office_ID" = template."DOCBT_OrgOfficeID"
+    ))
     and stored."DOCStoredObject_AggregateType" = 'document_template_version_source'
     and stored."DOCStoredObject_AggregateID" = version."DOCBTV_ID"
     and stored."DOCStoredObject_Container" = 'multideck-template-sources'

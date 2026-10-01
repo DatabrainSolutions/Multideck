@@ -13,7 +13,9 @@ import {
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
 type StudioRequest = {
-  action?: "component" | "open" | "preview" | "preview-draft" | "draft-source" | "template-source" | "save" | "bootstrap" | "create" | "approve" | "duplicate-booking"
+  action?: "library" | "component" | "open" | "preview" | "preview-draft" | "draft-source" | "template-source" | "save" | "bootstrap" | "create" | "approve" | "duplicate-booking"
+  libraryAction?: "read" | "reorder" | "remove" | "restore"
+  templateOrder?: string[]
   templateCode?: string
   multideckTemplateId?: string
   templateName?: string
@@ -446,6 +448,17 @@ Deno.serve(async (request) => {
   try {
     const context = await authenticateRequest(request)
     const payload = await request.json() as StudioRequest
+
+    if (payload.action === "library") {
+      const { data, error } = await context.admin.schema("document_api").rpc("template_library", {
+        caller_auth_user_id: context.userId,
+        requested_action: payload.libraryAction ?? "read",
+        requested_template_id: payload.multideckTemplateId ?? null,
+        requested_order: payload.templateOrder ?? null,
+      })
+      if (error || !data) throw error ?? new Error("Template library returned no data")
+      return jsonResponse(request, data)
+    }
 
     if (payload.action === "component") {
       return await studioComponentResponse(request)
