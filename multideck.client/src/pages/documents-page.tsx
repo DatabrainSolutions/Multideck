@@ -920,6 +920,7 @@ function CreateDocumentWorkspace({
   const [draftPreviewBusy, setDraftPreviewBusy] = useState(false)
   const [sourcePreviewSafe, setSourcePreviewSafe] = useState(false)
   const previewRequestRef = useRef(0)
+  const [reviewedSource, setReviewedSource] = useState<{ templateId: string; version: number; sha256: string; base64: string } | null>(null)
   const [draftReviewed, setDraftReviewed] = useState(false)
   const [draftUserId, setDraftUserId] = useState<string | null>(null)
   const latestDraftRef = useRef<{ userId: string; draft: DocumentBuilderDraft } | null>(null)
@@ -1099,6 +1100,7 @@ function CreateDocumentWorkspace({
     setSourceLoading(true)
     setSourcePreviewSafe(false)
     previewRequestRef.current += 1
+    setReviewedSource(null)
     setDraftSampleJson("{}")
     setStudioError(null)
     setStudioTemplateBase64(null)
@@ -1151,22 +1153,37 @@ function CreateDocumentWorkspace({
     setDraftPreviewBusy(true)
     setStudioError(null)
     setDraftReviewed(false)
+    setReviewedSource(null)
+    const source = savedTemplate
+    const base64 = studioTemplateBase64
+    const templateId = selectedTemplate.id
     try {
       const parsed = JSON.parse(draftSampleJson) as unknown
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(t("Sample data must be a JSON object."))
       const blob = await previewDraftDocumentStudioTemplate(selectedTemplate.id, studioTemplateBase64, parsed as Record<string, unknown>, studioTemplateFileName)
-      if (requestId === previewRequestRef.current) setDraftPreviewUrl(URL.createObjectURL(blob))
+      if (requestId === previewRequestRef.current) {
+        setDraftPreviewUrl(URL.createObjectURL(blob))
+        if (source?.sourceSha256 && source.multideckTemplateId === templateId) {
+          setReviewedSource({ templateId, version: source.multideckVersion, sha256: source.sourceSha256, base64 })
+        }
+      }
     } catch (cause) {
-      setStudioError(cause instanceof Error ? cause.message : t("The draft preview could not be created."))
-    } finally { setDraftPreviewBusy(false) }
+      if (requestId === previewRequestRef.current) setStudioError(cause instanceof Error ? cause.message : t("The draft preview could not be created."))
+    } finally { if (requestId === previewRequestRef.current) setDraftPreviewBusy(false) }
   }
 
   async function approveTemplate() {
     if (!selectedTemplate || !draftReviewed || !savedTemplate || savedTemplate.status !== "draft") return
+    if (!reviewedSource || reviewedSource.templateId !== selectedTemplate.id
+      || reviewedSource.version !== savedTemplate.multideckVersion
+      || reviewedSource.sha256 !== savedTemplate.sourceSha256 || reviewedSource.base64 !== studioTemplateBase64) {
+      setStudioError(t("Preview the latest saved draft before publishing it."))
+      return
+    }
     setApprovingTemplate(true)
     setStudioError(null)
     try {
-      await approveDocumentStudioTemplate(selectedTemplate.id)
+      await approveDocumentStudioTemplate(selectedTemplate.id, reviewedSource.version, reviewedSource.sha256)
       await onRendered()
       setSavedTemplate(null)
       setDraftReviewed(false)
@@ -1194,6 +1211,7 @@ function CreateDocumentWorkspace({
   }
 
   function clearStudio({ preserveTemplate = false }: { preserveTemplate?: boolean } = {}) {
+    setReviewedSource(null)
     setStudioSession(null)
     setStudioRequest(null)
     if (!preserveTemplate) setStudioTemplateBase64(null)
@@ -1453,8 +1471,9 @@ function CreateDocumentWorkspace({
                 </Button>
               ) : null}
               {canManageTemplates && savedTemplate?.status === "draft" ? <>
-                <label className="flex items-center gap-1.5 text-[11px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} disabled={!studioPreviewReady} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label>
-                <Button type="button" variant="ghost" disabled={!studioPreviewReady || !draftReviewed || approvingTemplate} onClick={() => void approveTemplate()} className="h-9 text-[11px]">{approvingTemplate ? t("Publishing…") : t("Publish version")}</Button>
+                <label className="flex items-center gap-1.5 text-[11px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} disabled={!studioPreviewReady || !reviewedSource} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label>
+                <Button type="button" variant="ghost" disabled={!studioPreviewReady || !reviewedSource || !draftReviewed || approvingTemplate} onClick={() => void approveTemplate()} className="h-9 text-[11px]">{approvingTemplate ? t("Publishing…") : t("Publish version")}</Button>
+                {!reviewedSource ? <p className="text-[11px] text-[var(--md-subtle)]">{t("Publish from Manage templates after reviewing a fictional-data preview.")}</p> : null}
               </> : null}
               {savedTemplate ? (
                 <Button type="button" variant="ghost" size="icon-lg" onClick={() => void copyTemplateId()} aria-label={t("Copy Carbone template ID")} title={t("Copy Carbone template ID")} className="rounded-[var(--md-radius-md)]">
@@ -1554,7 +1573,7 @@ function CreateDocumentWorkspace({
             </div>
             <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={sourceLoading || !studioTemplateBase64 || !sourcePreviewSafe || publishingSource || draftPreviewBusy || approvingTemplate} onClick={() => void previewDraft()}>{draftPreviewBusy ? t("Rendering…") : t("Preview template")}</Button><span className="text-[11px] text-[var(--md-subtle)]">{t("Uses fictional sample data; no Job number is needed.")}</span></div>
             <div className="min-h-[440px] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">{draftPreviewUrl ? <iframe src={draftPreviewUrl} title={t("Template preview")} className="h-full min-h-[440px] w-full bg-white" /> : <div className="grid h-full min-h-[440px] place-items-center text-[12px] text-[var(--md-subtle)]">{t(!sourceLoading && studioTemplateBase64 && !sourcePreviewSafe ? previewPrivacyMessage : "Preview will appear here")}</div>}</div>
-            <div className="flex flex-wrap items-center gap-3"><label className="flex items-center gap-2 text-[12px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} disabled={!canManageTemplates || !draftPreviewUrl || draftPreviewBusy || savedTemplate?.status !== "draft"} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label><Button type="button" variant="ghost" disabled={!canManageTemplates || !draftReviewed || draftPreviewBusy || savedTemplate?.status !== "draft" || approvingTemplate} onClick={() => void approveTemplate()}>{approvingTemplate ? t("Publishing…") : t("Publish reviewed version")}</Button></div>
+            <div className="flex flex-wrap items-center gap-3"><label className="flex items-center gap-2 text-[12px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} disabled={!canManageTemplates || !reviewedSource || !draftPreviewUrl || draftPreviewBusy || savedTemplate?.status !== "draft"} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label><Button type="button" variant="ghost" disabled={!canManageTemplates || !reviewedSource || !draftReviewed || draftPreviewBusy || savedTemplate?.status !== "draft" || approvingTemplate} onClick={() => void approveTemplate()}>{approvingTemplate ? t("Publishing…") : t("Publish reviewed version")}</Button></div>
             <details className="max-w-3xl text-[12px] text-[var(--md-text)]"><summary className="cursor-pointer rounded-[var(--md-radius-md)] py-2 font-medium text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]">{t("Preview sample data (advanced)")}</summary><label className="mt-2 block">{t("Safe sample data (JSON)")}<textarea value={draftSampleJson} readOnly spellCheck={false} className="mt-2 h-[360px] w-full resize-y rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] p-4 font-sans text-[12px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" /><span className="mt-1 block text-[11px] text-[var(--md-subtle)]">{t("Fixed fictional examples. Real customer data cannot be entered in template previews.")}</span></label></details>
           </div>
         </main>

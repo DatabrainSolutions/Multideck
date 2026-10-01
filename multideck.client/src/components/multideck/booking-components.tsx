@@ -3789,15 +3789,24 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
       ])
       const mode = String(record.workspace.booking.mode ?? "").toLowerCase()
       const availableTemplates = documentWorkspace.templates.filter(template => template.outputFormats.includes("pdf") && (
-        isBookingConfirmationTemplateCode(template.code)
-        || ["sea", "ocean"].includes(mode) && ["FIATA_BOL_REFERENCE", "JE2648771_FBL_MULTIMODAL_CTRS_A4260714093859"].includes(template.code)
+        ["sea", "ocean"].includes(mode) && ["HBL", "FIATA_BOL_REFERENCE", "JE2648771_FBL_MULTIMODAL_CTRS_A4260714093859"].includes(template.code)
         || mode === "air" && ["MAWB", "MNG_AWB", "HAWB"].includes(template.code)
       ))
-      if (!availableTemplates.some(template => template.code === "JOB_CONFIRMATION")) throw new Error(t("The published Booking confirmation template is unavailable."))
+      if (!availableTemplates.length) throw new Error(t("No supported transport layout is available. Add received Booking confirmations to Job documents."))
       setConfirmationTemplates(availableTemplates)
       setReview(next)
       setIssueControlsReady([1, 2].includes(issueOptions.protocolVersion))
       setTransportReadyCodes(issueOptions.transportDraftTemplateCodes ?? [])
+      const first = availableTemplates.find(template => issueOptions.transportDraftTemplateCodes?.includes(template.code)) ?? availableTemplates[0]
+      setConfirmationTemplateCode(first.code)
+      if (issueOptions.transportDraftTemplateCodes?.includes(first.code)) {
+        const request = ++transportRequest.current
+        setTransportLoading(true)
+        try {
+          const transport = await getTransportDraftReview(record.workspace.booking.jobId, first.code)
+          if (request === transportRequest.current) setTransportReview(transport)
+        } finally { if (request === transportRequest.current) setTransportLoading(false) }
+      }
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : t("Booking information could not be reviewed.")
       setReviewError(message.includes("Choose a supported booking action")
@@ -3842,6 +3851,7 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
         documentIssueStatus,
         transportReviewToken: selectedBookingLayout ? undefined : transportReview?.reviewToken,
         confirmTransportReview: selectedBookingLayout ? undefined : confirmTransport,
+        expectedTemplateVersion: selectedTemplate?.version,
       })
       await onWorkspaceSaved(await getBookingWorkflow(record.workspace.booking.bookingReference))
       setReviewOpen(false)
@@ -4047,6 +4057,7 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
                 </Select>
               </label>
               <p className="text-[var(--md-text)]">{t(documentIssueStatus === "draft" ? "DRAFT is marked on every PDF page. This is for review, not an issued transport document." : "FINAL records the reviewed Booking information; it is not an Original bill or proof of shipment.")}</p>
+              <p className="text-[var(--md-subtle)]">{t("Booking confirmations are received from your carrier or partner. Add those files to Job documents.")}</p>
               {!selectedBookingLayout && !transportReadyCodes.includes(confirmationTemplateCode) ? <p role="status" className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-3 text-[var(--md-text)]">{t("This layout needs its Booking field mapping reviewed and its clean version published before generation. No document will be created.")}</p> : null}
               {transportLoading ? <DotGridLoader label={t("Reviewing transport particulars…")} /> : null}
               {!selectedBookingLayout && transportReview ? <div className="grid gap-3">

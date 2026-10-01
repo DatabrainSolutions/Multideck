@@ -1,6 +1,8 @@
 // Reviewed Draft-only sources. Changed Word bytes require a fresh privacy,
 // layout and mapping review; a matching display name is not approval.
 export const transportDraftSourceHashes: Record<string, string> = {
+  HBL: "439f0208bc97e1ba8ab35a763d6608a810afd17ef514fa8b45f18040a287fc47",
+  HAWB: "892df6229274a0f5674a8d9c7baeec3370d24000159dcbacf385fefdd094ea50",
   MAWB: "01c023ed81c54b982cb02f439e3549a0844a731abbe01bcdb1fb0e1b1538cc32",
   MNG_AWB: "bc11f94686b5c8ee17678d4f6388ca95dd3b5a2588adb3c7d412f98bfacbda2f",
   JE2648771_FBL_MULTIMODAL_CTRS_A4260714093859: "7e4ca3982f46813c4965596d74aa8dd0cc3c6077a7cd1b472f81b5d2b7e09319",

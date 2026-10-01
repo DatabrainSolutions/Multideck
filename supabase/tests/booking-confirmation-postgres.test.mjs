@@ -391,6 +391,43 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
       select 'transport passed';
     `)
     assert.match(transportResult, /transport passed/)
+
+    // Use the newer deployed freeze function with the real authorised source
+    // above. The House migration's template seeding is outside this fixture.
+    const houseMigration = readFileSync(new URL('../migrations/20261001185549_house_transport_review_layouts.sql', import.meta.url), 'utf8')
+    sql(houseMigration.slice(houseMigration.indexOf('create or replace function document_api.freeze_transport_document_draft('), houseMigration.lastIndexOf('commit;')))
+    for (const [code, mode] of [['HBL', 'sea'], ['HAWB', 'air']]) {
+      const houseResult = sql(`
+        update public."DOCB_DocumentTemplates" set "DOCBT_Code"='${code}' where "DOCBT_ID"='b1000000-0000-4000-8000-000000000001';
+        update public."Job_Routing" set "JobRoute_ModeCode"='${mode}' where "Job_ID"='60000000-0000-4000-8000-000000000001';
+        update public."DOCB_RenderJobs" set "DOCBRJ_StatusCode"='rendering',"DOCBRJ_RenderSettingsJSON"='{}',"DOCBRJ_InputSnapshotJSON"='{"meta":{"correlationId":"house-audit"}}'
+          where "DOCBRJ_ID"='c1000000-0000-4000-8000-000000000001';
+        do $house$ declare source jsonb; mapped jsonb; snapshot jsonb;
+        begin
+          source:=document_api.transport_document_source('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
+          mapped:=jsonb_build_object('job',jsonb_build_object('reference',source#>>'{job,bookingReference}'),
+            'meta',jsonb_build_object('transportMappingVersion',1,'transportDocumentCode','${code}','sourceJobId',source->>'jobId','sourceRouteId',source#>>'{routing,0,id}'),
+            'issuer',jsonb_build_object('name','Fictional issuer'),
+            'documentIssue',jsonb_build_object('status','draft','isLegalOriginal',false));
+          begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',jsonb_set(mapped,'{meta,sourceJobId}','"00000000-0000-4000-8000-000000000999"'));
+            raise exception 'Wrong House shipment allowed'; exception when invalid_parameter_value then null; end;
+          begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',jsonb_set(mapped,'{meta,sourceRouteId}','"00000000-0000-4000-8000-000000000999"'));
+            raise exception 'Wrong House route allowed'; exception when invalid_parameter_value then null; end;
+          begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',jsonb_set(mapped,'{meta,transportDocumentCode}','"OTHER"'));
+            raise exception 'Wrong House layout allowed'; exception when invalid_parameter_value then null; end;
+          begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',jsonb_set(mapped,'{documentIssue,status}','"original"'));
+            raise exception 'House Original allowed'; exception when invalid_parameter_value then null; end;
+          snapshot:=document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',mapped);
+          if snapshot#>>'{meta,correlationId}'<>'house-audit' or snapshot#>>'{issuer,name}'<>'Fictional issuer'
+            or snapshot#>>'{documentIssue,status}'<>'draft' or snapshot#>>'{meta,transportDocumentCode}'<>'${code}' then
+            raise exception 'House frozen identity lost'; end if;
+          begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',mapped);
+            raise exception 'House snapshot overwritten'; exception when invalid_parameter_value then null; end;
+        end $house$;
+        select 'house passed';
+      `)
+      assert.match(houseResult, /house passed/)
+    }
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'immediate', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

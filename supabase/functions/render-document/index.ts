@@ -14,6 +14,8 @@ import {
 import { bookingDocumentFamily, documentIssueConversion, resolveDocumentIssue } from "../_shared/document-issue.ts"
 import { transportDocumentDataset } from "../_shared/transport-document.ts"
 import { reviewedTransportSource, transportDraftSourceHashes } from "../_shared/transport-layouts.ts"
+import { jobDocumentIdentity } from "../_shared/document-branding.ts"
+import { transportDocumentDataset as houseTransportDataset } from "../_shared/transport-document-mapping.ts"
 
 type OutputFormat = "pdf" | "docx"
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
@@ -36,6 +38,7 @@ type RenderRequest = {
   confirmCustomerPrices?: boolean
   transportReviewToken?: string
   confirmTransportReview?: boolean
+  expectedTemplateVersion?: number
 }
 
 type PreparedRender = {
@@ -181,6 +184,13 @@ Deno.serve(async (request) => {
         let dataset: ReturnType<typeof transportDocumentDataset>
         try { dataset = transportDocumentDataset(source.data, family) }
         catch (cause) { throw new FunctionError(400, cause instanceof Error ? cause.message : "Review the main carriage and cargo first.", "Invalid transport source") }
+        if (code === "HBL" || code === "HAWB") {
+          try {
+            const identity = await jobDocumentIdentity(context.admin, payload.jobId, source.data.companyId)
+            const house = houseTransportDataset(source.data, identity, code)
+            dataset.transport.gaps.push(...house.review.missing.map(label => ({ label })))
+          } catch (cause) { throw new FunctionError(400, cause instanceof Error ? cause.message : "Review the issuing entity and transport particulars.", "Invalid house transport source") }
+        }
         return jsonResponse(request, { protocolVersion: 2, reviewToken: source.data.reviewToken,
           bookingReference: dataset.transport.reference, family, parties: dataset.transport.parties,
           route: dataset.routing[0], cargo: dataset.transport.cargo, equipment: dataset.transport.equipment,
@@ -198,11 +208,14 @@ Deno.serve(async (request) => {
         version.DOCBTV_StatusCode === "published" && version.DOCBTV_VersionNo === layout.DOCBT_CurrentVersionNo
         && reviewedTransportSource(layout.DOCBT_Code, version.DOCBTV_TemplateSnapshotJSON?.source?.sha256)))
         .map(layout => layout.DOCBT_Code)
-      return jsonResponse(request, { ...options.data, protocolVersion: 2, transportGenerationReady: readyCodes.length > 0,
+      return jsonResponse(request, { ...options.data, bookingIssueStatuses: [], protocolVersion: 2, transportGenerationReady: readyCodes.length > 0,
         transportDraftTemplateCodes: readyCodes, originalIssuanceEnabled: false })
     }
     const templateCode = payload.templateCode?.trim().toUpperCase() ?? ""
     const bookingConfirmation = /^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(templateCode)
+    if (bookingConfirmation) {
+      throw new FunctionError(409, "Booking confirmations are received from your carrier or partner. Add the received file to the booking’s Documents tab.", "Outgoing booking confirmations are outside the document generation workflow")
+    }
     const family = bookingDocumentFamily(templateCode)
     const transportDraft = family === "sea" || family === "air"
     const outputFormat = payload.outputFormat?.trim().toLowerCase() ?? ""
@@ -247,6 +260,17 @@ Deno.serve(async (request) => {
     if (error || !data) throw error ?? new Error("Render preparation returned no data")
     prepared = data as PreparedRender
 
+    if (payload.expectedTemplateVersion !== undefined) {
+      if (!Number.isInteger(payload.expectedTemplateVersion) || payload.expectedTemplateVersion < 1) {
+        throw new FunctionError(400, "Refresh the document preview before saving.", "Invalid reviewed template version")
+      }
+      const version = await context.admin.from("DOCB_TemplateVersions")
+        .select("DOCBTV_VersionNo").eq("DOCBTV_ID", prepared.templateVersionId).single()
+      if (version.error || version.data?.DOCBTV_VersionNo !== payload.expectedTemplateVersion) {
+        throw new FunctionError(409, "The template changed. Refresh the preview before saving.", "Reviewed template version became stale")
+      }
+    }
+
     if (transportDraft) {
       const version = await context.admin.from("DOCB_TemplateVersions").select("DOCBTV_TemplateSnapshotJSON")
         .eq("DOCBTV_ID", prepared.templateVersionId).single()
@@ -261,8 +285,20 @@ Deno.serve(async (request) => {
       if (source.data.reviewToken !== payload.transportReviewToken) {
         throw new FunctionError(409, "The Booking changed. Review the transport Draft again.", "Transport source changed before mapping")
       }
-      let mapped: ReturnType<typeof transportDocumentDataset>
-      try { mapped = transportDocumentDataset(source.data, family as "sea" | "air") }
+      let mapped: Record<string, unknown>
+      try {
+        const identity = await jobDocumentIdentity(context.admin, prepared.jobId, prepared.companyId)
+        if (templateCode === "HBL" || templateCode === "HAWB") {
+          mapped = houseTransportDataset(source.data, identity, templateCode)
+        } else {
+          const legacy = transportDocumentDataset(source.data, family as "sea" | "air")
+          mapped = { ...legacy, ...identity,
+            company: { name: identity.issuer.name, logoDataUri: identity.branding.logoDataUri },
+            job: { ...legacy.job, legalEntityName: identity.issuer.name },
+            waybill: { ...legacy.waybill, issuerName: identity.issuer.name },
+          }
+        }
+      }
       catch (cause) { throw new FunctionError(400, cause instanceof Error ? cause.message : "Review the transport data first.", "Invalid transport source") }
       const frozen = await context.admin.schema("document_api").rpc("freeze_transport_document_draft", {
         caller_auth_user_id: context.userId, requested_render_job_id: prepared.renderJobId,

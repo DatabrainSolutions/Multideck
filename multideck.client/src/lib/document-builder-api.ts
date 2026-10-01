@@ -108,6 +108,7 @@ export type RenderDocumentRequest = {
   documentIssueStatus?: "draft" | "final"
   transportReviewToken?: string
   confirmTransportReview?: boolean
+  expectedTemplateVersion?: number
 }
 
 export type BookingDocumentIssueOptions = {
@@ -179,6 +180,7 @@ export type DocumentStudioRequest = {
 }
 
 export type SaveDocumentStudioTemplateResponse = {
+  sourceSha256?: string
   multideckTemplateId: string
   templateCode: string
   carboneTemplateId: string
@@ -543,7 +545,10 @@ async function readDocumentStudioTemplateSource(templateId: string, action: "dra
   return result.draft
 }
 
-export async function approveDocumentStudioTemplate(templateId: string) {
+export async function approveDocumentStudioTemplate(templateId: string, reviewedVersion: number, reviewedSourceSha256: string) {
+  if (!Number.isInteger(reviewedVersion) || reviewedVersion < 1 || !/^[a-f0-9]{64}$/.test(reviewedSourceSha256)) {
+    throw new Error("Preview the latest saved draft before publishing it.")
+  }
   requireDocumentClient()
   const session = await getSupabaseSession()
   if (!session) throw new Error("Sign in to manage templates.")
@@ -555,7 +560,7 @@ export async function approveDocumentStudioTemplate(templateId: string) {
       apikey: supabasePublicApiKey,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ action: "approve", multideckTemplateId: templateId }),
+    body: JSON.stringify({ action: "approve", multideckTemplateId: templateId, reviewedVersion, reviewedSourceSha256 }),
   })
   if (!response.ok) {
     let message = "The template could not be approved."

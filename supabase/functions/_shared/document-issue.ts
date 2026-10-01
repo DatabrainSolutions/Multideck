@@ -4,7 +4,7 @@ export type DocumentIssueStatus = "draft" | "final" | "original" | "copy"
 
 export function bookingDocumentFamily(code: string): "booking" | "sea" | "air" | null {
   if (/^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(code)) return "booking"
-  if (["FIATA_BOL_REFERENCE", "JE2648771_FBL_MULTIMODAL_CTRS_A4260714093859"].includes(code)) return "sea"
+  if (["HBL", "FIATA_BOL_REFERENCE", "JE2648771_FBL_MULTIMODAL_CTRS_A4260714093859"].includes(code)) return "sea"
   if (["MAWB", "MNG_AWB", "HAWB"].includes(code)) return "air"
   return null
 }

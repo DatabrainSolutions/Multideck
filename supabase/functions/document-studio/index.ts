@@ -10,11 +10,18 @@ import {
   toFunctionError,
 } from "../_shared/document-functions.ts"
 import { templatePreviewSample, templatePreviewPrivacyMessage } from "../_shared/template-preview-safety.ts"
+import { jobDocumentIdentity } from "../_shared/document-branding.ts"
+import { documentIssueConversion } from "../_shared/document-issue.ts"
+import { bookingTemplateSample, validateBookingTemplate } from "../_shared/booking-template-validation.ts"
+import { multideckDocumentLogo } from "../_shared/multideck-document-logo.ts"
+import { bookingDefaultTemplate } from "../_shared/booking-default-template.ts"
+import { transportDefaultTemplates } from "../_shared/transport-default-templates.ts"
+import { transportTemplateSample, validateTransportTemplate } from "../_shared/transport-template-validation.ts"
 
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
 type StudioRequest = {
-  action?: "library" | "component" | "open" | "preview" | "preview-draft" | "draft-source" | "template-source" | "save" | "bootstrap" | "create" | "approve" | "duplicate-booking"
+  action?: "library" | "component" | "open" | "preview" | "preview-draft" | "draft-source" | "template-source" | "save" | "bootstrap" | "create" | "approve" | "duplicate-booking" | "history" | "version-source" | "restore-default"
   libraryAction?: "read" | "reorder" | "remove" | "restore"
   templateOrder?: string[]
   templateCode?: string
@@ -29,6 +36,10 @@ type StudioRequest = {
   contentSections?: unknown
   templateBase64?: string
   sampleData?: unknown
+  versionNo?: number
+  reviewedVersion?: number
+  reviewedSourceSha256?: string
+  previewScenario?: "standard" | "short" | "optional" | "long" | "tenant" | "oversized"
 }
 
 type StudioSession = {
@@ -170,7 +181,7 @@ function sourceMimeType(fileName: string, requestedMimeType?: string) {
 }
 
 async function sha256Hex(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer)
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
@@ -193,7 +204,7 @@ function parseSampleData(value: unknown) {
 }
 
 function binaryResponse(request: Request, bytes: Uint8Array, contentType: string) {
-  return new Response(bytes, {
+  return new Response(new Uint8Array(bytes).buffer, {
     status: 200,
     headers: {
       ...corsHeaders(request),
@@ -264,7 +275,16 @@ async function prepareSession(
       requested_content_sections: contentSections,
     })
   if (error || !data) throw error ?? new Error("Document Studio session returned no data")
-  return data as StudioSession
+  const session = data as StudioSession
+  if (/^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(templateCode)) {
+    const jobId = (session.dataset.job as { id?: string } | undefined)?.id
+      ?? (session.dataset.bookingConfirmation as { jobId?: string } | undefined)?.jobId
+    if (!isUuid(jobId)) throw new FunctionError(409, "Refresh the booking source and try again.", "Authorised Studio source identity is missing")
+    const actor = await context.admin.from("cmp_Users").select("Company_ID").eq("Auth_User_ID", context.userId).single()
+    if (actor.error || !actor.data?.Company_ID) throw actor.error ?? new Error("Studio company identity is missing")
+    session.dataset = { ...session.dataset, ...await jobDocumentIdentity(context.admin, jobId, actor.data.Company_ID) }
+  }
+  return session
 }
 
 async function authorizeTemplateSave(
@@ -309,13 +329,13 @@ async function recordTemplateSource(
 ) {
   const extension = sourceExtension(sourceFileName)
   const storedFileName = `${registration.carboneTemplateId}-${registration.carboneVersionId}.${extension}`
-  const sourcePath = `templates/${registration.multideckTemplateId}/source/${sha256}.${extension}`
+  const sourcePath = `templates/${registration.multideckTemplateId}/source/v${registration.multideckVersion}/${sha256}.${extension}`
   const { error: uploadError } = await context.admin.storage
     .from(templateSourcesBucket)
     .upload(sourcePath, bytes, {
       contentType: sourceMimeType,
       cacheControl: "31536000",
-      upsert: true,
+      upsert: false,
     })
   if (uploadError) throw new Error(`Template source upload failed: ${uploadError.message}`)
 
@@ -346,6 +366,15 @@ async function saveTemplateToCarbone(
 ) {
   const templateSha256 = await sha256Hex(templateBytes)
   const authorisedTemplate = await authorizeTemplateSave(context, templateId)
+  if (/^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(authorisedTemplate.templateCode)) {
+    await testBookingTemplate(templateBytes, templateBase64, sourceFileName)
+  }
+  if (authorisedTemplate.templateCode === "HBL" || authorisedTemplate.templateCode === "HAWB") {
+    await testTransportTemplate(templateBytes, templateBase64, sourceFileName, authorisedTemplate.templateCode)
+  }
+  if (["MAWB", "MNG_AWB", "FIATA_BOL_REFERENCE", "JE2648771_FBL_MULTIMODAL_CTRS_A4260714093859"].includes(authorisedTemplate.templateCode)) {
+    throw new FunctionError(409, "This issuer layout is protected. An approved issuer source is required before changing it.", "Protected transport source editing was blocked")
+  }
   const saveResponse = await fetch(`${getCarboneBaseUrl()}/template`, {
     method: "POST",
     headers: {
@@ -391,6 +420,54 @@ async function saveTemplateToCarbone(
   return registration
 }
 
+async function testBookingTemplate(bytes: Uint8Array, base64: string, fileName: string, scenario = "standard") {
+  if (!templatePreviewSample(await sha256Hex(bytes))) throw new FunctionError(400, templatePreviewPrivacyMessage, "Unreviewed Booking source blocked before test render")
+  if (!["standard", "short", "optional", "long", "tenant", "oversized"].includes(scenario)) throw new FunctionError(400, "Choose a supported template test.", "Unsupported template preview scenario")
+  if (!fileName.toLowerCase().endsWith(".docx")) throw new FunctionError(400, "Use a Word DOCX file for booking confirmations.", "Unsupported Booking template format")
+  try { validateBookingTemplate(bytes) } catch (error) {
+    throw new FunctionError(400, error instanceof Error ? error.message : "Check the required template fields.", "Booking template validation failed")
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), renderTimeout())
+  try {
+    const response = await fetch(`${getCarboneBaseUrl()}/render/template?download=true`, {
+      method: "POST",
+      headers: { Authorization: getCarboneAuthorization(), "Content-Type": "application/json", "carbone-version": Deno.env.get("CARBONE_API_VERSION")?.trim() || "5" },
+      body: JSON.stringify({ data: { ...bookingTemplateSample(scenario), branding: { logoDataUri: scenario === "tenant" ? 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 120 80"><rect x="2" y="2" width="116" height="76" fill="white" stroke="black"/><text x="60" y="46" text-anchor="middle" font-family="Arial" font-size="20" fill="black">DEMO</text></svg>') : multideckDocumentLogo } }, template: base64,
+        convertTo: documentIssueConversion("pdf", "draft"), converter: "L", lang: "en-GB", timezone: "UTC", reportName: "booking-template-test" }),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new FunctionError(400, "Carbone could not render this template. Check its fields and formatting, then upload it again.", `Booking test render returned HTTP ${response.status}`)
+    const output = new Uint8Array(await response.arrayBuffer())
+    if (!output.length || output.length > maximumGeneratedFileBytes || new TextDecoder().decode(output.slice(0, 5)) !== "%PDF-") {
+      throw new FunctionError(502, "The template test did not return a valid PDF. Try again.", "Invalid Booking template test output")
+    }
+    return output
+  } finally { clearTimeout(timer) }
+}
+
+async function testTransportTemplate(bytes: Uint8Array, base64: string, fileName: string, code: "HBL" | "HAWB", scenario = "standard") {
+  if (!templatePreviewSample(await sha256Hex(bytes))) throw new FunctionError(400, templatePreviewPrivacyMessage, "Unreviewed house transport source blocked before test render")
+  if (!["standard", "short", "optional", "long", "tenant", "oversized"].includes(scenario)) throw new FunctionError(400, "Choose a supported template test.", "Unsupported transport preview scenario")
+  if (!fileName.toLowerCase().endsWith(".docx")) throw new FunctionError(400, "Use a Word DOCX file for this draft layout.", "Unsupported transport template format")
+  try { validateTransportTemplate(bytes, code) } catch (error) {
+    throw new FunctionError(400, error instanceof Error ? error.message : "Check the required template fields.", "Own-issuer draft template validation failed")
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), renderTimeout())
+  try {
+    const response = await fetch(`${getCarboneBaseUrl()}/render/template?download=true`, {
+      method: "POST", headers: { Authorization: getCarboneAuthorization(), "Content-Type": "application/json", "carbone-version": Deno.env.get("CARBONE_API_VERSION")?.trim() || "5" },
+      body: JSON.stringify({ data: transportTemplateSample(code, scenario), template: base64,
+        convertTo: documentIssueConversion("pdf", "draft"), converter: "L", lang: "en-GB", timezone: "UTC", reportName: `${code.toLowerCase()}-template-test` }), signal: controller.signal,
+    })
+    if (!response.ok) throw new FunctionError(400, "Carbone could not render this template. Check its fields and formatting, then upload it again.", `Transport test render returned HTTP ${response.status}`)
+    const output = new Uint8Array(await response.arrayBuffer())
+    if (!output.length || output.length > maximumGeneratedFileBytes || new TextDecoder().decode(output.slice(0, 5)) !== "%PDF-") throw new FunctionError(502, "The template test did not return a valid PDF. Try again.", "Invalid transport template test output")
+    return output
+  } finally { clearTimeout(timer) }
+}
+
 async function createTemplate(
   context: Awaited<ReturnType<typeof authenticateRequest>>,
   templateCode: string,
@@ -431,13 +508,31 @@ async function addTemplateSourceMetadata(
 async function approveTemplate(
   context: Awaited<ReturnType<typeof authenticateRequest>>,
   templateId: string,
+  reviewedVersion: number,
+  reviewedSourceSha256: string,
 ) {
+  const template = await authorizeTemplateSave(context, templateId)
+  if (/^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(template.templateCode) || template.templateCode === "HBL" || template.templateCode === "HAWB") {
+    const source = await context.admin.schema("document_api").rpc("studio_template_draft_source", {
+      caller_auth_user_id: context.userId, requested_template_id: templateId,
+    })
+    if (source.error || !source.data) throw source.error ?? new FunctionError(409, "Save and preview the template draft before activating it.", "No saved Booking draft to approve")
+    const file = await context.admin.storage.from(templateSourcesBucket).download(source.data.path)
+    if (file.error || !file.data || file.data.size > maximumStudioTemplateBytes) throw new FunctionError(502, "The draft source could not be checked. Try again.", "Booking draft approval source unavailable")
+    const bytes = new Uint8Array(await file.data.arrayBuffer())
+    if (source.data.multideckVersion !== reviewedVersion || await sha256Hex(bytes) !== reviewedSourceSha256) throw new FunctionError(409, "The template changed. Preview the latest saved draft before activating it.", "Stale Booking template review")
+    if (template.templateCode === "HBL" || template.templateCode === "HAWB") await testTransportTemplate(bytes, toBase64(bytes), source.data.fileName, template.templateCode)
+    else await testBookingTemplate(bytes, toBase64(bytes), source.data.fileName)
+  }
   const { data, error } = await context.admin
     .schema("document_api")
-    .rpc("approve_studio_template_version", {
+    .rpc("approve_reviewed_template_version", {
       caller_auth_user_id: context.userId,
       requested_template_id: templateId,
+      reviewed_version_no: reviewedVersion,
+      reviewed_source_sha256: reviewedSourceSha256,
     })
+  if (error?.code === "40001") throw new FunctionError(409, "The template changed. Preview the latest saved draft before activating it.", "Stale template review")
   if (error || !data) throw error ?? new Error("Document template approval returned no data")
   return data
 }
@@ -463,6 +558,44 @@ Deno.serve(async (request) => {
 
     if (payload.action === "component") {
       return await studioComponentResponse(request)
+    }
+
+    if (["history", "version-source", "restore-default"].includes(payload.action ?? "")) {
+      if (!isUuid(payload.multideckTemplateId)) throw new FunctionError(400, "Choose a valid template.", "Invalid template history target")
+      const template = await authorizeTemplateSave(context, payload.multideckTemplateId)
+      if (payload.action === "restore-default") {
+        if (template.templateCode === "HBL" || template.templateCode === "HAWB") {
+          const base64 = transportDefaultTemplates[template.templateCode]
+          return jsonResponse(request, await saveTemplateToCarbone(context, payload.multideckTemplateId, base64,
+            fromBase64(base64), "Restored Multideck draft default as a reviewable version", template.templateCode === "HBL" ? "house-bill-of-lading.docx" : "house-air-waybill.docx"))
+        }
+        if (!/^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(template.templateCode)) throw new FunctionError(409, "This document has no reviewed default available to restore.", "No supported default source")
+        return jsonResponse(request, await saveTemplateToCarbone(context, payload.multideckTemplateId, bookingDefaultTemplate,
+          fromBase64(bookingDefaultTemplate), "Restored Multideck default as a reviewable draft", "booking-confirmation.docx"))
+      }
+      const history = await context.admin.from("DOCB_TemplateVersions")
+        .select("DOCBTV_VersionNo,DOCBTV_StatusCode,DOCBTV_TemplateSnapshotJSON,DOCBTV_PublishedAt,DOCBTV_ChangeReason")
+        .eq("DOCBTV_TemplateID", payload.multideckTemplateId).in("DOCBTV_StatusCode", ["draft", "published"])
+        .order("DOCBTV_VersionNo", { ascending: false }).limit(100)
+      if (history.error) throw history.error
+      if (payload.action === "history") return jsonResponse(request, { versions: history.data.map((row) => ({
+        version: row.DOCBTV_VersionNo, status: row.DOCBTV_StatusCode, publishedAt: row.DOCBTV_PublishedAt,
+        reason: row.DOCBTV_ChangeReason, hasSource: !!row.DOCBTV_TemplateSnapshotJSON?.source?.path,
+      })) })
+      const version = history.data.find((row) => row.DOCBTV_VersionNo === payload.versionNo)
+      const source = version?.DOCBTV_TemplateSnapshotJSON?.source
+      if (!source || source.bucket !== templateSourcesBucket || source.provider !== "supabase_storage"
+        || !/^[a-f0-9]{64}$/.test(source.sha256 ?? "")
+        || !new RegExp(`^templates/${payload.multideckTemplateId}/source/(?:v${version!.DOCBTV_VersionNo}/)?${source.sha256}\\.(?:pdf|docx?|xlsx?)$`).test(source.path ?? "")) {
+        throw new FunctionError(404, "That version has no recoverable source file.", "No valid saved template version source")
+      }
+      const file = await context.admin.storage.from(templateSourcesBucket).download(source.path)
+      if (file.error || !file.data || file.data.size > maximumStudioTemplateBytes) throw new FunctionError(502, "That source file could not be opened. Try again.", "Template history file unavailable")
+      const bytes = new Uint8Array(await file.data.arrayBuffer())
+      if (await sha256Hex(bytes) !== source.sha256) throw new FunctionError(502, "The saved source could not be verified.", "Historical template source hash mismatch")
+      return jsonResponse(request, { draft: { multideckTemplateId: payload.multideckTemplateId, templateCode: template.templateCode,
+        multideckVersion: version!.DOCBTV_VersionNo, status: version!.DOCBTV_StatusCode,
+        sourceSha256: source.sha256, templateBase64: toBase64(bytes), templateFileName: source.fileName ?? "template.docx" } })
     }
 
     if (payload.action === "bootstrap") {
@@ -554,7 +687,10 @@ Deno.serve(async (request) => {
       if (!isUuid(payload.multideckTemplateId)) {
         throw new FunctionError(400, "Choose a valid document template.", "Studio approval request was invalid")
       }
-      return jsonResponse(request, await approveTemplate(context, payload.multideckTemplateId))
+      if (!Number.isInteger(payload.reviewedVersion) || typeof payload.reviewedSourceSha256 !== "string" || !/^[a-f0-9]{64}$/.test(payload.reviewedSourceSha256)) {
+        throw new FunctionError(400, "Preview the saved draft before activating it.", "Template approval lacks a source review")
+      }
+      return jsonResponse(request, await approveTemplate(context, payload.multideckTemplateId, payload.reviewedVersion!, payload.reviewedSourceSha256))
     }
 
     if (payload.action === "draft-source" || payload.action === "template-source") {
@@ -586,6 +722,7 @@ Deno.serve(async (request) => {
         carboneVersionId: data.carboneVersionId,
         status: data.status === "published" ? "published" : "draft",
         templateBase64: toBase64(bytes),
+        sourceSha256: await sha256Hex(bytes),
         templateFileName: fileName,
         templateMimeType: data.mimeType,
         previewSafe: previewSampleData !== null,
@@ -600,6 +737,13 @@ Deno.serve(async (request) => {
       await authorizeTemplateSave(context, payload.multideckTemplateId)
       const templateFileName = payload.templateFileName ?? "template.docx"
       const templateBytes = fromBase64(payload.templateBase64, templateFileName)
+      const template = await authorizeTemplateSave(context, payload.multideckTemplateId)
+      if (template.templateCode === "HBL" || template.templateCode === "HAWB") {
+        return binaryResponse(request, await testTransportTemplate(templateBytes, payload.templateBase64, templateFileName, template.templateCode, payload.previewScenario), "application/pdf")
+      }
+      if (/^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(template.templateCode)) {
+        return binaryResponse(request, await testBookingTemplate(templateBytes, payload.templateBase64, templateFileName, payload.previewScenario), "application/pdf")
+      }
       const sampleData = templatePreviewSample(await sha256Hex(templateBytes))
       if (!sampleData) throw new FunctionError(400, templatePreviewPrivacyMessage, "Unreviewed template source blocked before rendering")
       // Never accept caller-entered customer data on the template demo surface.
@@ -735,7 +879,7 @@ Deno.serve(async (request) => {
         body: JSON.stringify({
           data: sampleData ?? session.dataset,
           template: payload.templateBase64,
-          ...(templateExtension === "pdf" ? {} : { convertTo: "pdf" }),
+          ...(templateExtension === "pdf" ? {} : { convertTo: /^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(templateCode) ? documentIssueConversion("pdf", "draft") : "pdf" }),
           converter: "L",
           lang: session.languageCode,
           reportName: `${session.templateCode}-${session.jobReference}-preview`,

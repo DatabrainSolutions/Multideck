@@ -67,11 +67,25 @@ test('saving a published template keeps the approved version current until revie
     assert.equal(draft.multideckVersion, 2)
     assert.equal(draft.fileName, 'example.docx')
     sql(`do $$begin perform document_api.studio_template_draft_source('${id(102)}','${id(10)}'); raise exception 'Expected denial'; exception when insufficient_privilege then null; end$$;`)
-    const approved = JSON.parse(sql(`select document_api.approve_studio_template_version('${id(101)}','${id(10)}')`))
+    sql(`alter table public."DOCB_DocumentTemplates" add column "DOCBT_Name" text default 'Booking confirmation';`)
+    const authoring = readFileSync(new URL('../migrations/20260805123825_document_template_authoring_workflow.sql', import.meta.url), 'utf8')
+    sql(authoring.slice(authoring.indexOf('create or replace function document_api.authorize_studio_template_save'), authoring.indexOf('-- Record the stable Carbone template ID')))
+    sql(readFileSync(new URL('../migrations/20261001171500_document_template_review_identity.sql', import.meta.url), 'utf8'))
+    sql(`update public."DOCB_TemplateVersions" set "DOCBTV_TemplateSnapshotJSON"=jsonb_set("DOCBTV_TemplateSnapshotJSON",'{source,sha256}','"${'c'.repeat(64)}"') where "DOCBTV_TemplateID"='${id(10)}' and "DOCBTV_VersionNo"=2;`)
+    for (const [version, hash] of [[1, 'c'.repeat(64)], [2, 'd'.repeat(64)]]) {
+      sql(`do $$begin perform document_api.approve_reviewed_template_version('${id(101)}','${id(10)}',${version},'${hash}'); raise exception 'Expected stale review denial'; exception when serialization_failure then null; end$$;`)
+      assert.equal(sql(`select "DOCBT_CurrentVersionNo" from public."DOCB_DocumentTemplates"`), '1')
+    }
+    for (const actor of [id(102), id(104), id(105)]) {
+      sql(`do $$begin perform document_api.approve_reviewed_template_version('${actor}','${id(10)}',2,'${'c'.repeat(64)}'); raise exception 'Expected permission denial'; exception when insufficient_privilege then null; end$$;`)
+    }
+    for (const role of ['anon', 'authenticated']) {
+      sql(`set role ${role}; do $$begin perform document_api.approve_reviewed_template_version('${id(101)}','${id(10)}',2,'${'c'.repeat(64)}'); raise exception 'Expected direct call denial'; exception when insufficient_privilege then null; end$$;`)
+    }
+    const approved = JSON.parse(sql(`select document_api.approve_reviewed_template_version('${id(101)}','${id(10)}',2,'${'c'.repeat(64)}')`))
     assert.equal(approved.status, 'published')
     assert.equal(sql(`select "DOCBT_CurrentVersionNo" from public."DOCB_DocumentTemplates" where "DOCBT_ID"='${id(10)}'`), '2')
     assert.equal(sql(`select document_api.studio_template_draft_source('${id(101)}','${id(10)}') is null`), 't')
-    sql(`alter table public."DOCB_DocumentTemplates" add column "DOCBT_Name" text default 'Booking confirmation';`)
     const choices = readFileSync(new URL('../migrations/20260929144212_booking_confirmation_template_choices.sql', import.meta.url), 'utf8')
     sql(choices.slice(choices.indexOf('create or replace function document_api.is_booking_confirmation_template_code'), choices.indexOf('create or replace function document_api.prepare_booking_confirmation')))
     assert.equal(sql(`select document_api.is_booking_confirmation_template_code('JOB_CONFIRMATION_LAYOUT_2')`), 't')

@@ -2,7 +2,18 @@
 
 Research checked 1 October 2026. This is a product workflow recommendation, not an assertion that every freight document follows one legal rule.
 
-Current checkpoint note: the transaction evidence below records renderer v60/v61 and studio v71. A later readback found shared-development renderer v62 and studio v73, with transport Draft generation blocked and a newer template-review identity contract. Do not use the historic successful generation as proof of current availability. See [the current dev checkpoint](../verification/2026-10-01-dev-merge-checkpoint.md) and [Harry's handover](../handovers/2026-10-01-harry-freight-handover.md). The previously date-dependent Finance dashboard fixture has also been corrected locally; the mandatory runner now passes 141 PostgreSQL checks plus 9 contracts.
+Current checkpoint note: the transaction evidence below records renderer v60/v61 and studio v71. The latest readback is shared-development renderer v63 and studio v78. Their received-confirmation workflow, own-issuer House layouts, branding/source history and exact review identity have now been reconciled locally with our Draft transport extension and privacy gates. This repair has not been pushed/deployed and transport generation is still blocked by the unchanged hosted renderer. Do not use historic successful generation as proof of current availability. See [the current dev checkpoint](../verification/2026-10-01-dev-merge-checkpoint.md) and [Harry's handover](../handovers/2026-10-01-harry-freight-handover.md). The mandatory runner passes 141 PostgreSQL checks plus 9 contracts; the full client suite retains 43 pre-existing failures.
+
+## Current workflow takes precedence over historic release notes
+
+- `JOB_CONFIRMATION` and its layout variants are received carrier/partner documents in the newer workflow, uploaded into Booking Documents. The reconciled renderer rejects outgoing generation and the picker excludes these codes. Existing earlier generated confirmations remain retained. An outgoing customer Booking advice would need its own agreed family.
+- The local compatibility repair enables only fingerprint-approved published transport Drafts: legacy FIATA/MAWB/MNG forms plus the newer own-issuer HBL/HAWB defaults. HBL/HAWB use the newer explicit House mapping and require a legal issuer and unambiguous main carriage. No Original/Copy authority is added.
+- Actual issuer/Admin branding and template version are frozen with the authorised source. Stale source/template reviews cannot generate or publish; no client dataset override is accepted for transport generation.
+- Template previews use exact clean source fingerprints and server-owned fictional samples, including static text/artwork checks. Unknown uploaded sources require a privacy review; tags alone cannot sanitise them. Publication binds the exact saved version and hash from the completed manager preview. A Job-data Studio preview is not template-publication approval.
+- House defaults currently lack the explicit cargo-split schedule retained in the four earlier FIATA/Air forms. Review that as a separate layout/data-scope enhancement; do not invent per-container weight/VGM or silently flatten multiple main-carriage consignments.
+- Five hosted migrations were imported verbatim into matching local files; they are already applied in shared development and must not be reapplied. This repair requires the approved frontend and two complete service bundles, not a blanket migration push or a new published-template selection.
+
+The release/recovery sections below describe earlier releases and remain as dated evidence. They are not instructions to restore outgoing Booking confirmations or roll back the newer shared-development source/review/branding controls. Current release steps are in the checkpoint and handover.
 
 ## Two independent lifecycles
 
