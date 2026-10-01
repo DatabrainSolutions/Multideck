@@ -1,3 +1,4 @@
+import { DashboardEmptyState } from "./dashboard-empty-state"
 import { useState, type KeyboardEvent } from "react"
 import { useLanguage } from "@/i18n/language-provider"
 import "./dashboard-analytics-charts.css"
@@ -32,11 +33,8 @@ function moveSelection(
     [target]?.focus()
 }
 
-/** A single ordered cohort, with a shared zero baseline and linked stage readouts. */
-export function CohortJourney({
-  stages,
-  note,
-}: {
+/** Workflow stages share the starting cohort's scale; counts remain inspectable at zero. */
+export function CohortJourney({ stages, note }: {
   stages: { label: string; value: number }[]
   note: string
 }) {
@@ -45,93 +43,34 @@ export function CohortJourney({
   const index = Math.min(selection, stages.length - 1)
   const stage = stages[index]
   const base = stages[0]?.value ?? 0
-  if (!stage || !base)
-    return (
-      <p className="md-analytics-empty">
-        {t("No starting cohort in this period.")}
-      </p>
-    )
-  // Inconsistent cohorts must be visible, rather than drawing a misleading conversion shape.
-  const valid = stages.every(
-    (item, i) => item.value >= 0 && (!i || item.value <= stages[i - 1].value),
-  )
-  const points = stages.map((item, i) => ({
-    x: 30 + (i * 500) / Math.max(1, stages.length - 1),
-    y: 145 - (item.value / base) * 110,
-  }))
-  const path = points.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ")
-  const drop = base - stage.value
+  const last = stages[stages.length - 1]
+  const valid = stages.every((item, i) => item.value >= 0 && (!i || item.value <= stages[i - 1].value))
+  const format = (value: number) => value.toLocaleString(language)
+  const share = (value: number) => `${Math.round(value / base * 100)}%`
+  if (!stage || (base === 0 && valid)) return <DashboardEmptyState kind={stages[0]?.label.includes("Lead") ? "leads" : "quotes"} title="No activity in this cohort" detail="Try a wider date range to see earlier activity." />
   return (
     <div className="md-cohort-journey">
-      {valid ? (
-        <svg viewBox="0 0 560 170" aria-hidden="true">
-          {[0, 0.5, 1].map((f) => (
-            <g key={f}>
-              <line
-                x1="30"
-                x2="530"
-                y1={145 - f * 110}
-                y2={145 - f * 110}
-                className="md-analytics-grid-line"
-              />
-              <text x="4" y={149 - f * 110}>
-                {f * 100}%
-              </text>
-            </g>
-          ))}
-          <path d={`${path} L530,145 L30,145 Z`} className="md-cohort-area" />
-          <path d={path} className="md-cohort-line" />
-          {points.map((p, i) => (
-            <g key={stages[i].label} onPointerEnter={() => select(i)}>
-              <circle cx={p.x} cy={p.y} r="16" fill="transparent" />
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r={i === index ? 6 : 4}
-                className="md-cohort-point"
-              />
-            </g>
-          ))}
-        </svg>
-      ) : (
-        <p className="md-analytics-empty" role="status">
-          {t(
-            "These stages do not form an ordered cohort. Review the source counts below.",
-          )}
-        </p>
-      )}
-      <div
-        className="md-cohort-stages"
-        role="group"
-        aria-label={t("Conversion stages")}
-        style={{
-          gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))`,
-        }}
-      >
+      <div className="md-cohort-summary">
+        <strong>{base > 0 && valid ? share(last.value) : "—"}</strong>
+        <div><span>{t(last.label)}</span><small>{t("of the starting cohort")}</small></div>
+      </div>
+      {!valid ? <p className="md-analytics-note" role="status">{t("These stages do not form an ordered cohort. Review the source counts below.")}</p> : null}
+      <div className="md-cohort-stages" role="group" aria-label={t("Conversion stages")}>
         {stages.map((item, i) => (
-          <button
-            key={item.label}
-            type="button"
-            aria-pressed={i === index}
-            tabIndex={i === index ? 0 : -1}
-            onClick={() => select(i)}
-            onFocus={() => select(i)}
-            onKeyDown={(e) => moveSelection(e, i, stages.length, select)}
-          >
-            <span>{t(item.label)}</span>
-            <strong>{item.value.toLocaleString(language)}</strong>
+          <button key={item.label} type="button" aria-pressed={i === index}
+            tabIndex={i === index ? 0 : -1} onClick={() => select(i)} onFocus={() => select(i)}
+            onKeyDown={(e) => moveSelection(e, i, stages.length, select)}>
+            <span className="md-cohort-stage-label">{t(item.label)}</span>
+            <strong>{format(item.value)}</strong>
+            <span className="md-cohort-stage-track" aria-hidden="true"><i style={{ width: `${valid && base > 0 ? item.value / base * 100 : 0}%` }} /></span>
+            <span className="md-cohort-stage-share">{valid && base > 0 ? share(item.value) : "—"}</span>
           </button>
         ))}
       </div>
       <p className="md-analytics-readout" aria-live="polite">
-        <strong>{Math.round((stage.value / base) * 100)}%</strong>{" "}
-        {t("of the starting cohort")}
-        {index && valid ? (
-          <span>
-            {" "}
-            · {drop.toLocaleString(language)} {t("have not reached this stage")}
-          </span>
-        ) : null}
+        {base === 0 && valid ? t("No activity in this cohort. Try a wider date range.") : (
+          <><strong>{t(stage.label)}: {format(stage.value)}</strong>{index > 0 && valid ? ` · ${format(base - stage.value)} ${t("have not reached this stage")}` : null}</>
+        )}
       </p>
       <p className="md-analytics-note">{note}</p>
     </div>
@@ -346,7 +285,7 @@ export function UsageCalendar({
               type="button"
               tabIndex={i === index ? 0 : -1}
               aria-pressed={i === index}
-              aria-label={`${formatDate(day.day)} · ${isMeasured(day.day) ? `${hours(day.activeSeconds)} ${t("active")}, ${hours(day.idleSeconds)} ${t("idle")}` : t("No telemetry coverage")}`}
+              aria-label={`${formatDate(day.day)} · ${isMeasured(day.day) ? `${hours(day.activeSeconds)} ${t("active")}, ${hours(day.idleSeconds)} ${t("idle")}` : t("No activity tracking")}`}
               onPointerEnter={() => select(i)}
               onFocus={() => select(i)}
               onClick={() => select(i)}
@@ -371,12 +310,12 @@ export function UsageCalendar({
         <small>
           {isMeasured(selected.day)
             ? `${t("active")} · ${hours(selected.idleSeconds)} ${t("idle")}`
-            : t("No telemetry coverage")}
+            : t("No activity tracking")}
         </small>
       </div>
       <p className="md-analytics-note">
         {t(
-          "Each square is one UTC day. Darker squares mean more measured active time. Outline-only days have no telemetry coverage.",
+          "Each square is a UTC day. Darker squares show more active time; outlined days have no tracking.",
         )}
       </p>
     </div>

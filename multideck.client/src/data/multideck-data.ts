@@ -1,3 +1,5 @@
+import dashboardEmptySource from "@/components/multideck/dashboard-empty-state.tsx?raw"
+import dashboardEmptyStyles from "@/components/multideck/dashboard-empty-state.css?raw"
 import tablePrimitiveSource from "@/components/ui/table.tsx?raw"
 import tableViewportSource from "@/components/ui/table-viewport.tsx?raw"
 import workingCapitalPanelSource from "@/components/multideck/finance-working-capital-panel.tsx?raw"
@@ -8,6 +10,9 @@ import sidebarNavigationSearchSource from "@/lib/sidebar-navigation-search.ts?ra
 import appBreadcrumbsSource from "@/components/multideck/app-breadcrumbs.tsx?raw"
 import appBreadcrumbsStyles from "@/components/multideck/app-breadcrumbs.css?raw"
 import dashboardModeChartSource from "@/components/multideck/dashboard-mode-chart.tsx?raw"
+import workflowComponentsSource from "@/components/multideck/workflow-components.tsx?raw"
+import dashboardInsightCardSource from "@/components/multideck/dashboard-insight-card.tsx?raw"
+import dashboardInsightCardStyles from "@/components/multideck/dashboard-insight-card.css?raw"
 import dashboardWorldMapSource from "@/components/multideck/dashboard-world-map.tsx?raw"
 import dashboardAnalyticsChartsSource from "@/components/multideck/dashboard-analytics-charts.tsx?raw"
 import commandInputSource from "@/components/multideck/command-input.tsx?raw"
@@ -1388,7 +1393,7 @@ foundOn: [{ label: "CRM companies", route: "/crm/accounts" }, { label: "CRM cont
     category: "Controls",
     description: "The shared branded date controls for a single date, date and time, or a range with optional comparison.",
     details: "Use these instead of browser-native date inputs. Every variant shares the glass calendar, English regional date formatting, constrained dates, and the rebranded Calendar Days icon; date-time fields add a compact branded time control.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Quote details", route: "/quotes/jq20013" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Inbox", route: "/inbox" }, { label: "Calendar · New meeting", route: "/calendar" }, { label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Components", route: "/components?component=date-range-picker" }, ...tableExportFoundOn],
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Quote details", route: "/quotes/jq20013" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Inbox", route: "/inbox" }, { label: "Calendar · New meeting", route: "/calendar" }, { label: "Settings · Availability", route: "/settings?tab=availability" }, { label: "Components", route: "/components?component=date-range-picker" }, ...tableExportFoundOn],
     componentCode: `export function MultideckDatePicker({ value, onChange, minDate, maxDate }) {\n  return <MultideckDateRangePicker value={{ start: value, end: value }} onChange={(range) => onChange(range.start)} minDate={minDate} maxDate={maxDate} />\n}\n\nexport function MultideckDateTimePicker({ value, onChange }) {\n  const date = value.slice(0, 10)\n  const time = value.slice(11, 16)\n  return (\n    <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-2">\n      <MultideckDatePicker value={date} onChange={(nextDate) => onChange((nextDate ?? "") + "T" + time)} />\n      <BrandedTimeInput value={time} onChange={(nextTime) => onChange(date + "T" + nextTime)} />\n    </div>\n  )\n}`,
     usageCode: `const [expiryDate, setExpiryDate] = useState("2026-06-04")\nconst [appointment, setAppointment] = useState("2026-06-04T09:30")\n\n<MultideckDatePicker\n  value={expiryDate}\n  onChange={(date) => setExpiryDate(date ?? "")}\n  title="Expiry date"\n/>\n\n<MultideckDateTimePicker\n  value={appointment}\n  onChange={setAppointment}\n  title="Appointment"\n/>`,
   },
@@ -2007,9 +2012,9 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Segmented Control",
     category: "Navigation",
     description: "A compact mode switch with one spring-animated selection pill for two to four exclusive choices.",
-    details: "Use for short mutually exclusive view modes. The selected pill preserves spatial continuity, respects reduced motion, and stays visually identical across settings, dashboards, registers, and workflows.",
-    foundOn: [{ label: "CRM dashboard", route: "/crm" }, { label: "Meetings", route: "/calendar/meetings" }, { label: "Booking link editor", route: "/calendar/booking-links" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  const controlId = useId()\n  const shouldReduceMotion = useReducedMotion()\n\n  return (\n    <div role="group" className="relative isolate inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1">\n      {options.map((option) => (\n        <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}>\n          {value === option ? (\n            <motion.span layoutId={controlId + "-active"} transition={reduceMotion(shouldReduceMotion, mdMotion.spring)} />\n          ) : null}\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
+    details: "Use for short mutually exclusive view modes. The selected pill preserves spatial continuity and respects reduced motion. Use animated={false} for immediate analytics range changes. A custom value keeps the first preset reachable by keyboard.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "CRM dashboard", route: "/crm" }, { label: "Meetings", route: "/calendar/meetings" }, { label: "Booking link editor", route: "/calendar/booking-links" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Expected receipts", route: "/warehouse/purchase-orders" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
+    componentCode: workflowComponentsSource,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
   {
@@ -2349,11 +2354,50 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `const items = dashboardPriorityQueue(bookings, quotes)\n\n<DashboardPriorityQueue\n  items={items}\n  operatorName={operatorName}\n  onOpenItem={(item) =>\n    navigate(item.bookingId ? getBookingDetailPath(item.bookingId) : \`/quotes/\${item.quoteReference}\`)\n  }\n  onHandOverToDexter={(item) => {\n    rememberDexterTaskHandoff(buildTaskPrompt(item))\n    navigate("/agent-dexter")\n  }}\n/>`,
   },
   {
+    id: "dashboard-insight-card",
+    name: "Dashboard Insight Card",
+    category: "Data",
+    description: "A measured KPI with a daily trend or a proportional breakdown.",
+    details: "Pair one figure with its real daily values or parts of a total. Zero activity uses neutral baseline ticks; dates without tracking use outlined ticks. Trends have accessible date-by-date values. Keep permission gaps explicit and only add an Open action when a real destination exists. Numbers and charts remain still while being read.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=dashboard-insight-card" }],
+    componentCode: `${dashboardInsightCardSource}\n\n/* Styles */\n${dashboardInsightCardStyles}`,
+    usageCode: `<DashboardInsightCard
+  kpi={{ label: "Bookings placed", value: "42", detail: "Excludes provisional and cancelled", tone: "teal" }}
+  trendLabel="Daily bookings"
+  trend={[{ label: "1 Sept", value: 12 }, { label: "2 Sept", value: 18 }, { label: "3 Sept", value: 12 }]}
+  onOpen={() => navigate("/bookings")}
+/>`,
+  },
+  {
+    id: "quote-decision-breakdown",
+    name: "Quote Decision Breakdown",
+    category: "Data",
+    description: "Accepted and lost quote decisions, with a proportional split and recorded loss reasons.",
+    details: "Use for outcomes recorded during a reporting period. Pending quotes are excluded from the win rate. No decisions shows a dash and an explicit empty state. Loss reasons appear only when recorded; counts always remain visible, including zero. Compose inside a panel rather than nesting another card.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=quote-decision-breakdown" }],
+    componentCode: `${dashboardInsightCardSource}\n\n/* Styles */\n${dashboardInsightCardStyles}`,
+    usageCode: `<QuoteDecisionBreakdown
+  accepted={28}
+  lost={12}
+  reasons={[{ label: "Price", count: 8 }, { label: "Timing", count: 4 }]}
+/>`,
+  },
+  {
+    id: "dashboard-empty-state",
+    name: "Dashboard Empty State",
+    category: "Data",
+    description: "A quiet looping SVG for a dashboard block without recorded activity.",
+    details: "Choose the illustration for the block: leads, follow-ups, quotes, pipeline, loss reasons, customers, continuity, activity, workflow, money, coverage, destinations, shipping, system health, Dexter or modules. Filled paper and semantic teal, blue and amber accents keep each scene legible in both themes. Keep the enclosing panel at the same height as its populated state. Illustrations are decorative and never imply actual progress. Reduced motion uses a still illustration. Loops pause outside the viewport; a keyboard-accessible control pauses each illustration. Use compact inside a KPI, and keep access failures or confirmed zero issues distinct from missing data.",
+    foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=dashboard-empty-state" }],
+    componentCode: `${dashboardEmptySource}\n\n/* Styles */\n${dashboardEmptyStyles}`,
+    usageCode: `<DashboardEmptyState kind="quotes" title="No quotes sent in this period" detail="Try a wider date range to see earlier activity." />`,
+  },
+  {
     id: "cohort-journey",
     name: "Cohort Journey",
     category: "Data",
     description: "An ordered conversion cohort on a shared baseline, with linked stage inspection.",
-    details: "Use for outcomes to date of one starting cohort. Point height is the share reaching each stage. Pointer and arrow-key inspection share the stage count and drop-off readout. State what begins the cohort and disclose that incomplete outcomes may progress. Inconsistent stages show their counts without a misleading shape.",
+    details: "Use for outcomes to date of one starting cohort. Horizontal bars show the share reaching each stage on the same starting-cohort scale. Pointer and arrow-key inspection share the stage count and remaining cohort. Zero activity preserves every stage and explains the empty period. State what begins the cohort and disclose that incomplete outcomes may progress. Inconsistent stages show their counts without a misleading shape.",
     foundOn: [{ label: "Admin dashboard", route: "/admin" }, { label: "Components", route: "/components?component=cohort-journey" }],
     componentCode: dashboardAnalyticsChartsSource,
     usageCode: `<CohortJourney stages={[{ label: "Quotes sent", value: 120 }, { label: "Customer decision", value: 76 }, { label: "Accepted", value: 42 }, { label: "Booking placed", value: 35 }]} note="Quotes first sent in the period, with outcomes to date." />`,

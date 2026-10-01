@@ -101,15 +101,17 @@ const KpiCell = memo(function KpiCell({
           {/* The compact row has no room for the supporting lines, so they are
               kept for assistive technology rather than dropped from the
               product. */}
-          <span className={compact ? "sr-only" : "md-kpi-cell-detail"}>
-            {kpi.detail}
-            {kpi.delta ? (
-              <span className="md-kpi-cell-detail-caption">
-                {" "}
-                · {t(kpi.delta.caption)}
-              </span>
-            ) : null}
-          </span>
+          {kpi.detail || kpi.delta ? (
+            <span className={compact ? "sr-only" : "md-kpi-cell-detail"}>
+              {kpi.detail}
+              {kpi.delta ? (
+                <span className="md-kpi-cell-detail-caption">
+                  {kpi.detail ? " · " : ""}
+                  {t(kpi.delta.caption)}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
         </span>
       </span>
       {spark && kpi.series?.length ? (

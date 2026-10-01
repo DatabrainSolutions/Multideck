@@ -52,6 +52,7 @@ export function SegmentedControl<T extends string>({
   ariaLabel,
   renderOption,
   disabled = false,
+  animated = true,
 }: {
   options: readonly T[]
   value: T
@@ -60,9 +61,11 @@ export function SegmentedControl<T extends string>({
   ariaLabel?: string
   renderOption?: (option: T) => ReactNode
   disabled?: boolean
+  /** Keep keyboard-led analytics range changes immediate. */
+  animated?: boolean
 }) {
   const controlId = useId()
-  const shouldReduceMotion = useReducedMotion()
+  const shouldReduceMotion = useReducedMotion() || !animated
 
   return (
     <div
@@ -75,17 +78,18 @@ export function SegmentedControl<T extends string>({
         className,
       )}
     >
-      {options.map((option) => (
+      {options.map((option, index) => (
         <button
           key={option}
           type="button"
           role="radio"
           aria-checked={value === option}
-          tabIndex={value === option ? 0 : -1}
+          tabIndex={value === option || (!options.includes(value) && index === 0) ? 0 : -1}
           disabled={disabled}
           className={cn(
             "relative h-8 min-w-0 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] disabled:cursor-not-allowed disabled:active:scale-100",
             value === option && "text-[var(--md-selected-text)]",
+            !animated && "transition-none active:scale-100",
           )}
           onClick={() => onChange(option)}
           onKeyDown={(event) => moveChoiceFocus(event, options, value, onChange)}

@@ -1,17 +1,22 @@
+import { DashboardEmptyState, type DashboardEmptyKind } from "@/components/multideck/dashboard-empty-state"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { ArrowRight, RefreshCw } from "@/components/icons/hugeicons"
-import { CrmPanel, CrmEmptyState } from "@/components/multideck/crm-dashboard"
+import { CrmPanel } from "@/components/multideck/crm-dashboard"
 import {
   CohortJourney,
   LossReasonMap,
   UsageCalendar,
 } from "@/components/multideck/dashboard-analytics-charts"
+import { StaticBloomShader } from "@/components/multideck/dexter-action-pill"
 import { DashboardWorldMap } from "@/components/multideck/dashboard-world-map"
 import { DashboardModeChart } from "@/components/multideck/dashboard-mode-chart"
-import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
+import { DashboardInsightCard, QuoteDecisionBreakdown } from "@/components/multideck/dashboard-insight-card"
+import { MultideckDateRangePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
+import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import { InlineNotice } from "@/components/multideck/inline-notice"
 import { SettingsPageHeader } from "@/components/multideck/settings-components"
+import { Surface } from "@/components/multideck/surface"
 import {
   Select,
   SelectContent,
@@ -20,9 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Inbox } from "@/components/icons/hugeicons"
-import { accentCssText } from "@/lib/accent-theme"
+import { accentCssText, buildAccentRamp } from "@/lib/accent-theme"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   adminReportingPeriod,
@@ -32,6 +35,7 @@ import {
 import type { DashboardKpi } from "@/lib/dashboard-live-data"
 import { getDexterUsage, type DexterUsage } from "@/lib/dexter-api"
 
+const adminShaderStops = buildAccentRamp("teal").brand.shader
 const adminBrandCss = accentCssText("teal")
   .replaceAll(":root.dark", ".dark .md-admin-dashboard")
   .replaceAll(":root", ".md-admin-dashboard")
@@ -55,6 +59,22 @@ const flowNames: Record<string, string> = {
   quote_send: "Send quote",
   booking_create: "Create booking",
 }
+const purposeNames: Record<string, string> = {
+  dexter_chat: "Dexter chat",
+  inbox_document_extraction: "Inbox document extraction",
+  document_ocr: "Document OCR",
+  tenant_brand_import: "Brand import",
+  dexter_voice: "Dexter voice",
+  invoice_ocr: "Invoice OCR",
+  email_compose: "Email writing",
+  email_refine: "Email editing",
+  quote_intelligence: "Quote analysis",
+  reference_rule: "Reference rules",
+  crm_sales_insights: "Sales insights",
+  developer_broadcast: "Developer broadcast",
+  writing_profile: "Writing profile",
+  finance_matching: "Finance matching",
+}
 const palette = [
   "var(--md-accent)",
   "var(--md-blue)",
@@ -67,7 +87,9 @@ function Ranking({
   rows,
   format,
   onOpen,
+  total,
 }: {
+  total?: number
   rows: { key: string; label: string; value: number; sub?: string }[]
   format: (n: number) => string
   onOpen?: (key: string) => void
@@ -75,11 +97,7 @@ function Ranking({
   const { t } = useLanguage()
   if (!rows.length)
     return (
-      <CrmEmptyState
-        icon={Inbox}
-        title={t("No activity in this period")}
-        body={t("Recorded activity will appear here when it is available.")}
-      />
+      <p className="md-analytics-empty">{t("No activity in this period")}</p>
     )
   return (
     <div className="md-admin-ranking">
@@ -93,6 +111,12 @@ function Ranking({
               <span dir="auto">{row.label}</span>
               {row.sub ? <small>{row.sub}</small> : null}
             </span>
+            {total !== undefined ? (
+              <span className="md-admin-customer-share">
+                <span aria-hidden="true"><i style={{ width: `${total > 0 ? Math.min(100, row.value / total * 100) : 0}%` }} /></span>
+                <small>{total > 0 ? `${Math.round(row.value / total * 100)}%` : "—"}</small>
+              </span>
+            ) : null}
             <strong>{format(row.value)}</strong>
             {onOpen ? (
               <ArrowRight className="size-3.5" aria-hidden="true" />
@@ -122,16 +146,19 @@ function Metric({
   label,
   value,
   detail,
+  empty,
 }: {
   label: string
   value: string
-  detail: string
+  detail?: string
+  empty?: { kind: DashboardEmptyKind; title: string }
 }) {
   return (
     <div className="md-admin-metric">
       <span>{label}</span>
       <strong>{value}</strong>
-      <small>{detail}</small>
+      {detail ? <small>{detail}</small> : null}
+      {empty ? <DashboardEmptyState {...empty} compact /> : null}
     </div>
   )
 }
@@ -150,8 +177,11 @@ export function AdminDashboardPage({
   const { language, t } = useLanguage()
   const [view, setView] = useState<View>("Overview")
   const [period, setPeriod] = useState("30")
-  const [custom, setCustom] = useState(() => adminReportingPeriod(30))
-  const [appliedCustom, setAppliedCustom] = useState(custom)
+  const [custom, setCustom] = useState<MultideckDateRange>(() => {
+    const range = adminReportingPeriod(30)
+    return { start: range.from, end: range.to }
+  })
+  const [appliedCustom, setAppliedCustom] = useState(() => adminReportingPeriod(30))
   const [data, setData] = useState<AdminDashboardData | null>(null)
   const [error, setError] = useState<{
     message: string
@@ -173,6 +203,8 @@ export function AdminDashboardPage({
   )
   const integer = (n: number) =>
     n.toLocaleString(language, { maximumFractionDigits: 0 })
+  const activeDays = (n: number) =>
+    `${integer(n)} ${t(n === 1 ? "active day" : "active days")}`
   const hours = (n: number) =>
     `${(n / 3600).toLocaleString(language, { maximumFractionDigits: 1 })}h`
   const percent = (n: number, d: number) =>
@@ -184,7 +216,8 @@ export function AdminDashboardPage({
       year: "numeric",
       timeZone: "UTC",
     })
-  const periodLabel = `${date(window_.from)} – ${date(window_.to)}`
+  const displayedPeriod = data?.period ?? window_
+  const periodLabel = `${date(displayedPeriod.from)} – ${date(displayedPeriod.to)}`
   const money = (n: number, code: string) =>
     n.toLocaleString(language, {
       style: "currency",
@@ -198,13 +231,13 @@ export function AdminDashboardPage({
     const controller = new AbortController()
     setLoading(true)
     setError(null)
-    setData(null)
     load(window_, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) setData(result)
       })
       .catch((cause) => {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted) {
+          if (cause?.status === 401 || cause?.status === 403) setData(null)
           setError({
             message:
               cause instanceof Error
@@ -212,6 +245,7 @@ export function AdminDashboardPage({
                 : "Workspace analytics could not be loaded.",
             status: cause?.status,
           })
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
@@ -239,12 +273,13 @@ export function AdminDashboardPage({
       current = false
     }
   }, [view, loadAllowance, allowanceRevision])
-  const validCustom =
-    /^\d{4}-\d{2}-\d{2}$/.test(custom.from) &&
-    /^\d{4}-\d{2}-\d{2}$/.test(custom.to) &&
-    custom.from <= custom.to &&
-    custom.to <= adminReportingPeriod(1).to &&
-    Date.parse(custom.to) - Date.parse(custom.from) <= 365 * 86_400_000
+  const lastCompleteDay = adminReportingPeriod(1).to
+  const customEndLimit = custom.start && !custom.end
+    ? new Date(Math.min(Date.parse(lastCompleteDay), Date.parse(custom.start) + 365 * 86_400_000)).toISOString().slice(0, 10)
+    : lastCompleteDay
+  const customStartLimit = custom.start && !custom.end
+    ? new Date(Date.parse(custom.start) - 365 * 86_400_000).toISOString().slice(0, 10)
+    : undefined
   const activePrice =
     data?.prices.find((p) => p.currency === currency) ?? data?.prices[0]
   const users = [...(data?.users ?? [])].sort((a, b) =>
@@ -261,7 +296,7 @@ export function AdminDashboardPage({
           label: t("New leads"),
           value: data.permissions.crm ? integer(data.summary.leads) : "—",
           detail: t(
-            data.permissions.crm ? "Leads created" : "CRM access required",
+            data.permissions.crm ? "" : "CRM access required",
           ),
           tone: "neutral",
         },
@@ -272,7 +307,7 @@ export function AdminDashboardPage({
             : "—",
           detail: t(
             data.permissions.customers
-              ? "Customer accounts created"
+              ? ""
               : "Customer access required",
           ),
           tone: "neutral",
@@ -310,14 +345,14 @@ export function AdminDashboardPage({
               )
             : "—",
           detail: data.permissions.quotes
-            ? `${integer(data.summary.wonQuotes + data.summary.lostQuotes)} ${t("recorded decisions")}`
+            ? `${integer(data.summary.wonQuotes + data.summary.lostQuotes)} ${t(data.summary.wonQuotes + data.summary.lostQuotes === 1 ? "recorded decision" : "recorded decisions")}`
             : t("Quote access required"),
           tone: "green",
         },
         {
           label: t("Active users"),
           value: integer(data.summary.activeUsers),
-          detail: t("Measured time in Multideck"),
+          detail: t("With recorded active time"),
           tone: "neutral",
         },
       ].map((kpi, i) => {
@@ -344,21 +379,101 @@ export function AdminDashboardPage({
               delta: {
                 direction: now > before ? ("up" as const) : ("down" as const),
                 text: `${now > before ? "+" : ""}${Math.round(((now - before) / before) * 100)}%`,
-                caption: t("vs previous equal period"),
+                caption: `${t("vs previous")} ${Math.round((Date.parse(window_.to) - Date.parse(window_.from)) / 86_400_000) + 1} ${t("days")}`,
               },
             }
           : kpi
       }) as DashboardKpi[])
     : []
 
+  const dailyTrend = (key: "leads" | "customers" | "bookings" | "activeSeconds") =>
+    (data?.trend ?? []).map(day => ({
+      label: new Date(`${day.day}T00:00:00Z`).toLocaleDateString(language, {
+        day: "numeric", month: "short", timeZone: "UTC",
+      }),
+      value: key === "activeSeconds" ? day[key] / 60 : day[key],
+      measured: key !== "activeSeconds" || Boolean(data?.coverage.trackingStartedAt
+        && day.day >= data.coverage.trackingStartedAt.slice(0, 10)
+        && (!data.coverage.usageRetainedFrom || day.day >= data.coverage.usageRetainedFrom)),
+    }))
+  const insights = data ? [
+    { route: "/crm/leads", trend: dailyTrend("leads"), trendLabel: t("Daily leads") },
+    { route: "/crm/accounts?view=customers", trend: dailyTrend("customers"), trendLabel: t("Daily customers") },
+    { route: "/crm/accounts?view=customers", segments: [
+      { label: t("Repeat"), value: data.summary.repeatCustomers, color: "var(--md-accent)" },
+      { label: t("First-time"), value: Math.max(0, data.summary.bookingCustomers - data.summary.repeatCustomers), color: "var(--md-line-strong, var(--md-line))" },
+    ] },
+    { route: "/bookings", trend: dailyTrend("bookings"), trendLabel: t("Daily bookings") },
+    { route: "/quotes", segments: [
+      { label: t("Accepted"), value: data.summary.wonQuotes, color: "var(--md-accent)" },
+      { label: t("Lost"), value: data.summary.lostQuotes, color: "var(--md-amber)" },
+    ] },
+    { route: "/admin/activity", trend: dailyTrend("activeSeconds"), trendLabel: t("Active minutes per day") },
+  ] : []
+
+  const growthReadings: { text: string; source: string; label: string }[] = []
+  if (data?.permissions.crm) {
+    growthReadings.push({
+      text: data.leadFunnel.overdueFollowUps > 0
+        ? `${integer(data.leadFunnel.overdueFollowUps)} ${t("open leads have overdue follow-ups. Review the current queue before adding more outreach.")}`
+        : data.leadFunnel.created > 0
+          ? `${integer(data.leadFunnel.converted)} ${t("of")} ${integer(data.leadFunnel.created)} ${t("leads created in this period have converted to deals.")}`
+          : t("No new leads were recorded in this period. Existing customer activity is measured separately."),
+      source: "#admin-growth-leads", label: t("Lead conversion"),
+    })
+  }
+  if (data?.permissions.quotes) {
+    const awaiting = Math.max(0, data.quoteFunnel.sent - data.quoteFunnel.responded)
+    growthReadings.push({
+      text: data.quoteFunnel.responded > data.quoteFunnel.sent
+        ? t("The quote stage counts need review before drawing a conversion conclusion.")
+        : data.quoteFunnel.sent > 0
+        ? `${integer(awaiting)} ${t("of")} ${integer(data.quoteFunnel.sent)} ${t("quotes first sent in this period have no recorded customer decision yet.")}`
+        : t("No quotes were first sent in this period. Accepted prices can still include quotes sent earlier."),
+      source: "#admin-growth-quotes", label: t("Quote conversion"),
+    })
+  }
+  if (data?.permissions.customers && data.permissions.bookings && data.customers[0] && data.summary.bookings > 0) {
+    const customer = data.customers[0]
+    growthReadings.push({ text: `${customer.name} ${t("accounts for")} ${percent(customer.bookings, data.summary.bookings)} ${t("of bookings placed in this period")} (${integer(customer.bookings)} ${t("of")} ${integer(data.summary.bookings)}).`, source: "#admin-growth-customers", label: t("Top customers") })
+  }
+  const emptyPanels: Record<string, { kind: DashboardEmptyKind; title: string; detail?: string } | undefined> = {}
+  if (data) {
+    const empty = (name: string, missing: boolean, kind: DashboardEmptyKind, title: string, detail = "Try a wider date range to see earlier activity.") => {
+      if (missing) emptyPanels[name] = { kind, title, detail }
+    }
+    empty("Booking destinations", data.permissions.bookings && !data.countries.some(country => country.count > 0), "map", "No booking destinations in this period")
+    empty("Top customers", !data.customers.length, "customers", "No customer bookings in this period")
+    empty("Shipping modes", !data.modes.some(mode => mode.count > 0), "shipping", "No bookings placed in this period")
+    empty("Quote decisions", data.summary.wonQuotes + data.summary.lostQuotes === 0, "quotes", "No quote decisions recorded")
+    empty("Most active users", !mostActiveUsers.some(user => user.activeSeconds > 0), "activity", "No active time recorded")
+    empty("Lead conversion", data.leadFunnel.created === 0, "leads", "No leads created in this period")
+    empty("Lead follow-up", data.leadFunnel.created === 0 && data.leadFunnel.overdueFollowUps === 0 && data.leadFunnel.responseHours === null, "followup", "No lead follow-up activity", "No overdue follow-ups. Response time will appear once a new lead receives a recorded response.")
+    empty("Quote conversion", data.quoteFunnel.sent === 0, "pipeline", "No quotes sent in this period")
+    empty("Accepted quote value", !activePrice, "money", "No priced accepted quotes", "Saved prices will appear here when an accepted quote has a complete price.")
+    empty("Price coverage", data.summary.wonQuotes === 0, "coverage", "No accepted quotes in this period")
+    empty("Quote loss reasons", !data.lossReasons.some(reason => reason.count > 0), "losses", "No recorded quote losses")
+    empty("Customer continuity", data.summary.bookingCustomers === 0, "continuity", "No customer bookings in this period")
+    empty("Workflow completion", !data.workflows.some(flow => flow.started > 0), "workflow", "No workflow attempts recorded", "Recorded lead, quote and booking workflows will appear here.")
+    empty("Workspace rhythm", !data.trend.some(day => day.activeSeconds + day.idleSeconds > 0), "activity", "No workspace activity recorded", "Activity appears after colleagues use Multideck with tracking enabled.")
+    empty("Time in Multideck", !data.trend.some(day => day.activeSeconds + day.idleSeconds > 0), "activity", "No time recorded in this period")
+    empty("Users", !users.some(user => user.activeSeconds + user.idleSeconds + user.aiRequests > 0), "customers", "No measured user activity")
+    empty("Module adoption", !data.modules.some(module => module.activeSeconds + module.idleSeconds > 0), "modules", "No module activity recorded")
+    empty("AI activity", data.ai.requests === 0, "ai", "No successful AI requests recorded", "Recorded requests will appear here after Dexter is used.")
+    empty("AI cost and reliability", data.ai.requests + data.ai.failed === 0, "ai", "No AI requests recorded", "Cost and reliability will appear once requests are recorded.")
+    empty("Needs attention", (data.permissions.crm ? data.leadFunnel.overdueFollowUps : 0) + (data.permissions.documents ? data.system.failedDocuments : 0) + (data.permissions.finance ? data.system.blockedAccounting : 0) + data.ai.failed === 0, "system", "Nothing needs attention", "No overdue follow-ups, blocked exports or recorded failures within your access.")
+    empty("Data coverage", (data.permissions.bookings || data.permissions.quotes) && data.summary.bookings + data.summary.wonQuotes + data.summary.lostQuotes + data.coverage.undatedQuoteOutcomes === 0, "coverage", "No records to assess yet", "Data coverage will appear as bookings and quote outcomes are recorded.")
+  }
   const panel = (
     title: string,
     children: ReactNode,
     meta?: string,
     action?: ReactNode,
   ) => (
-    <CrmPanel title={t(title)} meta={meta} action={action}>
-      {children}
+    <CrmPanel title={t(title)} meta={meta} action={action} className={`md-admin-panel md-admin-panel--${title.toLowerCase().replaceAll(/[^a-z]+/g, "-")}`}>
+      <div className="md-admin-panel-body" data-panel={title} tabIndex={0} role="region" aria-label={`${t(title)} ${t("details")}`}>
+        {emptyPanels[title] ? <DashboardEmptyState {...emptyPanels[title]!} /> : children}
+      </div>
     </CrmPanel>
   )
   const coverage = data ? (
@@ -374,7 +489,6 @@ export function AdminDashboardPage({
         ? new Date(data.coverage.trackingStartedAt).toLocaleDateString(language)
         : t("the first recorded session")}
       {". "}
-      {t("All reporting days are UTC.")}
     </p>
   ) : null
   const customerPanel =
@@ -388,7 +502,6 @@ export function AdminDashboardPage({
           key: c.id,
           label: c.name,
           value: c.bookings,
-          sub: t("Bookings placed"),
         }))}
         format={integer}
         onOpen={(id) => {
@@ -396,7 +509,7 @@ export function AdminDashboardPage({
           if (c) navigate(c.route)
         }}
       />,
-      t("By booking volume"),
+      t("Bookings placed"),
     )
   const usagePanel =
     data &&
@@ -407,7 +520,7 @@ export function AdminDashboardPage({
           key: u.id,
           label: u.name,
           value: u.activeSeconds,
-          sub: `${integer(u.days)} ${t("active days")} · ${hours(u.idleSeconds)} ${t("idle")}`,
+          sub: `${activeDays(u.days)} · ${hours(u.idleSeconds)} ${t("idle")}`,
         }))}
         format={hours}
       />,
@@ -472,36 +585,51 @@ export function AdminDashboardPage({
           </button>
         ))}
       </div>,
-      t("Recorded exceptions"),
     )
   return (
-    <div className="md-admin-dashboard md-kpi-scope">
+    <div className="md-admin-dashboard md-kpi-scope" data-view={view}>
       <style>{adminBrandCss}</style>
       <SettingsPageHeader
         title={t("Admin dashboard")}
-        description={t(
-          "A clear view of your workspace, customers and commercial activity.",
-        )}
         descriptionPlacement="under-title"
         actions={
           <>
-            <Select value={period} onValueChange={setPeriod}>
-              <SelectTrigger
-                aria-label={t("Reporting period")}
-                className="md-admin-period"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {["7", "30", "90", "custom"].map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p === "custom"
-                      ? t("Custom period")
-                      : `${p} ${t("complete days")}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="md-admin-range-controls">
+              <SegmentedControl
+                options={["7", "30", "90"] as const}
+                value={period}
+                onChange={setPeriod}
+                ariaLabel={t("Reporting period")}
+                renderOption={value => `${value}D`}
+                className="h-9 [&>button]:h-7 [&>button]:px-2.5"
+                animated={false}
+              />
+              <MultideckDateRangePicker
+                value={custom}
+                onChange={range => {
+                  setCustom(range)
+                  if (range.start && range.end && range.start <= range.end
+                    && range.end <= lastCompleteDay
+                    && Date.parse(range.end) - Date.parse(range.start) <= 365 * 86_400_000) {
+                    setAppliedCustom({ from: range.start, to: range.end })
+                    setPeriod("custom")
+                  }
+                }}
+                onOpenChange={open => {
+                  if (open) setCustom({ start: window_.from, end: window_.to })
+                }}
+                triggerLabel={t("Custom")}
+                title="Custom reporting period"
+                description="Choose a start and end date, up to one year apart. Today is excluded."
+                footerLabel="Reporting dates"
+                active={period === "custom"}
+                align="end"
+                minDate={customStartLimit}
+                maxDate={customEndLimit}
+                resetValue={{ start: adminReportingPeriod(30).from, end: lastCompleteDay }}
+                triggerClassName="h-9 w-auto min-w-0"
+              />
+            </div>
             <Button
               variant="ghost"
               size="icon"
@@ -555,49 +683,10 @@ export function AdminDashboardPage({
         </div>
         <p>
           {periodLabel}
-          <span>UTC</span>
+          <span>{" "}UTC</span>
         </p>
       </div>
-      {period === "custom" ? (
-        <form
-          className="md-admin-custom"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (validCustom) setAppliedCustom({ ...custom })
-          }}
-        >
-          <label>
-            {t("From")}
-            <Input
-              type="date"
-              value={custom.from}
-              max={custom.to}
-              onChange={(e) =>
-                setCustom((c) => ({ ...c, from: e.target.value }))
-              }
-            />
-          </label>
-          <label>
-            {t("To")}
-            <Input
-              type="date"
-              value={custom.to}
-              min={custom.from}
-              max={adminReportingPeriod(1).to}
-              onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))}
-            />
-          </label>
-          <Button variant="secondary" disabled={!validCustom} type="submit">
-            {t("Apply period")}
-          </Button>
-          {!validCustom ? (
-            <small role="status">
-              {t("Choose complete days within a period of at most one year.")}
-            </small>
-          ) : null}
-        </form>
-      ) : null}
-      {loading ? (
+      {loading && !data ? (
         <DotGridLoaderPanel label={t("Loading workspace analytics")} />
       ) : error ? (
         <InlineNotice
@@ -620,26 +709,40 @@ export function AdminDashboardPage({
         >
           {error.message}
         </InlineNotice>
-      ) : data ? (
+      ) : null}
+      {data ? (
         <div
           id="admin-dashboard-content"
           role="tabpanel"
           aria-labelledby={`admin-tab-${views.indexOf(view)}`}
           tabIndex={0}
           className="md-admin-content"
+          aria-busy={loading}
         >
-          <KpiStrip kpis={kpis} columns={6} spark={false} animated={false} />
+          {loading ? <span className="md-admin-refresh-status" role="status">{t("Updating report…")}</span> : null}
+          {view === "Overview" ? <div className="md-admin-insights">
+            {kpis.map((kpi, index) => {
+              const { route, ...visual } = insights[index]
+              const available = kpi.value !== "—"
+              return <DashboardInsightCard
+                key={kpi.label}
+                kpi={kpi}
+                empty={available && [data.summary.leads, data.summary.customers, data.summary.bookingCustomers, data.summary.bookings, data.summary.wonQuotes + data.summary.lostQuotes, data.summary.activeSeconds][index] === 0 ? { kind: (["leads", "customers", "customers", "map", "quotes", "activity"] as DashboardEmptyKind[])[index], title: t("No recorded activity") } : undefined}
+                onOpen={available ? () => navigate(route) : undefined}
+                {...(available ? visual : {})}
+              />
+            })}
+          </div> : null}
           {view === "Overview" ? (
             <>
               <div className="md-admin-grid md-admin-grid-feature">
                 {data.permissions.bookings
                   ? panel(
-                      "Where your bookings go",
+                      "Booking destinations",
                       <DashboardWorldMap values={data.countries} />,
-                      t("Destination · bookings placed"),
                     )
                   : panel(
-                      "Where your bookings go",
+                      "Booking destinations",
                       <p className="md-admin-caption">
                         {t(
                           "Booking access is required to view geographic activity.",
@@ -648,7 +751,7 @@ export function AdminDashboardPage({
                     )}
                 {customerPanel}
               </div>
-              <div className="md-admin-grid">
+              <div className="md-admin-grid md-admin-commercial-row">
                 {data.permissions.bookings && data.modes.length === 0 ? (
                   panel(
                     "Shipping modes",
@@ -658,7 +761,7 @@ export function AdminDashboardPage({
                     t("Daily bookings placed"),
                   )
                 ) : data.permissions.bookings ? (
-                  <DashboardModeChart
+                  <div className="md-admin-chart-frame md-admin-chart-frame--modes"><DashboardModeChart
                     animated={false}
                     title={t("Shipping modes")}
                     subtitle={t(
@@ -695,28 +798,19 @@ export function AdminDashboardPage({
                           ]
                         : []),
                     ]}
-                    height={230}
-                  />
+                    height={390}
+                  /></div>
                 ) : null}
-                {data.permissions.quotes
-                  ? panel(
+                {data.permissions.quotes ? (
+                  <div className="md-admin-quote-column">
+                    {panel(
                       "Quote decisions",
-                      <>
-                        <div className="md-admin-metrics">
-                          <Metric
-                            label={t("Accepted")}
-                            value={integer(data.summary.wonQuotes)}
-                            detail={t("Recorded wins in this period")}
-                          />
-                          <Metric
-                            label={t("Lost")}
-                            value={integer(data.summary.lostQuotes)}
-                            detail={t("Recorded losses in this period")}
-                          />
-                        </div>
-                        <LossReasonMap reasons={data.lossReasons} />
-                      </>,
-                      t("Outcomes recorded in this period"),
+                      <QuoteDecisionBreakdown
+                        accepted={data.summary.wonQuotes}
+                        lost={data.summary.lostQuotes}
+                        reasons={data.lossReasons}
+                      />,
+                      t("Recorded in this period"),
                       <Button
                         variant="ghost"
                         size="sm"
@@ -725,8 +819,30 @@ export function AdminDashboardPage({
                         {t("Explore conversion")}
                         <ArrowRight className="size-3.5" />
                       </Button>,
-                    )
-                  : null}
+                    )}
+                    <Surface padding="none" className="md-admin-quote-activity" aria-labelledby="admin-quote-activity-title">
+                      <div className="md-admin-quote-activity-head">
+                        <div>
+                        <h2 id="admin-quote-activity-title">{t("Quote pipeline")}</h2>
+                        <p>{t("Quotes sent in the selected period")}</p>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => navigate("/quotes")}>
+                          {t("View quotes")}
+                          <ArrowRight className="size-3.5" />
+                        </Button>
+                      </div>
+                      <div className="md-admin-quote-activity-body">
+                        {data.quoteFunnel.sent === 0 ? <DashboardEmptyState kind="pipeline" title="No quotes sent in this period" detail="Try a wider date range to see earlier activity." /> : <>
+                      <dl>
+                        <div><dt>{t("Sent")}</dt><dd>{integer(data.quoteFunnel.sent)}</dd><p>{t("Sent to customers")}</p></div>
+                        <div data-pending={data.summary.pendingQuotes > 0 || undefined}><dt>{t("Awaiting decision")}</dt><dd>{integer(data.summary.pendingQuotes)}</dd><p>{t("No decision recorded")}</p></div>
+                        {data.permissions.bookings ? <div><dt>{t("Booked")}</dt><dd>{integer(data.quoteFunnel.booked)}</dd><p>{t("Linked to a booking")}</p></div> : null}
+                      </dl>
+                        </>}
+                      </div>
+                    </Surface>
+                  </div>
+                ) : null}
               </div>
               <div className="md-admin-grid">
                 {usagePanel}
@@ -736,178 +852,105 @@ export function AdminDashboardPage({
           ) : null}
           {view === "Growth" ? (
             <>
-              <div className="md-admin-grid">
-                {data.permissions.crm
-                  ? panel(
-                      "Lead conversion",
-                      <CohortJourney
-                        stages={[
-                          {
-                            label: "Leads created",
-                            value: data.leadFunnel.created,
-                          },
-                          {
-                            label: "Converted to a deal",
-                            value: data.leadFunnel.converted,
-                          },
-                        ]}
-                        note={t(
-                          "Leads created in this period, with their outcomes to date. This cohort may still progress.",
-                        )}
-                      />,
-                      t("Created-lead cohort"),
-                    )
-                  : null}
-                {data.permissions.quotes
-                  ? panel(
-                      "Quote conversion",
-                      <CohortJourney
-                        stages={[
-                          {
-                            label: "Quotes sent",
-                            value: data.quoteFunnel.sent,
-                          },
-                          {
-                            label: "Customer decision",
-                            value: data.quoteFunnel.responded,
-                          },
-                          {
-                            label: "Accepted",
-                            value: data.quoteFunnel.accepted,
-                          },
-                          ...(data.permissions.bookings
-                            ? [
-                                {
-                                  label: "Booking placed",
-                                  value: data.quoteFunnel.booked,
-                                },
-                              ]
-                            : []),
-                        ]}
-                        note={t(
-                          data.permissions.bookings
-                            ? "Quotes first sent in this period, with outcomes to date. No response is not a customer decision."
-                            : "Quotes first sent in this period, with outcomes to date. Booking access is required to inspect booking conversion.",
-                        )}
-                      />,
-                      t("Sent-quote cohort"),
-                    )
-                  : null}
+              <div className="md-admin-grid md-admin-growth-pair">
+                {data.permissions.crm ? (
+                  <div className="md-admin-growth-stack">
+                    <div id="admin-growth-leads">
+                      {panel("Lead conversion", <CohortJourney
+                        stages={[{ label: "Leads created", value: data.leadFunnel.created }, { label: "Converted to a deal", value: data.leadFunnel.converted }]}
+                        note={t("Leads created in this period, with outcomes to date.")}
+                      />)}
+                    </div>
+                    {panel("Lead follow-up", <>
+                      <div className="md-admin-metrics md-admin-growth-followup">
+                        <Metric label={t("Overdue follow-ups")} value={integer(data.leadFunnel.overdueFollowUps)} detail={t("Current open leads · all dates")} />
+                        <Metric label={t("Average first response")} value={data.leadFunnel.responseHours === null ? "—" : `${data.leadFunnel.responseHours}h`} detail={t("Leads created in this period with a recorded response")} />
+                      </div>
+                    </>, undefined, <Button variant="ghost" size="sm" onClick={() => navigate("/crm/leads")}>{t("View leads")}<ArrowRight className="size-3.5" /></Button>)}
+                  </div>
+                ) : null}
+                {data.permissions.quotes ? (
+                  <div id="admin-growth-quotes" className="md-admin-growth-conversion">
+                    {panel("Quote conversion", <CohortJourney
+                      stages={[
+                        { label: "Quotes sent", value: data.quoteFunnel.sent },
+                        { label: "Customer decision", value: data.quoteFunnel.responded },
+                        { label: "Accepted", value: data.quoteFunnel.accepted },
+                        ...(data.permissions.bookings ? [{ label: "Booking placed", value: data.quoteFunnel.booked }] : []),
+                      ]}
+                      note={t(data.permissions.bookings
+                        ? "Quotes first sent in this period, with outcomes to date. Unanswered quotes are excluded from decisions."
+                        : "Quotes first sent in this period, with outcomes to date. Booking access is required to view booking conversion.")}
+                    />)}
+                  </div>
+                ) : null}
               </div>
-              <div className="md-admin-grid">
-                {data.permissions.quotes
-                  ? panel(
-                      "Accepted quote value",
-                      <>
-                        <div className="md-admin-metrics">
-                          <Metric
-                            label={t("Average won price")}
-                            value={
-                              activePrice
-                                ? money(
-                                    activePrice.average,
-                                    activePrice.currency,
-                                  )
-                                : "—"
-                            }
-                            detail={
-                              activePrice
-                                ? `${integer(activePrice.sample)} ${t("accepted submitted versions")}`
-                                : t("No priced wins in this period")
-                            }
-                          />
-                          <Metric
-                            label={t("Median won price")}
-                            value={
-                              activePrice
-                                ? money(
-                                    activePrice.median,
-                                    activePrice.currency,
-                                  )
-                                : "—"
-                            }
-                            detail={t(
-                              "Middle value, less affected by large quotes",
-                            )}
-                          />
+              {data.permissions.quotes ? (
+                <div className="md-admin-grid md-admin-growth-pair">
+                  <div className="md-admin-growth-stack" id="admin-growth-value">
+                    {panel("Accepted quote value", <>
+                      <div className="md-admin-price-summary">
+                        <div className="md-admin-price-hero">
+                          <span>{t("Average accepted price")}</span>
+                          <strong>{activePrice ? money(activePrice.average, activePrice.currency) : "—"}</strong>
+                          <small>{activePrice ? `${integer(activePrice.sample)} ${t(activePrice.sample === 1 ? "priced quote" : "priced quotes")} · ${activePrice.currency}` : t("No priced wins in this period")}</small>
                         </div>
-                        <p className="md-admin-caption">
-                          {t(
-                            "Accepted submitted prices, excluding tax. Currencies are kept separate.",
-                          )}
-                          {data.coverage.unpricedWins
-                            ? ` ${integer(data.coverage.unpricedWins)} ${t(data.coverage.unpricedWins === 1 ? "win has no complete saved price." : "wins have no complete saved price.")}`
-                            : ""}
-                        </p>
-                      </>,
-                      activePrice?.currency,
-                      data.prices.length > 1 ? (
-                        <Select
-                          value={activePrice?.currency}
-                          onValueChange={setCurrency}
-                        >
-                          <SelectTrigger
-                            aria-label={t("Quote currency")}
-                            className="md-admin-currency"
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {data.prices.map((p) => (
-                              <SelectItem value={p.currency} key={p.currency}>
-                                {p.currency}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : undefined,
-                    )
-                  : null}
-                {data.permissions.quotes
-                  ? panel(
-                      "Most common quote loss reasons",
-                      <LossReasonMap reasons={data.lossReasons} />,
-                      t("Area shows share of recorded losses"),
-                    )
-                  : null}
-              </div>
-              <div className="md-admin-grid">
-                {panel(
-                  "Customer continuity",
-                  <div className="md-admin-metrics">
-                    <Metric
-                      label={t("Repeat customer share")}
-                      value={
-                        data.permissions.bookings
-                          ? percent(
-                              data.summary.repeatCustomers,
-                              data.summary.bookingCustomers,
-                            )
-                          : "—"
-                      }
-                      detail={t(
-                        data.permissions.bookings
-                          ? "Booking customers who also booked before this period"
-                          : "Booking access required",
-                      )}
-                    />
-                    <Metric
-                      label={t("Average first response")}
-                      value={
-                        !data.permissions.crm ||
-                        data.leadFunnel.responseHours === null
-                          ? "—"
-                          : `${data.leadFunnel.responseHours}h`
-                      }
-                      detail={t(
-                        data.permissions.crm
-                          ? "Only leads with a recorded first response"
-                          : "CRM access required",
-                      )}
-                    />
-                  </div>,
-                )}
-                {customerPanel}
+                        <div className="md-admin-price-median">
+                          <span>{t("Median price")}</span>
+                          <strong>{activePrice ? money(activePrice.median, activePrice.currency) : "—"}</strong>
+                          <small>{t("The midpoint, less affected by unusually large quotes")}</small>
+                        </div>
+                      </div>
+                      <p className="md-admin-price-note">{t("Accepted submitted prices, excluding tax. Currencies are kept separate.")}</p>
+                    </>, data.prices.length > 1 ? undefined : activePrice?.currency,
+                    data.prices.length > 1 ? (
+                      <Select value={activePrice?.currency} onValueChange={setCurrency}>
+                        <SelectTrigger aria-label={t("Quote currency")} className="md-admin-currency"><SelectValue /></SelectTrigger>
+                        <SelectContent>{data.prices.map((p) => <SelectItem value={p.currency} key={p.currency}>{p.currency}</SelectItem>)}</SelectContent>
+                      </Select>
+                    ) : undefined)}
+                    {panel("Price coverage", <div className="md-admin-price-coverage">
+                      <div><strong>{integer(data.prices.reduce((sum, price) => sum + price.sample, 0))}<span> / {integer(data.summary.wonQuotes)}</span></strong><span>{t("accepted quotes have a complete saved price")}</span></div>
+                      <div className="md-admin-coverage-track" aria-hidden="true"><i style={{ width: `${data.summary.wonQuotes > 0 ? Math.min(100, data.prices.reduce((sum, price) => sum + price.sample, 0) / data.summary.wonQuotes * 100) : 0}%` }} /></div>
+                      <p>{data.coverage.unpricedWins > 0
+                        ? `${integer(data.coverage.unpricedWins)} ${t(data.coverage.unpricedWins === 1 ? "accepted quote is missing a complete saved price and is excluded above." : "accepted quotes are missing complete saved prices and are excluded above.")}`
+                        : t(data.summary.wonQuotes > 0 ? "All accepted quotes in this period are included across the available currencies." : "No accepted quotes were recorded in this period.")}</p>
+                    </div>)}
+                  </div>
+                  {panel("Quote loss reasons", <LossReasonMap reasons={data.lossReasons} />,
+                    data.lossReasons.some((reason) => reason.count > 0) ? t("Area shows share of recorded losses") : undefined)}
+                </div>
+              ) : null}
+              {data.permissions.customers && data.permissions.bookings ? (
+                <div className="md-admin-growth-customers" id="admin-growth-customers">
+                  {panel("Top customers", <>
+                    <div className="md-admin-customers-head"><span>{t("Customer")}</span><span>{t("Share of period bookings")}</span><span>{t("Bookings")}</span></div>
+                    <Ranking rows={data.customers.map(c => ({ key: c.id, label: c.name, value: c.bookings }))} total={data.summary.bookings} format={integer}
+                      onOpen={(id) => { const customer = data.customers.find(c => c.id === id); if (customer) navigate(customer.route) }} />
+                  </>, t("Bookings placed in the selected period"))}
+                </div>
+              ) : null}
+              <div className="md-admin-grid md-admin-growth-pair">
+                {data.permissions.bookings ? panel("Customer continuity", <div className="md-admin-continuity">
+                  <div className="md-admin-continuity-head"><strong>{percent(data.summary.repeatCustomers, data.summary.bookingCustomers)}</strong><span>{t("repeat customer share")}</span></div>
+                  <div className="md-admin-coverage-track" aria-hidden="true"><i style={{ width: `${data.summary.bookingCustomers > 0 ? data.summary.repeatCustomers / data.summary.bookingCustomers * 100 : 0}%` }} /></div>
+                  <div className="md-admin-continuity-counts">
+                    <Metric label={t("Repeat customers")} value={integer(data.summary.repeatCustomers)} detail={t("Booked before this period")} />
+                    <Metric label={t("First-time customers")} value={integer(Math.max(0, data.summary.bookingCustomers - data.summary.repeatCustomers))} detail={t("First booking in this period")} />
+                  </div>
+                  {data.summary.bookingCustomers === 0 ? <p>{t("No customers placed bookings in this period.")}</p> : null}
+                </div>) : null}
+                <section className="md-admin-period-reading" aria-labelledby="admin-period-reading-title">
+                  <span className="md-admin-period-reading-shader" aria-hidden="true"><StaticBloomShader tone="brand" stops={adminShaderStops} /></span>
+                  <div className="md-admin-period-reading-content">
+                    <div className="md-admin-period-reading-head"><h2 id="admin-period-reading-title">{t("Reading the period")}</h2><span>{t("Dexter")}</span></div>
+                    {data.summary.leads + data.quoteFunnel.sent + data.summary.bookings === 0 ? <DashboardEmptyState kind="ai" title="No activity to read yet" detail="Try a wider date range to see earlier activity." /> : growthReadings.map(reading => <div className="md-admin-period-reading-row" key={reading.source}>
+                      <p>{reading.text}</p><a href={reading.source}>{reading.label}<ArrowRight className="size-3" aria-hidden="true" /></a>
+                    </div>)}
+                    {growthReadings.length === 0 ? <p>{t("There is not enough recorded activity to draw a useful conclusion for this period. Try a wider date range.")}</p> : null}
+                    <small>{t("Calculated from the recorded figures in this report.")}</small>
+                  </div>
+                </section>
               </div>
               {panel(
                 "Workflow completion",
@@ -966,12 +1009,12 @@ export function AdminDashboardPage({
                   </div>
                   <p className="md-admin-caption">
                     {t(
-                      "Measured attempts in the core commercial flows. Unfinished means no completion or cancellation after 24 hours; it does not prove the task was abandoned. Older attempts retain daily totals.",
+                      "Unfinished attempts have no completion or cancellation after 24 hours. They may still be in progress. Older attempts retain daily totals.",
                     )}
                   </p>
                   {data.workflowSteps.length ? (
                     <p className="md-admin-caption">
-                      {t("Last recorded steps in unfinished attempts:")}{" "}
+                      {t("Last steps in unfinished attempts:")}{" "}
                       {data.workflowSteps
                         .slice(0, 5)
                         .map(
@@ -1002,7 +1045,7 @@ export function AdminDashboardPage({
                             : "—"
                         }
                         detail={t(
-                          "Of the included allowance for this billing period",
+                          "Share of included AI allowance used",
                         )}
                       />
                       <Metric
@@ -1012,7 +1055,6 @@ export function AdminDashboardPage({
                             ? `${integer(allowance.subscription.occupiedSeats)}${allowance.subscription.paidSeats != null || allowance.subscription.seatLimit != null ? ` / ${integer(allowance.subscription.paidSeats ?? allowance.subscription.seatLimit!)}` : ""}`
                             : "—"
                         }
-                        detail={t("Current subscription seats")}
                       />
                     </div>
                     <p className="md-admin-caption">
@@ -1023,7 +1065,7 @@ export function AdminDashboardPage({
                           .slice(0, 10),
                       )}
                       {" · "}
-                      {t("Billing period; separate from the reporting filter.")}
+                      {t("Billing dates are separate from the reporting period.")}
                     </p>
                   </>
                 ) : allowanceError ? (
@@ -1050,26 +1092,29 @@ export function AdminDashboardPage({
                     label={t("Loading billing allowance")}
                   />
                 ),
-                t("Current billing period"),
               )}
               <div className="md-admin-metrics md-admin-metrics-wide">
                 <Metric
                   label={t("Active time")}
+                  empty={data.summary.activeSeconds === 0 ? { kind: "activity", title: t("No active time recorded") } : undefined}
                   value={hours(data.summary.activeSeconds)}
                   detail={t("Estimated time in focused Multideck windows")}
                 />
                 <Metric
                   label={t("Idle time")}
+                  empty={data.summary.idleSeconds === 0 ? { kind: "activity", title: t("No idle time recorded") } : undefined}
                   value={hours(data.summary.idleSeconds)}
                   detail={t("After 5 minutes without interaction")}
                 />
                 <Metric
                   label={t("AI requests")}
+                  empty={data.ai.requests === 0 ? { kind: "ai", title: t("No successful requests recorded") } : undefined}
                   value={integer(data.ai.requests)}
-                  detail={t("Successful provider requests in this report")}
+                  detail={t("Successful provider requests")}
                 />
                 <Metric
                   label={t("AI tokens")}
+                  empty={data.ai.tokens === 0 ? { kind: "ai", title: t("No token usage recorded") } : undefined}
                   value={integer(data.ai.tokens)}
                   detail={t("OpenAI input and output tokens")}
                 />
@@ -1084,11 +1129,13 @@ export function AdminDashboardPage({
                   />,
                   t("Daily active time · UTC"),
                 )}
+                <div className="md-admin-chart-frame md-admin-chart-frame--time">
+                  {emptyPanels["Time in Multideck"] ? panel("Time in Multideck", null, t("Hours in focused windows")) : (
                 <DashboardModeChart
                   animated={false}
                   title={t("Time in Multideck")}
                   subtitle={t(
-                    "Hours · focused windows only · overlapping sessions counted once per user",
+                    "Hours in focused windows · overlapping sessions counted once per user",
                   )}
                   formatValue={(n) =>
                     `${n.toLocaleString(language, { maximumFractionDigits: 1 })}h`
@@ -1114,7 +1161,8 @@ export function AdminDashboardPage({
                     },
                   ]}
                   height={230}
-                />
+                />                  )}
+                </div>
               </div>
               <div className="md-admin-grid">
                 {panel(
@@ -1140,7 +1188,7 @@ export function AdminDashboardPage({
                               <th scope="row" dir="auto">
                                 {u.name}
                                 <small>
-                                  {integer(u.days)} {t("active days")}
+                                  {activeDays(u.days)}
                                   {!u.enabled ? ` · ${t("Deactivated")}` : ""}
                                 </small>
                               </th>
@@ -1193,7 +1241,7 @@ export function AdminDashboardPage({
                       key: m.key,
                       label: t(m.key[0].toUpperCase() + m.key.slice(1)),
                       value: m.activeSeconds,
-                      sub: `${integer(m.users)} ${t("users")} · ${hours(m.idleSeconds)} ${t("idle")}`,
+                      sub: `${integer(m.users)} ${t(m.users === 1 ? "user" : "users")} · ${hours(m.idleSeconds)} ${t("idle")}`,
                     }))}
                     format={hours}
                   />,
@@ -1206,12 +1254,12 @@ export function AdminDashboardPage({
                   <Ranking
                     rows={data.ai.purposes.map((p) => ({
                       key: p.key,
-                      label: p.key.replaceAll("_", " "),
+                      label: t(purposeNames[p.key] ?? p.key.replaceAll("_", " ")),
                       value: p.count,
                     }))}
                     format={integer}
                   />,
-                  t("Provider request purposes"),
+                  t("Requests by purpose"),
                 )}
                 {panel(
                   "AI cost and reliability",
@@ -1226,7 +1274,6 @@ export function AdminDashboardPage({
                     <Metric
                       label={t("Failed requests")}
                       value={integer(data.ai.failed)}
-                      detail={t("Provider failures recorded in the period")}
                     />
                   </div>,
                 )}
@@ -1302,7 +1349,7 @@ export function AdminDashboardPage({
               </div>
               <p className="md-admin-caption">
                 {t(
-                  "These are recorded application exceptions and data coverage checks. Queue and overdue-follow-up counts show their current state.",
+                  "Queue and overdue-follow-up counts show the current state; other counts use the reporting period.",
                 )}
               </p>
             </>

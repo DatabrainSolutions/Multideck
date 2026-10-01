@@ -1,0 +1,68 @@
+.md-dashboard-empty { min-width: 0; height: 100%; min-height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 16px; padding: 20px; }
+.md-empty-illustration { position: relative; width: 168px; flex-shrink: 0; }
+.md-empty-illustration > svg { display: block; width: 100%; height: auto; stroke: var(--md-accent); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.md-dashboard-empty .md-empty-base, .md-dashboard-empty .md-empty-ground { stroke: color-mix(in srgb, var(--md-subtle) 48%, transparent); }
+.md-empty-ground { opacity: .65; }
+.md-dashboard-empty .md-empty-paper { fill: var(--md-surface); }
+.md-empty-copy p { color: var(--md-text); font-size: 13px; line-height: 1.5; }
+.md-empty-copy small { display: block; margin-top: 6px; color: var(--md-subtle); font-size: 12px; line-height: 1.55; max-width: 36ch; }
+.md-empty-motion-control { position: absolute; right: -8px; bottom: -8px; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: var(--md-subtle); background: var(--md-surface); opacity: 0; transition: opacity 160ms; }
+.md-empty-motion-control > svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.md-dashboard-empty:hover .md-empty-motion-control, .md-dashboard-empty:focus-within .md-empty-motion-control { opacity: 1; }
+.md-empty-motion-control:focus-visible { outline: 2px solid var(--md-accent); outline-offset: 2px; }
+.md-empty-contact { animation: md-empty-contact 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-search { animation: md-empty-search 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-person-main { animation: md-empty-lift 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-person-side { animation: md-empty-connect 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-later { animation-delay: .5s; }
+.md-empty-document { animation: md-empty-document 6.5s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-ink { animation: md-empty-ink 6.5s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-pencil { transform-origin: 140px 79px; animation: md-empty-pencil 6.5s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-coin { animation: md-empty-lift 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-coin-back { animation: md-empty-lift 6s cubic-bezier(0.77, 0, 0.175, 1) .4s infinite; }
+.md-empty-pin { animation: md-empty-lift 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-pin-shadow { fill: var(--md-accent); stroke: none; opacity: .12; transform-origin: 105px 67px; animation: md-empty-shadow 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-route { opacity: .5; }
+.md-empty-workflow-node { animation: md-empty-connect 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-middle { animation-delay: .65s; }
+.md-empty-last { animation-delay: 1.3s; }
+.md-empty-shield-echo { opacity: .2; transform-origin: 100px 56px; animation: md-empty-echo 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-system-core { animation: md-empty-connect 6s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-calendar-dots { animation: md-empty-ink 7s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-clock-hand { transform-origin: 144px 81px; animation: md-empty-clock 7s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+@keyframes md-empty-contact { 0%, 15%, 85%, 100% { opacity: .65; } 35%, 65% { opacity: 1; } }
+@keyframes md-empty-search { 0%, 15%, 85%, 100% { transform: translate(0, 0); } 38%, 62% { transform: translate(-12px, -10px); } }
+@keyframes md-empty-lift { 0%, 18%, 85%, 100% { transform: translateY(0); } 43%, 60% { transform: translateY(-5px); } }
+@keyframes md-empty-connect { 0%, 15%, 85%, 100% { opacity: .45; } 40%, 60% { opacity: 1; } }
+@keyframes md-empty-document { 0%, 20%, 85%, 100% { transform: translateY(0); } 42%, 62% { transform: translateY(-3px); } }
+@keyframes md-empty-ink { 0%, 12%, 88%, 100% { opacity: .45; } 40%, 65% { opacity: 1; } }
+@keyframes md-empty-pencil { 0%, 18%, 85%, 100% { transform: translate(0, 0) rotate(0deg); } 40%, 62% { transform: translate(-3px, -4px) rotate(-8deg); } }
+@keyframes md-empty-shadow { 0%, 18%, 85%, 100% { transform: scaleX(1); opacity: .12; } 43%, 60% { transform: scaleX(.7); opacity: .06; } }
+@keyframes md-empty-echo { 0%, 20%, 90%, 100% { transform: scale(.96); opacity: .15; } 50%, 65% { transform: scale(1.04); opacity: .35; } }
+@keyframes md-empty-clock { 0%, 18%, 88%, 100% { transform: rotate(-12deg); } 45%, 62% { transform: rotate(18deg); } }
+.md-dashboard-empty[data-paused] svg * { animation-play-state: paused; }
+.md-dashboard-empty[data-compact] { min-height: 0; flex-direction: row; justify-content: flex-start; text-align: start; gap: 10px; padding: 0; }
+.md-dashboard-empty[data-compact] .md-empty-illustration { width: 66px; }
+.md-dashboard-empty[data-compact] .md-empty-copy p { font-size: 12px; }
+.md-dashboard-empty[data-compact] .md-empty-copy small { font-size: 11px; margin-top: 2px; }
+.md-dashboard-empty[data-compact] .md-empty-motion-control { right: -4px; bottom: -6px; }
+@media (hover: none) { .md-empty-motion-control { opacity: .8; } }
+@media (prefers-reduced-motion: reduce) { .md-dashboard-empty svg * { animation: none; } .md-empty-motion-control { display: none; } }
+
+/* Filled miniatures share the product palette; colour identifies parts, never data. */
+.md-empty-illustration { width: 184px; }
+.md-empty-illustration > svg { stroke: color-mix(in srgb, var(--md-text) 76%, transparent); }
+.md-dashboard-empty .md-empty-paper { fill: var(--md-surface-soft); stroke: color-mix(in srgb, var(--md-subtle) 65%, transparent); }
+.md-dashboard-empty .md-empty-accent { fill: color-mix(in srgb, var(--md-accent) 22%, var(--md-surface)); stroke: var(--md-accent); }
+.md-dashboard-empty .md-empty-blue { fill: color-mix(in srgb, var(--md-blue) 20%, var(--md-surface)); stroke: var(--md-blue); }
+.md-dashboard-empty .md-empty-amber { fill: color-mix(in srgb, var(--md-amber) 22%, var(--md-surface)); stroke: var(--md-amber); }
+.md-dashboard-empty .md-empty-solid { fill: var(--md-accent); stroke: none; }
+.md-dashboard-empty .md-empty-map-paper { fill: color-mix(in srgb, var(--md-blue) 10%, var(--md-surface)); stroke: color-mix(in srgb, var(--md-blue) 50%, var(--md-subtle)); }
+.md-empty-reminder { transform-origin: 142px 40px; animation: md-empty-reminder 7s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-loop-arrow { stroke: var(--md-accent); animation: md-empty-connect 7s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-vessel { transform-origin: 100px 86px; animation: md-empty-vessel 7s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+.md-empty-spark { transform-origin: 100px 62px; animation: md-empty-spark 7s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+@keyframes md-empty-reminder { 0%, 22%, 55%, 100% { transform: rotate(0deg); } 30%, 45% { transform: rotate(-7deg); } 37% { transform: rotate(7deg); } }
+@keyframes md-empty-vessel { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-3px) rotate(1deg); } }
+@keyframes md-empty-spark { 0%, 20%, 85%, 100% { transform: scale(1); } 45%, 62% { transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .md-dashboard-empty svg * { animation: none; } }

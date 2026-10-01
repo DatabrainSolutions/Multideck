@@ -1,3 +1,4 @@
+import { DashboardEmptyState, type DashboardEmptyKind } from "@/components/multideck/dashboard-empty-state"
 import { EventAttendeeStrip, EventAudiencePicker, EventGuestList, EventTicket, EventsEmptyState, RsvpChoice, RsvpFormBuilder, RsvpFormFields } from "@/components/multideck/company-event-components"
 import { RefineFrame } from "@/components/multideck/refine-frame"
 import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
@@ -174,6 +175,7 @@ import { DashboardWorldMap } from "@/components/multideck/dashboard-world-map"
 import { CohortJourney, LossReasonMap, UsageCalendar } from "@/components/multideck/dashboard-analytics-charts"
 import { DashboardModeChart } from "@/components/multideck/dashboard-mode-chart"
 import { DashboardPerformancePanel } from "@/components/multideck/dashboard-performance-panel"
+import { DashboardInsightCard, QuoteDecisionBreakdown } from "@/components/multideck/dashboard-insight-card"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { DashboardCoveragePanel } from "@/components/multideck/dashboard-coverage-panel"
 import { DashboardBreakdownPanel } from "@/components/multideck/dashboard-breakdown-panel"
@@ -419,7 +421,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Chart components",
     helper: "Graphs, KPI boxes, report visuals",
-    ids: ["metric-card", "series-chart", "world-booking-map", "cohort-journey", "loss-reason-map", "usage-calendar", "performance-panel", "breakdown-panel", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
+    ids: ["metric-card", "dashboard-insight-card", "quote-decision-breakdown", "series-chart", "world-booking-map", "cohort-journey", "dashboard-empty-state", "loss-reason-map", "usage-calendar", "performance-panel", "breakdown-panel", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
   },
   {
     label: "Button & control components",
@@ -3808,7 +3810,49 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "cohort-journey" ? <div className="grid gap-6"><CohortJourney stages={[{ label: "Quotes sent", value: 120 }, { label: "Customer decision", value: 76 }, { label: "Accepted", value: 42 }, { label: "Booking placed", value: 35 }]} note="Quotes first sent in the period, with outcomes to date." /><CohortJourney stages={[{ label: "Leads created", value: 20 }, { label: "Converted", value: 12 }]} note="Created leads, with outcomes to date." /><CohortJourney stages={[]} note="No cohort." /></div> : null}
+      {id === "dashboard-insight-card" ? (
+        <div className="grid w-full max-w-[900px] gap-4 sm:grid-cols-2">
+          <DashboardInsightCard kpi={{ label: "Bookings placed", value: "42", detail: "Excludes provisional and cancelled", tone: "teal", delta: { direction: "up", text: "+12%", caption: "vs previous 7 days" } }} trendLabel="Daily bookings" trend={[{ label: "1 Sept", value: 2 }, { label: "2 Sept", value: 4 }, { label: "3 Sept", value: 9 }, { label: "4 Sept", value: 7 }, { label: "5 Sept", value: 6 }, { label: "6 Sept", value: 11 }, { label: "7 Sept", value: 3 }]} />
+          <DashboardInsightCard kpi={{ label: "Repeat customers", value: "18", detail: "Booked before this period", tone: "neutral" }} segments={[{ label: "Repeat", value: 18, color: "var(--md-accent)" }, { label: "First-time", value: 6, color: "var(--md-line)" }]} />
+          <DashboardInsightCard kpi={{ label: "New leads", value: "0", detail: "", tone: "neutral" }} trendLabel="Daily leads" trend={[{ label: "1 Sept", value: 0 }, { label: "2 Sept", value: 0 }, { label: "3 Sept", value: 0 }]} />
+          <DashboardInsightCard kpi={{ label: "Bookings placed", value: "—", detail: "Booking access required", tone: "neutral" }} />
+        </div>
+      ) : null}
+      {id === "quote-decision-breakdown" ? (
+        <div className="grid w-full max-w-[850px] gap-6 sm:grid-cols-2">
+          <QuoteDecisionBreakdown accepted={28} lost={12} reasons={[{ label: "Price", count: 8 }, { label: "Timing", count: 4 }]} />
+          <QuoteDecisionBreakdown accepted={7} lost={0} />
+          <QuoteDecisionBreakdown accepted={0} lost={0} />
+        </div>
+      ) : null}
+      {id === "dashboard-empty-state" ? (
+        <div className="grid w-full max-w-[900px] gap-4 sm:grid-cols-2">
+          {([
+            ["leads", "No leads created in this period"],
+            ["followup", "No lead follow-up activity"],
+            ["quotes", "No quote decisions recorded"],
+            ["pipeline", "No quotes sent in this period"],
+            ["losses", "No recorded quote losses"],
+            ["customers", "No customer bookings in this period"],
+            ["continuity", "No repeat customer activity yet"],
+            ["activity", "No workspace activity recorded"],
+            ["workflow", "No workflow attempts recorded"],
+            ["money", "No priced accepted quotes"],
+            ["coverage", "No records to assess yet"],
+            ["map", "No booking destinations in this period"],
+            ["shipping", "No bookings placed in this period"],
+            ["system", "Nothing needs attention"],
+            ["ai", "No AI requests recorded"],
+            ["modules", "No module activity recorded"],
+          ] satisfies [DashboardEmptyKind, string][]).map(([kind, title]) => (
+            <div key={kind} className="h-[240px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)]">
+              <DashboardEmptyState kind={kind} title={title} detail="This illustration occupies the same space as the populated view." />
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {id === "cohort-journey" ? <div className="grid gap-6"><CohortJourney stages={[{ label: "Quotes sent", value: 120 }, { label: "Customer decision", value: 76 }, { label: "Accepted", value: 42 }, { label: "Booking placed", value: 35 }]} note="Quotes first sent in the period, with outcomes to date." /><CohortJourney stages={[{ label: "Leads created", value: 20 }, { label: "Converted", value: 12 }]} note="Created leads, with outcomes to date." /><CohortJourney stages={[{ label: "Leads created", value: 0 }, { label: "Converted", value: 0 }]} note="No leads created in the period." /><CohortJourney stages={[{ label: "Quotes sent", value: 4 }, { label: "Accepted", value: 6 }]} note="Source counts need review." /></div> : null}
       {id === "loss-reason-map" ? <div className="grid gap-6"><LossReasonMap reasons={[{ label: "Price", count: 24 }, { label: "Customer: Timing", count: 12 }, { label: "No response", count: 8 }, { label: "Service", count: 3 }]} /><LossReasonMap reasons={[]} /></div> : null}
       {id === "usage-calendar" ? <div className="grid gap-6"><UsageCalendar measuredFrom="2026-09-04T00:00:00Z" days={Array.from({ length: 30 }, (_, i) => ({ day: `2026-09-${String(i + 1).padStart(2, "0")}`, activeSeconds: (i % 7 < 5 ? 1800 + i * 600 : 0), idleSeconds: i * 120 }))} /><UsageCalendar days={[]} /></div> : null}
       {id === "world-booking-map" ? (
