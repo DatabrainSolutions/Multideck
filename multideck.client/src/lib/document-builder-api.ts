@@ -285,7 +285,7 @@ export async function duplicateBookingConfirmationTemplate(sourceTemplateId: str
   return data
 }
 
-export async function previewDraftDocumentStudioTemplate(templateId: string, templateBase64: string, sampleData: Record<string, unknown>): Promise<Blob> {
+export async function previewDraftDocumentStudioTemplate(templateId: string, templateBase64: string, sampleData: Record<string, unknown>, templateFileName = "template.docx"): Promise<Blob> {
   requireDocumentClient()
   const session = await getSupabaseSession()
   if (!session) throw new Error("Sign in again to preview this template.")
@@ -293,7 +293,7 @@ export async function previewDraftDocumentStudioTemplate(templateId: string, tem
   const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
     method: "POST",
     headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "preview-draft", multideckTemplateId: templateId, templateBase64, sampleData }),
+    body: JSON.stringify({ action: "preview-draft", multideckTemplateId: templateId, templateBase64, templateFileName, sampleData }),
   })
   if (!response.ok) {
     let message = "The draft preview could not be created."
@@ -462,7 +462,11 @@ export async function bootstrapDocumentStudioTemplate(templateId: string, templa
   return response.json() as Promise<SaveDocumentStudioTemplateResponse>
 }
 
-type DocumentStudioTemplateSource = SaveDocumentStudioTemplateResponse & { templateBase64: string }
+type DocumentStudioTemplateSource = SaveDocumentStudioTemplateResponse & {
+  templateBase64: string
+  templateFileName: string
+  templateMimeType: string
+}
 
 export function getDocumentStudioDraftSource(templateId: string) {
   return readDocumentStudioTemplateSource(templateId, "draft-source")

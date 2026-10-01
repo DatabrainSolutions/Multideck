@@ -31,6 +31,12 @@ It returns the latest pending revision, otherwise the current approved source.
 Only a matching active object in private template storage can be read. Older
 published sources are not substituted when the selected source is unavailable.
 
+The source reader retains its filename and MIME type. Draft thumbnail and editor
+preview requests forward that filename, so an imported PDF or Excel source is
+not validated as Word. Source downloads retain the original format; previewing
+does not save, replace or publish a version. Word remains the edited-layout
+upload format in this authoring screen.
+
 ## Dexter exception
 
 Word layout editing and binary template-source downloads are manual authoring

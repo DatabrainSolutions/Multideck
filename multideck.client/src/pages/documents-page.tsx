@@ -157,7 +157,7 @@ function loadTemplatePreview(
     if (template.status === "draft") {
       const source = await getDocumentStudioDraftSource(template.id)
       if (!source) return null
-      const blob = await previewDraftDocumentStudioTemplate(template.id, source.templateBase64, {})
+      const blob = await previewDraftDocumentStudioTemplate(template.id, source.templateBase64, {}, source.templateFileName)
       const page = await renderTemplateThumbnail(blob, `${template.code}.pdf`)
       if (page) rememberTemplatePreview(key, page)
       return page
@@ -382,11 +382,11 @@ function base64FromDataUri(value: unknown) {
   return /^[A-Za-z0-9+/]*={0,2}$/.test(base64) ? base64 : null
 }
 
-function templateBlobFromBase64(base64: string) {
+function templateBlobFromBase64(base64: string, mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
   const binary = atob(base64)
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
-  return new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })
+  return new Blob([bytes], { type: mimeType })
 }
 
 function readTemplateFile(file: File) {
@@ -946,6 +946,8 @@ function CreateDocumentWorkspace({
   const [studioSession, setStudioSession] = useState<DocumentStudioSession | null>(null)
   const [studioRequest, setStudioRequest] = useState<DocumentStudioRequest | null>(null)
   const [studioTemplateBase64, setStudioTemplateBase64] = useState<string | null>(null)
+  const [studioTemplateFileName, setStudioTemplateFileName] = useState("template.docx")
+  const [studioTemplateMimeType, setStudioTemplateMimeType] = useState("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
   const [studioData, setStudioData] = useState<Record<string, unknown> | null>(null)
   const [studioLoading, setStudioLoading] = useState(false)
   const [studioError, setStudioError] = useState<string | null>(null)
@@ -982,6 +984,8 @@ function CreateDocumentWorkspace({
     setStudioSession(null)
     setStudioRequest(null)
     setStudioTemplateBase64(null)
+    setStudioTemplateFileName("template.docx")
+    setStudioTemplateMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     setStudioData(null)
     setStudioError(null)
     setStudioPreviewReady(false)
@@ -1143,6 +1147,8 @@ function CreateDocumentWorkspace({
     setSourceLoading(true)
     setStudioError(null)
     setStudioTemplateBase64(null)
+    setStudioTemplateFileName("template.docx")
+    setStudioTemplateMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     setSavedTemplate(null)
     setDraftPreviewUrl(null)
     setDraftReviewed(false)
@@ -1152,10 +1158,12 @@ function CreateDocumentWorkspace({
     void sourceRequest.then((source) => {
       if (cancelled) return
       if (!source) {
-        if (selectedTemplate.status === "published") setStudioError(t("The published Word source is unavailable."))
+        if (selectedTemplate.status === "published") setStudioError(t("The published template source is unavailable."))
         return
       }
       setStudioTemplateBase64(source.templateBase64)
+      setStudioTemplateFileName(source.templateFileName)
+      setStudioTemplateMimeType(source.templateMimeType)
       setSavedTemplate(source)
     }).catch((cause) => {
       if (!cancelled) setStudioError(cause instanceof Error ? cause.message : t("The saved template source could not be opened."))
@@ -1186,7 +1194,7 @@ function CreateDocumentWorkspace({
     try {
       const parsed = JSON.parse(draftSampleJson) as unknown
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(t("Sample data must be a JSON object."))
-      const blob = await previewDraftDocumentStudioTemplate(selectedTemplate.id, studioTemplateBase64, parsed as Record<string, unknown>)
+      const blob = await previewDraftDocumentStudioTemplate(selectedTemplate.id, studioTemplateBase64, parsed as Record<string, unknown>, studioTemplateFileName)
       setDraftPreviewUrl(URL.createObjectURL(blob))
     } catch (cause) {
       setStudioError(cause instanceof Error ? cause.message : t("The draft preview could not be created."))
@@ -1304,10 +1312,11 @@ function CreateDocumentWorkspace({
 
   async function downloadTemplateForLocalEditing() {
     if (!selectedTemplate || !studioTemplateBase64) return
-    const url = URL.createObjectURL(templateBlobFromBase64(studioTemplateBase64))
-    await startSignedDownload(url, `${selectedTemplate.code.toLowerCase()}-template.docx`)
+    const url = URL.createObjectURL(templateBlobFromBase64(studioTemplateBase64, studioTemplateMimeType))
+    const extension = studioTemplateFileName.split(".").pop() ?? "docx"
+    await startSignedDownload(url, `${selectedTemplate.code.toLowerCase()}-template.${extension}`)
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-    toast.info(t("Template downloaded"), { description: t("Edit the Word file locally, then upload it here to refresh the preview.") })
+    toast.info(t("Template downloaded"))
   }
 
   async function uploadEditedTemplate(file: File | undefined) {
@@ -1316,6 +1325,8 @@ function CreateDocumentWorkspace({
     try {
       const base64 = await readTemplateFile(file)
       setStudioTemplateBase64(base64)
+      setStudioTemplateFileName(file.name)
+      setStudioTemplateMimeType(file.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
       setSavedTemplate(null)
       setStudioPreviewReady(false)
       toast.success(t("Edited template loaded"), { description: t("The live preview is updating with your current JSON data.") })
@@ -1335,6 +1346,8 @@ function CreateDocumentWorkspace({
       const base64 = await readTemplateFile(file)
       const result = await bootstrapDocumentStudioTemplate(selectedTemplate.id, base64)
       setStudioTemplateBase64(base64)
+      setStudioTemplateFileName(file.name)
+      setStudioTemplateMimeType(file.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
       setSavedTemplate(result)
       setDraftPreviewUrl(null)
       setDraftReviewed(false)
@@ -1445,7 +1458,7 @@ function CreateDocumentWorkspace({
         <div className="flex shrink-0 items-center gap-1.5">
           {canManageTemplates ? <Button type="button" variant="ghost" disabled={publishingSource || draftPreviewBusy || approvingTemplate} onClick={() => setCreateTemplateOpen(true)} className="h-9 text-[11px]"><FilePlus2 className="size-3.5" aria-hidden="true" />{t("New template")}</Button> : null}
           <Badge className={cn("hidden h-7 border-0 px-2.5 text-[11px] font-medium shadow-none sm:inline-flex", studioReady ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[var(--md-surface-tint)] text-[var(--md-subtle)]")}>
-            {sourceLoading ? t("Opening Word source…") : studioLoading ? t("Checking job access…") : studioReady ? t("JSON and preview ready") : savedTemplate?.status === "draft" || selectedTemplate?.status === "draft" ? t("Draft template") : selectedTemplate?.status === "published" ? t("Published template") : t("Choose document context")}
+            {sourceLoading ? t("Opening template source…") : studioLoading ? t("Checking job access…") : studioReady ? t("JSON and preview ready") : savedTemplate?.status === "draft" || selectedTemplate?.status === "draft" ? t("Draft template") : selectedTemplate?.status === "published" ? t("Published template") : t("Choose document context")}
           </Badge>
           {studioReady ? (
             <>
@@ -1568,10 +1581,10 @@ function CreateDocumentWorkspace({
             {studioError ? <InlineNotice tone="error" action={!studioTemplateBase64 ? <Button type="button" variant="ghost" disabled={sourceLoading} onClick={() => setSourceReloadKey((current) => current + 1)}>{t("Try again")}</Button> : undefined}>{studioError}</InlineNotice> : null}
             <input ref={sourceUploadRef} type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" onChange={(event) => void publishTemplateSource(event.target.files?.[0])} />
             <div className="flex flex-wrap items-center gap-3">
-              {studioTemplateBase64 ? <Button type="button" variant="ghost" disabled={publishingSource || draftPreviewBusy} onClick={() => void downloadTemplateForLocalEditing()}><Download className="size-4" aria-hidden="true" />{t("Download Word source")}</Button> : null}
+              {studioTemplateBase64 ? <Button type="button" variant="ghost" disabled={publishingSource || draftPreviewBusy} onClick={() => void downloadTemplateForLocalEditing()}><Download className="size-4" aria-hidden="true" />{t("Download template source")}</Button> : null}
               <Button type="button" variant="ghost" disabled={!canManageTemplates || sourceLoading || publishingSource || draftPreviewBusy || approvingTemplate} onClick={() => sourceUploadRef.current?.click()}><FileUp className="size-4" aria-hidden="true" />{publishingSource ? t("Saving source…") : t("Upload edited Word source")}</Button>
               {selectedTemplate.status === "published" && isBookingConfirmationTemplateCode(selectedTemplate.code) ? <Button type="button" variant="ghost" disabled={!canManageTemplates || sourceLoading || publishingSource || draftPreviewBusy || approvingTemplate} onClick={openBookingTemplateCopy}><Copy className="size-4" aria-hidden="true" />{t("Edit as new template")}</Button> : null}
-              <span role="status" className="text-[11px] text-[var(--md-subtle)]">{sourceLoading ? t("Opening Word source…") : savedTemplate ? `${t(savedTemplate.status === "draft" ? "Saved draft" : "Published source")} · v${savedTemplate.multideckVersion}` : t("No source loaded in this session")}</span>
+              <span role="status" className="text-[11px] text-[var(--md-subtle)]">{sourceLoading ? t("Opening template source…") : savedTemplate ? `${t(savedTemplate.status === "draft" ? "Saved draft" : "Published source")} · v${savedTemplate.multideckVersion}` : t("No source loaded in this session")}</span>
             </div>
             <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={sourceLoading || !studioTemplateBase64 || publishingSource || draftPreviewBusy || approvingTemplate} onClick={() => void previewDraft()}>{draftPreviewBusy ? t("Rendering…") : t("Preview template")}</Button><span className="text-[11px] text-[var(--md-subtle)]">{t("Uses fictional sample data; no Job number is needed.")}</span></div>
             <div className="min-h-[440px] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">{draftPreviewUrl ? <iframe src={draftPreviewUrl} title={t("Template preview")} className="h-full min-h-[440px] w-full bg-white" /> : <div className="grid h-full min-h-[440px] place-items-center text-[12px] text-[var(--md-subtle)]">{t("Preview will appear here")}</div>}</div>

@@ -1,9 +1,42 @@
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
+import { createRequire } from "node:module"
+import vm from "node:vm"
 import test from "node:test"
 
 const root = new URL("../../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
+
+test("draft previews retain PDF and Office source filenames in the actual request", async () => {
+  const api = await read("multideck.client/src/lib/document-builder-api.ts")
+  const requireClient = createRequire(new URL("multideck.client/package.json", root))
+  const ts = requireClient("typescript")
+  const start = api.indexOf("export async function previewDraftDocumentStudioTemplate(")
+  const end = api.indexOf("export async function renderDocument(", start)
+  assert.ok(start >= 0 && end > start)
+  const compiled = ts.transpile(api.slice(start, end).replace("export ", ""), { target: ts.ScriptTarget.ES2022 })
+  const requests = []
+  const context = vm.createContext({
+    requireDocumentClient() {},
+    getSupabaseSession: async () => ({ access_token: "fictional-test-token" }),
+    supabaseFunctionsUrl: "https://example.invalid/functions/v1",
+    supabasePublicApiKey: "fictional-test-key",
+    fetch: async (_url, request) => {
+      requests.push(JSON.parse(request.body))
+      return { ok: true, blob: async () => new Blob(["%PDF-fictional-preview"]) }
+    },
+    Blob,
+  })
+  vm.runInContext(compiled, context)
+  for (const fileName of ["fiata.pdf", "booking.docx", "manifest.xlsx"]) {
+    const preview = await context.previewDraftDocumentStudioTemplate("fictional-template", "fictional-source", {}, fileName)
+    assert.equal(requests.at(-1).templateFileName, fileName)
+    assert.equal(requests.at(-1).action, "preview-draft")
+    assert.ok((await preview.text()).startsWith("%PDF-"))
+  }
+  await context.previewDraftDocumentStudioTemplate("fictional-template", "fictional-source", {})
+  assert.equal(requests.at(-1).templateFileName, "template.docx")
+})
 
 test("Carbone Studio component remains authenticated and server-hosted", async () => {
   const [edge, client, page, config] = await Promise.all([
@@ -120,7 +153,7 @@ test("managers edit library layouts consistently while document creation remains
   assert.match(page, /workspace\?\.permissions\.canManageTemplates \? openManage\(template\.code\) : openCreate\(template\.code\)/)
   assert.match(page, /workspace\?\.permissions\.canManageTemplates \? "Edit template" : "Use template"/)
   assert.match(page, /getDocumentStudioDraftSource\(template\.id\)/)
-  assert.match(page, /previewDraftDocumentStudioTemplate\(template\.id, source\.templateBase64, \{\}\)/)
+  assert.match(page, /previewDraftDocumentStudioTemplate\(template\.id, source\.templateBase64, \{\}, source\.templateFileName\)/)
   assert.match(page, /IntersectionObserver/)
 })
 
