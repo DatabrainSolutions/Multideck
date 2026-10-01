@@ -112,6 +112,9 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260929144212_booking_confirmation_template_choices.sql',
       '20261001093644_read_published_template_layout_source.sql',
       '20261001100836_document_template_library_controls.sql',
+      '20261001132349_template_source_uploads_require_review.sql',
+      '20261001145513_booking_document_issue_markings.sql',
+      '20261001161514_transport_document_draft_mapping.sql',
     ])
     for (const migration of operationalMigrations) {
       assert.ok(readFileSync(new URL(`migrations/${migration}`, root), 'utf8').trim(),

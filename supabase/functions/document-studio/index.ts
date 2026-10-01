@@ -9,6 +9,7 @@ import {
   templateSourcesBucket,
   toFunctionError,
 } from "../_shared/document-functions.ts"
+import { templatePreviewSample, templatePreviewPrivacyMessage } from "../_shared/template-preview-safety.ts"
 
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
@@ -576,6 +577,7 @@ Deno.serve(async (request) => {
       if (!bytes.byteLength || (extension === "pdf" ? new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-" : ["docx", "xlsx"].includes(extension) && (bytes[0] !== 0x50 || bytes[1] !== 0x4b))) {
         throw new FunctionError(502, "The saved template source is invalid.", "Draft source signature was invalid")
       }
+      const previewSampleData = templatePreviewSample(await sha256Hex(bytes))
       return jsonResponse(request, { draft: {
         multideckTemplateId: payload.multideckTemplateId,
         templateCode: data.templateCode,
@@ -586,6 +588,8 @@ Deno.serve(async (request) => {
         templateBase64: toBase64(bytes),
         templateFileName: fileName,
         templateMimeType: data.mimeType,
+        previewSafe: previewSampleData !== null,
+        previewSampleData,
       } })
     }
 
@@ -595,9 +599,11 @@ Deno.serve(async (request) => {
       }
       await authorizeTemplateSave(context, payload.multideckTemplateId)
       const templateFileName = payload.templateFileName ?? "template.docx"
-      fromBase64(payload.templateBase64, templateFileName)
-      const sampleData = parseSampleData(payload.sampleData)
-      if (!sampleData) throw new FunctionError(400, "Enter safe sample data to preview this template.", "Draft preview had no sample data")
+      const templateBytes = fromBase64(payload.templateBase64, templateFileName)
+      const sampleData = templatePreviewSample(await sha256Hex(templateBytes))
+      if (!sampleData) throw new FunctionError(400, templatePreviewPrivacyMessage, "Unreviewed template source blocked before rendering")
+      // Never accept caller-entered customer data on the template demo surface.
+      // Real record document generation uses the separate authorised job workflow.
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), renderTimeout())
       try {

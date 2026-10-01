@@ -105,6 +105,49 @@ export type RenderDocumentRequest = {
   studioTemplateBase64?: string
   bookingReviewToken?: string
   confirmCustomerPrices?: boolean
+  documentIssueStatus?: "draft" | "final"
+  transportReviewToken?: string
+  confirmTransportReview?: boolean
+}
+
+export type BookingDocumentIssueOptions = {
+  protocolVersion: 1 | 2
+  bookingIssueStatuses: ("draft" | "final")[]
+  transportGenerationReady: boolean
+  originalIssuanceEnabled: boolean
+  transportDraftTemplateCodes?: string[]
+}
+
+export async function getBookingDocumentIssueOptions(jobId: string): Promise<BookingDocumentIssueOptions> {
+  const { data, error } = await requireDocumentClient().functions.invoke<BookingDocumentIssueOptions>("render-document", {
+    method: "POST", body: { action: "booking-issue-options", jobId },
+  })
+  if (error || !data || ![1, 2].includes(data.protocolVersion)) {
+    throw new Error("Document markings are awaiting their backend release. No document has been created.")
+  }
+  return data
+}
+
+export type TransportDraftReview = {
+  protocolVersion: 2
+  reviewToken: string
+  bookingReference: string
+  family: "sea" | "air"
+  parties: Array<{ role: string; name: string; fullAddress: string }>
+  route: { origin: { name: string; unlocode: string }; destination: { name: string; unlocode: string }; carrierName: string; masterTransportReference: string; houseTransportReference: string }
+  cargo: Array<{ lineNumber: string; description: string; packageQuantity: string; packageType: string; grossWeight: string }>
+  equipment: Array<{ number: string; type: string; seal: string }>
+  allocations: Array<{ cargoLine: string; equipmentNumber: string; equipmentType: string; packages: string; grossWeight: string; volume: string }>
+  gaps: Array<{ label: string }>
+}
+
+export async function getTransportDraftReview(jobId: string, templateCode: string): Promise<TransportDraftReview> {
+  const { data, error } = await requireDocumentClient().functions.invoke<TransportDraftReview>("render-document", {
+    method: "POST", body: { action: "transport-draft-review", jobId, templateCode },
+  })
+  if (error) throw await toFunctionError(error, "Transport Draft review is unavailable. No document has been created.")
+  if (data?.protocolVersion !== 2) throw new Error("Transport Draft review is unavailable. No document has been created.")
+  return data
 }
 
 export type DocumentStudioSession = {
@@ -466,6 +509,8 @@ type DocumentStudioTemplateSource = SaveDocumentStudioTemplateResponse & {
   templateBase64: string
   templateFileName: string
   templateMimeType: string
+  previewSafe?: boolean
+  previewSampleData?: Record<string, unknown> | null
 }
 
 export function getDocumentStudioDraftSource(templateId: string) {

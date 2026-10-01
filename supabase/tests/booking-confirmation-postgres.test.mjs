@@ -13,6 +13,7 @@ const equipmentModeMigration = readFileSync(new URL('../migrations/2026092909563
 const shipmentTypeMigration = readFileSync(new URL('../migrations/20260929130600_booking_confirmation_shipment_type_source.sql', import.meta.url), 'utf8')
 const templateChoicesMigration = readFileSync(new URL('../migrations/20260929144212_booking_confirmation_template_choices.sql', import.meta.url), 'utf8')
 const detailMigration = readFileSync(new URL('../migrations/20260901100000_booking_detail_editing.sql', import.meta.url), 'utf8')
+const issueMigration = readFileSync(new URL('../migrations/20261001145513_booking_document_issue_markings.sql', import.meta.url), 'utf8')
 const originalDetailSave = detailMigration.slice(
   detailMigration.indexOf('create or replace function booking_api.save_booking_detail_fields('),
   detailMigration.indexOf('create or replace function booking_api.workspace_extended('),
@@ -85,7 +86,7 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
         "DOCBGD_TemplateID" uuid, "DOCBGD_TemplateVersionID" uuid,
         "DOCBGD_VersionNo" integer, "DOCBGD_IsCurrentVersion" boolean,
         "DOCBGD_FileName" text, "DOCBGD_MimeType" text,
-        "DOCBGD_FileSizeBytes" bigint, "DOCBGD_CreatedAt" timestamptz default now());
+        "DOCBGD_FileSizeBytes" bigint, "DOCBGD_CreatedAt" timestamptz default now(), "DOCBGD_MetadataJSON" jsonb);
       create function booking_api.has_permission(uuid,text) returns boolean language sql as $$ select $1 is not null $$;
       create function document_api.has_permission(uuid,text) returns boolean language sql as $$ select $1 is not null $$;
       create function booking_api.workspace_documents(uuid,uuid) returns jsonb language sql as $$ select '[]'::jsonb $$;
@@ -105,6 +106,7 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
     sql(shipmentTypeMigration)
     sql(templateChoicesMigration.slice(templateChoicesMigration.indexOf('create or replace function document_api.is_booking_confirmation_template_code'), templateChoicesMigration.indexOf('-- A manager may copy')))
     sql(templateChoicesMigration.slice(templateChoicesMigration.indexOf('create or replace function document_api.prepare_booking_confirmation')))
+    sql(issueMigration)
     const result = sql(`
       insert into public."cmp_Users" values
         ('10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','active','Lee','Wright'),
@@ -214,7 +216,18 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
           raise exception 'Foreign tenant read allowed'; exception when insufficient_privilege then null; end;
         begin perform document_api.booking_confirmation_review('30000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001');
           raise exception 'Unlinked colleague read allowed'; exception when insufficient_privilege then null; end;
+        begin perform document_api.booking_document_issue_options('30000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001');
+          raise exception 'Foreign tenant read issue options'; exception when insufficient_privilege then null; end;
         snapshot:=document_api.prepare_booking_confirmation('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000001',review->>'reviewToken',true);
+        begin perform document_api.apply_booking_document_issue('30000000-0000-4000-8000-000000000002','c0000000-0000-4000-8000-000000000001','draft');
+          raise exception 'Foreign tenant selected issue status'; exception when insufficient_privilege then null; end;
+        begin perform document_api.apply_booking_document_issue('30000000-0000-4000-8000-000000000003','c0000000-0000-4000-8000-000000000001','draft');
+          raise exception 'Another user selected issue status'; exception when insufficient_privilege then null; end;
+        begin perform document_api.apply_booking_document_issue('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000001','original');
+          raise exception 'Legal Original allowed'; exception when invalid_parameter_value then null; end;
+        perform document_api.apply_booking_document_issue('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000001','draft');
+        begin perform document_api.apply_booking_document_issue('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000001','final');
+          raise exception 'Frozen issue selection changed'; exception when invalid_parameter_value then null; end;
         if snapshot#>>'{bookingConfirmation,chargeTotals,0,amount}'<>'200'
           or snapshot#>>'{bookingConfirmation,shipper,name}'<>'Demo Shipper'
           or snapshot->'meta'<> '{"schemaVersion":2}'::jsonb then
@@ -228,11 +241,20 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
           where "DOCBRJ_ID"='c0000000-0000-4000-8000-000000000001')<>'200' then raise exception 'Old snapshot changed'; end if;
         perform document_api.complete_job_render('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000001',
           'd0000000-0000-4000-8000-000000000001','private','path1','v1.pdf','application/pdf',10,'sha');
+        if (select "DOCBGD_MetadataJSON"#>>'{documentIssue,status}' from public."DOCB_GeneratedDocuments" where "DOCBGD_ID"='d0000000-0000-4000-8000-000000000001') is distinct from 'draft' then
+          raise exception 'Saved file lost its Draft status'; end if;
         insert into public."DOCB_RenderJobs" values ('c0000000-0000-4000-8000-000000000002','b0000000-0000-4000-8000-000000000001',
           '60000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','rendering','pdf','{}','{}');
         begin perform document_api.prepare_booking_confirmation('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000002',review->>'reviewToken',true);
           raise exception 'Stale review accepted'; exception when serialization_failure then null; end;
         perform document_api.prepare_booking_confirmation('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000002',changed->>'reviewToken',true);
+        update public."Job_Costing_Lines" set "JobCostingLine_RevenueAmountCurrency"=76
+          where "JobCostingLine_ID"='a0000000-0000-4000-8000-000000000002';
+        begin perform document_api.apply_booking_document_issue('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000002','final');
+          raise exception 'Changed Booking accepted at issue step'; exception when serialization_failure then null; end;
+        update public."Job_Costing_Lines" set "JobCostingLine_RevenueAmountCurrency"=75
+          where "JobCostingLine_ID"='a0000000-0000-4000-8000-000000000002';
+        perform document_api.apply_booking_document_issue('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000002','final');
         perform document_api.complete_job_render('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000002',
           'd0000000-0000-4000-8000-000000000002','private','path2','v2.pdf','application/pdf',10,'sha');
         if (select count(*) from public."DOCB_GeneratedDocuments" where "DOCBGD_VersionNo" in (1,2) and "DOCBGD_IsCurrentVersion")<>2 then
@@ -249,6 +271,11 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
         listing:=booking_api.workspace_documents('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
         if jsonb_array_length(listing)<>3 or listing#>>'{0,metadata,templateCode}'<>'JOB_CONFIRMATION_LAYOUT_2' then
           raise exception 'Documents listing lost a Booking layout or version'; end if;
+        if (select count(*) from jsonb_array_elements(listing) item where item->>'documentIssueStatus' in ('draft','final'))<>2 then
+          raise exception 'Issue status missing or historical unmarked file relabelled'; end if;
+        if has_function_privilege('authenticated','document_api.apply_booking_document_issue(uuid,uuid,text)','EXECUTE')
+          or has_function_privilege('anon','document_api.booking_document_issue_options(uuid,uuid)','EXECUTE') then
+          raise exception 'Browser role can bypass secure document service'; end if;
         update public."Job_Header" set "Job_Status"='draft' where "Job_ID"='60000000-0000-4000-8000-000000000001';
         review:=document_api.booking_confirmation_review('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
         if (review->>'provisional')::boolean is not true or (review->>'priceAvailable')::boolean is not false then
@@ -258,6 +285,9 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
         begin perform document_api.prepare_booking_confirmation('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000003',review->>'reviewToken',true);
           raise exception 'Provisional customer price was confirmed'; exception when invalid_parameter_value then null; end;
         snapshot:=document_api.prepare_booking_confirmation('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000003',review->>'reviewToken',false);
+        begin perform document_api.apply_booking_document_issue('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000003','final');
+          raise exception 'Provisional Final document allowed'; exception when invalid_parameter_value then null; end;
+        perform document_api.apply_booking_document_issue('30000000-0000-4000-8000-000000000001','c0000000-0000-4000-8000-000000000003','draft');
         if snapshot#>>'{bookingConfirmation,priceStatus}'<>'Price to be confirmed'
           or jsonb_array_length(snapshot#>'{bookingConfirmation,chargeLines}')<>0
           or snapshot::text like '%Private rate%' or snapshot::text like '%do not copy%' then
@@ -275,6 +305,92 @@ test('Booking PDF review freezes customer prices, excludes private data, and ret
       select 'passed';
     `)
     assert.match(result, /passed/)
+    // Extend the real PostgreSQL fixture only after the established Booking
+    // confirmation lifecycle has passed. Do not replace its original coverage.
+    sql(`
+      create schema quote_api;
+      create function quote_api.cargo_handling(text) returns jsonb language sql as $$ select coalesce(nullif($1,'')::jsonb,'{}'::jsonb) $$;
+      create table public."cmp_Company" ("Company_ID" uuid, "Company_Name" text);
+      create table public."sys_RefUNLOCO" ("RL_Code" text,"RL_IATA" text,"RL_IsActive" boolean,"RL_HasAirport" boolean);
+      insert into public."sys_RefUNLOCO" values ('GBLHR','LHR',true,true),('USJFK','JFK',true,true);
+      insert into public."cmp_Company" values ('20000000-0000-4000-8000-000000000001','Example Freight Ltd');
+      alter table public."Job_Parties" add column "JobParty_CountryCodeSnapshot" text;
+      alter table public."Job_Routing" add column "JobRoute_IsMainCarriage" boolean default true;
+      alter table public."Job_Cargo" add column "JobCargo_Commodity" text, add column "JobCargo_HSCode" text,
+        add column "JobCargo_IsHazardous" boolean default false, add column "JobCargo_ChargeableWeightKg" numeric;
+      alter table public."Job_Containers" add column "JobContainer_JSON" jsonb default '{}',
+        add column "JobContainer_GrossKilos" numeric, add column "JobContainer_VGMKilos" numeric;
+      create table booking_api.cargo_equipment_allocations(id uuid,job_id uuid,cargo_id uuid,container_id uuid,route_id uuid,
+        package_quantity numeric,gross_weight_kg numeric,volume_cbm numeric,created_at timestamptz default now(),is_deleted boolean default false);
+      alter table public."DOCB_DocumentTemplates" add column "DOCBT_StatusCode" text default 'published', add column "DOCBT_IsActive" boolean default true;
+      create table public."DOCB_TemplateVersions"("DOCBTV_ID" uuid,"DOCBTV_StatusCode" text,"DOCBTV_TemplateSnapshotJSON" jsonb);
+      alter table public."DOCB_RenderJobs" add column "DOCBRJ_TemplateVersionID" uuid;
+      insert into public."DOCB_DocumentTemplates"("DOCBT_ID","DOCBT_Code","DOCBT_Name") values
+        ('b1000000-0000-4000-8000-000000000001','FIATA_BOL_REFERENCE','FIATA Draft');
+      insert into public."DOCB_TemplateVersions" values ('f1000000-0000-4000-8000-000000000001','published','{"source":{"sha256":"reviewed-hash"}}');
+      insert into public."DOCB_RenderJobs"("DOCBRJ_ID","DOCBRJ_TemplateID","DOCBRJ_JobID","DOCBRJ_CreatedBy",
+        "DOCBRJ_StatusCode","DOCBRJ_OutputFormatCode","DOCBRJ_InputSnapshotJSON","DOCBRJ_RenderSettingsJSON","DOCBRJ_TemplateVersionID") values
+        ('c1000000-0000-4000-8000-000000000001','b1000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001',
+          '10000000-0000-4000-8000-000000000001','rendering','pdf','{"meta":{"correlationId":"safe-audit-id"}}','{}','f1000000-0000-4000-8000-000000000001');
+      update public."Job_Routing" set "JobRoute_ModeCode"='sea' where "Job_ID"='60000000-0000-4000-8000-000000000001';
+      insert into public."Job_Containers"("JobContainers_ID","Job_ID","JobContainer_EquipmentKind","JobContainer_TypeCodeSnapshot") values
+        ('91000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001','container','40GP');
+      insert into booking_api.cargo_equipment_allocations(id,job_id,cargo_id,container_id,package_quantity) values
+        ('92000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000002',1),
+        ('92000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001','91000000-0000-4000-8000-000000000003',1);
+    `)
+    sql(readFileSync(new URL('../migrations/20261001161514_transport_document_draft_mapping.sql', import.meta.url), 'utf8'))
+    const transportResult = sql(`
+      do $transport$ declare source jsonb; snapshot jsonb;
+        mapped jsonb:='{"job":{"reference":"JE-TEST"},"meta":{"transportMappingVersion":1},"documentIssue":{"status":"draft","isLegalOriginal":false},"transport":{"cargo":[{"description":"Fictional parts"}]}}';
+      begin
+        source:=document_api.transport_document_source('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
+        if source#>>'{routing,0,origin,iataCode}'<>'LHR' or source#>>'{routing,0,destination,iataCode}'<>'JFK' then
+          raise exception 'Explicit airport reference was not mapped'; end if;
+        insert into public."sys_RefUNLOCO" values ('GBLHR','XYZ',true,true);
+        source:=document_api.transport_document_source('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
+        if source#>'{routing,0,origin,iataCode}'<>'null'::jsonb then raise exception 'Ambiguous airport code guessed'; end if;
+        delete from public."sys_RefUNLOCO" where "RL_IATA"='XYZ';
+        source:=document_api.transport_document_source('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
+        if jsonb_array_length(source->'equipment')<>3 or jsonb_array_length(source->'allocations')<>2
+          or source#>>'{allocations,1,packageQuantity}'<>'1' or source#>'{allocations,1,grossWeight}'<>'null'::jsonb
+          or source::text like '%Private rate%' or source::text like '%Private cost%' then
+          raise exception 'Projection lost unnumbered equipment/splits or included private data'; end if;
+        begin perform document_api.transport_document_source('30000000-0000-4000-8000-000000000002','60000000-0000-4000-8000-000000000001');
+          raise exception 'Foreign company source allowed'; exception when insufficient_privilege then null; end;
+        begin perform document_api.transport_document_source('30000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001');
+          raise exception 'Unlinked colleague source allowed'; exception when insufficient_privilege then null; end;
+        insert into public."cmp_Users_Offices" values ('10000000-0000-4000-8000-000000000003','40000000-0000-4000-8000-000000000001');
+        perform document_api.transport_document_source('30000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001');
+        begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000003','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',mapped);
+          raise exception 'Another employee froze the creator render'; exception when insufficient_privilege then null; end;
+        begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','wrong-hash',mapped);
+          raise exception 'Wrong source allowed'; exception when invalid_parameter_value then null; end;
+        begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',jsonb_set(mapped,'{documentIssue,status}','"original"'));
+          raise exception 'Original allowed'; exception when invalid_parameter_value then null; end;
+        update public."Job_Cargo" set "JobCargo_Description"='Changed goods' where "JobCargo_ID"='80000000-0000-4000-8000-000000000001';
+        begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',mapped);
+          raise exception 'Stale review allowed'; exception when serialization_failure then null; end;
+        source:=document_api.transport_document_source('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
+        snapshot:=document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',mapped);
+        if snapshot#>>'{meta,correlationId}'<>'safe-audit-id' or snapshot#>>'{documentIssue,status}'<>'draft' then
+          raise exception 'Draft freeze lost audit metadata'; end if;
+        begin perform document_api.freeze_transport_document_draft('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',source->>'reviewToken','reviewed-hash',mapped);
+          raise exception 'Frozen Draft changed'; exception when invalid_parameter_value then null; end;
+        update public."cmp_Users" set "User_AccessStatus"='disabled' where "Auth_User_ID"='30000000-0000-4000-8000-000000000001';
+        begin perform document_api.transport_document_source('30000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001');
+          raise exception 'Revoked actor source allowed'; exception when insufficient_privilege then null; end;
+        update public."cmp_Users" set "User_AccessStatus"='active' where "Auth_User_ID"='30000000-0000-4000-8000-000000000001';
+        perform document_api.complete_job_render('30000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',
+          'd1000000-0000-4000-8000-000000000001','private','draft-path','transport-DRAFT.pdf','application/pdf',10,'sha');
+        if (select count(*) from jsonb_array_elements(booking_api.workspace_documents('30000000-0000-4000-8000-000000000003','60000000-0000-4000-8000-000000000001')) item where item->>'typeCode'='transport_draft')<>1 then
+          raise exception 'Standard colleague cannot see the saved transport Draft'; end if;
+        if has_function_privilege('authenticated','document_api.freeze_transport_document_draft(uuid,uuid,text,text,jsonb)','EXECUTE')
+          or has_function_privilege('anon','document_api.transport_document_source(uuid,uuid)','EXECUTE') then raise exception 'Browser can bypass transport service'; end if;
+      end $transport$;
+      select 'transport passed';
+    `)
+    assert.match(transportResult, /transport passed/)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'immediate', '-w', 'stop'])
     rmSync(directory, { recursive: true, force: true })

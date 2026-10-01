@@ -92,6 +92,7 @@ const tests = [
   'dexter-deal-watch-postgres.test.mjs',
   'dexter-address-watch-postgres.test.mjs',
   'booking-provisional-lifecycle-postgres.test.mjs',
+  'booking-confirmation-postgres.test.mjs',
   'booking-charge-provenance-postgres.test.mjs',
   'quote-response-public-boundary-postgres.test.mjs',
   'operational-role-quote-booking-parity-contract.test.mjs',

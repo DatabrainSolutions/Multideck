@@ -116,8 +116,10 @@ const templatePreviewRequests = new Map<string, Promise<RenderedPdfPage | null>>
 const maxCachedTemplatePreviews = 24
 let documentWorkspaceCache: DocumentBuilderWorkspace | null = null
 
-function templatePreviewKey(template: DocumentTemplateSummary, document: GeneratedDocumentSummary | null) {
-  return `${template.id}:${template.version}:${document?.id ?? "live"}`
+const previewPrivacyMessage = "Preview hidden for privacy. This source has not been checked for embedded customer details. Use a clean, privacy-reviewed template source."
+
+function templatePreviewKey(template: DocumentTemplateSummary) {
+  return `fictional-v1:${template.id}:${template.version}:${template.updatedAt}`
 }
 
 function rememberTemplatePreview(key: string, page: RenderedPdfPage) {
@@ -141,51 +143,22 @@ async function renderTemplateThumbnail(blob: Blob, fileName: string) {
   return page ?? null
 }
 
-function loadTemplatePreview(
-  template: DocumentTemplateSummary,
-  previewDocument: GeneratedDocumentSummary | null,
-  previewJobNumber: string | null,
-) {
-  const key = templatePreviewKey(template, previewDocument)
+function loadTemplatePreview(template: DocumentTemplateSummary) {
+  const key = templatePreviewKey(template)
   const cached = templatePreviewCache.get(key)
   if (cached) return Promise.resolve(cached)
-
   const pending = templatePreviewRequests.get(key)
   if (pending) return pending
 
   const previewRequest = (async () => {
-    if (template.status === "draft") {
-      const source = await getDocumentStudioDraftSource(template.id)
-      if (!source) return null
-      const blob = await previewDraftDocumentStudioTemplate(template.id, source.templateBase64, {}, source.templateFileName)
-      const page = await renderTemplateThumbnail(blob, `${template.code}.pdf`)
-      if (page) rememberTemplatePreview(key, page)
-      return page
-    }
-    if (previewDocument) {
-      try {
-        const download = await getGeneratedDocumentDownload(previewDocument.id)
-        const blob = await fetchSignedDocument(download.signedUrl)
-        const page = await renderTemplateThumbnail(blob, download.fileName)
-        if (page) {
-          rememberTemplatePreview(key, page)
-          return page
-        }
-      } catch {
-        // A recently generated document is the fast path. If its signed link
-        // is unavailable, fall through to a fresh template render.
-      }
-    }
-
-    if (!previewJobNumber) return null
-    const request: DocumentStudioRequest = {
-      templateCode: template.code,
-      jobNumber: previewJobNumber,
-      contentSections: template.contentSections.map((section) => section.code),
-    }
-    const session = await getDocumentStudioSession(request)
-    const response = await renderDocumentStudioPreview({ ...request, templateBase64: session.templateBase64, sampleData: {} })
-    const page = await renderTemplateThumbnail(await response.blob(), `${template.id}.pdf`)
+    const source = template.status === "draft"
+      ? await getDocumentStudioDraftSource(template.id)
+      : await getDocumentStudioTemplateSource(template.id)
+    if (!source?.previewSafe || !source.previewSampleData) throw new Error(previewPrivacyMessage)
+    const blob = await previewDraftDocumentStudioTemplate(
+      template.id, source.templateBase64, source.previewSampleData, source.templateFileName,
+    )
+    const page = await renderTemplateThumbnail(blob, `${template.code}.pdf`)
     if (page) rememberTemplatePreview(key, page)
     return page
   })().finally(() => templatePreviewRequests.delete(key))
@@ -194,19 +167,15 @@ function loadTemplatePreview(
   return previewRequest
 }
 
-function DocumentTemplatePreview({
-  template,
-  previewDocument,
-  previewJobNumber,
-}: {
+function DocumentTemplatePreview({ template, canManageTemplates }: {
   template: DocumentTemplateSummary
-  previewDocument: GeneratedDocumentSummary | null
-  previewJobNumber: string | null
+  canManageTemplates: boolean
 }) {
   const { t } = useLanguage()
-  const cacheKey = templatePreviewKey(template, previewDocument)
-  const [page, setPage] = useState<RenderedPdfPage | null>(() => templatePreviewCache.get(cacheKey) ?? null)
+  const cacheKey = templatePreviewKey(template)
+  const [page, setPage] = useState<RenderedPdfPage | null>(null)
   const [failed, setFailed] = useState(false)
+  const [privacyBlocked, setPrivacyBlocked] = useState(false)
   const previewRef = useRef<HTMLSpanElement>(null)
   const [inView, setInView] = useState(false)
 
@@ -226,54 +195,35 @@ function DocumentTemplatePreview({
   useEffect(() => {
     if (!inView) return
     let cancelled = false
-    setPage(templatePreviewCache.get(cacheKey) ?? null)
-    setFailed(false)
+    setPage(canManageTemplates ? templatePreviewCache.get(cacheKey) ?? null : null)
+    setFailed(!canManageTemplates)
+    setPrivacyBlocked(false)
+    if (!canManageTemplates) return
 
-    if (!previewJobNumber && !previewDocument && template.status !== "draft") {
+    void loadTemplatePreview(template).then((loadedPage) => {
+      if (cancelled) return
+      if (loadedPage) setPage(loadedPage)
+      else setFailed(true)
+    }).catch((cause) => {
+      if (cancelled) return
       setFailed(true)
-      return undefined
-    }
-
-    void loadTemplatePreview(template, previewDocument, previewJobNumber)
-      .then((loadedPage) => {
-        if (cancelled) return
-        if (loadedPage) setPage(loadedPage)
-        else setFailed(true)
-      })
-      .catch((previewError) => {
-        if (!cancelled && !(previewError instanceof DOMException && previewError.name === "AbortError")) setFailed(true)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [cacheKey, inView, previewDocument, previewJobNumber, template])
+      setPrivacyBlocked(cause instanceof Error && cause.message.includes("Preview hidden for privacy"))
+    })
+    return () => { cancelled = true }
+  }, [cacheKey, inView, canManageTemplates, template])
 
   return (
     <span ref={previewRef} className="grid size-full place-items-center bg-[var(--md-surface-tint)]">
       {page
         ? <img src={page.url} alt="" decoding="async" className="size-full object-cover object-top" />
         : failed
-        ? <FileText className="size-5 text-[var(--md-subtle)]" strokeWidth={1.25} aria-hidden="true" />
+        ? <span className="flex max-w-[180px] flex-col items-center gap-2 px-4 text-center text-[12px] leading-5 text-[var(--md-subtle)]">
+            <FileText className="size-5" strokeWidth={1.25} aria-hidden="true" />
+            {t(privacyBlocked ? "Preview hidden for privacy" : "Preview unavailable")}
+          </span>
         : <LoaderCircle className="size-4 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" aria-label={t("Loading preview…")} />}
     </span>
   )
-}
-
-function previewJobNumber(document: GeneratedDocumentSummary | undefined) {
-  if (!document) return null
-  const separatorIndex = document.targetReference.indexOf("-")
-  return separatorIndex >= 0 ? document.targetReference.slice(separatorIndex + 1) : document.targetReference
-}
-
-function currentPreviewDocument(template: DocumentTemplateSummary, documents: GeneratedDocumentSummary[]) {
-  const matching = documents.find((document) => document.status === "ready" && document.templateCode === template.code)
-  if (!matching) return null
-  const documentCreatedAt = Date.parse(matching.createdAt)
-  const templateUpdatedAt = Date.parse(template.updatedAt)
-  return Number.isNaN(documentCreatedAt) || Number.isNaN(templateUpdatedAt) || documentCreatedAt >= templateUpdatedAt
-    ? matching
-    : null
 }
 
 async function startSignedDownload(url: string, fileName: string) {
@@ -968,6 +918,8 @@ function CreateDocumentWorkspace({
   const [draftSampleJson, setDraftSampleJson] = useState('{\n  "job": {\n    "reference": "DEMO-001",\n    "mode": "sea",\n    "origin": "London",\n    "destination": "Rotterdam"\n  },\n  "customer": { "name": "Example Customer Ltd" }\n}')
   const [draftPreviewUrl, setDraftPreviewUrl] = useState<string | null>(null)
   const [draftPreviewBusy, setDraftPreviewBusy] = useState(false)
+  const [sourcePreviewSafe, setSourcePreviewSafe] = useState(false)
+  const previewRequestRef = useRef(0)
   const [draftReviewed, setDraftReviewed] = useState(false)
   const [draftUserId, setDraftUserId] = useState<string | null>(null)
   const latestDraftRef = useRef<{ userId: string; draft: DocumentBuilderDraft } | null>(null)
@@ -1145,6 +1097,9 @@ function CreateDocumentWorkspace({
     if (preview || !canManageTemplates || !selectedTemplate || !["draft", "published"].includes(selectedTemplate.status)) return
     let cancelled = false
     setSourceLoading(true)
+    setSourcePreviewSafe(false)
+    previewRequestRef.current += 1
+    setDraftSampleJson("{}")
     setStudioError(null)
     setStudioTemplateBase64(null)
     setStudioTemplateFileName("template.docx")
@@ -1161,6 +1116,8 @@ function CreateDocumentWorkspace({
         if (selectedTemplate.status === "published") setStudioError(t("The published template source is unavailable."))
         return
       }
+      setSourcePreviewSafe(source.previewSafe === true)
+      setDraftSampleJson(JSON.stringify(source.previewSampleData ?? {}, null, 2))
       setStudioTemplateBase64(source.templateBase64)
       setStudioTemplateFileName(source.templateFileName)
       setStudioTemplateMimeType(source.templateMimeType)
@@ -1188,6 +1145,9 @@ function CreateDocumentWorkspace({
 
   async function previewDraft() {
     if (!selectedTemplate || !studioTemplateBase64) return
+    if (!sourcePreviewSafe) { setStudioError(t(previewPrivacyMessage)); return }
+    const requestId = ++previewRequestRef.current
+    setDraftPreviewUrl(null)
     setDraftPreviewBusy(true)
     setStudioError(null)
     setDraftReviewed(false)
@@ -1195,7 +1155,7 @@ function CreateDocumentWorkspace({
       const parsed = JSON.parse(draftSampleJson) as unknown
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(t("Sample data must be a JSON object."))
       const blob = await previewDraftDocumentStudioTemplate(selectedTemplate.id, studioTemplateBase64, parsed as Record<string, unknown>, studioTemplateFileName)
-      setDraftPreviewUrl(URL.createObjectURL(blob))
+      if (requestId === previewRequestRef.current) setDraftPreviewUrl(URL.createObjectURL(blob))
     } catch (cause) {
       setStudioError(cause instanceof Error ? cause.message : t("The draft preview could not be created."))
     } finally { setDraftPreviewBusy(false) }
@@ -1339,6 +1299,11 @@ function CreateDocumentWorkspace({
 
   async function publishTemplateSource(file: File | undefined) {
     if (!file || !selectedTemplate || !canManageTemplates) return
+    previewRequestRef.current += 1
+    setSourcePreviewSafe(false)
+    setDraftSampleJson("{}")
+    setDraftPreviewUrl(null)
+    setDraftReviewed(false)
     setPublishingSource(true)
     setStudioError(null)
     setError(null)
@@ -1352,8 +1317,9 @@ function CreateDocumentWorkspace({
       setDraftPreviewUrl(null)
       setDraftReviewed(false)
       await onRendered()
+      setSourceReloadKey((current) => current + 1)
       toast.success(t("Template source saved"), {
-        description: t("Preview and review the draft before publishing it."),
+        description: t("The source needs a privacy check before it can appear in template previews."),
       })
     } catch (uploadError) {
       setStudioError(uploadError instanceof Error ? uploadError.message : t("The template source could not be saved."))
@@ -1586,10 +1552,10 @@ function CreateDocumentWorkspace({
               {selectedTemplate.status === "published" && isBookingConfirmationTemplateCode(selectedTemplate.code) ? <Button type="button" variant="ghost" disabled={!canManageTemplates || sourceLoading || publishingSource || draftPreviewBusy || approvingTemplate} onClick={openBookingTemplateCopy}><Copy className="size-4" aria-hidden="true" />{t("Edit as new template")}</Button> : null}
               <span role="status" className="text-[11px] text-[var(--md-subtle)]">{sourceLoading ? t("Opening template source…") : savedTemplate ? `${t(savedTemplate.status === "draft" ? "Saved draft" : "Published source")} · v${savedTemplate.multideckVersion}` : t("No source loaded in this session")}</span>
             </div>
-            <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={sourceLoading || !studioTemplateBase64 || publishingSource || draftPreviewBusy || approvingTemplate} onClick={() => void previewDraft()}>{draftPreviewBusy ? t("Rendering…") : t("Preview template")}</Button><span className="text-[11px] text-[var(--md-subtle)]">{t("Uses fictional sample data; no Job number is needed.")}</span></div>
-            <div className="min-h-[440px] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">{draftPreviewUrl ? <iframe src={draftPreviewUrl} title={t("Template preview")} className="h-full min-h-[440px] w-full bg-white" /> : <div className="grid h-full min-h-[440px] place-items-center text-[12px] text-[var(--md-subtle)]">{t("Preview will appear here")}</div>}</div>
+            <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={sourceLoading || !studioTemplateBase64 || !sourcePreviewSafe || publishingSource || draftPreviewBusy || approvingTemplate} onClick={() => void previewDraft()}>{draftPreviewBusy ? t("Rendering…") : t("Preview template")}</Button><span className="text-[11px] text-[var(--md-subtle)]">{t("Uses fictional sample data; no Job number is needed.")}</span></div>
+            <div className="min-h-[440px] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">{draftPreviewUrl ? <iframe src={draftPreviewUrl} title={t("Template preview")} className="h-full min-h-[440px] w-full bg-white" /> : <div className="grid h-full min-h-[440px] place-items-center text-[12px] text-[var(--md-subtle)]">{t(!sourceLoading && studioTemplateBase64 && !sourcePreviewSafe ? previewPrivacyMessage : "Preview will appear here")}</div>}</div>
             <div className="flex flex-wrap items-center gap-3"><label className="flex items-center gap-2 text-[12px] text-[var(--md-text)]"><Checkbox checked={draftReviewed} disabled={!canManageTemplates || !draftPreviewUrl || draftPreviewBusy || savedTemplate?.status !== "draft"} onCheckedChange={(value) => setDraftReviewed(value === true)} />{t("I inspected the preview")}</label><Button type="button" variant="ghost" disabled={!canManageTemplates || !draftReviewed || draftPreviewBusy || savedTemplate?.status !== "draft" || approvingTemplate} onClick={() => void approveTemplate()}>{approvingTemplate ? t("Publishing…") : t("Publish reviewed version")}</Button></div>
-            <details className="max-w-3xl text-[12px] text-[var(--md-text)]"><summary className="cursor-pointer rounded-[var(--md-radius-md)] py-2 font-medium text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]">{t("Preview sample data (advanced)")}</summary><label className="mt-2 block">{t("Safe sample data (JSON)")}<textarea value={draftSampleJson} onChange={(event) => { setDraftSampleJson(event.target.value); setDraftReviewed(false); setDraftPreviewUrl(null) }} spellCheck={false} className="mt-2 h-[360px] w-full resize-y rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] p-4 font-sans text-[12px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" /><span className="mt-1 block text-[11px] text-[var(--md-subtle)]">{t("Use fictional values only. Match the fields used by your Carbone tags.")}</span></label></details>
+            <details className="max-w-3xl text-[12px] text-[var(--md-text)]"><summary className="cursor-pointer rounded-[var(--md-radius-md)] py-2 font-medium text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]">{t("Preview sample data (advanced)")}</summary><label className="mt-2 block">{t("Safe sample data (JSON)")}<textarea value={draftSampleJson} readOnly spellCheck={false} className="mt-2 h-[360px] w-full resize-y rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] p-4 font-sans text-[12px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" /><span className="mt-1 block text-[11px] text-[var(--md-subtle)]">{t("Fixed fictional examples. Real customer data cannot be entered in template previews.")}</span></label></details>
           </div>
         </main>
       ) : (
@@ -2135,10 +2101,6 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
         ) : libraryTemplates.length ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {libraryTemplates.map((template, index) => {
-              const previewDocument = currentPreviewDocument(template, workspace?.generatedDocuments ?? [])
-              const jobSource = previewDocument
-                ?? workspace?.generatedDocuments.find((document) => document.status === "ready" && document.templateCode === template.code)
-                ?? workspace?.generatedDocuments.find((document) => document.status === "ready")
               return (
               <div key={template.id} data-template-id={template.id}
                 onDragOver={(event) => { if (draggingId && !libraryBusy) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropId(template.id) } }}
@@ -2158,8 +2120,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
                 <span className="block aspect-[210/297] overflow-hidden rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-0.5 group-hover:shadow-[var(--md-shadow-soft)] group-focus-visible:ring-[3px] group-focus-visible:ring-[var(--md-accent-a14)] group-active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none" aria-hidden="true">
                   <DocumentTemplatePreview
                     template={template}
-                    previewDocument={previewDocument}
-                    previewJobNumber={previewJobNumber(jobSource)}
+                    canManageTemplates={Boolean(workspace?.permissions.canManageTemplates)}
                   />
                 </span>
                 <span className="mt-2.5 block min-w-0 text-center">

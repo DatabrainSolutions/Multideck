@@ -11,6 +11,9 @@ import {
   signedUrlLifetimeSeconds,
   toFunctionError,
 } from "../_shared/document-functions.ts"
+import { bookingDocumentFamily, documentIssueConversion, resolveDocumentIssue } from "../_shared/document-issue.ts"
+import { transportDocumentDataset } from "../_shared/transport-document.ts"
+import { reviewedTransportSource, transportDraftSourceHashes } from "../_shared/transport-layouts.ts"
 
 type OutputFormat = "pdf" | "docx"
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
@@ -19,6 +22,9 @@ const allowedContentSections: ContentSection[] = ["job", "customer", "shipper", 
 const maximumStudioTemplateBytes = 15 * 1024 * 1024
 
 type RenderRequest = {
+  action?: string
+  jobId?: string
+  documentIssueStatus?: unknown
   templateCode?: string
   targetType?: string
   jobNumber?: string
@@ -28,11 +34,14 @@ type RenderRequest = {
   studioTemplateBase64?: string
   bookingReviewToken?: string
   confirmCustomerPrices?: boolean
+  transportReviewToken?: string
+  confirmTransportReview?: boolean
 }
 
 type PreparedRender = {
   renderJobId: string
   templateCode: string
+  templateVersionId: string
   carboneTemplateReference: string
   outputFormat: OutputFormat
   languageCode: string
@@ -155,8 +164,47 @@ Deno.serve(async (request) => {
   try {
     context = await authenticateRequest(request)
     const payload = await request.json() as RenderRequest
+    if (payload.action === "booking-issue-options" || payload.action === "transport-draft-review") {
+      if (typeof payload.jobId !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(payload.jobId)) {
+        throw new FunctionError(400, "Choose a valid Booking.", "Invalid Booking issue options target")
+      }
+      if (payload.action === "transport-draft-review") {
+        const code = payload.templateCode?.trim().toUpperCase() ?? ""
+        const family = bookingDocumentFamily(code)
+        if ((family !== "sea" && family !== "air") || !Object.hasOwn(transportDraftSourceHashes, code)) {
+          throw new FunctionError(400, "Choose a supported transport Draft layout.", "Unsupported transport review layout")
+        }
+        const source = await context.admin.schema("document_api").rpc("transport_document_source", {
+          caller_auth_user_id: context.userId, requested_job_id: payload.jobId,
+        })
+        if (source.error || !source.data) throw source.error ?? new Error("Transport review is unavailable")
+        let dataset: ReturnType<typeof transportDocumentDataset>
+        try { dataset = transportDocumentDataset(source.data, family) }
+        catch (cause) { throw new FunctionError(400, cause instanceof Error ? cause.message : "Review the main carriage and cargo first.", "Invalid transport source") }
+        return jsonResponse(request, { protocolVersion: 2, reviewToken: source.data.reviewToken,
+          bookingReference: dataset.transport.reference, family, parties: dataset.transport.parties,
+          route: dataset.routing[0], cargo: dataset.transport.cargo, equipment: dataset.transport.equipment,
+          allocations: dataset.transport.allocations, totals: dataset.transport.totals, gaps: dataset.transport.gaps })
+      }
+      const options = await context.admin.schema("document_api").rpc("booking_document_issue_options", {
+        caller_auth_user_id: context.userId, requested_job_id: payload.jobId,
+      })
+      if (options.error || !options.data) throw options.error ?? new Error("Document issue options are unavailable")
+      const layouts = await context.admin.from("DOCB_DocumentTemplates")
+        .select("DOCBT_Code,DOCBT_CurrentVersionNo,DOCB_TemplateVersions(DOCBTV_VersionNo,DOCBTV_StatusCode,DOCBTV_TemplateSnapshotJSON)")
+        .eq("DOCBT_IsActive", true).eq("DOCBT_StatusCode", "published").in("DOCBT_Code", Object.keys(transportDraftSourceHashes))
+      if (layouts.error) throw layouts.error
+      const readyCodes = (layouts.data ?? []).filter(layout => layout.DOCB_TemplateVersions.some(version =>
+        version.DOCBTV_StatusCode === "published" && version.DOCBTV_VersionNo === layout.DOCBT_CurrentVersionNo
+        && reviewedTransportSource(layout.DOCBT_Code, version.DOCBTV_TemplateSnapshotJSON?.source?.sha256)))
+        .map(layout => layout.DOCBT_Code)
+      return jsonResponse(request, { ...options.data, protocolVersion: 2, transportGenerationReady: readyCodes.length > 0,
+        transportDraftTemplateCodes: readyCodes, originalIssuanceEnabled: false })
+    }
     const templateCode = payload.templateCode?.trim().toUpperCase() ?? ""
     const bookingConfirmation = /^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(templateCode)
+    const family = bookingDocumentFamily(templateCode)
+    const transportDraft = family === "sea" || family === "air"
     const outputFormat = payload.outputFormat?.trim().toLowerCase() ?? ""
     const contentSections = parseContentSections(payload.contentSections)
     const jobNumber = parseJobNumber(payload.jobNumber)
@@ -170,7 +218,20 @@ Deno.serve(async (request) => {
     if (outputFormat !== "pdf" && outputFormat !== "docx") {
       throw new FunctionError(400, "Choose PDF or DOCX.", "Output format validation failed")
     }
-    if (bookingConfirmation && payload.studioTemplateBase64) {
+    let issueStatus: ReturnType<typeof resolveDocumentIssue>
+    let conversion: ReturnType<typeof documentIssueConversion>
+    try {
+      issueStatus = resolveDocumentIssue(templateCode, payload.documentIssueStatus)
+      conversion = documentIssueConversion(outputFormat, issueStatus)
+    } catch (cause) {
+      throw new FunctionError(400, cause instanceof Error ? cause.message : "Choose a valid document status.", "Invalid document issue selection")
+    }
+    if (transportDraft && (!Object.hasOwn(transportDraftSourceHashes, templateCode)
+      || typeof payload.transportReviewToken !== "string" || !/^[a-f0-9]{32}$/.test(payload.transportReviewToken)
+      || payload.confirmTransportReview !== true)) {
+      throw new FunctionError(409, "Review the supported transport Draft in Booking Documents first. No document has been created.", "Transport review is required")
+    }
+    if ((bookingConfirmation || transportDraft) && payload.studioTemplateBase64) {
       throw new FunctionError(400, "Publish the reviewed Booking template before using it on a Booking.", "Booking generation cannot use an unapproved source override")
     }
 
@@ -186,17 +247,43 @@ Deno.serve(async (request) => {
     if (error || !data) throw error ?? new Error("Render preparation returned no data")
     prepared = data as PreparedRender
 
-    const { data: selectedDataset, error: selectionError } = await context.admin
+    if (transportDraft) {
+      const version = await context.admin.from("DOCB_TemplateVersions").select("DOCBTV_TemplateSnapshotJSON")
+        .eq("DOCBTV_ID", prepared.templateVersionId).single()
+      const hash = version.data?.DOCBTV_TemplateSnapshotJSON?.source?.sha256
+      if (version.error || !reviewedTransportSource(templateCode, hash)) {
+        throw new FunctionError(409, "Publish the reviewed Draft transport layout before generating this PDF.", "Transport layout source is not approved")
+      }
+      const source = await context.admin.schema("document_api").rpc("transport_document_source", {
+        caller_auth_user_id: context.userId, requested_job_id: prepared.jobId,
+      })
+      if (source.error || !source.data) throw source.error ?? new Error("Transport source is unavailable")
+      if (source.data.reviewToken !== payload.transportReviewToken) {
+        throw new FunctionError(409, "The Booking changed. Review the transport Draft again.", "Transport source changed before mapping")
+      }
+      let mapped: ReturnType<typeof transportDocumentDataset>
+      try { mapped = transportDocumentDataset(source.data, family as "sea" | "air") }
+      catch (cause) { throw new FunctionError(400, cause instanceof Error ? cause.message : "Review the transport data first.", "Invalid transport source") }
+      const frozen = await context.admin.schema("document_api").rpc("freeze_transport_document_draft", {
+        caller_auth_user_id: context.userId, requested_render_job_id: prepared.renderJobId,
+        expected_review_token: payload.transportReviewToken, expected_source_hash: hash, mapped_dataset: mapped,
+      })
+      if (frozen.error?.code === "40001") throw new FunctionError(409, "The Booking changed. Review the transport Draft again.", "Transport review became stale")
+      if (frozen.error || !frozen.data) throw frozen.error ?? new Error("Transport Draft could not be frozen")
+      prepared = { ...prepared, dataset: frozen.data as Record<string, unknown> }
+    } else {
+      const { data: selectedDataset, error: selectionError } = await context.admin
       .schema("document_api")
       .rpc("apply_job_render_content_selection", {
         caller_auth_user_id: context.userId,
         requested_render_job_id: prepared.renderJobId,
         requested_content_sections: contentSections,
       })
-    if (selectionError || !selectedDataset) {
-      throw selectionError ?? new Error("Document content selection returned no data")
+      if (selectionError || !selectedDataset) {
+        throw selectionError ?? new Error("Document content selection returned no data")
+      }
+      prepared = { ...prepared, dataset: selectedDataset as Record<string, unknown> }
     }
-    prepared = { ...prepared, dataset: selectedDataset as Record<string, unknown> }
     if (bookingConfirmation) {
       if (outputFormat !== "pdf" || typeof payload.bookingReviewToken !== "string"
         || !/^[a-f0-9]{32}$/.test(payload.bookingReviewToken)
@@ -216,6 +303,15 @@ Deno.serve(async (request) => {
       }
       if (confirmationError || !confirmation) throw confirmationError ?? new Error("Booking confirmation preparation returned no data")
       prepared = { ...prepared, dataset: confirmation as Record<string, unknown> }
+    }
+    if (issueStatus && !transportDraft) {
+      const issue = await context.admin.schema("document_api").rpc("apply_booking_document_issue", {
+        caller_auth_user_id: context.userId, requested_render_job_id: prepared.renderJobId,
+        requested_issue_status: issueStatus,
+      })
+      if (issue.error?.code === "40001") throw new FunctionError(409, "The Booking changed. Review it again before saving.", "Document issue review became stale")
+      if (issue.error || !issue.data) throw issue.error ?? new Error("Document issue status could not be frozen")
+      prepared = { ...prepared, dataset: issue.data as Record<string, unknown> }
     }
     const studioTemplateBytes = decodeStudioTemplate(payload.studioTemplateBase64)
 
@@ -248,10 +344,11 @@ Deno.serve(async (request) => {
           body: JSON.stringify({
             data: prepared.dataset,
             ...(studioTemplateBytes ? { template: payload.studioTemplateBase64 } : {}),
-            convertTo: prepared.outputFormat,
+            convertTo: conversion,
+            ...(issueStatus ? { hardRefresh: true } : {}),
             lang: prepared.languageCode,
             ...(bookingConfirmation ? { timezone: "UTC" } : {}),
-            reportName: safeReportName(prepared.templateCode, prepared.jobReference),
+            reportName: `${safeReportName(prepared.templateCode, prepared.jobReference)}${issueStatus ? `-${issueStatus.toUpperCase()}` : ""}`,
           }),
           signal: controller.signal,
         },
@@ -281,7 +378,7 @@ Deno.serve(async (request) => {
     const createdAt = new Date()
     const extension = prepared.outputFormat
     const fileName = bookingConfirmation
-      ? `${safeReportName(prepared.templateCode, prepared.jobReference)}-${createdAt.toISOString().replace(/[-:.TZ]/g, "")}-${generatedDocumentId.slice(0, 8)}.${extension}`
+      ? `${safeReportName(prepared.templateCode, prepared.jobReference)}-${issueStatus?.toUpperCase()}-${createdAt.toISOString().replace(/[-:.TZ]/g, "")}-${generatedDocumentId.slice(0, 8)}.${extension}`
       : `${safeReportName(prepared.templateCode, prepared.jobReference)}.${extension}`
     const environment = (Deno.env.get("MULTIDECK_ENVIRONMENT")?.trim() || "production").replace(/[^a-z0-9_-]/gi, "-")
     uploadedPath = [

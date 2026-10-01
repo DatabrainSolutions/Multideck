@@ -28,21 +28,39 @@ test('saving a published template keeps the approved version current until revie
       create table public."DOCB_TemplateVersions"("DOCBTV_ID" uuid,"DOCBTV_TemplateID" uuid,"DOCBTV_VersionNo" integer,"DOCBTV_StatusCode" text,"DOCBTV_PublishedAt" timestamptz,"DOCBTV_PublishedBy" uuid,"DOCBTV_TemplateSnapshotJSON" jsonb);
       create table public."DOC_StoredObjects"("DOCStoredObject_ID" uuid,"DOCStoredObject_AggregateType" text,"DOCStoredObject_AggregateID" uuid,"DOCStoredObject_Container" text,"DOCStoredObject_BlobName" text,"DOCStoredObject_OriginalFileName" text,"DOCStoredObject_MimeType" text,"DOCStoredObject_StatusCode" text,"DOCStoredObject_DeletedAt" timestamptz);
       create function document_api.has_permission(actor uuid, code text) returns boolean language sql as $$select actor in ('${id(101)}'::uuid,'${id(103)}'::uuid,'${id(104)}'::uuid,'${id(105)}'::uuid) and code='Documents.Manage'$$;
-      create function document_api.register_studio_template_version(actor uuid, template_id uuid, provider_id text, version_id text) returns jsonb language plpgsql as $$declare next_version integer; begin
-        select coalesce(max("DOCBTV_VersionNo"),0)+1 into next_version from public."DOCB_TemplateVersions" where "DOCBTV_TemplateID"=template_id;
-        insert into public."DOCB_TemplateVersions" values ('${id(1000)}',template_id,next_version,'draft',null,null,jsonb_build_object('carbone',jsonb_build_object('versionId',version_id),'source',jsonb_build_object('provider','supabase_storage','path','source/'||next_version)));
-        return jsonb_build_object('multideckVersion',next_version,'status','draft'); end$$;
       create function document_api.approve_studio_template_version(actor uuid, template_id uuid) returns jsonb language sql as $$select '{}'::jsonb$$;
       insert into public."cmp_Users" values ('${id(1)}','${id(101)}','active'), ('${id(3)}','${id(103)}','active'), ('${id(4)}','${id(104)}','inactive');
       insert into public."DOCB_DocumentTemplates" values ('${id(10)}','SAMPLE','published',1,true,true,'carbone',now(),'${id(1)}');
       insert into public."DOCB_TemplateVersions" values ('${id(11)}','${id(10)}',1,'published',now(),'${id(1)}','{"carbone":{"versionId":"${'a'.repeat(64)}"}}');
       ${readFileSync(new URL('../migrations/20260925123314_review_document_templates.sql', import.meta.url), 'utf8')}`)
+    // Exercise the real current registration function, not the historical stub.
+    sql(`alter table public."DOCB_DocumentTemplates" add column "DOCBT_SettingsJSON" jsonb default '{"carbone":{"templateId":"123"}}';
+      alter table public."DOCB_DocumentTemplates" add column "DOCBT_DefaultOutputFormatCode" text default 'pdf';
+      alter table public."DOCB_TemplateVersions" alter column "DOCBTV_ID" set default '${id(1000)}';
+      alter table public."DOCB_TemplateVersions" add column "DOCBTV_RenderEngineCode" text;
+      alter table public."DOCB_TemplateVersions" add column "DOCBTV_OutputFormatCode" text;
+      alter table public."DOCB_TemplateVersions" add column "DOCBTV_ChangeReason" text;
+      alter table public."DOCB_TemplateVersions" add column "DOCBTV_CreatedBy" uuid;
+      ${readFileSync(new URL('../migrations/20261001132349_template_source_uploads_require_review.sql', import.meta.url), 'utf8')}`)
+    for (const actor of [id(102), id(104), id(105), null]) {
+      sql(`do $$begin perform document_api.register_studio_template_version(${actor ? `'${actor}'` : 'null'},'${id(10)}','123','${'b'.repeat(64)}'); raise exception 'Expected denial'; exception when insufficient_privilege then null; end$$;`)
+    }
+    for (const role of ['anon', 'authenticated']) {
+      sql(`set role ${role}; do $$begin perform document_api.register_studio_template_version('${id(101)}','${id(10)}','123','${'b'.repeat(64)}'); raise exception 'Expected denial'; exception when insufficient_privilege then null; end$$;`)
+    }
+    assert.equal(sql(`select count(*) from public."DOCB_TemplateVersions"`), '1')
     const saved = JSON.parse(sql(`select document_api.register_studio_template_version('${id(101)}','${id(10)}','123','${'b'.repeat(64)}')`))
     assert.equal(saved.status, 'draft')
     assert.equal(sql(`select "DOCBT_CurrentVersionNo" from public."DOCB_DocumentTemplates" where "DOCBT_ID"='${id(10)}'`), '1')
     assert.equal(sql(`select "DOCBTV_StatusCode" from public."DOCB_TemplateVersions" where "DOCBTV_TemplateID"='${id(10)}' and "DOCBTV_VersionNo"=2`), 'draft')
+    const repeated = JSON.parse(sql(`select document_api.register_studio_template_version('${id(101)}','${id(10)}','123','${'b'.repeat(64)}')`))
+    assert.equal(repeated.multideckVersion, 2)
+    assert.equal(repeated.status, 'draft')
+    const unchanged = JSON.parse(sql(`select document_api.register_studio_template_version('${id(101)}','${id(10)}','123','${'a'.repeat(64)}')`))
+    assert.equal(unchanged.status, 'published')
+    assert.equal(sql(`select "DOCBT_CurrentVersionNo" from public."DOCB_DocumentTemplates"`), '1')
     sql(`insert into public."DOC_StoredObjects" values ('${id(20)}','document_template_version_source','${id(1000)}','multideck-template-sources','templates/${id(10)}/source/example.docx','example.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document','active',null);
-      update public."DOCB_TemplateVersions" set "DOCBTV_TemplateSnapshotJSON"=jsonb_set("DOCBTV_TemplateSnapshotJSON",'{source,storedObjectId}','"${id(20)}"') where "DOCBTV_TemplateID"='${id(10)}' and "DOCBTV_VersionNo"=2;
+      update public."DOCB_TemplateVersions" set "DOCBTV_TemplateSnapshotJSON"=jsonb_set("DOCBTV_TemplateSnapshotJSON",'{source}','{"storedObjectId":"${id(20)}","provider":"supabase_storage","path":"source/2"}') where "DOCBTV_TemplateID"='${id(10)}' and "DOCBTV_VersionNo"=2;
       ${readFileSync(new URL('../migrations/20260925123316_read_document_template_draft.sql', import.meta.url), 'utf8')}`)
     const draft = JSON.parse(sql(`select document_api.studio_template_draft_source('${id(101)}','${id(10)}')`))
     assert.equal(draft.bucket, 'multideck-template-sources')
@@ -104,7 +122,7 @@ test('saving a published template keeps the approved version current until revie
       sql(`begin; update public."DOCB_DocumentTemplates" set ${unavailable} where "DOCBT_ID"='${id(10)}';
         do $$begin if document_api.studio_template_layout_source('${id(101)}','${id(10)}') is not null then raise exception 'Expected unavailable template'; end if; end$$; rollback;`)
     }
-    sql(`insert into public."DOCB_TemplateVersions" values ('${id(1001)}','${id(10)}',3,'draft',null,null,'{"source":{"storedObjectId":"${id(22)}"}}');
+    sql(`insert into public."DOCB_TemplateVersions"("DOCBTV_ID","DOCBTV_TemplateID","DOCBTV_VersionNo","DOCBTV_StatusCode","DOCBTV_PublishedAt","DOCBTV_PublishedBy","DOCBTV_TemplateSnapshotJSON") values ('${id(1001)}','${id(10)}',3,'draft',null,null,'{"source":{"storedObjectId":"${id(22)}"}}');
       insert into public."DOC_StoredObjects" values ('${id(22)}','document_template_version_source','${id(1001)}','multideck-template-sources','revision.docx','revision.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document','active',null);`)
     const revision = JSON.parse(sql(`select document_api.studio_template_layout_source('${id(101)}','${id(10)}')`))
     assert.equal(revision.status, 'draft')

@@ -245,6 +245,7 @@ export type BookingWorkflowRoute = {
 
 export type BookingWorkflowDocument = {
   id: string
+  documentIssueStatus?: "draft" | "final" | "original" | "copy" | null
   category?: "quote" | "job" | "customs" | null
   typeCode?: string | null
   title: string

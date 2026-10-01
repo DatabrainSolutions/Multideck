@@ -85,7 +85,7 @@ test("template saves are authorised, versioned, and keep published templates cur
   const [edge, migration, replacementPublishing] = await Promise.all([
     read("supabase/functions/document-studio/index.ts"),
     read("supabase/migrations/20260805123825_document_template_authoring_workflow.sql"),
-    read("supabase/migrations/20260806083120_keep_published_template_saves_current.sql"),
+    read("supabase/migrations/20261001132349_template_source_uploads_require_review.sql"),
   ])
 
   assert.match(edge, /payload\.action === "save"/)
@@ -104,9 +104,9 @@ test("template saves are authorised, versioned, and keep published templates cur
   assert.match(migration, /'draft'/)
   assert.match(migration, /revoke all on function document_api\.register_studio_template_version/)
   assert.match(migration, /grant execute on function document_api\.register_studio_template_version[\s\S]+to service_role/)
-  assert.match(replacementPublishing, /when selected_template\."DOCBT_StatusCode" = 'published' then 'published'/)
-  assert.match(replacementPublishing, /"DOCBT_CurrentVersionNo" = case/)
-  assert.match(replacementPublishing, /when saved_status = 'published' then next_version_no/)
+  assert.match(replacementPublishing, /saved_status := 'draft'/)
+  assert.match(replacementPublishing, /saved_status := matching_version\."DOCBTV_StatusCode"/)
+  assert.doesNotMatch(replacementPublishing, /"DOCBT_CurrentVersionNo"\s*=/)
 })
 
 test("template sources are privately owned by each tenant and catalogued before use", async () => {
@@ -121,19 +121,15 @@ test("template sources are privately owned by each tenant and catalogued before 
   assert.match(migration, /grant execute on function document_api\.record_template_source[\s\S]+to service_role/)
 })
 
-test("published template thumbnails render the blank approved source", async () => {
+test("template thumbnails cannot borrow customer PDFs or Job datasets", async () => {
   const page = await read("multideck.client/src/pages/documents-page.tsx")
-
-  assert.match(page, /getDocumentStudioSession\(request\)/)
-  assert.match(page, /renderDocumentStudioPreview\(\{ \.\.\.request, templateBase64: session\.templateBase64, sampleData: \{\} \}\)/)
-  assert.match(page, /renderPdfPageImages/)
-  assert.match(page, /aspect-\[210\/297\]/)
-  assert.match(page, /pathLength="1"/)
-  assert.match(page, /stroke-dashoffset:1/)
-  assert.match(page, /text-center/)
-  assert.match(page, /document\.status === "ready" && document\.templateCode === template\.code/)
-  assert.match(page, /\?\? workspace\?\.generatedDocuments\.find\(\(document\) => document\.status === "ready"\)/)
-  assert.match(page, /document\.targetReference\.slice\(separatorIndex \+ 1\)/)
+  const thumbnails = page.slice(page.indexOf("function loadTemplatePreview("), page.indexOf("async function startSignedDownload"))
+  assert.doesNotMatch(thumbnails, /getGeneratedDocumentDownload|fetchSignedDocument|getDocumentStudioSession|renderDocumentStudioPreview|jobNumber/)
+  assert.match(thumbnails, /source\?\.previewSafe/)
+  assert.match(thumbnails, /source\.previewSampleData/)
+  assert.match(thumbnails, /getDocumentStudioTemplateSource/)
+  assert.match(page, /fictional-v1:/)
+  assert.doesNotMatch(page, /function currentPreviewDocument|function previewJobNumber/)
 })
 
 test("managers edit library layouts consistently while document creation remains published-only", async () => {
@@ -153,7 +149,7 @@ test("managers edit library layouts consistently while document creation remains
   assert.match(page, /workspace\?\.permissions\.canManageTemplates \? openManage\(template\.code\) : openCreate\(template\.code\)/)
   assert.match(page, /workspace\?\.permissions\.canManageTemplates \? "Edit template" : "Use template"/)
   assert.match(page, /getDocumentStudioDraftSource\(template\.id\)/)
-  assert.match(page, /previewDraftDocumentStudioTemplate\(template\.id, source\.templateBase64, \{\}, source\.templateFileName\)/)
+  assert.match(page, /template\.id, source\.templateBase64, source\.previewSampleData, source\.templateFileName/)
   assert.match(page, /IntersectionObserver/)
 })
 

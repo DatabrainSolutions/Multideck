@@ -84,3 +84,82 @@ The security advisor's only new finding is informational: the private audit tabl
 has RLS enabled with no browser policy, deliberately denying browser access.
 See [Supabase's RLS advisory](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
 No new security warning or error was introduced.
+
+## Demo-safe template previews — 1 October 2026
+
+The Templates gallery and Manage templates preview are separate from operational
+document generation. They never reuse an issued Job PDF or open a Job session.
+Only exact SHA-256 fingerprints of privacy-reviewed sources can be previewed.
+The server supplies a fixed fictional fixture and ignores caller-supplied JSON.
+An unknown or modified source is blocked before Carbone is called. Uploaded
+sources need a fresh privacy review, including fixed text, images, headers,
+footers, signatures and referenced assets; file type and tags alone are not proof.
+
+The reviewed source catalogue is `functions/_shared/template-preview-catalogue.json`.
+Each entry identifies the retained source and fictional fixture. To add a source,
+inspect all content and artwork, confirm it contains no customer details or
+unreviewed external references, render the fictional fixture, then register the
+exact source hash. Do not add a prefix/name-based bypass or self-certification.
+The imported FIATA completed PDF is deliberately not in this catalogue. MAWB
+and MNG sources retain fixed real carrier information and await clean layouts.
+No operational records, issued PDFs, retained sources or version history are deleted.
+
+This is an additional guard on the existing manual Word authoring exception for
+Dexter, not a new read/write/watch capability. Preview privacy review cannot be
+claimed or bypassed by Dexter. Existing document generation permissions and
+tenant isolation remain unchanged. Non-managers are not given private source
+access for gallery thumbnails.
+
+Shared development `aqtwypsuijxlnvtxpuxe` runs document-studio v66 with JWT
+verification retained. All four deployed files were read back and matched the
+local sources. Production and GitHub were not changed. The current catalogue
+covers 38 active template entries (37 distinct sources); the three unchecked
+sources above display a privacy notice rather than customer content.
+
+Seventeen focused contract/privacy checks, TypeScript and the client production
+build passed. Chrome confirmed the completed FIATA v3 is blocked, the reviewed
+FIATA reference renders fictional parties and the Multideck logo, source switching
+clears the previous PDF, the sample JSON is read-only, and the controls fit at
+390px without page overflow. Reload does not restore an old PDF. No templates
+were published and no issued documents or operational records were changed.
+
+## Clean waybill restoration — 1 October 2026
+
+Shared development document-studio v70 recognises 40 exact reviewed source
+fingerprints. Its four files were read back unchanged after deployment except
+for the approved fictional source catalogue additions. Old completed FIATA and
+fixed-carrier sources remain blocked; no filename-based bypass was added.
+
+New sources and rebuild instructions are in `supabase/templates/demo-safe-waybills`.
+The clean Master Air Waybill v7 and MNG Air Waybill v7 are drafts above retained published v6. FIATA
+-Waybill v6 is an editable one-page draft with the replaceable Multideck logo;
+its completed PDF v3 and the intermediate drafts remain in history. Real
+Carbone previews were created in Chrome and downloaded for text/layout checks.
+The MAWB retains all twelve pages, with fictional values on all six form faces.
+FIATA no longer copies customer names, references, container numbers or a signature.
+
+The older registration function unexpectedly auto-promoted the first MAWB
+upload. A guarded correction restored the exact retained published v6 pointer
+and marked only the newly uploaded source v7 as draft, with an explanatory
+change reason. No generated documents used that source. Following explicit user
+approval, migration `20261001132349_template_source_uploads_require_review.sql`
+was applied to shared development (hosted migration version `20261001134924`,
+name `template_source_uploads_require_review`). Readback confirmed draft-only new
+sources, no published-pointer overwrite, an active-user check and server-only
+execution. MNG's source was then uploaded through Lee's authenticated Chrome
+session and saved as draft v7. Database readback confirmed both original published
+v6 hashes and pointers were unchanged and neither new v7 had generated documents.
+
+The actual MNG preview PDF was downloaded and both pages inspected: fictional
+parties, carrier, addresses and references on the form; generic conditions on the
+reverse; no unresolved tags or retained customer/carrier values. All three restored
+previews were visible in the template library after a full reload. Source uploads
+remain drafts until a separate review/publication; no publish action was taken.
+
+Nineteen focused privacy, document and actual PostgreSQL checks passed, including
+the real registration definition rather than a mocked draft save, plus anonymous,
+inactive, unlinked and unpermitted save denials. The full access regression suite
+was rerun before the approved out-of-band development migration and remains at 139/140: the existing unrelated
+Finance Director September cash/date fixture fails. Production and GitHub are
+unchanged. These clean draft previews are not operational generation sign-off;
+review the new carrier-address and FIATA mappings before publication.

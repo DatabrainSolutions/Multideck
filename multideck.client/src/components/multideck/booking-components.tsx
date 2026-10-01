@@ -7,7 +7,7 @@ import { planningChargeReadback } from "@/lib/booking-charge-readback"
 import { planningAuditChanges } from "@/lib/booking-planning-audit"
 import { bookingOwnerLabel } from "@/lib/booking-owner"
 import { getBookingAttachmentAccess, getBookingConfirmationReview, getBookingQuoteDocumentAccess, type BookingConfirmationReview } from "@/lib/booking-workflow-api"
-import { getDocumentBuilderWorkspace, getGeneratedDocumentDownload, isBookingConfirmationTemplateCode, renderDocument, type DocumentTemplateSummary } from "@/lib/document-builder-api"
+import { getBookingDocumentIssueOptions, getDocumentBuilderWorkspace, getGeneratedDocumentDownload, getTransportDraftReview, isBookingConfirmationTemplateCode, renderDocument, type DocumentTemplateSummary, type TransportDraftReview } from "@/lib/document-builder-api"
 import { hasPermission } from "@/lib/auth-user"
 import "@/quotes-transfer.css"
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
@@ -3722,8 +3722,23 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
   const [reviewLoading, setReviewLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [confirmPrices, setConfirmPrices] = useState(false)
+  const [documentIssueStatus, setDocumentIssueStatus] = useState<"draft" | "final">("draft")
+  const [issueControlsReady, setIssueControlsReady] = useState(false)
+  const [transportReadyCodes, setTransportReadyCodes] = useState<string[]>([])
+  const [transportReview, setTransportReview] = useState<TransportDraftReview | null>(null)
+  const [transportLoading, setTransportLoading] = useState(false)
+  const [confirmTransport, setConfirmTransport] = useState(false)
+  const transportRequest = useRef(0)
+  const selectedTemplate = confirmationTemplates.find(template => template.code === confirmationTemplateCode)
+  const selectedBookingLayout = isBookingConfirmationTemplateCode(confirmationTemplateCode)
+  const selectedLayoutReady = selectedTemplate?.status === "published" && issueControlsReady && (selectedBookingLayout
+    || transportReadyCodes.includes(confirmationTemplateCode) && transportReview && !transportLoading)
   const documentRequest = useRef(0)
   useEffect(() => () => { documentRequest.current += 1 }, [])
+  useEffect(() => {
+    const url = preview?.url
+    return () => { if (url?.startsWith("blob:")) URL.revokeObjectURL(url) }
+  }, [preview?.url])
   async function openQuotePdf(id: string, name: string, attachment = false) {
     const request = ++documentRequest.current
     setPreview({ id, name, attachment })
@@ -3739,7 +3754,13 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
     setPreview({ id, name, generated: true, mimeType: "application/pdf" })
     try {
       const access = await getGeneratedDocumentDownload(id, true)
-      if (request === documentRequest.current) setPreview({ id, name: access.fileName, generated: true, url: access.signedUrl, mimeType: "application/pdf" })
+      const response = await fetch(access.signedUrl, { credentials: "omit", signal: AbortSignal.timeout(60_000) })
+      if (!response.ok) throw new Error(t("The PDF could not be opened. Please try again."))
+      const blob = await response.blob()
+      if (!blob.size || await blob.slice(0, 5).text() !== "%PDF-") throw new Error(t("The stored file is not a valid PDF."))
+      const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }))
+      if (request === documentRequest.current) setPreview({ id, name: access.fileName, generated: true, url, mimeType: "application/pdf" })
+      else URL.revokeObjectURL(url)
     } catch (cause) {
       if (request === documentRequest.current) setPreview({ id, name, generated: true, error: cause instanceof Error ? cause.message : t("The PDF could not be opened.") })
     }
@@ -3752,24 +3773,61 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
     setConfirmationTemplateCode("JOB_CONFIRMATION")
     setReviewError(null)
     setConfirmPrices(false)
+    setDocumentIssueStatus("draft")
+    setIssueControlsReady(false)
+    transportRequest.current += 1
+    setTransportReadyCodes([])
+    setTransportReview(null)
+    setTransportLoading(false)
+    setConfirmTransport(false)
     setReviewLoading(true)
     try {
-      const [next, documentWorkspace] = await Promise.all([
+      const [next, documentWorkspace, issueOptions] = await Promise.all([
         getBookingConfirmationReview(record.workspace.booking.jobId),
         getDocumentBuilderWorkspace(),
+        getBookingDocumentIssueOptions(record.workspace.booking.jobId),
       ])
-      const availableTemplates = documentWorkspace.templates.filter(template => template.status === "published" && isBookingConfirmationTemplateCode(template.code) && template.outputFormats.includes("pdf"))
+      const mode = String(record.workspace.booking.mode ?? "").toLowerCase()
+      const availableTemplates = documentWorkspace.templates.filter(template => template.outputFormats.includes("pdf") && (
+        isBookingConfirmationTemplateCode(template.code)
+        || ["sea", "ocean"].includes(mode) && ["FIATA_BOL_REFERENCE", "JE2648771_FBL_MULTIMODAL_CTRS_A4260714093859"].includes(template.code)
+        || mode === "air" && ["MAWB", "MNG_AWB", "HAWB"].includes(template.code)
+      ))
       if (!availableTemplates.some(template => template.code === "JOB_CONFIRMATION")) throw new Error(t("The published Booking confirmation template is unavailable."))
       setConfirmationTemplates(availableTemplates)
       setReview(next)
+      setIssueControlsReady([1, 2].includes(issueOptions.protocolVersion))
+      setTransportReadyCodes(issueOptions.transportDraftTemplateCodes ?? [])
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : t("Booking information could not be reviewed.")
       setReviewError(message.includes("Choose a supported booking action")
         ? t("Booking PDFs are awaiting their backend release. No document has been created.") : message)
     } finally { setReviewLoading(false) }
   }
+  async function chooseDocument(code: string) {
+    const request = ++transportRequest.current
+    setConfirmationTemplateCode(code)
+    setDocumentIssueStatus("draft")
+    setReviewError(null)
+    setTransportReview(null)
+    setConfirmTransport(false)
+    setTransportLoading(false)
+    if (isBookingConfirmationTemplateCode(code) || !record.workspace || !transportReadyCodes.includes(code)) return
+    setTransportLoading(true)
+    try {
+      const next = await getTransportDraftReview(record.workspace.booking.jobId, code)
+      if (request === transportRequest.current) setTransportReview(next)
+    } catch (cause) {
+      if (request === transportRequest.current) setReviewError(cause instanceof Error ? cause.message : t("Transport information could not be reviewed."))
+    } finally { if (request === transportRequest.current) setTransportLoading(false) }
+  }
   async function generateConfirmation() {
-    if (!record.workspace || !review || generating || !canGenerate || blocked || !confirmationTemplates.some(template => template.code === confirmationTemplateCode)) return
+    if (!record.workspace || !review || generating || !canGenerate || blocked || !selectedLayoutReady || documentIssueStatus === "final" && review.provisional) return
+    if (!selectedBookingLayout && !confirmTransport) {
+      setReviewError(t("Confirm that you have reviewed the transport particulars before saving this Draft."))
+      document.getElementById("transport-draft-reviewed")?.focus()
+      return
+    }
     setGenerating(true)
     setReviewError(null)
     try {
@@ -3781,10 +3839,13 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
         contentSections: ["job", "customer", "cargo", "routing"],
         bookingReviewToken: review.reviewToken,
         confirmCustomerPrices: confirmPrices && review.priceAvailable && !review.provisional,
+        documentIssueStatus,
+        transportReviewToken: selectedBookingLayout ? undefined : transportReview?.reviewToken,
+        confirmTransportReview: selectedBookingLayout ? undefined : confirmTransport,
       })
       await onWorkspaceSaved(await getBookingWorkflow(record.workspace.booking.bookingReference))
       setReviewOpen(false)
-      toast.success(t("Booking PDF saved"), { description: t("This version is available in Job documents.") })
+      toast.success(t(documentIssueStatus === "draft" ? "Draft PDF saved" : "Final PDF saved"), { description: t("This version is available in Job documents.") })
       await openGeneratedPdf(result.generatedDocumentId, result.fileName)
     } catch (cause) {
       setReviewError(cause instanceof Error ? cause.message : t("The Booking PDF could not be generated."))
@@ -3877,7 +3938,7 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10.5px] font-medium text-[var(--md-subtle)]"><span data-i18n-skip>{groupDocuments.length}</span> {t(groupDocuments.length === 1 ? "file" : "files")}</span>
-                  {group.category === "job" && canGenerate ? <Button type="button" size="sm" disabled={blocked} onClick={() => void openReview()}>{t("Create Booking PDF")}</Button> : null}
+                  {group.category === "job" && canGenerate ? <Button type="button" size="sm" disabled={blocked} onClick={() => void openReview()}>{t("Create document")}</Button> : null}
                 </div>
               </div>
 
@@ -3889,6 +3950,7 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
                       document.fileName && document.fileName !== document.title ? document.fileName : "",
                       formatFileSize(document.fileSizeBytes),
                       !retainedOriginal && document.version != null ? `${t("Version")} ${document.version}` : "",
+                      document.documentIssueStatus ? t(document.documentIssueStatus === "draft" ? "Draft — for review" : document.documentIssueStatus === "final" ? "Final" : document.documentIssueStatus === "original" ? "Original" : "Copy") : "",
                     ].filter(Boolean)
                     const status = retainedOriginal ? "Retained original" : document.isCurrent === false
                       ? "Superseded"
@@ -3924,7 +3986,7 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
                           {group.category === "quote" ? <Button size="sm" variant="outline"
                             aria-label={`${t("Open PDF")}: ${document.fileName || document.title}`}
                             onClick={() => void openQuotePdf(document.id, document.fileName || document.title)}>{t("Open PDF")}</Button> : null}
-                          {document.typeCode === "booking_confirmation" ? <Button size="sm" variant="outline"
+                          {["booking_confirmation", "transport_draft"].includes(document.typeCode ?? "") ? <Button size="sm" variant="outline"
                             aria-label={`${t("Open PDF")}: ${document.fileName || document.title}`}
                             onClick={() => void openGeneratedPdf(document.id, document.fileName || document.title)}>{t("Open PDF")}</Button> : null}
                           {group.category === "customs" && (document.typeCode === "commercial_invoice_original" || document.isCurrent !== false && ["commercial_invoice", "packing_list"].includes(document.typeCode ?? "")) && document.fileName ? <Button size="sm" variant="outline"
@@ -3944,7 +4006,7 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
         <Dialog open={preview !== null} onOpenChange={open => { if (!open) { documentRequest.current += 1; setPreview(null) } }}>
           <DialogContent className="w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-5xl">
             <DialogHeader><DialogTitle>{preview?.name}</DialogTitle>
-              <DialogDescription>{t(preview?.generated ? "Saved Booking information PDF. This version is unchanged." : preview?.attachment ? "Saved Booking attachment." : "Saved accepted Quote PDF. The original document is unchanged.")}</DialogDescription></DialogHeader>
+              <DialogDescription>{t(preview?.generated ? "Saved document PDF. This version is unchanged." : preview?.attachment ? "Saved Booking attachment." : "Saved accepted Quote PDF. The original document is unchanged.")}</DialogDescription></DialogHeader>
             {preview?.error ? <div role="alert" className="grid gap-2 text-[13px]">
               <p>{preview.error}</p><Button variant="outline" onClick={() => preview.generated ? void openGeneratedPdf(preview.id, preview.name) : void openQuotePdf(preview.id, preview.name, preview.attachment)}>{t("Try again")}</Button>
             </div> : preview?.url ? (preview.mimeType === "application/pdf" ? <iframe title={`${t("Attachment")}: ${preview.name}`} src={preview.url} className="h-[65vh] w-full rounded-[var(--md-radius-lg)] bg-white" />
@@ -3960,18 +4022,49 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
         <Dialog open={reviewOpen} onOpenChange={(open) => { if (!generating) setReviewOpen(open) }}>
           <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{t("Review Booking information")}</DialogTitle>
-              <DialogDescription>{t("A saved PDF freezes the selected service and customer selling prices at this point. Internal costs and carrier notes are excluded.")}</DialogDescription>
+              <DialogTitle>{t("Create document")}</DialogTitle>
+              <DialogDescription>{t("Choose a document and review its Booking information. Each saved PDF is a separate, unchanged version.")}</DialogDescription>
             </DialogHeader>
             {reviewLoading ? <div className="grid place-items-center py-8"><DotGridLoader label={t("Loading Booking information…")} /></div> : null}
             {reviewError ? <p role="alert" className="rounded-[var(--md-radius-md)] bg-[var(--md-status-red-bg)] p-3 text-[12px] text-[var(--md-status-red-ink)]">{reviewError}</p> : null}
             {review ? <div className="grid gap-4 text-[12px] text-[var(--md-ink)]">
-              <label className="grid gap-1.5 font-medium">{t("Booking confirmation layout")}
-                <Select value={confirmationTemplateCode} onValueChange={setConfirmationTemplateCode}>
+              <label className="grid gap-1.5 font-medium">{t("Document")}
+                <Select disabled={generating} value={confirmationTemplateCode} onValueChange={code => void chooseDocument(code)}>
                   <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] font-normal shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
-                  <SelectContent>{confirmationTemplates.map(template => <SelectItem key={template.id} value={template.code}>{t(template.name)}</SelectItem>)}</SelectContent>
+                  <SelectContent>{confirmationTemplates.map(template => <SelectItem key={template.id} value={template.code}>{t(template.name)}{template.status !== "published" || !isBookingConfirmationTemplateCode(template.code) && !transportReadyCodes.includes(template.code) ? ` · ${t("Not ready to generate")}` : ""}</SelectItem>)}</SelectContent>
                 </Select>
               </label>
+              <label className="grid gap-1.5 font-medium">{t("Document status")}
+                <Select disabled={generating} value={documentIssueStatus} onValueChange={value => setDocumentIssueStatus(value as "draft" | "final")}>
+                  <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] font-normal shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">{t("Draft — for customer review")}</SelectItem>
+                    {selectedBookingLayout ? <SelectItem disabled={review.provisional} value="final">{t("Final — Booking information")}</SelectItem> : <>
+                      <SelectItem disabled value="original">{t("Original — issuing rules required")}</SelectItem>
+                      <SelectItem disabled value="copy">{t("Copy — issued document required")}</SelectItem>
+                    </>}
+                  </SelectContent>
+                </Select>
+              </label>
+              <p className="text-[var(--md-text)]">{t(documentIssueStatus === "draft" ? "DRAFT is marked on every PDF page. This is for review, not an issued transport document." : "FINAL records the reviewed Booking information; it is not an Original bill or proof of shipment.")}</p>
+              {!selectedBookingLayout && !transportReadyCodes.includes(confirmationTemplateCode) ? <p role="status" className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-3 text-[var(--md-text)]">{t("This layout needs its Booking field mapping reviewed and its clean version published before generation. No document will be created.")}</p> : null}
+              {transportLoading ? <DotGridLoader label={t("Reviewing transport particulars…")} /> : null}
+              {!selectedBookingLayout && transportReview ? <div className="grid gap-3">
+                <p className="font-medium" data-i18n-skip>{transportReview.route.origin.name || transportReview.route.origin.unlocode} → {transportReview.route.destination.name || transportReview.route.destination.unlocode}</p>
+                <dl className="grid gap-2 sm:grid-cols-2">{transportReview.parties.map(party => <div key={party.role}>
+                  <dt className="text-[var(--md-text)]">{t(party.role)}</dt><dd className="whitespace-pre-wrap break-words" data-i18n-skip>{[party.name, party.fullAddress].filter(Boolean).join("\n") || t("Not recorded")}</dd>
+                </div>)}</dl>
+                <details><summary className="cursor-pointer font-medium">{t("Cargo and equipment schedule")} · {transportReview.cargo.length} {t("cargo lines")} · {transportReview.equipment.length} {t("equipment units")}</summary>
+                  <div className="mt-2 grid gap-2">
+                    {transportReview.cargo.map(line => <p key={line.lineNumber} className="break-words" data-i18n-skip>{line.lineNumber}. {line.description} · {line.packageQuantity || t("Not recorded")} {line.packageType} · {line.grossWeight || t("Not recorded")} kg</p>)}
+                    {transportReview.equipment.map((unit, index) => <p key={index} data-i18n-skip>{unit.number || t("Number not recorded")} · {unit.type} · {unit.seal || t("Seal not recorded")}</p>)}
+                    {transportReview.allocations.map((split, index) => <p key={index} data-i18n-skip>{t("Cargo line")} {split.cargoLine} → {split.equipmentNumber || t("Number not recorded")} · {split.packages || t("Not recorded")} {t("packages")} · {split.grossWeight || t("Not recorded")} kg</p>)}
+                  </div>
+                </details>
+                {transportReview.gaps.length ? <p className="text-[var(--md-text)]">{t("Still to review")}: {transportReview.gaps.map(gap => t(gap.label)).join(" · ")}. {t("Unrecorded values stay blank in the Draft.")}</p> : null}
+                <label htmlFor="transport-draft-reviewed" className="flex items-start gap-2"><Checkbox id="transport-draft-reviewed" disabled={generating} checked={confirmTransport} onCheckedChange={value => { setConfirmTransport(value === true); setReviewError(null) }} />{t("I have reviewed the parties, route and cargo/equipment schedule")}</label>
+              </div> : null}
+              {selectedBookingLayout ? <>
               <div className="grid gap-1"><p className="font-medium" data-i18n-skip>{review.bookingReference} · {review.customer?.name}</p>
                 <p>{review.provisional ? t("Provisional—not confirmed") : t("Booking information")}</p>
                 <p>{t("Prepared by")} <span data-i18n-skip>{review.preparedBy}</span></p>
@@ -3986,7 +4079,8 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
                   </div>)}
               </div>
               {review.specialInstructions ? <p><span className="font-medium">{t("Special instructions")}:</span> <span data-i18n-skip>{review.specialInstructions}</span></p> : null}
-              <div className="grid gap-2">
+              </> : null}
+              {selectedBookingLayout ? <div className="grid gap-2">
                 <p className="font-medium">{t("Customer selling prices")}</p>
                 {review.priceAvailable && !review.provisional ? <>
                   <div className="max-h-44 overflow-y-auto rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]">
@@ -3995,11 +4089,11 @@ function BookingDocumentsWorkspace({ record, canGenerate, blocked, onWorkspaceSa
                   <p className="text-right font-medium" data-i18n-skip>{review.chargeTotals.map(total => `${total.currency} ${total.amount.toFixed(2)}`).join(" · ")}</p>
                   <label className="flex items-center gap-2"><Checkbox checked={confirmPrices} onCheckedChange={checked => setConfirmPrices(checked === true)} />{t("I have reviewed and confirm these customer selling prices for this PDF")}</label>
                 </> : <p className="text-[var(--md-text)]">{t("Price to be confirmed")}</p>}
-              </div>
+              </div> : null}
             </div> : null}
             <DialogFooter>
               <Button variant="ghost" disabled={generating} onClick={() => setReviewOpen(false)}>{t("Cancel")}</Button>
-              <Button disabled={!review || generating || blocked || !confirmationTemplates.some(template => template.code === confirmationTemplateCode)} onClick={() => void generateConfirmation()}>{t(generating ? "Saving PDF…" : confirmPrices ? "Save PDF with reviewed prices" : "Save PDF — price to be confirmed")}</Button>
+              <Button disabled={!review || generating || blocked || !selectedLayoutReady || documentIssueStatus === "final" && review.provisional} onClick={() => void generateConfirmation()}>{t(generating ? "Saving PDF…" : documentIssueStatus === "draft" ? "Save Draft PDF" : "Save Final PDF")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
