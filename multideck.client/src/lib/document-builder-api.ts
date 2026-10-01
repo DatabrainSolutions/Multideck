@@ -443,7 +443,17 @@ export async function bootstrapDocumentStudioTemplate(templateId: string, templa
   return response.json() as Promise<SaveDocumentStudioTemplateResponse>
 }
 
-export async function getDocumentStudioDraftSource(templateId: string): Promise<(SaveDocumentStudioTemplateResponse & { templateBase64: string }) | null> {
+type DocumentStudioTemplateSource = SaveDocumentStudioTemplateResponse & { templateBase64: string }
+
+export function getDocumentStudioDraftSource(templateId: string) {
+  return readDocumentStudioTemplateSource(templateId, "draft-source")
+}
+
+export function getDocumentStudioTemplateSource(templateId: string) {
+  return readDocumentStudioTemplateSource(templateId, "template-source")
+}
+
+async function readDocumentStudioTemplateSource(templateId: string, action: "draft-source" | "template-source"): Promise<DocumentStudioTemplateSource | null> {
   requireDocumentClient()
   const session = await getSupabaseSession()
   if (!session) throw new Error("Sign in to manage templates.")
@@ -451,7 +461,7 @@ export async function getDocumentStudioDraftSource(templateId: string): Promise<
   const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
     method: "POST",
     headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "draft-source", multideckTemplateId: templateId }),
+    body: JSON.stringify({ action, multideckTemplateId: templateId }),
   })
   if (!response.ok) {
     let message = "The saved template source could not be opened."
@@ -461,7 +471,7 @@ export async function getDocumentStudioDraftSource(templateId: string): Promise<
     } catch { /* Keep the safe fallback. */ }
     throw new Error(message)
   }
-  const result = await response.json() as { draft: (SaveDocumentStudioTemplateResponse & { templateBase64: string }) | null }
+  const result = await response.json() as { draft: DocumentStudioTemplateSource | null }
   return result.draft
 }
 

@@ -103,7 +103,7 @@ test("published template thumbnails render the blank approved source", async () 
   assert.match(page, /document\.targetReference\.slice\(separatorIndex \+ 1\)/)
 })
 
-test("managers can edit library drafts but document creation remains published-only", async () => {
+test("managers edit library layouts consistently while document creation remains published-only", async () => {
   const [migration, page] = await Promise.all([
     read("supabase/migrations/20260805152605_expose_review_templates_to_managers.sql"),
     read("multideck.client/src/pages/documents-page.tsx"),
@@ -117,8 +117,8 @@ test("managers can edit library drafts but document creation remains published-o
   assert.match(page, /templates=\{publishedTemplates\}/)
   assert.match(page, /workspace\.permissions\.canManageTemplates && template\.status === "draft"/)
   assert.match(page, /libraryTemplates\.map/)
-  assert.match(page, /template\.status === "draft" \? openManage\(template\.code\) : openCreate\(template\.code\)/)
-  assert.match(page, /template\.status === "draft" \? "Edit draft" : "Use template"/)
+  assert.match(page, /workspace\?\.permissions\.canManageTemplates \? openManage\(template\.code\) : openCreate\(template\.code\)/)
+  assert.match(page, /workspace\?\.permissions\.canManageTemplates \? "Edit template" : "Use template"/)
   assert.match(page, /getDocumentStudioDraftSource\(template\.id\)/)
   assert.match(page, /previewDraftDocumentStudioTemplate\(template\.id, source\.templateBase64, \{\}\)/)
   assert.match(page, /IntersectionObserver/)

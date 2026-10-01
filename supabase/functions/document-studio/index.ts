@@ -13,7 +13,7 @@ import {
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
 type StudioRequest = {
-  action?: "component" | "open" | "preview" | "preview-draft" | "draft-source" | "save" | "bootstrap" | "create" | "approve" | "duplicate-booking"
+  action?: "component" | "open" | "preview" | "preview-draft" | "draft-source" | "template-source" | "save" | "bootstrap" | "create" | "approve" | "duplicate-booking"
   templateCode?: string
   multideckTemplateId?: string
   templateName?: string
@@ -543,11 +543,12 @@ Deno.serve(async (request) => {
       return jsonResponse(request, await approveTemplate(context, payload.multideckTemplateId))
     }
 
-    if (payload.action === "draft-source") {
+    if (payload.action === "draft-source" || payload.action === "template-source") {
       if (!isUuid(payload.multideckTemplateId)) {
-        throw new FunctionError(400, "Choose a valid document template.", "Draft source request was invalid")
+        throw new FunctionError(400, "Choose a valid document template.", "Template source request was invalid")
       }
-      const { data, error } = await context.admin.schema("document_api").rpc("studio_template_draft_source", {
+      const sourceReader = payload.action === "template-source" ? "studio_template_layout_source" : "studio_template_draft_source"
+      const { data, error } = await context.admin.schema("document_api").rpc(sourceReader, {
         caller_auth_user_id: context.userId,
         requested_template_id: payload.multideckTemplateId,
       })
@@ -568,7 +569,7 @@ Deno.serve(async (request) => {
         multideckVersion: data.multideckVersion,
         carboneTemplateId: data.carboneTemplateId,
         carboneVersionId: data.carboneVersionId,
-        status: "draft",
+        status: data.status === "published" ? "published" : "draft",
         templateBase64: toBase64(bytes),
         templateFileName: fileName,
         templateMimeType: data.mimeType,

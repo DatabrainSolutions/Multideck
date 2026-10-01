@@ -33,6 +33,12 @@ const edgeFunction = read(
   "supabase/functions/agent-dexter/index.ts",
 )
 
+test("Word layout authoring has explicit chat and watch unsupported boundaries", () => {
+  assert.match(edgeFunction, /Word template-source downloads, layout edits, preview approval and template publication are manual authoring controls/)
+  assert.match(edgeFunction, /Template-source reads and layout-editing activity watches are unsupported\. Choose status=unsupported/)
+  assert.match(edgeFunction, /direct an authorised template manager to Documents > Templates/)
+})
+
 test("accepted Quote PDF access has explicit chat and watch unsupported boundaries", () => {
   assert.match(edgeFunction, /Accepted Quote PDF and Booking invoice\/packing-list binary retrieval and private download links are not exposed through Dexter chat/)
   assert.match(edgeFunction, /Direct the operator to Booking > Documents > Open PDF/)
