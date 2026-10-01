@@ -7,7 +7,6 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   AiBrain,
-  GripVertical,
   MoreHorizontal,
   ArrowLeft,
   Copy,
@@ -1782,7 +1781,6 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
   const [libraryAnnouncement, setLibraryAnnouncement] = useState("")
-  const touchDrag = useRef<{ id: string; timer: number; active: boolean; target: string | null } | null>(null)
   const removalFocusId = useRef<string | null>(null)
   const [documentOffset, setDocumentOffset] = useState(0)
   const [documentPageSize, setDocumentPageSize] = useState(defaultPaginationPageSize)
@@ -1817,7 +1815,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
       setLibraryError(failure instanceof Error ? failure.message : t("Template controls could not be loaded."))
     }
   }
-  useEffect(() => { void loadLibrary(); return () => { if (touchDrag.current) window.clearTimeout(touchDrag.current.timer) } }, [])
+  useEffect(() => { void loadLibrary() }, [])
 
   async function moveTemplate(id: string, targetId: string) {
     if (libraryBusy || !libraryReady || id === targetId) return
@@ -1852,16 +1850,6 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     } catch (failure) {
       setLibraryError(failure instanceof Error ? failure.message : t("The template could not be updated."))
     } finally { setLibraryBusy(false) }
-  }
-
-  function finishTouchDrag(cancelled = false) {
-    const current = touchDrag.current
-    if (!current) return
-    window.clearTimeout(current.timer)
-    touchDrag.current = null
-    setDraggingId(null)
-    setDropId(null)
-    if (!cancelled && current.active && current.target) void moveTemplate(current.id, current.target)
   }
 
   const dateFormatter = useMemo(
@@ -2179,30 +2167,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
                   </span>
                 </span>
               </button>
-              <div className="absolute inset-x-1 top-1 flex justify-between">
-                <Button type="button" variant="secondary" className="size-10 touch-none cursor-grab p-0 active:cursor-grabbing" disabled={!libraryReady || libraryBusy} aria-label={`${t("Move template")}: ${template.name}`} title={t("Drag to move; use the menu for keyboard controls")}
-                  onKeyDown={(event) => { const offset = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : 0; if (offset && libraryTemplates[index + offset]) { event.preventDefault(); void moveTemplate(template.id, libraryTemplates[index + offset].id) } }}
-                  draggable={libraryReady && !libraryBusy}
-                  onDragStart={(event) => { event.dataTransfer.setData("text/plain", template.id); event.dataTransfer.effectAllowed = "move"; setDraggingId(template.id) }}
-                  onDragEnd={() => { setDraggingId(null); setDropId(null) }}
-                  onPointerDown={(event) => {
-                    if (event.pointerType !== "touch" || libraryBusy || !libraryReady) return
-                    event.currentTarget.setPointerCapture(event.pointerId)
-                    touchDrag.current = { id: template.id, active: false, target: null, timer: window.setTimeout(() => { if (touchDrag.current) { touchDrag.current.active = true; setDraggingId(template.id) } }, 180) }
-                  }}
-                  onPointerMove={(event) => {
-                    const current = touchDrag.current
-                    if (!current?.active) return
-                    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-template-id]")?.dataset.templateId ?? null
-                    current.target = target
-                    setDropId(target)
-                    const scroller = event.currentTarget.closest<HTMLElement>("[data-document-page-scroll]")
-                    const bounds = scroller?.getBoundingClientRect()
-                    if (scroller && bounds) { if (event.clientY > bounds.bottom - 60) scroller.scrollBy(0, 16); else if (event.clientY < bounds.top + 60) scroller.scrollBy(0, -16) }
-                  }}
-                  onPointerUp={() => finishTouchDrag()}
-                  onPointerCancel={() => finishTouchDrag(true)}
-                ><GripVertical className="size-4" aria-hidden="true" /></Button>
+              <div className="absolute end-1 top-1">
                 <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="secondary" className="size-10 p-0" aria-label={`${t("Template options")}: ${template.name}`} disabled={libraryBusy}><MoreHorizontal className="size-4" aria-hidden="true" /></Button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem disabled={!libraryReady || index === 0} onSelect={() => void moveTemplate(template.id, libraryTemplates[0].id)}>{t("Move to top")}</DropdownMenuItem>

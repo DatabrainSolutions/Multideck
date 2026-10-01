@@ -11,7 +11,9 @@ Operators without Documents.Manage retain the published-only creation flow.
 
 Each operator's order is saved on their own profile, through the authenticated
 Studio library action. New templates append to the visible ordered library.
-Native desktop drag, a touch drag handle and menu actions use the same save.
+Native desktop tile dragging and menu actions use the same save. The top-right
+menu is the sole visible control for ordering/removal, including on touch devices
+and through keyboard navigation; there is no separate six-dot drag handle.
 Failed saves restore the previous order and show a retryable error.
 
 Remove is manager-only and applies to the shared library. It sets IsActive false
