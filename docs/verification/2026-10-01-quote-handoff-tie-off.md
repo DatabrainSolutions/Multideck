@@ -1,5 +1,7 @@
 # Quote-to-Booking database tie-off
 
+> Later update: Lee approved full Git publication and conflict-free dev merge. See `2026-10-01-handover-publication.md` for final remote status. The no-push statements in this dated database tie-off describe its original boundary; the database fixes remain applied and must not be repeated.
+
 ## Outcome and authority
 
 Lee approved fixing the two missing database issues before handover, then clarified that he wants self-contained continuation context, **not deployment of the whole project**. Both fixes are now applied and verified in shared-development Supabase `aqtwypsuijxlnvtxpuxe`. No GitHub push/remote dev merge, document-service deployment, template publication, production change, customer acceptance or mail delivery is included.

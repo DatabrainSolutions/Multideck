@@ -1,5 +1,9 @@
 # Dev merge checkpoint 1 October 2026
 
+## Later Git publication
+
+Lee subsequently approved complete Git publication and a conflict-free merge into `dev`. The final remote commit/status is recorded in [the handover publication record](2026-10-01-handover-publication.md). Earlier 'no push' statements below are historical checkpoints. The fresh backend inventory advanced to studio 84 / renderer 65; do not overwrite those newer hosted functions with the earlier local v78/v63 compatibility bundle. Git publication does not perform backend deployment.
+
 ## Final handover tie-off addendum
 
 Lee subsequently approved and we applied the two missing Quote-to-Booking fixes only to shared development: cargo-weight correction `20261001203200`, party-contact handoff `20261001203201`. Both applied SQL bodies match their existing local migration files exactly. Mandatory checks now pass **143 + 9**, focused checks **9/9**, and the deployed rolled-back projection/party-storage check **5/5**. The before/after 12-operator access probe and retained-record/template counts are unchanged. No GitHub push, document-service deployment, publication or production change occurred.
