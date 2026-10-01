@@ -103,7 +103,7 @@ test("published template thumbnails render the blank approved source", async () 
   assert.match(page, /document\.targetReference\.slice\(separatorIndex \+ 1\)/)
 })
 
-test("draft templates stay out of the customer template row", async () => {
+test("managers can edit library drafts but document creation remains published-only", async () => {
   const [migration, page] = await Promise.all([
     read("supabase/migrations/20260805152605_expose_review_templates_to_managers.sql"),
     read("multideck.client/src/pages/documents-page.tsx"),
@@ -115,6 +115,13 @@ test("draft templates stay out of the customer template row", async () => {
   assert.doesNotMatch(page, /Carrier review/)
   assert.match(page, /const publishedTemplates = workspace\?\.templates\.filter\(\(template\) => template\.status === "published"\) \?\? \[\]/)
   assert.match(page, /templates=\{publishedTemplates\}/)
+  assert.match(page, /workspace\.permissions\.canManageTemplates && template\.status === "draft"/)
+  assert.match(page, /libraryTemplates\.map/)
+  assert.match(page, /template\.status === "draft" \? openManage\(template\.code\) : openCreate\(template\.code\)/)
+  assert.match(page, /template\.status === "draft" \? "Edit draft" : "Use template"/)
+  assert.match(page, /getDocumentStudioDraftSource\(template\.id\)/)
+  assert.match(page, /previewDraftDocumentStudioTemplate\(template\.id, source\.templateBase64, \{\}\)/)
+  assert.match(page, /IntersectionObserver/)
 })
 
 test("the full-height documents route owns a constrained page scroll area", async () => {

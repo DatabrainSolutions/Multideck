@@ -149,6 +149,14 @@ function loadTemplatePreview(
   if (pending) return pending
 
   const previewRequest = (async () => {
+    if (template.status === "draft") {
+      const source = await getDocumentStudioDraftSource(template.id)
+      if (!source) return null
+      const blob = await previewDraftDocumentStudioTemplate(template.id, source.templateBase64, {})
+      const page = await renderTemplateThumbnail(blob, `${template.code}.pdf`)
+      if (page) rememberTemplatePreview(key, page)
+      return page
+    }
     if (previewDocument) {
       try {
         const download = await getGeneratedDocumentDownload(previewDocument.id)
@@ -194,13 +202,29 @@ function DocumentTemplatePreview({
   const cacheKey = templatePreviewKey(template, previewDocument)
   const [page, setPage] = useState<RenderedPdfPage | null>(() => templatePreviewCache.get(cacheKey) ?? null)
   const [failed, setFailed] = useState(false)
+  const previewRef = useRef<HTMLSpanElement>(null)
+  const [inView, setInView] = useState(false)
 
   useEffect(() => {
+    const element = previewRef.current
+    if (!element) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setInView(true)
+        observer.disconnect()
+      }
+    }, { rootMargin: "160px" })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!inView) return
     let cancelled = false
     setPage(templatePreviewCache.get(cacheKey) ?? null)
     setFailed(false)
 
-    if (!previewJobNumber) {
+    if (!previewJobNumber && !previewDocument && template.status !== "draft") {
       setFailed(true)
       return undefined
     }
@@ -218,15 +242,13 @@ function DocumentTemplatePreview({
     return () => {
       cancelled = true
     }
-  }, [cacheKey, previewDocument, previewJobNumber, template])
-
-  if (page) {
-    return <img src={page.url} alt="" decoding="async" fetchPriority="high" className="size-full object-cover object-top" />
-  }
+  }, [cacheKey, inView, previewDocument, previewJobNumber, template])
 
   return (
-    <span className="grid size-full place-items-center bg-[var(--md-surface-tint)]">
-      {failed
+    <span ref={previewRef} className="grid size-full place-items-center bg-[var(--md-surface-tint)]">
+      {page
+        ? <img src={page.url} alt="" decoding="async" className="size-full object-cover object-top" />
+        : failed
         ? <FileText className="size-5 text-[var(--md-subtle)]" strokeWidth={1.25} aria-hidden="true" />
         : <LoaderCircle className="size-4 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" aria-label={t("Loading preview…")} />}
     </span>
@@ -1847,7 +1869,8 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     })
   }
 
-  function openManage() {
+  function openManage(templateCode: string | null = null) {
+    setSelectedTemplateCode(templateCode)
     setManageOpen(true)
     navigate?.("/documents/templates")
   }
@@ -1858,8 +1881,8 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   }
 
   async function selectCreatedTemplate(code: string) {
-    setSelectedTemplateCode(code)
     await loadWorkspace()
+    setSelectedTemplateCode(code)
   }
 
   async function download(document: GeneratedDocumentSummary) {
@@ -1920,6 +1943,8 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
 
   // Booking confirmation remains in the library; its action opens the Booking review.
   const publishedTemplates = workspace?.templates.filter((template) => template.status === "published") ?? []
+  const libraryTemplates = workspace?.templates.filter((template) => template.status === "published"
+    || (workspace.permissions.canManageTemplates && template.status === "draft")) ?? []
   const generatedDocuments = workspace?.generatedDocuments ?? []
   const generatedDocumentTotal = workspace?.generatedDocumentTotal ?? generatedDocuments.length
   const generatedDocumentColumns = useMemo<DataTableColumn<GeneratedDocumentSummary>[]>(() => [
@@ -1998,10 +2023,10 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
         <div className="flex items-end justify-between gap-3">
           <div>
             <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Templates")}</h2>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Choose a template to create a customer document.")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(workspace?.permissions.canManageTemplates ? "Choose a published template to create a document, or open a draft to edit its layout." : "Choose a template to create a customer document.")}</p>
           </div>
           {workspace?.permissions.canManageTemplates && navigate ? (
-            <Button type="button" variant="ghost" onClick={openManage} className="text-[12px]">
+            <Button type="button" variant="ghost" onClick={() => openManage()} className="text-[12px]">
               {t("Manage templates")}
             </Button>
           ) : null}
@@ -2011,9 +2036,9 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           <Surface tone="soft" className="grid min-h-36 place-items-center">
             <LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" aria-label={t("Loading templates")} />
           </Surface>
-        ) : publishedTemplates.length ? (
+        ) : libraryTemplates.length ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {publishedTemplates.map((template) => {
+            {libraryTemplates.map((template) => {
               const previewDocument = currentPreviewDocument(template, workspace?.generatedDocuments ?? [])
               const jobSource = previewDocument
                 ?? workspace?.generatedDocuments.find((document) => document.status === "ready" && document.templateCode === template.code)
@@ -2022,10 +2047,10 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
               <button
                 key={template.id}
                 type="button"
-                onClick={() => openCreate(template.code)}
+                onClick={() => template.status === "draft" ? openManage(template.code) : openCreate(template.code)}
                 data-document-template-code={template.code}
-                disabled={!workspace?.permissions.canGenerate || template.status !== "published"}
-                aria-label={`${t("Use template")}: ${t(template.name)}`}
+                disabled={template.status === "draft" ? !workspace?.permissions.canManageTemplates : !workspace?.permissions.canGenerate}
+                aria-label={`${t(template.status === "draft" ? "Edit draft" : "Use template")}: ${t(template.name)}`}
                 className="group min-w-0 text-start outline-none disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <span className="block aspect-[210/297] overflow-hidden rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-0.5 group-hover:shadow-[var(--md-shadow-soft)] group-focus-visible:ring-[3px] group-focus-visible:ring-[var(--md-accent-a14)] group-active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none" aria-hidden="true">
@@ -2036,6 +2061,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
                   />
                 </span>
                 <span className="mt-2.5 block min-w-0 text-center">
+                  <span className="mb-1 block text-[11px] text-[var(--md-subtle)]">{t(template.status === "draft" ? "Draft" : "Published")} · v{template.version}</span>
                   <span className="relative inline-block pb-1 text-[13px] font-medium leading-5 text-[var(--md-ink)]">
                     {t(template.name)}
                     <svg aria-hidden="true" className="absolute inset-x-0 -bottom-0.5 h-1 w-full overflow-visible" viewBox="0 0 100 4" preserveAspectRatio="none">
