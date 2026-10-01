@@ -1,5 +1,13 @@
 # Dev merge checkpoint 1 October 2026
 
+## Final handover tie-off addendum
+
+Lee subsequently approved and we applied the two missing Quote-to-Booking fixes only to shared development: cargo-weight correction `20261001203200`, party-contact handoff `20261001203201`. Both applied SQL bodies match their existing local migration files exactly. Mandatory checks now pass **143 + 9**, focused checks **9/9**, and the deployed rolled-back projection/party-storage check **5/5**. The before/after 12-operator access probe and retained-record/template counts are unchanged. No GitHub push, document-service deployment, publication or production change occurred.
+
+All 54 branch migration names now have hosted ledger records; 32 timestamps differ. Use `2026-10-01-freight-migration-ledger.json` and do not blanket-push/reapply migrations or repair history without SQL comparison. The exact verification, recovery definitions, unchanged security-advisor findings and an additional legacy stable-items fixture loader/baseline failure are recorded in `2026-10-01-quote-handoff-tie-off.md`. No partial repair of that optional fixture is shipped; the earlier 43 client failures remain separately documented.
+
+The main handover explicitly highlights the 35 unwired catalogue draft families, exact latest House-source review requirement (tie-off metadata HBL v6 / HAWB v5), and Draft-only Originals/Copy boundary awaiting senior Jenkar staff rather than Lee. The dated checkpoint below remains evidence of the earlier local compatibility review, not a new hosted generation sign-off.
+
 ## Result
 
 Merged dev successfully without conflicts. Local work is retained. The subsequent document-service compatibility repair is now implemented and tested locally against the newer hosted renderer v63 / studio v78. **Release approval is still required:** no push, dev-branch update or shared-service deployment was performed. This resolves the identified integration work locally; it is not fresh live document-generation sign-off or a fully green application regression.

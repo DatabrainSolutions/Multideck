@@ -4,12 +4,12 @@ Prepared for Lee's annual leave on 1 October 2026. This is the continuation brie
 
 ## Read this first
 
-We have pulled and merged the current dev branch into our freight work without conflicts. We have also completed the identified document-service compatibility repair locally, preserving the newer shared-development workflow. The frontend build, both document-service type checks and mandatory backend/access checks pass. **The next step is an approved release and actual workflow verification, not asking Harry to resolve this known merge issue.** No push/merge into remote dev or shared-service deployment has been performed in this review. The application still has the 43 previously recorded client-test failures, and the repaired document generation has not yet been exercised against the deployed provider.
+We have pulled and merged the current dev branch into our freight work without conflicts. We have also completed the identified document-service compatibility repair locally, preserving the newer shared-development workflow. The frontend build, both document-service type checks and mandatory backend/access checks pass. **The known compatibility repair is completed locally; it is not a merge conflict left for Harry.** Following Lee's specific approval, the two missing Quote-to-Booking database fixes have now been applied and verified in shared development. No push/merge into remote dev or document-service deployment has been performed. The application still has the 43 previously recorded client-test failures, and the repaired document generation has not yet been exercised against the deployed provider. Lee clarified that this tie-off is a self-contained handover, not a request to deploy the whole project.
 
 - Local work is preserved on `codex/freight-workspace-foundation`. The pre-merge checkpoint is `c78e17c8`; the dev merge is `b1922c30`, incorporating dev `654bbf28`.
 - The incoming four dev commits refine supplier invoice intake, approvals and payment views. They changed five frontend files and added no database migrations in this pull.
 - Local frontend: `http://localhost:3000`. It connects to shared-development Supabase `aqtwypsuijxlnvtxpuxe`. A local build is not a hosted frontend release.
-- No GitHub push, shared backend deployment, shared database mutation or production change was performed during this checkpoint review.
+- No GitHub push, shared document-service deployment or production change was performed. The only shared writes in the final tie-off were the two explicitly approved database migrations below; fictional verification party rows were rolled back.
 - Production is out of scope. Issued files, published template history and operational data must stay retained.
 - The full client suite now passes 920/963 checks, including three new publishing tests. Its same 43 failures reproduce before the dev merge; they are not newly introduced by this merge or compatibility repair. They remain unresolved, not waived.
 
@@ -22,6 +22,32 @@ We have pulled and merged the current dev branch into our freight work without c
 5. Obtain the senior-staff decisions below before enabling transport Originals or Copies.
 6. Prepare an exact release plan and ask Lee for confirmation before pushing or changing shared services.
 
+### Start here: no conversation archaeology required
+
+The sections below are the authoritative handover, not a list of work Harry must infer from chat. Do not treat a local repair, a published layout, a preview or a database migration as equivalent to an end-to-end released workflow.
+
+| Item | Exact status at handover | Harry's next step / safe default |
+| --- | --- | --- |
+| Two missing Quote-to-Booking fixes | Applied and verified in shared development; no historical records backfilled | Do not reapply. Use the recorded ledger versions and verification scripts below. |
+| Freight/dev code compatibility | Fixed and tested locally on this branch; not pushed to remote dev | Read the checkpoint, compare newer dev/hosted services before release, preserve newer code. GitHub approval is still required. |
+| 35 catalogue document families | Editable layout drafts, not 35 working Booking generation choices | Map, refine, privacy-review, publish and connect one family at a time to its proper record owner. |
+| HBL/HAWB | Code integration retained; latest saved sources not privacy-signed-off by this tie-off | Inspect the exact latest version/hash, static text, images and tags. Keep unreviewed sources blocked; do not overwrite newer House work. |
+| Transport Original/Copy | Intentionally disabled, not an unfinished button to enable | Continue with Drafts. Obtain document-type and issuing-authority decisions from senior Jenkar staff, not from Lee's availability. |
+| Booking confirmation manager draft | Earlier v11 source ownership mismatch recorded; published v10 retained | Re-read current source metadata. Restore/save a correctly owned draft through the supported source/version flow, then fictional preview/review; never relax the ownership check or publish the invalid draft. |
+| Regression/demo acceptance | Mandatory checks pass; 43 existing client failures and the additional legacy fixture issue are documented | Use the exact failure list/checkpoint and tie-off note. Triage as engineering work; do not claim a regression-clean demo or ask Lee to reconstruct the failures. |
+
+Harry can investigate and continue these technical items without Lee. Issuing decisions belong to senior Jenkar operations/authorised issuers, with the safe Draft-only rule already chosen. Release permission is a separate outstanding approval, not a missing product answer to guess while Lee is away.
+
+### Two database issues closed before handover
+
+- **Loaded container weight:** applied `20260925095733_stop_quote_cargo_weight_copy_to_container.sql` to shared development as hosted migration **20261001203200**. A Quote's cargo gross weight no longer becomes the container's loaded gross weight; VGM remains unknown unless separately recorded. Packages, equipment count, known cargo weight and mode guards are retained. Existing containers were not rewritten.
+- **Shipper/consignee contacts:** applied `20260929132713_quote_party_contact_handoff.sql` as hosted migration **20261001203201**. Initial accepted-Quote party rows now retain source contact/email values; later reviewed Quote updates include party emails. Explicit Booking contacts and subsequent blank overrides are preserved. Unrelated party roles and manually created Bookings are not backfilled.
+- Mandatory PostgreSQL/access regression now passes **143/143 + 9/9** with both cases included. Focused PostgreSQL/contact/container contracts pass **9/9**.
+- Shared-development verification executes the real deployed projection and party trigger against typed party storage with fictional temporary rows, then rolls back. All five live assertions pass; the 12-operator access probe passes before/after with unchanged counts. No customer acceptance, mail delivery or full browser conversion was performed in this tie-off.
+- Deployed function readback proves the only old-function changes were one container-weight expression and two Quote-sync email fields. Existing 340 Jobs, 51 parties, 26 containers and 43 active templates remain unchanged after rollback. Existing security-advisor findings are unchanged after ignoring observation timestamps; they are not waived.
+- All 54 branch migration files now have matching named records in shared development. **32 use different hosted timestamps**, so this is not permission to run a blanket `db push` or rewrite migration history. The full local-file/hosted-version crosswalk is `docs/verification/2026-10-01-freight-migration-ledger.json`; the two newly applied SQL records were read back and match their local files exactly.
+- Reproducible commands, recovery evidence, permission boundaries and the additional legacy fixture failure are in `docs/verification/2026-10-01-quote-handoff-tie-off.md`. That note is the next starting point, not this conversation.
+
 ## Quotes
 
 ### What we have done
@@ -31,6 +57,7 @@ We have pulled and merged the current dev branch into our freight work without c
 - Added current-user ownership defaults for new Quotes, without changing an existing explicit owner. Sender identity is separate from customer contact and customer reference.
 - Corrected the PDF contact mapping to the operator who sent the Quote, rather than placing the customer reference in Contact. Cargo handling flags such as Fragile feed the customer document.
 - Added mode-aware route/PDF labels and preserved repeating cargo information. Collection and delivery remain explicit shipment facts; they are not assumed from a company's registered address.
+- Closed the missing contact handoff in shared development: shipper/consignee contact/email snapshots carry into initial Booking parties and reviewed Quote updates, without refilling later operator-cleared values. This does not retroactively repair existing records.
 - Built sent-Quote document retention and authorised PDF opening/download. A stored file and an expired preview link are different problems; opening a file must obtain fresh authorised access.
 - Repaired accepted-Quote charge provenance during Booking conversion. The recorded JQ20035 acceptance created JE0991153; repeated response attempts must not create another Booking.
 - Added sender as well as creator notification coverage, with recipient/privacy boundaries. An existing decline or acceptance is a recorded response, not something to overwrite to make another button work.
@@ -61,6 +88,7 @@ We have pulled and merged the current dev branch into our freight work without c
 - Added whole-line assignment, multiple lines in one container and splitting one cargo line across multiple containers.
 - Replaced the clunky split flow with a cargo-first Load plan sheet. It shows the line's package total, assigned quantity, remainder and per-container entries, with more detailed weights/leg information available when needed.
 - Added over-allocation checks, stable cargo/equipment identities and precise quantity handling. Package distribution must never calculate an invented container weight or verified gross mass (VGM).
+- Closed the missing shared-development conversion fix: cargo gross weight is no longer automatically copied into a loaded container's gross-weight field. Quantities and valid equipment choices remain; existing recorded weights/VGM are unchanged.
 - Added repeatable vehicle identifiers and retained planning/operational charge boundaries. Planning changes are not automatically posted invoices or accounting entries.
 - Kept the audit compact, with changed information and further detail available on demand.
 - Added Booking document creation controls and retained the historical separate Draft/Final Booking confirmation files. The newer shared-development direction treats Booking confirmations as received carrier/partner files: upload them into Job documents. The reconciled picker does not generate outgoing confirmations. If an outgoing customer Booking advice is required, agree a distinct family and ownership rather than undoing this direction.
@@ -112,11 +140,19 @@ We have pulled and merged the current dev branch into our freight work without c
 
 ## Documents
 
+### Important: template availability is not generation readiness
+
+**Not all 35 catalogue templates are wired into Bookings.** They remain visible, editable layout drafts in Documents, with drag-and-drop thumbnail ordering, saved per-user preferences and the three-dot move/remove menu. Having a tile or a clean fictional preview does not make it a document that Create document can produce from a Booking. Each unfinished family still needs its own correct fields, document-specific layout review, privacy/source review, publication and workflow connection. Finance and Warehouse documents belong to those owners; do not enable every catalogue draft through a generic Booking dataset.
+
+**House bills still need exact latest-source checks.** The latest metadata readback in this tie-off is HBL published v6 / HAWB published v5; earlier v3/v2 observations below are historical, not current instructions to restore those versions. Their static text, artwork, tags, identity and exact version/hash were not inspected or approved here. Preserve those newer sources and fail closed until a qualified source review is recorded.
+
+**Original and Copy remain blocked for FIATA, Air and House transport bills.** This is the agreed safe default while senior Jenkar staff confirm document classification and issuing arrangements. Do not enable them for a demo, infer authority from an employee login, or wait for Lee to decide questions he explicitly cannot answer. Harry should take the structured questions in Decisions for senior Jenkar staff to the appropriate staff and keep Draft-only operation meanwhile.
+
 ### What we have done
 
 - Matched the BoxTop catalogue and sample inventory to 35 editable draft document families. The crosswalk accounts for 189 entries: 55 matched to new families, 8 reusing existing families, 17 controlled-form cases and 109 report/undefined cases.
 - Added catalogue drafts for freight invoices/proformas, packing lists, instructions, notices, manifests, warehouse outputs, vehicle handover and release requests. These are layout foundations, not 35 completed live-record generation workflows.
-- Made templates visible as editable items in Documents, with saved per-user order, menu-based move/remove and recoverable removed templates. Removed the non-working six-dot control. Operations requirements is not an operational template to restore by accident.
+- Made templates visible as editable items in Documents, with drag-and-drop thumbnail ordering, saved per-user order, menu-based move/remove and recoverable removed templates. Removed the non-working six-dot control, not the tile's drag-and-drop behaviour. Operations requirements is not an operational template to restore by accident.
 - Kept template editing independent of Job numbers. Word source editing, fictional-data preview, review and publication are separate from creating a document from a real Booking.
 - Built a separate FIATA reference layout with the replaceable Multideck logo. Preserved the other FIATA form as a separate template, rather than substituting one for the other.
 - Created clean versions of Master Air Waybill, MNG Air Waybill and FIATA -Waybill after discovering embedded customer data in their imported sources. Provider data substitution alone cannot remove live text already baked into a Word file.
@@ -136,7 +172,7 @@ We have pulled and merged the current dev branch into our freight work without c
 - Received Booking confirmation is no longer an outgoing generation choice. The restarted local Chrome picker on JE0991153 shows the two FIATA forms and HBL, all currently Not ready to generate against the unchanged hosted renderer; historic four Job files remain listed. The safe block is expected until release.
 - Five already-applied hosted migrations are now retained verbatim under their matching local names: final readiness `20261001171457`, review identity `20261001171500`, confirmation price label `20261001175904`, version sources `20261001180929`, House review layouts `20261001185549`. No shared database was changed and these must not be applied again.
 - There is no unresolved Git conflict or known publishing-contract incompatibility left for Harry from this repair. Fresh deployed generation, provider conversion and saved-file persistence still need approval and real verification. Do not confuse that remaining release gate with a code merge conflict.
-- Fresh read-only template inspection found separate hosted metadata/preview work: Booking confirmation v11 Draft points at v10's source object, so the reader rejects it even though the published v10 file exists. Repairing/restoring a correctly owned draft needs shared-data approval; do not relax source ownership or publish the invalid draft. HBL v3 has a newer published source fingerprint not inspected in this audit, and HAWB v2 is an unreviewed changed Draft. Those House choices stay blocked until their exact sources are reviewed; do not replace Harry's newer layouts blindly with defaults.
+- Earlier read-only template inspection found separate hosted metadata/preview work: Booking confirmation v11 Draft pointed at v10's source object, so the reader rejected it even though published v10 existed. Re-read that state before a draft-only repair; shared-data approval is still needed. Do not relax source ownership or publish the invalid draft. Earlier HBL v3 / HAWB v2 observations are superseded by this tie-off's HBL v6 / HAWB v5 metadata. The latest exact source fingerprints still need review by the continuing engineer; do not replace newer layouts blindly with defaults.
 
 ### Document-flow judgement retained for Harry
 
@@ -173,7 +209,7 @@ Step 8's publishing contract is fixed locally and awaits the approved frontend r
 
 ## Decisions for senior Jenkar staff
 
-Lee cannot confirm these before annual leave. Harry should obtain answers rather than choose issuing rules based on a template title or a watermark. Keep transport Draft-only until the answers are agreed and implemented.
+Lee cannot confirm these before annual leave. **These are decisions for senior Jenkar staff/authorised issuers, not questions that require Lee to return.** Harry should obtain answers rather than choose issuing rules based on a template title or a watermark. Keep transport Draft-only until the answers are agreed and implemented; this safe default lets technical work continue without enabling unapproved issuance.
 
 ### Which document are we issuing
 
@@ -237,6 +273,7 @@ Lee cannot confirm these before annual leave. Harry should obtain answers rather
 - The renderer handler check now exercises all six transport codes. The real PostgreSQL source/freeze fixture also exercises the newer HBL/HAWB freeze function, preserving issuer/audit metadata and rejecting the wrong shipment, route, layout, Original and repeated overwrite.
 - Latest full client run: 920/963 pass, the same 43 failing titles. The three new client checks pass; existing failures were not removed or relaxed.
 - Restarted the local server and reloaded Chrome: updated transport-only picker, retained files, safe blocked generation, dropdown/dialog Escape handling, 390 × 844 blocked-state layout without horizontal overflow, no framework overlay and no captured warning/error logs. The temporary viewport was reset. No document or operational record was saved.
+- Final narrow database tie-off: mandatory checks pass 143/143 + 9/9, focused checks 9/9, deployed fictional trigger/typed-storage and container projection 5/5, exact function changes verified, 12-account access counts unchanged, two exact SQL history records read back, 43 active templates retained. See the tie-off note for limits; this does not certify browser Quote acceptance or the document renderer.
 
 ### Not verified by this review
 
@@ -251,12 +288,13 @@ Lee cannot confirm these before annual leave. Harry should obtain answers rather
 - The 43 failures include Quote/Booking mode and lookup contracts, standalone Customs, shared tables/gallery, Admin/navigation, Finance route expectations, direct-read bounds, Inbox/Dexter and wizard/theme contracts.
 - Some tests inspect source structure, but do not assume all failures are stale tests. The direct-read-bound and permission-related cases require substantive review.
 - The comparison establishes the merge did not add these failures under the same runner. It does not make the current application fully regression-green.
+- An additional optional run of `booking-stable-items-postgres.test.mjs` fails during fixture loading: `booking-cargo-client-fixture.mjs` transforms a helper with local imports to CommonJS, then evaluates it without `require`. A temporary bundled diagnostic reached further pre-existing baseline/fixture column collisions. The diagnostic edits were reverted; no partial harness repair is shipped. The exact reproduction, file names and next repair step are in the tie-off note. This failure was not counted as a pass, is separate from the 43 client failures, and is not an error in either of the two deployed migration checks.
 
 ## Release and recovery plan
 
 1. Re-fetch dev and inspect current local work before doing further edits. Keep this branch and checkpoints; do not reset or discard concurrent work.
 2. Retrieve current shared-development renderer/studio and dependencies again. They can change while this handover is being read. Compare with local changes and preserve newer routes/protections.
-3. Confirm the five imported hosted migration files match their already-applied SQL and check historical local/hosted filename differences. The compatibility repair needs no new shared-development migration. Do not blindly push locally pending migrations, edit applied SQL or apply unrelated schema changes.
+3. Confirm the five imported hosted migration files match their already-applied SQL. The two approved handoff fixes are now applied as 20261001203200 / 20261001203201 and must not be applied again. Use the complete 54-file ledger crosswalk and tie-off evidence to check historical local/hosted filename differences; name matches alone are not blanket SQL-equivalence proof. The document compatibility repair needs no additional shared-development migration. Do not blindly push locally pending migrations, edit applied SQL or apply unrelated schema changes.
 4. Review the locally prepared compatible frontend and full document-studio/render-document dependency bundles. Local access/privacy/exact-source/stale-review/failure checks are recorded above. If newer work appeared since readback, reconcile it before release; do not overwrite it.
 5. Report the exact target branch/environment, required migration/function/template order, affected workflows and recovery plan. Ask Lee for confirmation before GitHub push or shared/production writes.
 6. For this compatibility release, after explicit approval push/merge the feature into dev, deploy the reconciled studio/renderer with complete helpers to shared development and update the intended dev frontend. No new template publication or database mutation is required/included by this repair. Obtain separate approval for any additional schema or published-selection changes. Re-read deployed versions.
@@ -275,8 +313,9 @@ Lee cannot confirm these before annual leave. Harry should obtain answers rather
 - Dated evidence: `docs/verification/2026-09-28-booking-customs-source.md`, `docs/verification/2026-09-30-dev-merge-checkpoint.md`, `docs/architecture/document-template-layout-editing.md`, `docs/architecture/booking-document-issuance.md`.
 - Fresh document-service versions used for compatibility: renderer 63, studio 78. Other services read at the earlier checkpoint: bookings-workflow 64, quotes-workflow 101, quote-response 49, agent-dexter 311, document-download 55, customs-invoice-ocr 81, finance-accruals 29. Recheck before release. The public quote-response token endpoint intentionally differs from signed-in JWT endpoints.
 - Current checkpoint details and the complete client failure list are in `docs/verification/2026-10-01-dev-merge-checkpoint.md`.
+- Final handoff-fix evidence: `docs/verification/2026-10-01-quote-handoff-tie-off.md`; full migration crosswalk: `docs/verification/2026-10-01-freight-migration-ledger.json`; pre-release recovery definitions: `docs/verification/2026-10-01-quote-handoff-pre-release.json`; rolled-back deployed check: `supabase/tests/quote-handoff-live-verification.sql`.
 - Build: run `npm run build` inside `multideck.client`. Backend/access: `node supabase/tests/run-data-access-regression.mjs` with PostgreSQL 17 available. Client: `node --experimental-strip-types --test multideck.client/tests/*.test.mjs` from repository root, using the configured project Node runtime.
 
 ## Continuation prompt for Harry
 
-Please continue the Multideck freight work from this handover and its checkpoint report. First verify the branch, working-tree changes, latest dev and hosted document-service versions. The known document-service compatibility repair is implemented and tested locally against renderer v63/studio v78; do not redo it or deploy stale bundles. Preserve received-confirmation upload semantics, newer House layouts/protected issuer forms, legal branding, exact source-review identity, static-source privacy and our frozen Draft transport mappings. Check the five imported already-applied migrations without reapplying them. Keep FIATA/Air/House Originals and Copies blocked until senior Jenkar staff answer the recorded issuing questions. Prepare/confirm the complete dev release scope and recovery plan, obtain Lee's confirmation before GitHub/shared writes, then verify actual approved document conversion/save/download and the agreed Quote, Booking and Customs workflows. Triage the 43 unchanged client failures; this handover does not waive them or assert demo-wide readiness. Preserve issued snapshots, generated versions and private data. Do not treat this handover as permission to send mail, accept real terms, post invoices, make payments or submit Customs.
+Please continue the Multideck freight work from this handover, its checkpoint report and the final quote-handoff tie-off note; do not rely on the old chat. First verify the branch, working-tree changes, latest dev and hosted document-service versions. The known document-service compatibility repair is implemented and tested locally against renderer v63/studio v78; do not redo it or deploy stale bundles. The two missing Quote-to-Booking database fixes are applied and verified in shared development as 20261001203200 / 20261001203201: do not reapply them. Use the 54-file ledger crosswalk, preserving applied history and newer work. Preserve received-confirmation upload semantics, newer House layouts/protected issuer forms, legal branding, exact source-review identity, static-source privacy and our frozen Draft transport mappings. The 35 catalogue families are editable draft layouts, not 35 completed Booking generation choices. Inspect the exact latest House sources before approving them; the tie-off metadata was HBL v6 / HAWB v5, not a permanent latest-version claim. Keep FIATA/Air/House Originals and Copies blocked; obtain the issuing answers from senior Jenkar staff rather than waiting for Lee. Prepare/confirm any future release scope and recovery plan and obtain the required explicit permission before GitHub/shared writes. Triage the 43 unchanged client failures and documented legacy PostgreSQL/Dexter fixture mismatch. This handover is self-contained engineering context, not demo-wide readiness or permission to send mail, accept real terms, post invoices, make payments or submit Customs. Preserve issued snapshots, generated versions and private data.

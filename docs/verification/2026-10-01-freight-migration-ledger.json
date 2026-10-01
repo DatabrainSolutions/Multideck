@@ -1,0 +1,342 @@
+{
+  "projectRef": "aqtwypsuijxlnvtxpuxe",
+  "environment": "shared-development",
+  "scope": "54 migration files in origin/dev...HEAD at the freight checkpoint",
+  "warning": "This is a name/version reconciliation, not SQL equivalence proof for every historical migration. Do not blindly db push or repair timestamps. Preserve already-applied history and review any future release delta.",
+  "newlyApplied": [
+    {
+      "localFile": "supabase/migrations/20260925095733_stop_quote_cargo_weight_copy_to_container.sql",
+      "hostedVersion": "20261001203200"
+    },
+    {
+      "localFile": "supabase/migrations/20260929132713_quote_party_contact_handoff.sql",
+      "hostedVersion": "20261001203201"
+    }
+  ],
+  "migrations": [
+    {
+      "localFile": "supabase/migrations/20260919080625_provisional_cancellation_audit.sql",
+      "hostedVersion": "20260919080625",
+      "hostedName": "provisional_cancellation_audit",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260919095813_booking_planning_charge_foundation.sql",
+      "hostedVersion": "20260919160346",
+      "hostedName": "booking_planning_charge_foundation",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919102445_booking_manual_planning_cancellation.sql",
+      "hostedVersion": "20260919160356",
+      "hostedName": "booking_manual_planning_cancellation",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919102957_booking_planning_charge_release.sql",
+      "hostedVersion": "20260919160357",
+      "hostedName": "booking_planning_charge_release",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919110708_booking_planning_charge_access.sql",
+      "hostedVersion": "20260919160358",
+      "hostedName": "booking_planning_charge_access",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919113132_booking_planning_charge_parties.sql",
+      "hostedVersion": "20260919160359",
+      "hostedName": "booking_planning_charge_parties",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919151833_booking_planning_charge_readback.sql",
+      "hostedVersion": "20260919160404",
+      "hostedName": "booking_planning_charge_readback",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919175923_booking_ownership_defaults.sql",
+      "hostedVersion": "20260919192852",
+      "hostedName": "booking_ownership_defaults",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919182854_booking_ownership_editor.sql",
+      "hostedVersion": "20260919192853",
+      "hostedName": "booking_ownership_editor",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919193238_booking_editor_audit_workspace.sql",
+      "hostedVersion": "20260919193400",
+      "hostedName": "booking_editor_audit_workspace",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919194350_booking_open_mode.sql",
+      "hostedVersion": "20260919194632",
+      "hostedName": "booking_open_mode",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919194818_booking_open_mode_options.sql",
+      "hostedVersion": "20260919194846",
+      "hostedName": "booking_open_mode_options",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260919202654_booking_planning_audit_details.sql",
+      "hostedVersion": "20260921075102",
+      "hostedName": "booking_planning_audit_details",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260921154728_booking_charge_provenance.sql",
+      "hostedVersion": "20260921154728",
+      "hostedName": "booking_charge_provenance",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260921154731_booking_charge_removal.sql",
+      "hostedVersion": "20260921154731",
+      "hostedName": "booking_charge_removal",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260921154733_booking_charge_restoration.sql",
+      "hostedVersion": "20260921154733",
+      "hostedName": "booking_charge_restoration",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260921154737_booking_operational_charge_editor.sql",
+      "hostedVersion": "20260921154737",
+      "hostedName": "booking_operational_charge_editor",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260921154738_booking_charge_source_and_bulk_guards.sql",
+      "hostedVersion": "20260921154738",
+      "hostedName": "booking_charge_source_and_bulk_guards",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260921154739_booking_quote_charge_review.sql",
+      "hostedVersion": "20260921154739",
+      "hostedName": "booking_quote_charge_review",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260921154740_booking_charge_editor_activation.sql",
+      "hostedVersion": "20260921154740",
+      "hostedName": "booking_charge_editor_activation",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260922105749_repeat_quote_save_guard.sql",
+      "hostedVersion": "20260922105749",
+      "hostedName": "repeat_quote_save_guard",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260922111756_quote_acceptance_version_order.sql",
+      "hostedVersion": "20260922111756",
+      "hostedName": "quote_acceptance_version_order",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260922114402_booking_quote_charge_customer_readback.sql",
+      "hostedVersion": "20260922114520",
+      "hostedName": "booking_quote_charge_customer_readback",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260922115340_provisional_cancel_without_customer.sql",
+      "hostedVersion": "20260922115502",
+      "hostedName": "provisional_cancel_without_customer",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260922120140_route_reference_json_operator_precedence.sql",
+      "hostedVersion": "20260922120337",
+      "hostedName": "route_reference_json_operator_precedence",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260922122801_customs_handoff_grant_conflict_target.sql",
+      "hostedVersion": "20260922122907",
+      "hostedName": "customs_handoff_grant_conflict_target",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260922125007_customs_handover_required_cargo_countries.sql",
+      "hostedVersion": "20260922125316",
+      "hostedName": "customs_handover_required_cargo_countries",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260922140741_booking_customs_field_mapping.sql",
+      "hostedVersion": "20260922141015",
+      "hostedName": "booking_customs_field_mapping",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260922150258_customs_original_invoice_retention.sql",
+      "hostedVersion": "20260922151405",
+      "hostedName": "customs_original_invoice_retention",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260922171000_quote_container_mode_projection.sql",
+      "hostedVersion": "20260922154429",
+      "hostedName": "quote_container_mode_projection",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260922175000_quote_equipment_conversion_guard.sql",
+      "hostedVersion": "20260922155116",
+      "hostedName": "quote_equipment_conversion_guard",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260924133000_booking_confirmation_scope_and_snapshot.sql",
+      "hostedVersion": "20260924151855",
+      "hostedName": "booking_confirmation_scope_and_snapshot",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260925095733_stop_quote_cargo_weight_copy_to_container.sql",
+      "hostedVersion": "20261001203200",
+      "hostedName": "stop_quote_cargo_weight_copy_to_container",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260925123314_review_document_templates.sql",
+      "hostedVersion": "20260925123314",
+      "hostedName": "review_document_templates",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260925123316_read_document_template_draft.sql",
+      "hostedVersion": "20260925123316",
+      "hostedName": "read_document_template_draft",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260928131554_booking_customs_importer_party.sql",
+      "hostedVersion": "20260928131554",
+      "hostedName": "booking_customs_importer_party",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260928132500_booking_confirmation_parties.sql",
+      "hostedVersion": "20260929095217",
+      "hostedName": "booking_confirmation_parties",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260928155945_quote_response_notify_sender.sql",
+      "hostedVersion": "20260928155945",
+      "hostedName": "quote_response_notify_sender",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260928160003_quote_default_current_operator.sql",
+      "hostedVersion": "20260928160003",
+      "hostedName": "quote_default_current_operator",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20260929095630_booking_confirmation_equipment_mode.sql",
+      "hostedVersion": "20260929095714",
+      "hostedName": "booking_confirmation_equipment_mode",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260929103059_quote_acceptance_charge_source_line.sql",
+      "hostedVersion": "20260929103603",
+      "hostedName": "quote_acceptance_charge_source_line",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260929130600_booking_confirmation_shipment_type_source.sql",
+      "hostedVersion": "20260929130622",
+      "hostedName": "booking_confirmation_shipment_type_source",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260929132713_quote_party_contact_handoff.sql",
+      "hostedVersion": "20261001203201",
+      "hostedName": "quote_party_contact_handoff",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20260929144212_booking_confirmation_template_choices.sql",
+      "hostedVersion": "20260929135231",
+      "hostedName": "booking_confirmation_template_choices",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20261001093644_read_published_template_layout_source.sql",
+      "hostedVersion": "20261001104005",
+      "hostedName": "20261001093644_read_published_template_layout_source",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20261001100836_document_template_library_controls.sql",
+      "hostedVersion": "20261001104008",
+      "hostedName": "20261001100836_document_template_library_controls",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20261001132349_template_source_uploads_require_review.sql",
+      "hostedVersion": "20261001134924",
+      "hostedName": "template_source_uploads_require_review",
+      "match": "name-only"
+    },
+    {
+      "localFile": "supabase/migrations/20261001145513_booking_document_issue_markings.sql",
+      "hostedVersion": "20261001145513",
+      "hostedName": "booking_document_issue_markings",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20261001161514_transport_document_draft_mapping.sql",
+      "hostedVersion": "20261001161514",
+      "hostedName": "transport_document_draft_mapping",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20261001171457_booking_document_final_readiness.sql",
+      "hostedVersion": "20261001171457",
+      "hostedName": "booking_document_final_readiness",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20261001171500_document_template_review_identity.sql",
+      "hostedVersion": "20261001171500",
+      "hostedName": "document_template_review_identity",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20261001175904_booking_confirmation_price_label.sql",
+      "hostedVersion": "20261001175904",
+      "hostedName": "booking_confirmation_price_label",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20261001180929_document_template_version_sources.sql",
+      "hostedVersion": "20261001180929",
+      "hostedName": "document_template_version_sources",
+      "match": "timestamp-and-name"
+    },
+    {
+      "localFile": "supabase/migrations/20261001185549_house_transport_review_layouts.sql",
+      "hostedVersion": "20261001185549",
+      "hostedName": "house_transport_review_layouts",
+      "match": "timestamp-and-name"
+    }
+  ]
+}

@@ -65,6 +65,31 @@ test('accepted Quote contact details reach initial Booking parties and reviewed 
         if (select "JobParty_EmailSnapshot" from public."Job_Parties" where "JobParty_RawSnapshot" ? 'role') is not null then
           raise exception 'Booking override was overwritten';
         end if;
+        insert into public."Job_Parties" ("JobParty_JobID","JobParty_Role","JobParty_RawSnapshot","JobParty_EmailSnapshot","JobParty_ContactNameSnapshot")
+          values (job,'shipper','{"case":"retained","email":"source@example.test","contact":"Source name"}',
+            'operator@example.test','Operator name');
+        if not exists(select 1 from public."Job_Parties" where "JobParty_RawSnapshot"->>'case'='retained'
+          and "JobParty_EmailSnapshot"='operator@example.test' and "JobParty_ContactNameSnapshot"='Operator name') then
+          raise exception 'Supplied Booking contact was overwritten';
+        end if;
+        insert into public."Job_Parties" ("JobParty_JobID","JobParty_Role","JobParty_RawSnapshot")
+          values (job,'payer','{"email":"payer@example.test","contact":"Payer name"}');
+        if exists(select 1 from public."Job_Parties" where "JobParty_Role"='payer'
+          and ("JobParty_EmailSnapshot" is not null or "JobParty_ContactNameSnapshot" is not null)) then
+          raise exception 'Unrelated party role was changed';
+        end if;
+        insert into public."Job_Header" values (gen_random_uuid(),null,'{}') returning "Job_ID" into job;
+        insert into public."Job_Parties" ("JobParty_JobID","JobParty_Role","JobParty_RawSnapshot")
+          values (job,'shipper','{"email":"manual@example.test","contact":"Manual name"}');
+        if exists(select 1 from public."Job_Parties" where "JobParty_JobID"=job
+          and ("JobParty_EmailSnapshot" is not null or "JobParty_ContactNameSnapshot" is not null)) then
+          raise exception 'A manual Booking was mistaken for Quote conversion';
+        end if;
+        if has_function_privilege('anon','booking_api.fill_accepted_quote_party_contact()','EXECUTE')
+          or has_function_privilege('authenticated','booking_api.fill_accepted_quote_party_contact()','EXECUTE')
+          or has_function_privilege('service_role','booking_api.fill_accepted_quote_party_contact()','EXECUTE') then
+          raise exception 'Private trigger function became a callable action';
+        end if;
         result := public.booking_workflow_apply_quote_sync_before_payer_20260904(null,null,null,
           '{"shipper":{"contact":"Sender","email":"sender@example.test"},"consignee":{"contact":"Recipient","email":"recipient@example.test"}}');
         if result#>>'{0,email}' <> 'sender@example.test' or result#>>'{1,email}' <> 'recipient@example.test' then

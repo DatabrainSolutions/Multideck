@@ -94,6 +94,8 @@ const tests = [
   'booking-provisional-lifecycle-postgres.test.mjs',
   'booking-confirmation-postgres.test.mjs',
   'booking-charge-provenance-postgres.test.mjs',
+  'quote-container-weight-postgres.test.mjs',
+  'quote-party-contact-handoff-postgres.test.mjs',
   'quote-response-public-boundary-postgres.test.mjs',
   'operational-role-quote-booking-parity-contract.test.mjs',
   'booking-role-permissions-contract.test.mjs',
