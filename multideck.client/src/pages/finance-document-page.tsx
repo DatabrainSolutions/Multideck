@@ -8,6 +8,8 @@ import {
 } from "@/components/multideck/finance-document-line-editor"
 import { SettingsPageHeader, SettingsPanel } from "@/components/multideck/settings-components"
 import { ProviderCustomerSetupWizard } from "@/components/multideck/provider-customer-setup-wizard"
+import { InlineNotice } from "@/components/multideck/inline-notice"
+import { financeApprovalReasons } from "@/lib/finance-approval-api"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -397,6 +399,19 @@ export function FinanceDocumentPage({
             {document.FINDoc_StatusCode === "rejected" && !vatSourceLocked && canDraft && canApprove ? <Button type="button" disabled={Boolean(pendingAction)} onClick={() => { setReason(""); setReasonAction("reopen") }}>{t("Return to draft")}</Button> : null}
           </div>
         </div>
+
+        {document.FINDoc_StatusCode === "awaiting_approval" && document.approvalPolicyDecision ? <InlineNotice tone="warning" title={t("Approval required")}>
+          <ul className="list-disc space-y-1 ps-4">{financeApprovalReasons(document.approvalPolicyDecision).map((message) => <li key={message}>{t(message)}</li>)}</ul>
+          {document.approvalPolicyDecision.jobs?.length ? <div className="mt-3 space-y-2">
+            <p>{t("Expected whole-job sales and costs at submission, excluding tax.")}</p>
+            {document.approvalPolicyDecision.jobs.map((job) => <p key={job.jobId} className="flex flex-wrap gap-x-3 gap-y-1">
+              <span data-i18n-skip>{job.reference}</span>
+              <span>{t("Expected sales")}: <span data-i18n-skip>{job.expectedSales == null ? "–" : new Intl.NumberFormat(language, { style: "currency", currency: document.approvalPolicyDecision!.baseCurrency }).format(job.expectedSales)}</span></span>
+              <span>{t("Expected costs")}: <span data-i18n-skip>{job.expectedCosts == null ? "–" : new Intl.NumberFormat(language, { style: "currency", currency: document.approvalPolicyDecision!.baseCurrency }).format(job.expectedCosts)}</span></span>
+              <span>{t("Expected margin")}: <span data-i18n-skip>{job.expectedMarginPercent == null ? "–" : new Intl.NumberFormat(language, { maximumFractionDigits: 2 }).format(job.expectedMarginPercent) + "%"}</span></span>
+            </p>)}
+          </div> : null}
+        </InlineNotice> : null}
 
         {blocked ? <section aria-labelledby="finance-recovery-title" className="rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-red),transparent_92%)] p-5 shadow-[var(--md-shadow-line)]"><div className="flex flex-wrap items-start justify-between gap-5"><div className="flex min-w-0 flex-1 gap-3"><AlertCircle className="mt-0.5 size-5 shrink-0 text-[var(--md-red)]" /><div><h2 id="finance-recovery-title" className="text-[14px] font-medium text-[var(--md-ink)]">{t("External mirror needs attention")}</h2><p className="mt-1 max-w-4xl break-words text-[13px] leading-5 text-[var(--md-text)]">{detail.integrationQueue?.FINIntQ_LastError ?? t("The external accounting mirror did not accept this delivery.")}</p><p className="mt-2 text-[11px] text-[var(--md-subtle)]">{t("Attempts")}: <span data-i18n-skip dir="ltr">{detail.integrationQueue?.FINIntQ_AttemptCount ?? 0}</span>{detail.integrationQueue?.FINIntQ_LastAttemptAt ? <> · {t("Last tried")} <span data-i18n-skip dir="ltr">{dateFormatter.format(new Date(detail.integrationQueue.FINIntQ_LastAttemptAt))}</span></> : null}</p></div></div><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => ledger === "receivables" ? setMirrorSetupOpen(true) : navigate(recoveryRoute)}>{t("Fix mirror setup")}</Button>{posted && canDraft && canApprove ? <Button type="button" variant="outline" onClick={() => { setReplacementPartyOrgId(""); setBillingPartyReason(""); setBillingPartyOpen(true) }}>{t("Reverse & replace")}</Button> : null}{canRetry && detail.integrationQueue?.retryAvailable ? <Button type="button" disabled={Boolean(pendingAction)} onClick={() => void retry()}>{pendingAction === "retry" ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}{t("Retry mirror")}</Button> : null}</div></div><p className="mt-4 border-t border-[color-mix(in_srgb,var(--md-red),transparent_80%)] pt-3 text-[12px] leading-5 text-[var(--md-text)]">{t(vatSourceLocked ? "This VAT-reconciled transaction is locked. A billing-party correction creates separate reversal and replacement postings." : "Match the billing party to its Accounts System account, then retry delivery. If the billing party itself is wrong, create a controlled reversal and replacement posting.")}</p></section> : null}
 

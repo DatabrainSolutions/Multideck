@@ -263,7 +263,8 @@ function isCustomsDeclarationEditRoute(path: string) {
 }
 
 /** Old CRM links still land on their current product destination. */
-function getLegacyCrmRoute(path: string) {
+function getLegacyCrmRoute(path: string, search = "") {
+  if (path === "/crm/accounts" && new URLSearchParams(search).get("view") === "suppliers") return "/suppliers"
   if (path === "/crm/insights") return "/crm"
   if (path === "/crm/marketing") return "/crm/drive"
   if (path === "/crm/suppliers") return "/suppliers"
@@ -359,7 +360,7 @@ function getRoute() {
   if (window.location.pathname === "/finance/setup") return "/finance/administration"
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
-  const legacyCrmRoute = getLegacyCrmRoute(window.location.pathname)
+  const legacyCrmRoute = getLegacyCrmRoute(window.location.pathname, window.location.search)
   if (legacyCrmRoute) return legacyCrmRoute
   const unavailableCrmRoute = getUnavailableCrmRoute(window.location.pathname)
   if (unavailableCrmRoute) return unavailableCrmRoute
@@ -800,7 +801,7 @@ export default function App() {
   // Old and prototype-only CRM bookmarks are rewritten in place, so the address
   // bar only shows routes that operators can genuinely use.
   useEffect(() => {
-    if (window.location.pathname === "/finance/setup" || getLegacyCrmRoute(window.location.pathname) || getUnavailableCrmRoute(window.location.pathname)) {
+    if (window.location.pathname === "/finance/setup" || getLegacyCrmRoute(window.location.pathname, window.location.search) || getUnavailableCrmRoute(window.location.pathname)) {
       window.history.replaceState(window.history.state, "", `${route}${window.location.search}`)
     }
   }, [route])

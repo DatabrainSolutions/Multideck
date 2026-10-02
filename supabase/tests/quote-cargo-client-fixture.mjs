@@ -14,12 +14,14 @@ function evaluate(source, bindings = {}) {
 }
 export const cargo = evaluate(read('../../multideck.client/src/lib/quote-cargo.ts'))
 export const documentCargo = evaluate(read('../functions/_shared/quote-document-cargo.ts'))
+const billing = evaluate(read('../../multideck.client/src/lib/quote-billing-contact.ts'))
+const pricing = evaluate(read('../../multideck.client/src/lib/quote-supplier-pricing.ts'))
 const freight = evaluate(read('../../multideck.client/src/lib/freight-direction.ts'))
 const source = read('../../multideck.client/src/pages/quotes-page.tsx')
 const ast = ts.createSourceFile('quotes-page.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 // Execute complete production mapping functions, without loading the page's
 // React tree or replacing any cargo/direction/date transformation with a mock.
-const names = ['newQuoteDraft', 'quoteUuidPattern', 'millisecondsPerCalendarDay', 'uuidOrNull',
+const names = ['supplierRateRequestDraft', 'newQuoteDraft', 'quoteUuidPattern', 'millisecondsPerCalendarDay', 'uuidOrNull',
   'quoteContainerRequests', 'quoteRoutingLegs', 'compactQuoteFacts', 'quoteDirectionForSave',
   'calculatedDirectionForQuote', 'quoteSavePayload', 'quoteRecordFromWorkspace',
   'quoteLifecyclePresentation', 'quoteTransitDays', 'quoteDateInputValue', 'getDateInputValue', 'salesRepresentativeValue',
@@ -31,7 +33,7 @@ const statements = names.map(name => {
   assert.ok(node, `Production mapping ${name} must exist`)
   return node.getText(ast)
 })
-export const mapping = evaluate(`${statements.join('\n')}\nexport { newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace, salesRepresentativeValue, quoteChargeSupplierIdentity, quoteChargeParties, newQuoteChargeRow, uuidOrNull };`, { ...cargo, ...freight, salesRepresentativeOptions: ['AM1 - Maya Stone'] })
+export const mapping = evaluate(`${statements.join('\n')}\nexport { supplierRateRequestDraft, newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace, salesRepresentativeValue, quoteChargeSupplierIdentity, quoteChargeParties, newQuoteChargeRow, uuidOrNull };`, { ...cargo, ...freight, ...billing, salesRepresentativeOptions: ['AM1 - Maya Stone'] })
 let openingExpression
 let chargeUpdateFunction
 function visit(node) {
@@ -44,7 +46,7 @@ assert.ok(chargeUpdateFunction)
 export function updateChargeRows({ quote, charges, rows, parties, nextRows }) {
   let updated
   evaluate(`${chargeUpdateFunction}\nupdateCharges(nextRows)`, {
-    quote, charges, rows, parties, nextRows, uuidOrNull: mapping.uuidOrNull,
+    quote, charges, rows, parties, nextRows, activeSupplier: null, visibleRows: rows, ...pricing, uuidOrNull: mapping.uuidOrNull,
     onRowsChange: value => { updated = value },
   })
   return updated

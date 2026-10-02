@@ -15,6 +15,8 @@ import {
 import { resolveAccountScoreExplanations } from "./score-explanations.ts"
 import { customsImporterProfileErrors } from "../_shared/customs-importer-profile.ts"
 
+import { accountFinanceAccess } from "../_shared/account-finance-access.mts"
+
 type Row = Record<string, any>
 type OrganisationType = "company" | "customer" | "supplier"
 const customerClassificationNames = new Set(["potential customer", "customer"])
@@ -315,9 +317,9 @@ type CustomerFinanceSnapshot = {
   summary: Row
 }
 
-async function customerAccountFinancials(admin: any, current: Row, requestedIds: string[], includeAccountingSync: boolean): Promise<CustomerFinanceSnapshot> {
+async function customerAccountFinancials(admin: any, current: Row, requestedIds: string[], includeAccountingSync: boolean, partyType: "customer" | "supplier" = "customer"): Promise<CustomerFinanceSnapshot> {
   const accountIds = [...new Set(requestedIds)].slice(0, 100)
-  const { data, error } = await admin.rpc("multideck_finance_customer_account_snapshot", {
+  const { data, error } = await admin.rpc(partyType === "supplier" ? "multideck_finance_supplier_account_snapshot" : "multideck_finance_customer_account_snapshot", {
     p_company_id: current.Company_ID,
     p_account_ids: accountIds,
     p_include_accounting_sync: includeAccountingSync,
@@ -1105,10 +1107,9 @@ Deno.serve(async (request) => {
         const payload = objectValue(data)
         const ids = Array.isArray(payload.ids) ? payload.ids.filter((value): value is string => typeof value === "string") : []
         const rows = await customerRows(admin, current.Company_ID, null, null, false, ids, undefined, "any")
-        const financialAccess = organisationType === "customer" && permissions.includes("Finance.Receivables.View")
-        const accountingSyncAccess = financialAccess && permissions.includes("Finance.Integration.Manage")
+        const { financialAccess, accountingSyncAccess } = accountFinanceAccess(organisationType, permissions)
         const financials = financialAccess
-          ? await customerAccountFinancials(admin, current, ids, accountingSyncAccess)
+          ? await customerAccountFinancials(admin, current, ids, accountingSyncAccess, organisationType === "supplier" ? "supplier" : "customer")
           : null
         const rowMap = new Map(rows.map((row: Row) => [row.id, row]))
         return json(request, {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { currentFunction } from './operational-access-source.mjs'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +10,7 @@ const migration = readFileSync(new URL('../migrations/20260925103000_finance_app
 const submissions = readFileSync(new URL('../migrations/20260925103100_finance_policy_document_cash_submission.sql', import.meta.url), 'utf8')
 const dexter = readFileSync(new URL('../migrations/20260925104200_finance_approval_dexter_parity.sql', import.meta.url), 'utf8')
 const decisionLock = readFileSync(new URL('../migrations/20260926095252_finance_approval_decision_entity_lock.sql', import.meta.url), 'utf8')
+const receivables = readFileSync(new URL('../migrations/20260929135845_receivables_exception_approvals.sql', import.meta.url), 'utf8')
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 
 test('entity-scoped approval policy defaults to review and audits bounded changes', async () => {
@@ -154,6 +156,125 @@ test('entity-scoped approval policy defaults to review and audits bounded change
     assert.equal(concurrentDecision.revision, 4)
     assert.equal(concurrentDecision.canAuto, true)
     assert.match(reject(`set role authenticated; select public.multideck_finance_approval_decision('${id(2)}','${id(3)}','document',1,'{}');`), /permission denied/)
+    // Apply the new migration after proving the existing fallback behaviour.
+    sql(`
+      alter table public."FIN_Documents" add column "FINDoc_SourceJobID" uuid,
+        add column "FINDoc_MetadataJSON" jsonb default '{}';
+      create table public."cmp_Offices"("Office_ID" uuid primary key,"Company_ID" uuid);
+      create table public."Job_Header"("Job_ID" uuid primary key,"Job_LegalEntityID" uuid,"Job_Number" integer,"Job_Period" text,
+        "Job_OfficeID" uuid,"Job_OrgOfficeID" uuid,"Job_IsDeleted" boolean default false);
+      create table public."Job_Costing_Lines"("JobCostingLine_ID" uuid primary key,"Job_ID" uuid references public."Job_Header"("Job_ID"),
+        "JobCostingLine_RevenueAmountLocal" numeric,"JobCostingLine_CostAmountLocal" numeric);
+      create table public."FIN_DocumentLineJobLinks"("FINDocLineJob_DocumentID" uuid,"FINDocLineJob_JobID" uuid);
+      ${currentFunction('public', '_multideck_dexter_evaluate_watch_signal').sql}
+      ${receivables}
+      insert into public."cmp_Offices" values('${id(30)}','${id(2)}'),('${id(31)}','${id(6)}');
+      insert into public."Job_Header"("Job_ID","Job_LegalEntityID","Job_Number","Job_Period","Job_OfficeID") values
+        ('${id(40)}','${id(3)}',40,'202609','${id(30)}'),
+        ('${id(41)}','${id(3)}',41,'202609','${id(30)}'),
+        ('${id(42)}','${id(3)}',42,'202609','${id(30)}'),
+        ('${id(43)}','${id(3)}',43,'202609','${id(30)}'),
+        ('${id(44)}','${id(7)}',44,'202609','${id(31)}'),
+        ('${id(45)}','${id(3)}',45,'202609','${id(30)}'),
+        ('${id(46)}','${id(3)}',46,'202609','${id(30)}');
+      insert into public."Job_Costing_Lines" values
+        ('${id(50)}','${id(40)}',1000,800),
+        ('${id(51)}','${id(41)}',1000,1100),
+        ('${id(52)}','${id(42)}',1000,1000),
+        ('${id(53)}','${id(43)}',1000,null),
+        ('${id(54)}','${id(44)}',999999,123),
+        ('${id(55)}','${id(45)}',0,0);
+    `)
+    const saveAR = (amount, margin = 0, mode = 'exception_review') => JSON.parse(sql(`select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(3)}','receivables','${mode}',${amount},null,'Configure receivables exceptions',${margin});`))
+    const draftAR = (number, { amount = 100, job = 40, type = 'sl_invoice', currency = 'GBP', companyEntity = 3 } = {}) => sql(`
+      insert into public."FIN_Documents"("FINDoc_ID","FINDoc_LegalEntityID","FINDoc_TypeCode","FINDoc_CurrencyCodeSnapshot",
+        "FINDoc_LocalGrossAmount","FINDoc_SourceKindCode","FINDoc_StatusCode","FINDoc_AccountingDate","FINDoc_SourceJobID")
+      values('${id(number)}','${id(companyEntity)}','${type}','${currency}',${amount},'${job === null ? 'manual' : 'job'}','draft','2026-09-25',${job === null ? 'null' : `'${id(job)}'`});`)
+    draftAR(60, { type: 'credit_note', amount: -100 })
+    assert.equal(submitDocument(60).FINDoc_StatusCode, 'awaiting_approval', 'Credit stays in legacy review until AR policy is explicitly saved')
+    assert.match(reject(`select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(3)}','receivables','automatic',1000,null,'Unsafe mode',0);`), /exception review/)
+    assert.match(reject(`select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(3)}','receivables','exception_review',1000,null,'Invalid margin',-1);`), /minimum expected job margin/)
+    assert.match(reject(`select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(3)}','receivables','exception_review',1000,5,'Wrong benchmark',0);`), /expected job margin/)
+    assert.match(reject(`select public.multideck_finance_save_approval_policy('${id(6)}','${id(5)}','${id(3)}','receivables','exception_review',1000,null,'Foreign user',0);`), /No configuration access/)
+    const arPolicy = saveAR(1000)
+    assert.equal(arPolicy.minExpectedMarginPercent, 0)
+    const listed = JSON.parse(sql(`select public.multideck_finance_list_approval_policies('${id(2)}','${id(3)}');`))
+    assert.equal(listed.find(policy => policy.workflow === 'receivables').maxAutoAmount, 1000)
+    const chatPolicy = JSON.parse(sql(`select public.multideck_dexter_domain_finance('${id(2)}','approval policy',25);`)).find(policy => policy.workflow === 'receivables')
+    assert.equal(chatPolicy.minExpectedMarginPercent, 0)
+    assert.equal(chatPolicy.benchmark, 'expected_sales_and_costs')
+    assert.equal(chatPolicy.recordId, arPolicy.policyId)
+    assert.equal(JSON.parse(sql(`select public.multideck_dexter_domain_finance('${id(6)}','approval policy',25);`)).length, 0)
+    draftAR(61)
+    const partialInvoice = submitDocument(61)
+    assert.equal(partialInvoice.FINDoc_StatusCode, 'approved', 'A small partial invoice uses the entire expected job, not invoice minus entire cost')
+    assert.equal(partialInvoice.approvalPolicyDecision.jobs[0].expectedProfit, 200)
+    assert.equal(partialInvoice.approvalPolicyDecision.jobs[0].expectedMarginPercent, 20)
+    draftAR(62, { type: 'credit_note', amount: -200 })
+    assert.equal(submitDocument(62).FINDoc_StatusCode, 'approved', 'Credit notes follow the same rules')
+    draftAR(63, { amount: 1000 })
+    assert.equal(submitDocument(63).FINDoc_StatusCode, 'approved', 'Exactly at threshold is allowed')
+    draftAR(64, { type: 'credit_note', amount: -1000.01 })
+    assert.equal(submitDocument(64).approvalPolicyDecision.reason, 'amount_limit', 'Absolute gross credit amount counts')
+    draftAR(65, { job: 41 })
+    const loss = submitDocument(65)
+    assert.equal(loss.FINDoc_StatusCode, 'awaiting_approval')
+    assert.ok(loss.approvalPolicyDecision.reasons.includes('expected_job_loss'))
+    assert.equal(loss.approvalPolicyDecision.jobs[0].expectedProfit, -100)
+    draftAR(66, { job: 42 })
+    assert.equal(submitDocument(66).FINDoc_StatusCode, 'approved', 'Break-even is not a loss')
+    draftAR(67, { job: 43 })
+    assert.ok(submitDocument(67).approvalPolicyDecision.reasons.includes('expected_costing_incomplete'))
+    draftAR(68, { job: 44 })
+    const foreignJob = submitDocument(68)
+    assert.ok(foreignJob.approvalPolicyDecision.reasons.includes('job_scope_unverified'))
+    assert.equal(foreignJob.approvalPolicyDecision.jobs.length, 0, 'Foreign costing never leaks')
+    draftAR(69, { job: 45 })
+    assert.equal(submitDocument(69).FINDoc_StatusCode, 'approved', 'Zero sales and zero costs do not divide by zero')
+    draftAR(70, { job: 46 })
+    assert.ok(submitDocument(70).approvalPolicyDecision.reasons.includes('expected_costing_incomplete'))
+    draftAR(71, { job: null })
+    assert.equal(submitDocument(71).FINDoc_StatusCode, 'approved', 'Standalone documents have no invented job benchmark')
+    draftAR(72, { currency: 'EUR' })
+    assert.ok(submitDocument(72).approvalPolicyDecision.reasons.includes('foreign_currency_review'))
+    draftAR(73)
+    sql(`insert into public."FIN_DocumentLineJobLinks" values('${id(73)}','${id(41)}');`)
+    assert.ok(submitDocument(73).approvalPolicyDecision.reasons.includes('expected_job_loss'), 'Each linked job is checked, not a net across jobs')
+    draftAR(74, { companyEntity: 7, job: 44 })
+    assert.match(reject(`select public.multideck_finance_submit_document('${id(2)}','${id(1)}','${id(74)}','Submit');`), /not found in this workspace/)
+    const tighter = saveAR(1000, 25)
+    draftAR(75)
+    assert.ok(submitDocument(75).approvalPolicyDecision.reasons.includes('expected_margin_limit'))
+    saveAR(1000, 20)
+    draftAR(76)
+    assert.equal(submitDocument(76).FINDoc_StatusCode, 'approved', 'Margin exactly at limit is allowed')
+    draftAR(77, { type: 'pl_invoice' })
+    assert.equal(submitDocument(77).approvalPolicyDecision.workflow, 'document', 'Payables keep the existing policy')
+    assert.equal(JSON.parse(sql(`select "FINDoc_MetadataJSON"->'approvalPolicyDecision' from public."FIN_Documents" where "FINDoc_ID"='${id(65)}';`)).jobs[0].expectedProfit, -100)
+    assert.equal(sql(`select count(*) from public."Audit_Events" where "AuditEvent_RecordID"='${id(65)}' and "AuditEvent_Action"='approval_exception';`), '1')
+    assert.equal(sql(`select count(*) from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_NewJSON"->>'policyId'='${tighter.policyId}' and ("AIDexterWatchSignal_NewJSON"->>'minExpectedMarginPercent')::numeric=25;`), '1')
+    // Decision watches are deterministic, target-specific, and silent on unchanged evidence.
+    sql(`update public."AI_DexterWatches" set "AIDexterWatch_TargetID"='${id(78)}' where "AIDexterWatch_CompanyID"='${id(2)}';`)
+    draftAR(78, { job: 41, type: 'credit_note', amount: -10 })
+    submitDocument(78)
+    const signalCount = () => sql(`select count(*) from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_SourceID"='${id(78)}';`)
+    assert.equal(signalCount(), '1')
+    sql(`update public."FIN_Documents" set "FINDoc_MetadataJSON"="FINDoc_MetadataJSON" where "FINDoc_ID"='${id(78)}';`)
+    assert.equal(signalCount(), '1')
+    draftAR(79, { job: 41 })
+    submitDocument(79)
+    assert.equal(sql(`select count(*) from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_SourceID"='${id(79)}';`), '0')
+    sql(`update public."AI_DexterWatches" set "AIDexterWatch_StatusCode"='paused',"AIDexterWatch_TargetID"='${id(80)}' where "AIDexterWatch_CompanyID"='${id(2)}';`)
+    draftAR(80, { job: 41 }); submitDocument(80)
+    assert.equal(sql(`select count(*) from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_SourceID"='${id(80)}';`), '0')
+    sql(`update public."AI_DexterWatches" set "AIDexterWatch_StatusCode"='active',"AIDexterWatch_TargetID"='${id(81)}' where "AIDexterWatch_CompanyID"='${id(2)}';`)
+    draftAR(81, { job: 41 }); submitDocument(81)
+    assert.equal(sql(`select count(*) from public."AI_DexterWatchSignals" where "AIDexterWatchSignal_SourceID"='${id(81)}';`), '1')
+    sql(`update public."cmp_Users" set "User_AccessStatus"='inactive' where "User_ID"='${id(1)}';`)
+    draftAR(82)
+    assert.match(reject(`select public.multideck_finance_submit_document('${id(2)}','${id(1)}','${id(82)}','Submit');`), /No configuration access/)
+    assert.match(reject(`set role authenticated; select public.multideck_finance_save_approval_policy('${id(2)}','${id(1)}','${id(3)}','receivables','exception_review',1000,null,'Direct client',0);`), /permission denied/)
+    assert.match(reject(`set role anon; select public._multideck_receivables_expected_jobs('${id(2)}','${id(3)}','${id(61)}',0);`), /permission denied/)
   } finally {
     if (started) run('pg_ctl', ['-D', join(dir, 'data'), '-m', 'immediate', '-w', 'stop'])
     rmSync(dir, { recursive: true, force: true })

@@ -868,6 +868,7 @@ export function LocationFields({
   required,
   invalid,
   className,
+  codeRowContent,
 }: {
   label: string
   mode?: string
@@ -881,6 +882,7 @@ export function LocationFields({
   required?: boolean
   invalid?: boolean
   className?: string
+  codeRowContent?: ReactNode
 }) {
   const { t } = useLanguage()
   const selectedCountry = value.countryName || value.countryCode
@@ -955,9 +957,12 @@ export function LocationFields({
         ) : null}
       </legend>
       <div className="md-location-fields-grid">
-        <CompactCombobox label="Country" value={value.countryName} options={countryOptions} recommendedOptions={recommendedCountries} onValueChange={applyCountryInput} placeholder="Country name or code" disabled={disabled} required={required} invalid={invalid && !value.countryName} width="full" />
+        <CompactCombobox className="[--md-field-label-width:60px]" label="Country" value={value.countryName} options={countryOptions} recommendedOptions={recommendedCountries} onValueChange={applyCountryInput} placeholder="Country name or code" disabled={disabled} required={required} invalid={invalid && !value.countryName} width="full" />
         <CompactCombobox label="Town, city or port" value={value.place} options={placeOptions} recommendedOptions={recommendedPlaces} onValueChange={(input) => onChange(resolveLinkedLocation(options, value, "place", input))} onOptionSelect={applySelectedOption} placeholder="Search town, city or port" disabled={disabled} required={required} invalid={invalid && !value.place} width="full" />
-        <AutoFilledField className="md-location-code" label="UN/LOCODE" value={value.unlocode} emptyLabel="e.g. GBFXT" width="full" valueDirection="ltr" autoPopulated={unlocodeAutoPopulated} disabled={disabled} onChange={(input) => onChange(resolveLinkedLocation(options, value, "unlocode", input))} />
+        <div className={cn("flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2", codeRowContent && "sm:col-span-2")}>
+          <AutoFilledField className={cn("md-location-code w-full", codeRowContent && "sm:w-[13rem] sm:flex-none")} label="UN/LOCODE" value={value.unlocode} emptyLabel="e.g. GBFXT" width="full" valueDirection="ltr" autoPopulated={unlocodeAutoPopulated} disabled={disabled} onChange={(input) => onChange(resolveLinkedLocation(options, value, "unlocode", input))} />
+          {codeRowContent}
+        </div>
       </div>
     </fieldset>
   )

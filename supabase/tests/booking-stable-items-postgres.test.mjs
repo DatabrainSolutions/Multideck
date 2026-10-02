@@ -45,7 +45,13 @@ const safetyEdit = mutateBookingCargo({ cargo: [{ description: 'First edited', g
 function table(name) {
   const start = baseline.indexOf(`CREATE TABLE IF NOT EXISTS "public"."${name}" (`)
   assert.ok(start >= 0)
+  // Replay historical migrations against their earlier table shapes; the
+  // current baseline already contains columns those migrations install.
   return baseline.slice(start, baseline.indexOf('\n);', start) + 3)
+    .replace(/^    "Job_GoodsValue(?:Amount|CurrencyCode)"[^\n]*\n/gm, '')
+    .replace(/^    CONSTRAINT "(?:CK_Job_Header_source_snapshot|Job_Cargo_JobCargo_ChargeableWeightKg_check|Job_goods_value_(?:currency|nonnegative)|JobRoute_(?:cutoffs_finite|vgm_cutoff_sea_only)|booking_dg_(?:source|status))"[^\n]*\n/gm, '')
+    .replace(/^    "(?:AIDexterAction_AlwaysRequiresApproval|Job_SourceSnapshotJSON|Job_CreateIdempotencyKey|JobCargo_(?:ChargeableWeightKg|SourceQuote(?:Version|Line)ID)|JobRoute_(?:Cargo|Documentation|Vgm)CutoffAt|JobRouteMilestone_(?:RecordedMode|CreatedBy|UpdatedBy|UpdatedAt)|JobCargoDG_(?:Source|SourceReference|Status|CreatedBy|UpdatedBy|UpdatedAt))"[^\n]*\n/gm, '')
+    .replace(/,\n\);$/, '\n);')
 }
 
 test('PostgreSQL: stable items, route milestones, approved Dexter cargo/container/route lifecycle, watches and isolation', { skip: !available }, async () => {
@@ -70,10 +76,10 @@ test('PostgreSQL: stable items, route milestones, approved Dexter cargo/containe
       create table public."sys_JobStatuses" ("JS_Code" text, "JS_IsActive" boolean);
       ${table('Job_Header')}
       alter table public."Job_Header"
-        add column "Job_BookingReference" text, add column "Job_CustomerDeadline" date,
-        add column "Job_IncotermsCode" text, add column "Job_IncotermsLocation" text,
-        add column "Job_FreightChargeAmount" numeric, add column "Job_FreightChargeCurrencyCode" text,
-        add column "Job_CollectionAddress" text, add column "Job_DeliveryAddress" text;
+        add column if not exists "Job_BookingReference" text, add column if not exists "Job_CustomerDeadline" date,
+        add column if not exists "Job_IncotermsCode" text, add column if not exists "Job_IncotermsLocation" text,
+        add column if not exists "Job_FreightChargeAmount" numeric, add column if not exists "Job_FreightChargeCurrencyCode" text,
+        add column if not exists "Job_CollectionAddress" text, add column if not exists "Job_DeliveryAddress" text;
       ${table('Job_Cargo')}
       ${table('Job_Containers')}
       alter table public."Job_Cargo" add primary key ("JobCargo_ID");

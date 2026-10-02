@@ -1,3 +1,7 @@
+import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
+import type { DexterEmailDraft } from "@/lib/dexter-api"
+import { quoteBillingContactName } from "@/lib/quote-billing-contact"
+import { mergeVisibleQuoteChargeRows } from "@/lib/quote-supplier-pricing"
 import { LocationAutocomplete } from "@/components/multideck/location-autocomplete"
 import { EmailSignatureControl } from "@/components/multideck/email-signature-control"
 import type { SignatureSelection } from "@/lib/email-signatures"
@@ -104,20 +108,17 @@ import {
   CompactSectionShell,
   LocationFields,
   NumberUnitField,
-  RecurrenceBuilder,
   type CompactComboboxOption,
 } from "@/components/multideck/quote-details/quote-detail-fields"
 import {
   EMPTY_CARGO_CHARACTERISTICS,
   EMPTY_HAZARDOUS_DETAILS,
-  EMPTY_RECURRENCE,
   getIncotermDefinition,
   INCOTERMS_2020,
   type CargoCharacteristics,
   type HazardousDetails,
   type LocationOption,
   type LocationValue,
-  type RecurrenceValue,
 } from "@/components/multideck/quote-details/quote-detail-model"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { organisationIsCustomer } from "@/lib/organisation-roles"
@@ -321,19 +322,11 @@ type QuoteCarrierOptionDraft = {
   reference: string
   serviceLevel: string
   rateSource: string
+  transitDays: string
+  serviceDetails: string
+  via: string
+  frequency: string
   status: "draft" | "prepared" | "received"
-}
-
-const carrierServiceLevels = ["Economy", "Standard", "Express", "Direct", "Via hub"] as const
-
-function carrierServiceTone(serviceLevel: string): StatusTone {
-  return ({
-    Economy: "blue",
-    Standard: "teal",
-    Express: "amber",
-    Direct: "green",
-    "Via hub": "purple",
-  } as Record<string, StatusTone>)[serviceLevel] ?? "neutral"
 }
 
 type QuoteSupplierOptionDraft = {
@@ -342,6 +335,7 @@ type QuoteSupplierOptionDraft = {
   supplierName: string
   supplierOffice: string
   contact: string
+  emailRequestStatus?: "sent"
   carriers: QuoteCarrierOptionDraft[]
 }
 
@@ -354,6 +348,10 @@ function blankCarrierOption(): QuoteCarrierOptionDraft {
     reference: "",
     serviceLevel: "Standard",
     rateSource: "Manual",
+    transitDays: "",
+    serviceDetails: "",
+    via: "",
+    frequency: "",
     status: "draft",
   }
 }
@@ -447,6 +445,9 @@ type QuoteRecord = {
   endDate?: string
   estimatedDeparture?: string
   estimatedArrival?: string
+  directServiceRequested?: string
+  readyFromDate?: string
+  requiredArrivalDate?: string
   deadline?: string
   validity: string
   direction?: string
@@ -649,7 +650,7 @@ function supplierOptionsFromQuote(quote: QuoteRecord): QuoteSupplierOptionDraft[
       if (Array.isArray(parsed) && parsed.length) {
         return parsed.map((supplier) => ({
           ...supplier,
-          carriers: Array.isArray(supplier.carriers) && supplier.carriers.length ? supplier.carriers : [blankCarrierOption()],
+          carriers: Array.isArray(supplier.carriers) && supplier.carriers.length ? supplier.carriers.map((carrier) => ({ ...carrier, transitDays: carrier.transitDays ?? "", serviceDetails: carrier.serviceDetails ?? "", via: carrier.via ?? "", frequency: carrier.frequency ?? "" })) : [blankCarrierOption()],
         }))
       }
     } catch {
@@ -672,12 +673,34 @@ function supplierOptionsFromQuote(quote: QuoteRecord): QuoteSupplierOptionDraft[
         reference: quote.carrierReference ?? "",
         serviceLevel: quote.serviceLevel ?? "Standard",
         rateSource: quote.rateSource ?? "Manual",
+        transitDays: "",
+        serviceDetails: "",
+        via: "",
+        frequency: "",
         status: "draft",
       }],
     }]
   }
 
   return [blankSupplierOption()]
+}
+
+function supplierRateRequestDraft(quote: QuoteRecord, supplier: QuoteSupplierOptionDraft): DexterEmailDraft {
+  const cargo = quote.container || (quote.cargoLines ?? []).map((line) => [
+    line.packageQuantity, line.packageType,
+    line.length && line.width && line.height ? `${line.length} × ${line.width} × ${line.height} ${line.lengthUnit}` : "",
+    line.grossWeightKg ? `${line.grossWeightKg} kg` : "",
+  ].filter(Boolean).join(" ")).join("; ") || "Please confirm cargo details"
+  return { id: crypto.randomUUID(), requestedAction: "send", mode: "new", mailboxId: null,
+    sourceMessageId: null, threadId: null, to: [{ address: supplier.contact, displayName: supplier.supplierName || null }],
+    cc: [], bcc: [], subject: `Rate request · ${quote.id}`,
+    bodyText: [`Please provide your rates and service options for ${quote.id}.`,
+      `Route: ${quote.origin} to ${quote.destination}`, `Mode: ${quote.mode}`,
+      quote.directServiceRequested === "Yes" ? "Direct service requested: Yes" : "",
+      quote.readyFromDate ? `Ready from: ${quote.readyFromDate}` : "",
+      quote.requiredArrivalDate ? `Required arrival: ${quote.requiredArrivalDate}` : "", `Cargo: ${cargo}`,
+      "Please include transit days, routing, frequency, validity and any exclusions.",
+    ].filter(Boolean).join("\n"), trackOpens: false, delivery: { status: "draft" } }
 }
 
 function cargoCharacteristicsFromQuote(quote: QuoteRecord): CargoCharacteristics {
@@ -951,9 +974,9 @@ const newQuoteDraft: QuoteRecord = {
   grossWeightKg: "",
   volumeCbm: "",
   chargeableWeightKg: "",
-  collectionRequired: "",
-  deliveryRequired: "",
-  customsIncluded: "",
+  collectionRequired: "No",
+  deliveryRequired: "No",
+  customsIncluded: "No",
   originCustomsAgentId: "",
   originCustomsAgentName: "",
   destinationCustomsAgentId: "",
@@ -1888,6 +1911,11 @@ function UnifiedQuoteChargesPanel({
   onRowsChange: (charges: QuoteCharge[]) => void
   lookups: QuoteWorkflowSources | null
 }) {
+  const { t } = useLanguage()
+  const [supplierTabId, setSupplierTabId] = useState("all")
+  const supplierTabs = useMemo(() => supplierOptionsFromQuote(quote).filter((supplier) => supplier.supplierName.trim()), [quote.supplierOptionsJson, quote.supplierId, quote.supplier, quote.carrierId, quote.carrier])
+  const activeSupplier = supplierTabs.find((supplier) => supplier.id === supplierTabId)
+  const activeSupplierId = activeSupplier ? uuidOrNull(activeSupplier.supplierId) : null
   const [financeCurrencies, setFinanceCurrencies] = useState<QuoteChargeCurrency[] | null>(null)
   const [financeRates, setFinanceRates] = useState<ApiFinanceExchangeRate[] | null>(null)
   const [liveChargeCatalogue, setLiveChargeCatalogue] = useState<QuoteChargeCatalogue | null>(null)
@@ -2039,9 +2067,17 @@ function UnifiedQuoteChargesPanel({
     }
   }), [charges, quote.customer, quote.customerId])
 
+  const visibleRows = activeSupplier ? rows.filter((row) => activeSupplierId && row.supplierId === activeSupplierId) : rows
+
   function updateCharges(nextRows: UnifiedQuoteChargeRow[]) {
-    onRowsChange(nextRows.map((row) => {
+    // Edits in a supplier tab must preserve charges belonging to other suppliers.
+    const visibleIds = new Set(visibleRows.map((row) => row.id))
+    const mergedRows = activeSupplier
+      ? mergeVisibleQuoteChargeRows(rows, visibleRows, nextRows)
+      : nextRows
+    onRowsChange(mergedRows.map((row) => {
       const current = charges[rows.findIndex((original) => original.id === row.id)]
+      if (activeSupplier && !visibleIds.has(row.id) && current) return current
       const supplier = parties.find((party) => party.id === row.supplierId)
       const costRoe = row.costRoe && row.costRoe > 0 ? row.costRoe : 0
       const sellRoe = row.sellRoe && row.sellRoe > 0 ? row.sellRoe : 0
@@ -2073,18 +2109,32 @@ function UnifiedQuoteChargesPanel({
   }
 
   return (
-    <>{chargeCatalogueError ? <p role="alert" className="mb-3 text-[13px] text-[var(--md-red)]">{chargeCatalogueError}</p> : null}<UnifiedQuoteChargesWorkspace
-      rows={rows}
+    <div className="grid min-w-0 gap-3">
+      <Tabs value={activeSupplier?.id ?? "all"} onValueChange={setSupplierTabId} className="min-w-0">
+        {supplierTabs.length ? <div className="max-w-full overflow-x-auto">
+          <TabsList aria-label={t("Supplier pricing")} className="w-max">
+            <TabsTrigger value="all">{t("All pricing")}</TabsTrigger>
+            {supplierTabs.map((supplier) => <TabsTrigger key={supplier.id} value={supplier.id}><span data-i18n-skip>{supplier.supplierName}</span></TabsTrigger>)}
+          </TabsList>
+        </div> : null}
+        <TabsContent value={activeSupplier?.id ?? "all"} className="grid min-w-0 gap-3">
+      {activeSupplier ? <p className="text-[12px] text-[var(--md-text)]">{activeSupplierId ? t("Showing charge lines linked to this supplier.") : t("Link this supplier to an organisation in Details before adding pricing. Existing unlinked charges remain in All pricing.")}</p> : null}
+      {chargeCatalogueError ? <p role="alert" className="mb-3 text-[13px] text-[var(--md-red)]">{chargeCatalogueError}</p> : null}<UnifiedQuoteChargesWorkspace
+      rows={visibleRows}
       onRowsChange={updateCharges}
-      createRow={() => newQuoteChargeRow(quote)}
+      createRow={() => ({ ...newQuoteChargeRow(quote), ...(activeSupplier ? { supplierId: activeSupplierId } : {}) })}
       chargeChoices={chargeChoices}
       parties={parties}
       currencies={currencies}
       exchangeRates={exchangeRates}
       baseCurrency={quote.currency}
-      readOnly={!editable}
+      readOnly={!editable || Boolean(activeSupplier && !activeSupplierId)}
       storageKey={`quote-${quote.id}-charges`}
-    /></>
+      key={activeSupplier?.id ?? "all"}
+    />
+        </TabsContent>
+      </Tabs>
+    </div>
   )
 }
 
@@ -3316,120 +3366,6 @@ function QuoteCompactSelect({
   )
 }
 
-function CarrierServiceLevelPill({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: string
-  disabled?: boolean
-  onChange: (value: string) => void
-}) {
-  const { t } = useLanguage()
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label={`${t("Service level")}: ${t(value || "Standard")}`}
-          className="rounded-[var(--md-radius-md)] outline-none transition-[opacity,transform] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-55 motion-reduce:transform-none"
-        >
-          <StatusPill kind="attribute" tone={carrierServiceTone(value)} indicator={false} className="pointer-events-none h-7 min-w-[94px] justify-center gap-1.5 px-2 text-[11px]">
-            {t(value || "Standard")}
-            <ChevronDown className="size-3" strokeWidth={1.5} aria-hidden="true" />
-          </StatusPill>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={5} className="w-44 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]">
-        <div className="grid gap-0.5">
-          {carrierServiceLevels.map((serviceLevel) => {
-            const selected = serviceLevel === value
-            return (
-              <button
-                key={serviceLevel}
-                type="button"
-                aria-pressed={selected}
-                className={cn(
-                  "flex min-h-8 items-center justify-between gap-2 rounded-[var(--md-radius-md)] px-2 text-start text-[11.5px] text-[var(--md-text)] outline-none transition-colors hover:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]",
-                  selected && "bg-[var(--md-accent-a07)] font-medium text-[var(--md-ink)]",
-                )}
-                onClick={() => onChange(serviceLevel)}
-              >
-                <span>{t(serviceLevel)}</span>
-                {selected ? <Check className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.6} aria-hidden="true" /> : null}
-              </button>
-            )
-          })}
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-function QuoteCarrierRemoveAction({
-  confirming,
-  disabled,
-  onCancel,
-  onRemove,
-}: {
-  confirming: boolean
-  disabled: boolean
-  onCancel: () => void
-  onRemove: () => void
-}) {
-  const { t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
-
-  return (
-    <span className="relative block h-7 w-[62px]" onClick={(event) => event.stopPropagation()}>
-      <motion.button
-        type="button"
-        initial={false}
-        animate={{ width: confirming ? 62 : 28 }}
-        className={cn(
-          "group/delete absolute inset-y-0 end-0 grid h-7 origin-end place-items-center overflow-hidden rounded-full text-[var(--md-subtle)] outline-none",
-          confirming
-            ? "bg-[rgba(209,78,78,0.12)] px-2 text-[11px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.18)]"
-            : "hover:text-[var(--md-red)]",
-        )}
-        aria-label={t(confirming ? "Confirm remove" : "Remove carrier")}
-        title={t(confirming ? "Confirm remove" : "Remove carrier")}
-        disabled={disabled}
-        onClick={(event) => { event.stopPropagation(); onRemove() }}
-        onBlur={() => { if (confirming) onCancel() }}
-        onKeyDown={(event) => {
-          event.stopPropagation()
-          if (event.key !== "Escape" || !confirming) return
-          event.preventDefault()
-          onCancel()
-        }}
-        transition={reduceMotion(Boolean(shouldReduceMotion), confirming ? mdMotion.fast : mdMotion.micro)}
-      >
-        <span
-          className={cn(
-            "absolute grid size-6 place-items-center rounded-full transition-[background-color,box-shadow,color,opacity,transform] duration-150 group-hover/delete:bg-[rgba(209,78,78,0.10)] group-hover/delete:shadow-[var(--md-shadow-line)] group-focus-visible/delete:ring-[3px] group-focus-visible/delete:ring-[var(--md-accent-a20)] group-active/delete:scale-[0.94] motion-reduce:transition-none",
-            confirming ? "scale-75 opacity-0" : "scale-100 opacity-100",
-          )}
-          aria-hidden="true"
-        >
-          <X className="size-3" strokeWidth={1.4} />
-        </span>
-        <span
-          className={cn(
-            "whitespace-nowrap transition-[opacity,transform] duration-150 motion-reduce:transition-none",
-            confirming ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
-          )}
-          aria-hidden={!confirming}
-        >
-          {t("Confirm")}
-        </span>
-      </motion.button>
-    </span>
-  )
-}
-
 function QuoteDetailsPanelV2({
   quote,
   editable,
@@ -3451,7 +3387,9 @@ function QuoteDetailsPanelV2({
 }) {
   const { direction, language, t } = useLanguage()
   const [rateRequestOpen, setRateRequestOpen] = useState(false)
-  const [confirmingCarrierId, setConfirmingCarrierId] = useState<string | null>(null)
+  const [onlineRequestSupplier, setOnlineRequestSupplier] = useState<QuoteSupplierOptionDraft | null>(null)
+  const [supplierEmailDraft, setSupplierEmailDraft] = useState<{ supplierId: string; draft: DexterEmailDraft } | null>(null)
+  const [goodsDetailsOpen, setGoodsDetailsOpen] = useState(false)
   const [pendingOverallMode, setPendingOverallMode] = useState<{ quoteId: string; from: string; to: string; shipmentType: string | undefined; routing: string } | null>(null)
   const overallModeTriggerRef = useRef<HTMLDivElement>(null)
   const overallModeCancelRef = useRef<HTMLButtonElement>(null)
@@ -3576,14 +3514,6 @@ function QuoteDetailsPanelV2({
     }))
     return [...officialLocationsByUnlocode.values(), ...unlinkedOptions]
   }, [officialLocationsByUnlocode, organisations, language])
-  const routeLocationOptions = useMemo<CompactComboboxOption[]>(() => locationOptions.map((option) => ({
-    id: option.id,
-    value: option.unlocode || option.place,
-    label: [option.unlocode, option.place].filter(Boolean).join(" · "),
-    description: option.countryName,
-    keywords: [option.countryCode, option.countryName, option.place, option.unlocode, ...(option.aliases ?? [])],
-    iconText: quoteCountryFlag(option.countryCode),
-  })), [locationOptions])
   // Changing a party only changes this small overlay, not the 116k-row directory.
   const recommendedLocationIds = useMemo(() => {
     const ids = new Set<string>()
@@ -3615,17 +3545,6 @@ function QuoteDetailsPanelV2({
   )
   const fieldPolicy = freightFieldPolicy({ mode: quote.mode, shipmentType: quote.shipmentType, direction: quote.direction, stage: editable ? "draft" : "submitted", legModes: routingLegs.map((leg) => leg.mode) })
   const isSeaContainerised = fieldPolicy.containerRequests
-  const recurrence: RecurrenceValue = {
-    ...EMPTY_RECURRENCE,
-    mode: (["once", "interval", "times-per-month", "custom"] as const).includes(quote.frequency as RecurrenceValue["mode"])
-      ? quote.frequency as RecurrenceValue["mode"]
-      : quote.frequency?.toLocaleLowerCase().includes("ad hoc") || !quote.frequency ? "once" : "custom",
-    interval: quote.frequencyInterval || "1",
-    unit: quote.frequencyUnit?.toLocaleLowerCase().startsWith("day") ? "day" : quote.frequencyUnit?.toLocaleLowerCase().startsWith("month") ? "month" : "week",
-    timesPerMonth: quote.frequencyTimesPerMonth || "1",
-    totalOccurrences: quote.frequencyCount || "",
-    notes: quote.frequencyNotes || "",
-  }
   const characteristics = cargoCharacteristicsFromQuote(quote)
   const hazardousDetails: HazardousDetails = {
     ...EMPTY_HAZARDOUS_DETAILS,
@@ -3702,92 +3621,6 @@ function QuoteDetailsPanelV2({
         shipmentType: freightShipmentAllowed(pendingOverallMode.to, quote.shipmentType ?? "") ? quote.shipmentType : "" })
     }
     setPendingOverallMode(null)
-  }
-
-  function baseRoutingLeg(): QuoteRoutingLeg {
-    return {
-      id: "route-1",
-      mode: quote.mode,
-      origin: originLocation,
-      destination: destinationLocation,
-      estimatedDeparture: quote.estimatedDeparture ?? "",
-      estimatedArrival: quote.estimatedArrival ?? "",
-      carrierId: quote.carrierId ?? "",
-      carrierName: quote.carrier ?? "",
-      serviceLevel: quote.serviceLevel ?? "",
-    }
-  }
-
-  function addRoutingLeg() {
-    if (!editable || routingLegs.length >= 30) return
-    const current = routingLegs.length > 0 ? routingLegs : [baseRoutingLeg()]
-    const previous = current.at(-1) ?? baseRoutingLeg()
-    const next: QuoteRoutingLeg = {
-      id: `route-${crypto.randomUUID()}`,
-      mode: previous.mode || quote.mode,
-      origin: previous.destination,
-      destination: { countryCode: "", countryName: "", place: "", unlocode: "" },
-      estimatedDeparture: previous.estimatedArrival,
-      estimatedArrival: "",
-      carrierId: "",
-      carrierName: "",
-      serviceLevel: previous.serviceLevel || quote.serviceLevel || "Standard",
-    }
-    persistRoutingLegs([...current, next])
-  }
-
-  function updateRoutingLeg(index: number, patch: Partial<QuoteRoutingLeg>) {
-    if (!editable || !Number.isInteger(index) || index < 0 || index >= routingLegs.length) return
-    const nextLegs = routingLegs.map((leg, legIndex) => legIndex === index ? { ...leg, ...patch } : leg)
-    if (patch.destination && nextLegs[index + 1]) nextLegs[index + 1] = { ...nextLegs[index + 1], origin: patch.destination }
-    persistRoutingLegs(nextLegs)
-  }
-
-  function persistRoutingLegs(nextLegs: QuoteRoutingLeg[]) {
-    if (!editable || nextLegs.length === 0 || nextLegs.length > 30) return
-    const first = nextLegs[0]
-    const last = nextLegs.at(-1) ?? first
-    onQuotePatch({
-      routingLegsJson: quoteRoutingLegsValue(nextLegs),
-      origin: first.origin.unlocode || first.origin.place,
-      originCountry: first.origin.countryName || first.origin.countryCode,
-      originTown: first.origin.place,
-      originUnlocode: first.origin.unlocode,
-      destination: last.destination.unlocode || last.destination.place,
-      destinationCountry: last.destination.countryName || last.destination.countryCode,
-      destinationTown: last.destination.place,
-      destinationUnlocode: last.destination.unlocode,
-      estimatedDeparture: first.estimatedDeparture,
-      estimatedArrival: last.estimatedArrival,
-      transitDays: quoteTransitDays(first.estimatedDeparture, last.estimatedArrival),
-      transitUnit: "Days",
-    })
-  }
-
-  function updateRoutingLocation(index: number, field: "origin" | "destination", value: string, option?: CompactComboboxOption) {
-    const selected = option?.id ? locationOptions.find((location) => location.id === option.id) : undefined
-    const nextLocation: LocationValue = selected
-      ? { countryCode: selected.countryCode, countryName: selected.countryName, place: selected.place, unlocode: selected.unlocode }
-      : /^[A-Za-z]{2}[A-Za-z0-9]{3}$/.test(value.trim())
-        ? { countryCode: value.trim().slice(0, 2).toLocaleUpperCase(), countryName: "", place: "", unlocode: value.trim().toLocaleUpperCase() }
-        : { countryCode: "", countryName: "", place: value, unlocode: "" }
-    updateRoutingLeg(index, { [field]: nextLocation })
-  }
-
-  function removeLastRoutingLeg() {
-    if (!editable || routingLegs.length <= 1) return
-    persistRoutingLegs(routingLegs.slice(0, -1))
-  }
-
-  function updateRecurrence(value: RecurrenceValue) {
-    onQuotePatch({
-      frequency: value.mode,
-      frequencyInterval: value.interval,
-      frequencyUnit: value.unit,
-      frequencyTimesPerMonth: value.timesPerMonth,
-      frequencyCount: value.totalOccurrences,
-      frequencyNotes: value.notes,
-    })
   }
 
   function updateHazardousDetails(value: HazardousDetails) {
@@ -3989,24 +3822,6 @@ function QuoteDetailsPanelV2({
     persistSupplierOptions(supplierOptions.map((supplier) => supplier.id === supplierId ? { ...supplier, ...patch } : supplier))
   }
 
-  function patchCarrier(supplierId: string, carrierId: string, patch: Partial<QuoteCarrierOptionDraft>) {
-    persistSupplierOptions(supplierOptions.map((supplier) => supplier.id === supplierId
-      ? { ...supplier, carriers: supplier.carriers.map((carrier) => carrier.id === carrierId ? { ...carrier, ...patch } : carrier) }
-      : supplier))
-  }
-
-  function requestRemoveCarrier(supplierId: string, carrierId: string) {
-    const supplier = supplierOptions.find((item) => item.id === supplierId)
-    if (!editable || !supplier || supplier.carriers.length === 1) return
-    const confirmationKey = `${supplierId}:${carrierId}`
-    if (confirmingCarrierId !== confirmationKey) {
-      setConfirmingCarrierId(confirmationKey)
-      return
-    }
-    setConfirmingCarrierId(null)
-    patchSupplier(supplierId, { carriers: supplier.carriers.filter((item) => item.id !== carrierId) })
-  }
-
   function roleCard(role: "shipper" | "consignee" | "agent", headerAction?: ReactNode) {
     const title = role === "shipper" ? "Shipper" : role === "consignee" ? "Consignee" : "Overseas Agent"
     const roleSearchLabel = role === "agent" ? "overseas agents" : `${role}s`
@@ -4077,7 +3892,6 @@ function QuoteDetailsPanelV2({
   const originIsUs = [originLocation.countryCode, originLocation.countryName, originLocation.unlocode.slice(0, 2)]
     .some((value) => ["US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"].includes(value.trim().toLocaleUpperCase()))
   const incotermDefinition = getIncotermDefinition(quote.incoterm)
-  const incotermNotSupplied = quote.incoterm.trim().toUpperCase() === incotermNotSuppliedValue
   const incotermAddressFallback = incotermDefinition?.code === "EXW"
     ? quote.collectionAddress
     : (["DAP", "DPU", "DDP"].includes(incotermDefinition?.code ?? "") ? quote.deliveryAddress : "")
@@ -4116,9 +3930,7 @@ function QuoteDetailsPanelV2({
             {fieldPolicy.hblMode ? <QuoteCompactSelect label="HBL mode" value={quote.hblMode ?? ""} options={["CY/CFS", "CY/CY", "CFS/CFS", "Door/Door"]} width="full" disabled={!editable} onChange={(value) => onQuoteChange("hblMode", value)} /> : null}
             <QuoteCompactSelect label={calculatedDirection ? "Direction (auto)" : "Direction"} value={calculatedDirection ?? quote.direction ?? ""} options={["Export", "Import", "Domestic", "Cross trade"]} width="full" disabled={!editable || Boolean(calculatedDirection)} onChange={(value) => onQuoteChange("direction", value)} />
           </div>
-          <div className="grid min-w-0 gap-2 @min-[80rem]/quote-details:contents @min-[28rem]/quote-details:grid-cols-2 @min-[40rem]/quote-details:grid-cols-3 @min-[65rem]/quote-details:grid-cols-6">
-            <QuoteCompactSelect label="Department" value={quote.department ?? ""} options={lookups?.departments.map((item) => item.name) ?? []} width="full" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.departments.find((department) => department.name === value); onQuoteChange("department", value); onQuoteChange("departmentId", item?.id ?? "") }} />
-            <QuoteCompactSelect label="Branch" value={quote.branch ?? ""} options={lookups?.offices.map((item) => ({ value: item.code || item.name, label: item.code || item.name })) ?? []} width="full" disabled={!editable} dataOptions onChange={(value) => { const item = lookups?.offices.find((office) => (office.code || office.name) === value); onQuoteChange("branch", value); onQuoteChange("officeId", item?.id ?? "") }} />
+          <div className="grid min-w-0 gap-2 @min-[80rem]/quote-details:contents @min-[28rem]/quote-details:grid-cols-2 @min-[40rem]/quote-details:grid-cols-3 @min-[65rem]/quote-details:grid-cols-4">
             <QuoteCompactSelect label="Priority" value={quote.priority ?? ""} options={["Low", "Standard", "High", "Tender"]} width="full" disabled={!editable} onChange={(value) => onQuoteChange("priority", value)} />
             <QuoteCompactDatePicker label="Valid from" value={quote.startDate ?? ""} width="full" disabled={!editable} onChange={(value) => onQuoteChange("startDate", value)} />
             <QuoteCompactDatePicker label="Valid to" value={quote.endDate ?? ""} width="full" minDate={quote.startDate || undefined} disabled={!editable} onChange={(value) => onQuoteChange("endDate", value)} />
@@ -4135,7 +3947,7 @@ function QuoteDetailsPanelV2({
             <QuoteCompactInput label="Customer PO" value={quote.customerPO ?? ""} width="full" className="md-party-short" disabled={!editable} onChange={(value) => onQuoteChange("customerPO", value)} />
             <QuoteCompactInput label="Customer ref" value={quote.localRef ?? ""} width="full" className="md-party-short" disabled={!editable} onChange={(value) => onQuoteChange("localRef", value)} />
             <CompactCombobox placeSearch label="Billing address" value={quote.customerAddress ?? ""} width="full" className="col-span-12" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerAddress, customerOrganisation?.addresses?.[0]?.address)} autoPopulationDescription={customerAutoPopulationDescription} options={customerAddresses.map((item) => ({ id: item.id, value: item.address, label: item.label || item.address, description: item.address }))} onOptionSelect={(option) => option.id && selectAddress("customer", option.id)} onValueChange={(value) => onQuotePatch({ customerAddress: value, payerAddress: value })} />
-            <CompactCombobox label="Billing contact" value={quote.customerContact ?? ""} width="full" className="md-party-contact" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => onQuotePatch({ customerContact: value, payerContact: value, ...(value !== quote.customerContact ? { contactId: "" } : {}) })} />
+            <CompactCombobox label="Billing contact" value={editable ? quote.customerContact ?? "" : quoteBillingContactName(quote.customerContact)} invalid={editable && Boolean(quote.customerContact?.includes("@"))} placeholder={editable ? "Full name" : "Name not recorded in this version"} width="full" className="md-party-contact" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerContact, customerSourceContact?.name)} autoPopulationDescription={customerAutoPopulationDescription} options={customerOperationalContacts.map((item) => ({ id: item.id, value: item.name, label: item.name, description: item.role || item.email || "" }))} onOptionSelect={(option) => option.id && selectContact("customer", option.id)} onValueChange={(value) => onQuotePatch({ customerContact: value, payerContact: value, ...(value !== quote.customerContact ? { contactId: "" } : {}) })} />
             <QuoteCompactInput label="Billing email" value={quote.customerEmail ?? ""} type="email" width="full" className="md-party-email" disabled={!editable} autoPopulated={matchesAutoPopulation(quote.customerEmail, customerSourceContact?.email)} autoPopulationDescription={customerAutoPopulationDescription} onChange={(value) => onQuotePatch({ customerEmail: value, payerEmail: value })} />
           </div>
         </CompactSectionShell> : roleCard("agent", leadSourceToggle)}
@@ -4143,22 +3955,116 @@ function QuoteDetailsPanelV2({
         {roleCard("consignee")}
       </div>
 
+      <div className="grid min-w-0 items-stretch gap-2 @min-[40rem]/quote-details:grid-cols-2">
+        <CompactSectionShell title="Includes">
+          <div className="grid min-w-0 gap-2 @min-[40rem]/quote-details:grid-cols-3" role="group" aria-label={t("Quoted operational scope")}>
+              <label className="flex min-h-9 cursor-pointer items-center gap-2 text-[11px] text-[var(--md-ink)]">
+                <Checkbox checked={quote.collectionRequired === "Yes"} disabled={!editable} onCheckedChange={(checked) => onQuoteChange("collectionRequired", checked === true ? "Yes" : "No")} />
+                <span>{t("Collection")}</span>
+              </label>
+              <label className="flex min-h-9 cursor-pointer items-center gap-2 text-[11px] text-[var(--md-ink)]">
+                <Checkbox checked={quote.deliveryRequired === "Yes"} disabled={!editable} onCheckedChange={(checked) => onQuoteChange("deliveryRequired", checked === true ? "Yes" : "No")} />
+                <span>{t("Delivery")}</span>
+              </label>
+              <label className="flex min-h-9 cursor-pointer items-center gap-2 text-[11px] text-[var(--md-ink)]">
+                <Checkbox checked={quote.customsIncluded === "Yes"} disabled={!editable} onCheckedChange={(checked) => onQuoteChange("customsIncluded", checked === true ? "Yes" : "No")} />
+                <span>{t("Customs clearance")}</span>
+              </label>
+          </div>
+        </CompactSectionShell>
+        <CompactSectionShell title="IncoTerms">
+          <div className="grid min-w-0 gap-2 @min-[40rem]/quote-details:grid-cols-2">
+              <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
+              <QuoteCompactInput label={incotermNamedPlaceLabel} value={quote.incotermPlace ?? ""} width="full" required={Boolean(incotermDefinition)} invalid={requireCoreFields && validationAttempted && incotermNamedPlaceMissing} disabled={!editable} onChange={(value) => onQuoteChange("incotermPlace", value)} />
+          </div>
+        </CompactSectionShell>
+      </div>
+      <div className="grid min-w-0 items-stretch gap-2 @min-[40rem]/quote-details:grid-cols-2">
+        <CompactSectionShell title="Origin from">
+          <div className="grid min-w-0 gap-3">
+            <LocationFields mode={quote.mode} label="Origin location" value={originLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} codeRowContent={<>
+            <QuoteCompactDatePicker label="Ready from date" width="short" value={quote.readyFromDate ?? ""} disabled={!editable} onChange={(value) => onQuoteChange("readyFromDate", value)} />
+            <label className="flex min-h-8 cursor-pointer items-center gap-2 text-[11px] text-[var(--md-ink)]">
+              <Checkbox checked={quote.directServiceRequested === "Yes"} disabled={!editable} onCheckedChange={(checked) => onQuoteChange("directServiceRequested", checked === true ? "Yes" : "No")} />
+              <span>{t("Direct Service Requested")}</span>
+            </label>
+            </>} />
+
+          </div>
+        </CompactSectionShell>
+        <CompactSectionShell title="Destination to">
+          <div className="grid min-w-0 gap-3">
+            <LocationFields mode={quote.mode} label="Destination location" value={destinationLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} codeRowContent={
+            <QuoteCompactDatePicker label="Required arrival date" width="short" value={quote.requiredArrivalDate ?? ""} minDate={quote.readyFromDate || undefined} disabled={!editable} onChange={(value) => onQuoteChange("requiredArrivalDate", value)} />
+            } />
+
+          </div>
+        </CompactSectionShell>
+      </div>
       <CompactSectionShell
-        title="Route & service"
-        meta={routingLegs.length > 0 ? `${routingLegs.length} planned ${routingLegs.length === 1 ? "leg" : "legs"}` : undefined}
-        action={(
-          <Button type="button" variant="ghost" size="sm" disabled={!editable || routingLegs.length >= 30} onClick={addRoutingLeg} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]">
-            <Plus className="size-3" aria-hidden="true" />{t("Add routing leg")}
-          </Button>
-        )}
+        title="Supplier options"
+        action={<div className="flex gap-1"><Button type="button" variant="ghost" size="sm" disabled={!editable} onClick={() => persistSupplierOptions([...supplierOptions, blankSupplierOption()])} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Plus className="size-3" />{t("Add supplier")}</Button><Button type="button" size="sm" disabled={!editable || !supplierOptions.some((supplier) => supplier.supplierName.trim())} onClick={() => setRateRequestOpen(true)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Send className="size-3" />{t("Prepare rate requests")}</Button></div>}
       >
-        <div className="grid gap-2">
-          {isSeaContainerised ? (
-            <div className="grid gap-1.5" role="group" aria-label={t("Container requests")}>
-              <div className="md-quote-terms-grid">
-                <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
-                <QuoteCompactInput label={incotermNamedPlaceLabel} value={quote.incotermPlace ?? ""} width="full" required={Boolean(incotermDefinition)} invalid={requireCoreFields && validationAttempted && incotermNamedPlaceMissing} disabled={!editable} onChange={(value) => onQuoteChange("incotermPlace", value)} />
-              </div>
+        <DataTable<QuoteSupplierOptionDraft>
+          ariaLabel="Supplier options"
+          rows={supplierOptions}
+          getRowKey={(supplier) => supplier.id}
+          rowAriaLabel={(supplier) => supplier.supplierName || t("Supplier not selected")}
+          columns={[
+            {
+              id: "supplier", label: "Supplier", kind: "custom", width: 340, canHide: false, canPin: false, resizable: false,
+              cellClassName: "px-2 py-1.5",
+              cell: (supplier) => {
+                const selectedSupplier = organisationsById.get(supplier.supplierId)
+                const supplierDirectory = organisationDirectories.supplier.options
+                const supplierIndex = supplierOptions.indexOf(supplier)
+                return <CompactCombobox label={`${t("Supplier")} ${supplierIndex + 1}`} value={supplier.supplierName} options={supplierDirectory} recommendedOptions={relatedOptions("supplier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested suppliers" allLabel="All organisations" onValueChange={(value) => patchSupplier(supplier.id, { supplierName: value, supplierId: selectedSupplier?.name === value ? supplier.supplierId : "" })} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) patchSupplier(supplier.id, { supplierId: item.id, supplierName: item.name, supplierOffice: item.addresses?.[0]?.label ?? "", contact: item.contacts?.[0]?.email ?? item.contacts?.[0]?.name ?? "" }) }} placeholder="Search suppliers or type manually" disabled={!editable} width="full" className="[&>div:first-child]:sr-only" />
+              },
+            },
+            {
+              id: "office", label: "Supplier office", kind: "custom", width: 220, canHide: false, canPin: false, resizable: false,
+              cellClassName: "px-2 py-1.5",
+              cell: (supplier) => {
+                const selectedSupplier = organisationsById.get(supplier.supplierId)
+                return <CompactCombobox label="Supplier office" value={supplier.supplierOffice} options={(selectedSupplier?.addresses ?? []).map((address) => ({ id: address.id, value: address.label, label: address.label, description: address.address }))} onValueChange={(value) => patchSupplier(supplier.id, { supplierOffice: value })} placeholder="Select or type office" disabled={!editable} width="full" className="[&>div:first-child]:sr-only" autoPopulated={matchesAutoPopulation(supplier.supplierOffice, selectedSupplier?.addresses?.[0]?.label)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
+              },
+            },
+            {
+              id: "contact", label: "Contact", kind: "custom", width: 260, canHide: false, canPin: false, resizable: false,
+              cellClassName: "px-2 py-1.5",
+              cell: (supplier) => {
+                const selectedSupplier = organisationsById.get(supplier.supplierId)
+                return <CompactCombobox label="Contact" value={supplier.contact} options={(selectedSupplier?.contacts ?? []).map((contact) => ({ id: contact.id, value: contact.email || contact.name, label: contact.name, description: contact.email ?? "" }))} onValueChange={(value) => patchSupplier(supplier.id, { contact: value })} placeholder="Contact or email" disabled={!editable} width="full" className="[&>div:first-child]:sr-only" autoPopulated={matchesAutoPopulation(supplier.contact, selectedSupplier?.contacts?.[0]?.email || selectedSupplier?.contacts?.[0]?.name)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
+              },
+            },
+            {
+              id: "status", label: "Rate status", kind: "status", width: 175, canHide: false, canPin: false, resizable: false,
+              cell: (supplier) => {
+                const received = supplier.carriers.filter((carrier) => carrier.status === "received").length
+                const prepared = supplier.carriers.filter((carrier) => carrier.status === "prepared").length
+                return <StatusPill tone={received === supplier.carriers.length ? "green" : received || prepared ? "amber" : "neutral"}>{received ? `${received}/${supplier.carriers.length} ${t("rates received")}` : prepared ? `${prepared}/${supplier.carriers.length} ${t("drafts prepared")}` : supplier.emailRequestStatus === "sent" ? t("Email sent") : t("Not requested")}</StatusPill>
+              },
+            },
+            {
+              id: "actions", label: "Request", kind: "actions", width: 220, canHide: false, canPin: false, resizable: false, exportable: false,
+              cell: (supplier) => <div className="flex items-center gap-1">
+                <Button type="button" variant="outline" size="sm" disabled={!editable || !supplier.contact.includes("@")} title={!supplier.contact.includes("@") ? t("Select a supplier email first") : undefined} onClick={() => setSupplierEmailDraft({ supplierId: supplier.id, draft: supplierRateRequestDraft(quote, supplier) })}><Mail className="size-3" />{t("Email")}</Button>
+                <Button type="button" variant="outline" size="sm" disabled={!editable || !supplier.supplierName.trim()} onClick={() => setOnlineRequestSupplier(supplier)}>{t("Online request")}</Button>
+                <Button type="button" variant="ghost" size="icon-sm" disabled={!editable || supplierOptions.length === 1} title={supplierOptions.length === 1 ? t("At least one supplier is required") : undefined} onClick={() => persistSupplierOptions(supplierOptions.filter((item) => item.id !== supplier.id))} aria-label={t("Remove supplier")} className="size-7 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)]"><Trash2 className="size-3.5" /></Button></div>,
+            },
+          ]}
+          minimumWidth={1215}
+          showToolbar={false}
+          showColumnManager={false}
+          enableSelectionExport={false}
+          rowClassName="h-12"
+          tableClassName="text-[11px]"
+        />
+      </CompactSectionShell>
+
+      <CompactSectionShell title="Cargo" meta="Package quantity, type and dimensions for pricing; goods details are optional">
+        <div className="grid min-w-0 gap-4">
+          {isSeaContainerised ? <div className="grid gap-1.5" role="group" aria-label={t("Container requests")}>
               {containerRequests.map((request, index) => {
                 const rowInvalid = requireCoreFields && validationAttempted && (!request.quantity || !request.type.trim())
                 return (
@@ -4206,190 +4112,10 @@ function QuoteDetailsPanelV2({
               {requireCoreFields && validationAttempted && !quote.container.trim() ? (
                 <p className="text-[10.5px] leading-4 text-[var(--md-red)]">{t("Add at least one complete container request")}</p>
               ) : null}
-            </div>
-          ) : (
-            <div className="md-quote-terms-grid">
-              <QuoteCompactSelect label="Incoterms / scope" value={quote.incoterm} options={incotermOptions} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.incoterm.trim()} disabled={!editable} onChange={(value) => onQuoteChange("incoterm", value)} />
-              <QuoteCompactInput label={incotermNamedPlaceLabel} value={quote.incotermPlace ?? ""} width="full" required={Boolean(incotermDefinition)} invalid={requireCoreFields && validationAttempted && incotermNamedPlaceMissing} disabled={!editable} onChange={(value) => onQuoteChange("incotermPlace", value)} />
-            </div>
-          )}
-          {incotermNotSupplied ? (
-            <div className="grid min-w-0 gap-2 sm:grid-cols-3 @min-[80rem]/quote-details:grid-cols-6" role="group" aria-label={t("Quoted operational scope")}>
-              <QuoteCompactSelect label="Collection" value={quote.collectionRequired ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.collectionRequired?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("collectionRequired", value)} />
-              <QuoteCompactSelect label="Delivery" value={quote.deliveryRequired ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.deliveryRequired?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("deliveryRequired", value)} />
-              <QuoteCompactSelect label="Customs clearance" value={quote.customsIncluded ?? ""} options={[{ value: "No", label: "Not included" }, { value: "Yes", label: "Included" }]} width="full" required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.customsIncluded?.trim()} disabled={!editable} onChange={(value) => onQuoteChange("customsIncluded", value)} />
-            </div>
-          ) : null}
-          <div className="md-quote-locations-grid">
-            <LocationFields mode={quote.mode} label="Origin from" value={originLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} onChange={(value) => updateLocation("origin", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.origin.trim()} />
-            <LocationFields mode={quote.mode} label="Destination to" value={destinationLocation} options={locationOptions} recommendedLocationIds={recommendedLocationIds} countries={countries} directoryStatus={unlocodeDirectoryStatus} onChange={(value) => updateLocation("destination", value)} disabled={!editable} required={requireCoreFields} invalid={requireCoreFields && validationAttempted && !quote.destination.trim()} />
-          </div>
-          <div className="md-quote-routing-grid">
-            <QuoteCompactInput label="Via" value={quote.via} width="full" disabled={!editable} onChange={(value) => onQuoteChange("via", value)} />
-            <QuoteCompactDatePicker label="ETD" width="full" value={quote.estimatedDeparture ?? ""} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(0, { estimatedDeparture: value }) : onQuotePatch({ estimatedDeparture: value, transitDays: quoteTransitDays(value, quote.estimatedArrival), transitUnit: "Days" })} />
-            <QuoteCompactDatePicker label="ETA" width="full" value={quote.estimatedArrival ?? ""} minDate={quote.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => routingLegs.length > 0 ? updateRoutingLeg(routingLegs.length - 1, { estimatedArrival: value }) : onQuotePatch({ estimatedArrival: value, transitDays: quoteTransitDays(quote.estimatedDeparture, value), transitUnit: "Days" })} />
-            <NumberUnitField label="Transit time" value={{ value: quoteTransitDays(quote.estimatedDeparture, quote.estimatedArrival) || quote.transitDays || "", unit: "Days" }} units={[{ value: "Days", label: "Days" }]} width="full" disabled onChange={() => undefined} />
-            <div className="min-w-0"><RecurrenceBuilder value={recurrence} onChange={updateRecurrence} disabled={!editable} /></div>
-          </div>
-          {routingLegs.length > 0 ? (
-            <div className="grid gap-1.5" role="group" aria-label={t("Planned routing legs")}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Planned routing legs")}</p>
-                  <p className="text-[10px] text-[var(--md-subtle)]">{t("The first origin and final destination remain the shipment summary above.")}</p>
-                </div>
-                <Button type="button" variant="ghost" size="sm" disabled={!editable || routingLegs.length <= 1} onClick={removeLastRoutingLeg} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-subtle)]">
-                  <Trash2 className="size-3" aria-hidden="true" />{t("Remove last leg")}
-                </Button>
-              </div>
-              {routingLegs.map((leg, index) => (
-                <div key={leg.id} className="grid min-w-0 gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)] grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] items-center">
-                  <QuoteCompactSelect label={`Leg ${index + 1} mode`} value={leg.mode} options={modes} width="full" disabled={!editable} dataOptions onChange={(value) => updateRoutingLeg(index, { mode: value })} />
-                  <CompactCombobox label={`Leg ${index + 1} origin`} value={leg.origin.unlocode || leg.origin.place} options={routeLocationOptions} recommendedOptionLimit={3} placeholder="Search place or UN/LOCODE" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLocation(index, "origin", value)} onOptionSelect={(option) => updateRoutingLocation(index, "origin", option.value, option)} />
-                  <CompactCombobox label={`Leg ${index + 1} destination`} value={leg.destination.unlocode || leg.destination.place} options={routeLocationOptions} recommendedOptionLimit={3} placeholder="Search place or UN/LOCODE" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLocation(index, "destination", value)} onOptionSelect={(option) => updateRoutingLocation(index, "destination", option.value, option)} />
-                  <QuoteCompactDatePicker label="Departure" value={leg.estimatedDeparture} width="full" disabled={!editable} onChange={(value) => updateRoutingLeg(index, { estimatedDeparture: value })} />
-                  <QuoteCompactDatePicker label="Arrival" value={leg.estimatedArrival} width="full" minDate={leg.estimatedDeparture || undefined} disabled={!editable} onChange={(value) => updateRoutingLeg(index, { estimatedArrival: value })} />
-                  <CompactCombobox label="Carrier" value={leg.carrierName} options={organisationDirectories.carrier.options} recommendedOptions={relatedOptions("carrier")} recommendedLabel="Suggested carriers" allLabel="All carriers" placeholder="TBC or search carriers" disabled={!editable} width="full" onValueChange={(value) => updateRoutingLeg(index, { carrierName: value, carrierId: organisationsById.get(leg.carrierId)?.name === value ? leg.carrierId : "" })} onOptionSelect={(option) => updateRoutingLeg(index, { carrierId: option.id ?? "", carrierName: option.value })} />
-                  <QuoteCompactSelect label="Service level" value={leg.serviceLevel} options={["Economy", "Standard", "Express"]} width="full" disabled={!editable} onChange={(value) => updateRoutingLeg(index, { serviceLevel: value })} />
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </CompactSectionShell>
+          </div> : null}
 
-      <CompactSectionShell
-        title="Supplier & carrier options"
-        action={<div className="flex gap-1"><Button type="button" variant="ghost" size="sm" disabled={!editable} onClick={() => persistSupplierOptions([...supplierOptions, blankSupplierOption()])} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Plus className="size-3" />{t("Add supplier")}</Button><Button type="button" size="sm" disabled={!editable || !supplierOptions.some((supplier) => supplier.supplierName.trim())} onClick={() => setRateRequestOpen(true)} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10.5px]"><Send className="size-3" />{t("Prepare rate requests")}</Button></div>}
-      >
-        <div className="grid gap-1.5">
-          {supplierOptions.map((supplier, supplierIndex) => {
-            const selectedSupplier = organisations.find((item) => item.id === supplier.supplierId)
-            const supplierDirectory = organisationDirectories.supplier.options
-            const carrierDirectory = organisationDirectories.carrier.options
-            const carrierColumns: DataTableColumn<QuoteCarrierOptionDraft>[] = [
-              {
-                id: "carrier",
-                label: "Carrier",
-                kind: "custom",
-                width: 344,
-                canHide: false,
-                canPin: false,
-                resizable: false,
-                cellClassName: "px-2 py-1.5",
-                cell: (carrier) => {
-                  const selectedCarrier = organisations.find((item) => item.id === carrier.carrierId)
-                  const carrierSequence = supplier.carriers.indexOf(carrier) + 1
-                  return <div className="flex min-w-0 items-center gap-1.5"><span data-i18n-skip dir="ltr" aria-label={`${t("Carrier ID")} ${carrierSequence}`} className="inline-grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)]">{carrierSequence}</span><CompactCombobox label="Carrier" value={carrier.carrierName} options={carrierDirectory} recommendedOptions={relatedOptions("carrier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested carriers" allLabel="All organisations" onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierName: value, carrierId: selectedCarrier?.name === value ? carrier.carrierId : "" })} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) patchCarrier(supplier.id, carrier.id, { carrierId: item.id, carrierName: item.name, carrierOffice: item.addresses?.[0]?.label ?? "" }) }} placeholder="TBC or search carriers" disabled={!editable} width="full" className="min-w-0 flex-1 [&>div:first-child]:sr-only" /></div>
-                },
-              },
-              {
-                id: "carrier-office",
-                label: "Carrier office",
-                kind: "custom",
-                width: 220,
-                canHide: false,
-                canPin: false,
-                resizable: false,
-                cellClassName: "px-2 py-1.5",
-                cell: (carrier) => {
-                  const selectedCarrier = organisations.find((item) => item.id === carrier.carrierId)
-                  return <CompactCombobox label="Carrier office" value={carrier.carrierOffice} options={(selectedCarrier?.addresses ?? []).map((address) => ({ id: address.id, value: address.label, label: address.label, description: address.address }))} onValueChange={(value) => patchCarrier(supplier.id, carrier.id, { carrierOffice: value })} placeholder="Select or type office" disabled={!editable || !carrier.carrierName} width="full" className="[&>div:first-child]:sr-only" autoPopulated={matchesAutoPopulation(carrier.carrierOffice, selectedCarrier?.addresses?.[0]?.label)} autoPopulationDescription={selectedCarrier ? `Filled from ${selectedCarrier.name}. Edit this field to override it for this quote.` : undefined} />
-                },
-              },
-              {
-                id: "carrier-reference",
-                label: "Carrier ref",
-                kind: "text",
-                width: 150,
-                canHide: false,
-                canPin: false,
-                resizable: false,
-                cellClassName: "px-2 py-1.5",
-                cell: (carrier) => <QuoteCompactInput label="Carrier ref" value={carrier.reference} width="full" className="[&>div:first-child]:sr-only" disabled={!editable} onChange={(value) => patchCarrier(supplier.id, carrier.id, { reference: value })} />,
-              },
-              {
-                id: "service-level",
-                label: "Service level",
-                kind: "attribute",
-                width: 145,
-                canHide: false,
-                canPin: false,
-                resizable: false,
-                cellClassName: "px-2 py-1.5",
-                cell: (carrier) => <CarrierServiceLevelPill value={carrier.serviceLevel} disabled={!editable} onChange={(value) => patchCarrier(supplier.id, carrier.id, { serviceLevel: value })} />,
-              },
-              {
-                id: "rate-source",
-                label: "Rate source",
-                kind: "attribute",
-                width: 150,
-                canHide: false,
-                canPin: false,
-                resizable: false,
-                cellClassName: "px-2 py-1.5",
-                cell: (carrier) => <QuoteCompactSelect label="Rate source" value={carrier.rateSource} options={["Manual", "Tariff", "Carrier portal", "Historic quote"]} width="full" className="[&>div:first-child]:sr-only" disabled={!editable} onChange={(value) => patchCarrier(supplier.id, carrier.id, { rateSource: value })} />,
-              },
-              {
-                id: "carrier-actions",
-                label: "Actions",
-                kind: "actions",
-                align: "center",
-                width: 52,
-                canHide: false,
-                canPin: false,
-                resizable: false,
-                exportable: false,
-                cellClassName: "px-1 py-1.5",
-                cell: (carrier) => <QuoteCarrierRemoveAction
-                  confirming={confirmingCarrierId === `${supplier.id}:${carrier.id}`}
-                  disabled={!editable || supplier.carriers.length === 1}
-                  onCancel={() => setConfirmingCarrierId(null)}
-                  onRemove={() => requestRemoveCarrier(supplier.id, carrier.id)}
-                />,
-              },
-            ]
-            return (
-              <section key={supplier.id} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
-                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1.75rem] items-start gap-x-2 gap-y-1.5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_1.75rem] xl:grid-cols-[minmax(16rem,2fr)_minmax(12rem,1fr)_minmax(14rem,1.2fr)_1.75rem]">
-                  <CompactCombobox label={`${t("Supplier")} ${supplierIndex + 1}`} value={supplier.supplierName} options={supplierDirectory} recommendedOptions={relatedOptions("supplier")} recommendedOptionLimit={organisationRecentOptionLimit} recommendedLabel="Suggested suppliers" allLabel="All organisations" onValueChange={(value) => patchSupplier(supplier.id, { supplierName: value, supplierId: selectedSupplier?.name === value ? supplier.supplierId : "" })} onOptionSelect={(option) => { const item = organisationsById.get(option.id ?? ""); if (item) patchSupplier(supplier.id, { supplierId: item.id, supplierName: item.name, supplierOffice: item.addresses?.[0]?.label ?? "", contact: item.contacts?.[0]?.email ?? item.contacts?.[0]?.name ?? "" }) }} placeholder="Search suppliers or type manually" disabled={!editable} width="full" className="col-start-1" />
-                  <CompactCombobox label="Supplier office" value={supplier.supplierOffice} options={(selectedSupplier?.addresses ?? []).map((address) => ({ id: address.id, value: address.label, label: address.label, description: address.address }))} onValueChange={(value) => patchSupplier(supplier.id, { supplierOffice: value })} placeholder="Select or type office" disabled={!editable} width="full" className="col-span-2 md:col-span-1" autoPopulated={matchesAutoPopulation(supplier.supplierOffice, selectedSupplier?.addresses?.[0]?.label)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
-                  <CompactCombobox label="Contact" value={supplier.contact} options={(selectedSupplier?.contacts ?? []).map((contact) => ({ id: contact.id, value: contact.email || contact.name, label: contact.name, description: contact.email ?? "" }))} onValueChange={(value) => patchSupplier(supplier.id, { contact: value })} placeholder="Contact or email" disabled={!editable} width="full" className="col-span-2 md:col-span-2 xl:col-span-1" autoPopulated={matchesAutoPopulation(supplier.contact, selectedSupplier?.contacts?.[0]?.email || selectedSupplier?.contacts?.[0]?.name)} autoPopulationDescription={selectedSupplier ? `Filled from ${selectedSupplier.name}. Edit this field to override it for this quote.` : undefined} />
-                  <Button type="button" variant="ghost" size="icon-sm" disabled={!editable || supplierOptions.length === 1} title={supplierOptions.length === 1 ? t("At least one supplier is required") : undefined} onClick={() => persistSupplierOptions(supplierOptions.filter((item) => item.id !== supplier.id))} aria-label={t("Remove supplier")} className="col-start-2 row-start-1 mt-5 size-7 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)] md:col-start-3 xl:col-start-4"><Trash2 className="size-3.5" /></Button>
-                </div>
-                <div className="mt-1.5 grid gap-1.5">
-                  <DataTable ariaLabel="Carrier options"
-                    columns={carrierColumns}
-                    rows={supplier.carriers}
-                    getRowKey={(carrier) => carrier.id}
-                    rowAriaLabel={(carrier) => `${t("Carrier")} ${carrier.carrierName || t("Not set")}`}
-                    rowContextActions={(carrier) => [{
-                      id: "remove-carrier",
-                      label: "Remove carrier",
-                      hint: supplier.carriers.length === 1 ? "Keep one option" : "Confirmation required",
-                      icon: Trash2,
-                      tone: "destructive",
-                      disabled: !editable || supplier.carriers.length === 1,
-                      onSelect: () => requestRemoveCarrier(supplier.id, carrier.id),
-                    }]}
-                    minimumWidth={1061}
-                    showToolbar={false}
-                    showColumnManager={false}
-                    enableSelectionExport={false}
-                    rowClassName="h-12"
-                    className="[&_[data-table-surface]]:rounded-[var(--md-radius-md)] [&_[data-table-surface]]:shadow-none"
-                    tableClassName="text-[11px]"
-                  />
-                  <Button type="button" variant="ghost" size="sm" disabled={!editable} onClick={() => patchSupplier(supplier.id, { carriers: [...supplier.carriers, blankCarrierOption()] })} className="h-7 w-fit rounded-[var(--md-radius-md)] px-2 text-[10.5px] text-[var(--md-accent)]"><Plus className="size-3" />{t("Add carrier")}</Button>
-                </div>
-              </section>
-            )
-          })}
-        </div>
-      </CompactSectionShell>
-
-      <CompactSectionShell title="Goods">
-        <div className="grid min-w-0 gap-4">
+          {isSeaContainerised ? <Button type="button" variant="ghost" size="sm" aria-expanded={goodsDetailsOpen} aria-controls="quote-optional-goods" onClick={() => setGoodsDetailsOpen(value => !value)} className="h-8 w-fit gap-1.5 px-2 text-[12px]"><ChevronDown className={cn("size-3 transition-transform motion-reduce:transition-none", goodsDetailsOpen && "rotate-180")} />{t("Goods details (optional)")}</Button> : null}
+          {!isSeaContainerised || goodsDetailsOpen ? <div id="quote-optional-goods" className="grid min-w-0 gap-3">
           {!quote.cargoLines ? (
             <div className="grid min-w-0 gap-3">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -4421,8 +4147,10 @@ function QuoteDetailsPanelV2({
           <QuoteCargoEditor lines={quote.cargoLines} editable={editable} chargeableWeight={fieldPolicy.chargeableWeight}
             legacy={{ description: quote.commodity || "", commodity: quote.commodity || "", packageQuantity: quote.packageQuantity || "", packageType: quote.packageType || "", grossWeightKg: quote.grossWeightKg || "", volumeCbm: quote.volumeCbm || "", chargeableWeightKg: quote.chargeableWeightKg || "", isHazardous: characteristics.hazardous, isTemperatureControlled: characteristics.temperatureControlled }}
             onChange={(cargoLines) => onQuotePatch({ cargoLines })} />
-          <div className="grid gap-2 pt-3 shadow-[var(--md-stroke-top)]">
-            <h4 className="text-[12px] font-medium text-[var(--md-text)]">{t("Shipment values & customs")}</h4>
+          </div> : null}
+          <details className="min-w-0 pt-2 shadow-[var(--md-stroke-top)]">
+            <summary className="cursor-pointer rounded-[var(--md-radius-sm)] py-1 text-[12px] text-[var(--md-text)] focus-visible:outline-2 focus-visible:outline-[var(--md-accent)]">{t("Shipment values & customs (optional)")}</summary>
+            <div className="grid gap-2 pt-2">
             <div className="grid min-w-0 gap-2 sm:grid-cols-2 @min-[60rem]/quote-details:grid-cols-[minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <AmountCurrencyField label="Goods value" value={{ amount: quote.goodsValue ?? "", currency: quote.goodsValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("goodsValue", value.amount); onQuoteChange("goodsValueCurrency", value.currency) }} width="full" />
             <AmountCurrencyField label="Insurance value" value={{ amount: quote.insuranceValue ?? "", currency: quote.insuranceValueCurrency || quote.currency || "GBP" }} currencies={currencies} disabled={!editable} onChange={(value) => { onQuoteChange("insuranceValue", value.amount); onQuoteChange("insuranceValueCurrency", value.currency) }} width="full" />
@@ -4430,7 +4158,8 @@ function QuoteDetailsPanelV2({
             <QuoteCompactInput label="Invoice lines" value={quote.invoiceLines ?? ""} type="number" dir="ltr" width="full" disabled={!editable} onChange={(value) => onQuoteChange("invoiceLines", value)} />
             </div>
             {originIsUs ? <QuoteCompactSelect label="FMC TID" value={quote.fmcTid ?? ""} options={["Not required", "Required", "Pending"]} width="short" disabled={!editable} onChange={(value) => onQuoteChange("fmcTid", value)} /> : null}
-          </div>
+            </div>
+          </details>
           {!quote.cargoLines ? <div>
             <p className="mb-1.5 text-[10.5px] font-medium text-[var(--md-text)]">{t(quote.cargoLines ? "Shipment handling (in addition to line flags)" : "Cargo characteristics")}</p>
             <CargoCharacteristicsField value={characteristics} inherited={quoteCargoSafety(quote.cargoLines)} onChange={(value) => { onQuoteChange("cargoCharacteristics", cargoCharacteristicsToString(value)); onQuoteChange("knownCargo", value.hazardous ? "Hazardous" : "General merchandise") }} hazardousDetails={hazardousDetails} onHazardousDetailsChange={updateHazardousDetails} disabled={!editable} />
@@ -4460,6 +4189,20 @@ function QuoteDetailsPanelV2({
           <DialogHeader><DialogTitle>{t("Change overall Quote mode?")}</DialogTitle><DialogDescription>{t("Existing routing legs keep their own modes, carriers and dates. An incompatible shipment type will be cleared for you to choose again. Cargo and equipment are retained; review them for the new mode. Submitted versions, Bookings and documents will not change.")}</DialogDescription></DialogHeader>
           <p className="text-[13px] font-medium" data-i18n-skip>{pendingOverallMode?.from} → {pendingOverallMode?.to || t("Not selected")}</p>
           <DialogFooter><Button ref={overallModeCancelRef} variant="ghost" onClick={() => setPendingOverallMode(null)}>{t("Keep current mode")}</Button><Button disabled={!editable} onClick={confirmOverallMode}>{t("Change mode and review")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(supplierEmailDraft)} onOpenChange={(open) => { if (!open) setSupplierEmailDraft(null) }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[680px]">
+          <DialogHeader><DialogTitle>{t("Email rate request")}</DialogTitle><DialogDescription>{t("Review the request and choose your connected mailbox before sending.")}</DialogDescription></DialogHeader>
+          {supplierEmailDraft ? <DexterEmailComposeCard key={supplierEmailDraft.draft.id} messageId={supplierEmailDraft.draft.id} draft={supplierEmailDraft.draft} standalone onDraftChange={(draft) => { setSupplierEmailDraft((current) => current ? { ...current, draft } : null); if (draft.delivery.status === "sent" && supplierOptions.find((supplier) => supplier.id === supplierEmailDraft.supplierId)?.emailRequestStatus !== "sent") patchSupplier(supplierEmailDraft.supplierId, { emailRequestStatus: "sent" }) }} /> : null}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(onlineRequestSupplier)} onOpenChange={(open) => { if (!open) setOnlineRequestSupplier(null) }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{t("Online rate request")}</DialogTitle><DialogDescription>{t("Request rates from a supplier portal or a connected provider such as FreightOS.")}</DialogDescription></DialogHeader>
+          <p data-i18n-skip className="text-[13px] font-medium">{onlineRequestSupplier?.supplierName}</p>
+          <p role="status" className="text-[13px] text-[var(--md-text)]">{t("No online rate provider is connected for this supplier. Connect a provider before requesting rates.")}</p>
+          <DialogFooter><Button type="button" variant="outline" onClick={() => setOnlineRequestSupplier(null)}>{t("Close")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       <Dialog open={rateRequestOpen} onOpenChange={setRateRequestOpen}>
@@ -4854,7 +4597,7 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     clientCode: customer?.code ?? fact("clientCode"),
     customerAddress: customer?.addresses[0]?.address ?? fact("customerAddress"),
     contactId: record.contactId ?? "",
-    customerContact: record.contactName ?? contact?.name ?? "",
+    customerContact: quoteBillingContactName(record.contactName, contact?.name),
     customerEmail: record.contactEmail ?? contact?.email ?? "",
     payerOrgId: payer.orgId ? String(payer.orgId) : record.customerId,
     payerCode: payer.code || payerOrganisation?.code || fact("payerCode") || fact("clientCode"),
@@ -4904,6 +4647,9 @@ function quoteRecordFromWorkspace(workspace: QuoteWorkflowWorkspace, lookups: Qu
     endDate: record.validTo ?? "",
     estimatedDeparture,
     estimatedArrival,
+    directServiceRequested: fact("directServiceRequested"),
+    readyFromDate: fact("readyFromDate"),
+    requiredArrivalDate: fact("requiredArrivalDate"),
     deadline: record.deadline?.trim() || payerTerms?.deadline?.trim() || "",
     validity: record.validTo ?? "",
     direction: record.direction ? record.direction.charAt(0).toUpperCase() + record.direction.slice(1) : "",
@@ -5263,6 +5009,9 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       routingLegs: quoteRoutingLegs(quote.routingLegsJson),
       estimatedDeparture: quote.estimatedDeparture,
       estimatedArrival: quote.estimatedArrival,
+      directServiceRequested: quote.directServiceRequested,
+      readyFromDate: quote.readyFromDate,
+      requiredArrivalDate: quote.requiredArrivalDate,
       hblMode: quote.hblMode,
       transitDays: quote.transitDays,
       transitUnit: quote.transitUnit,
@@ -5308,9 +5057,9 @@ function quoteSavePayload(quote: QuoteRecord, charges: QuoteCharge[], lookups: Q
       grossWeightKg: quote.grossWeightKg,
       volumeCbm: quote.volumeCbm,
       chargeableWeightKg: quote.chargeableWeightKg,
-      collectionRequired: quote.collectionRequired,
-      deliveryRequired: quote.deliveryRequired,
-      customsIncluded: quote.customsIncluded,
+      collectionRequired: quote.collectionRequired === "Yes" ? "Yes" : "No",
+      deliveryRequired: quote.deliveryRequired === "Yes" ? "Yes" : "No",
+      customsIncluded: quote.customsIncluded === "Yes" ? "Yes" : "No",
       originCustomsAgentId: quote.originCustomsAgentId,
       originCustomsAgentName: quote.originCustomsAgentName,
       destinationCustomsAgentId: quote.destinationCustomsAgentId,

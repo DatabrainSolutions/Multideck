@@ -502,6 +502,7 @@ export type AccountRegisterPage = {
     openInvoiceCount: number
     overdueInvoiceCount: number
     overdueCustomerCount: number
+    overdueSupplierCount?: number
     creditAttentionCount: number
     onHoldCount: number
     accountingAttentionCount: number | null

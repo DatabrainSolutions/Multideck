@@ -1,3 +1,4 @@
+import { quoteMinimumCargoAssertions } from "./quote-minimum-cargo-fixture.mjs"
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
@@ -53,7 +54,13 @@ const baseline = readFileSync(new URL('../baseline/public-schema.sql', import.me
 function table(name) {
   const start = baseline.indexOf(`CREATE TABLE IF NOT EXISTS "public"."${name}" (`)
   assert.ok(start >= 0)
+  // Replay historical handover, weight and goods-value migrations against
+  // their earlier table shapes; the current baseline already includes them.
   return baseline.slice(start, baseline.indexOf('\n);', start) + 3)
+    .replace(/^    "Job_GoodsValue(?:Amount|CurrencyCode)"[^\n]*\n/gm, '')
+    .replace(/^    CONSTRAINT "(?:Job_Cargo_JobCargo_ChargeableWeightKg_check|Job_goods_value_(?:currency|nonnegative))"[^\n]*\n/gm, '')
+    .replace(/^    "JobCargo_(?:SourceQuote(?:Version|Line)ID|ChargeableWeightKg)"[^\n]*\n/gm, '')
+    .replace(/,\n\);$/, '\n);')
 }
 const start = issue.indexOf('create or replace function public.quote_workflow_prepare_customer_response_v4(')
 const end = issue.indexOf('create or replace function public.quote_workflow_bind_pending_customer_response_document_v4(', start)
@@ -116,12 +123,12 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
       -- remains unchanged and is not claimed as covered by this test.
       create sequence test_job_numbers;
       alter table public."Job_Header" alter column "Job_Number" set default nextval('test_job_numbers'),
-        add column "Job_BookingReference" text, add column "Job_BookingReferenceSequenceKey" text,
-        add column "Job_SourceQuoteID" uuid, add column "Job_SourceQuoteVersionID" uuid,
-        add column "Job_SourceQuoteResponseID" uuid, add column "Job_SourceSnapshotJSON" jsonb,
-        add column "Job_IncotermsCode" text, add column "Job_IncotermsLocation" text,
-        add column "Job_CollectionAddress" text, add column "Job_DeliveryAddress" text,
-        add column "Job_CustomerDeadline" date,add column "Job_FreightChargeAmount" numeric,add column "Job_FreightChargeCurrencyCode" text;
+        add column if not exists "Job_BookingReference" text, add column if not exists "Job_BookingReferenceSequenceKey" text,
+        add column if not exists "Job_SourceQuoteID" uuid, add column if not exists "Job_SourceQuoteVersionID" uuid,
+        add column if not exists "Job_SourceQuoteResponseID" uuid, add column if not exists "Job_SourceSnapshotJSON" jsonb,
+        add column if not exists "Job_IncotermsCode" text, add column if not exists "Job_IncotermsLocation" text,
+        add column if not exists "Job_CollectionAddress" text, add column if not exists "Job_DeliveryAddress" text,
+        add column if not exists "Job_CustomerDeadline" date,add column if not exists "Job_FreightChargeAmount" numeric,add column if not exists "Job_FreightChargeCurrencyCode" text;
       alter table public."Job_Cargo" add primary key ("JobCargo_ID");
       alter table public."CusQuote_Header" add column "CusQuoteHeader_LifecycleCode" text default 'draft',
         add column "CusQuoteHeader_AcceptedVersionID" uuid,add column "CusQuoteHeader_SalesOwnerID" uuid,
@@ -131,8 +138,8 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
         add column "CusQuoteHeader_ContactNameSnapshot" text,add column "CusQuoteHeader_JobID" uuid,
         add column "CusQuoteHeader_LastEditedDate" timestamptz;
       create table booking_api.events(company_id uuid,job_id uuid,event_type text,summary text,metadata jsonb,actor_user_id uuid);
-      alter table public."Job_Header" add column "Job_PendingQuoteVersionID" uuid,add column "Job_PendingQuoteResponseID" uuid,
-        add column "Job_QuoteSyncStatus" text default 'in_sync',add column "Job_QuoteSyncDetectedAt" timestamptz;
+      alter table public."Job_Header" add column if not exists "Job_PendingQuoteVersionID" uuid,add column if not exists "Job_PendingQuoteResponseID" uuid,
+        add column if not exists "Job_QuoteSyncStatus" text default 'in_sync',add column if not exists "Job_QuoteSyncDetectedAt" timestamptz;
       create table booking_api.quote_sync_reviews (
         review_id uuid primary key,company_id uuid,job_id uuid,quote_id uuid,applied_version_id uuid,proposed_version_id uuid,
         proposed_response_id uuid,status_code text default 'pending',differences jsonb,applied_fields jsonb default '[]',
@@ -475,6 +482,8 @@ test('PostgreSQL: Quote cargo issue, initial handover and selective revision per
       ${quoteRouteClearAssertions}
       ${bookingContainerOperationsFixture(read)}
       ${quoteDeliveryRecipientFixture(read)}
+      ${read("20261001113338_quote_minimum_cargo_optional_goods.sql")}
+      ${quoteMinimumCargoAssertions}
     `)
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop'])

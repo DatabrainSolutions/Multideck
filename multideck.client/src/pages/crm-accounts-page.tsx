@@ -44,7 +44,8 @@ type OrganisationRegisterType = "company" | ProviderPartyType
 export function CrmAccountsPage({ navigate, currentUser, organisationType = "company" }: { navigate: (path: string) => void; currentUser?: AuthUserSummary | null; organisationType?: OrganisationRegisterType }) {
   const { language, t } = useLanguage()
   const customerAccounts = organisationType === "customer"
-  const title = customerAccounts ? "Customer accounts" : organisationType === "supplier" ? "Suppliers" : "Companies"
+  const financeAccounts = organisationType !== "company"
+  const title = customerAccounts ? "Customer accounts" : organisationType === "supplier" ? "Supplier accounts" : "Companies"
   const singular = organisationType === "customer" ? "customer" : organisationType === "supplier" ? "supplier" : "company"
   const routeBase = organisationType === "customer" ? "/customers" : organisationType === "supplier" ? "/suppliers" : "/crm/accounts"
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
@@ -242,10 +243,10 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   const accountColumns = useMemo<DataTableColumn<ApiCustomer>[]>(() => {
     const openColumn: DataTableColumn<ApiCustomer> = { id: "open", label: "Open", headerContent: <span className="sr-only">{t("Open")}</span>, width: 52, minWidth: 52, maxWidth: 52, canHide: false, canPin: false, exportable: false, cell: () => <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /> }
 
-    if (customerAccounts) {
+    if (financeAccounts) {
       const financialColumns: DataTableColumn<ApiCustomer>[] = [
         {
-          id: "account", label: "Customer", width: 265, minWidth: 220, maxWidth: 380, canHide: false, resizable: true,
+          id: "account", label: customerAccounts ? "Customer" : "Supplier", width: 265, minWidth: 220, maxWidth: 380, canHide: false, resizable: true,
           sortValue: (account) => account.name,
           exportValue: (account) => account.name,
           cell: (account) => <div className="grid min-h-11 min-w-0 content-center"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.accountCode ? `${t("Account")} ${account.accountCode}` : null, account.location].filter(Boolean).join(" · ") || t("No account code or location")}</span></div>,
@@ -286,9 +287,10 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         {
           id: "account-status", label: "Account status", kind: "status", width: 135, minWidth: 120, resizable: true,
           exportValue: (account) => account.financial?.accountStatus,
-          cell: (account) => !financialAccess ? <span className="text-[12px] text-[var(--md-subtle)]">{t("Restricted")}</span> : account.financial ? <StatusPill tone={account.financial.accountStatus === "blocked" ? "red" : account.financial.accountStatus === "on_hold" ? "amber" : "green"}>{t(account.financial.accountStatus === "blocked" ? "Blocked" : account.financial.accountStatus === "on_hold" ? "Credit hold" : "Active")}</StatusPill> : <span className="text-[12px] text-[var(--md-subtle)]">—</span>,
+          cell: (account) => !financialAccess ? <span className="text-[12px] text-[var(--md-subtle)]">{t("Restricted")}</span> : account.financial ? <StatusPill tone={account.financial.accountStatus === "blocked" ? "red" : account.financial.accountStatus === "on_hold" ? "amber" : "green"}>{t(account.financial.accountStatus === "blocked" ? "Blocked" : account.financial.accountStatus === "on_hold" ? (customerAccounts ? "Credit hold" : "Payment hold") : "Active")}</StatusPill> : <span className="text-[12px] text-[var(--md-subtle)]">—</span>,
         },
       ]
+      if (!customerAccounts) financialColumns.splice(financialColumns.findIndex((column) => column.id === "credit"), 1)
       if (accountingSyncAccess) financialColumns.push({
         id: "accounting-sync", label: "Accounting", kind: "status", width: 140, minWidth: 125, resizable: true,
         exportValue: (account) => account.financial?.accountingSyncStatus,
@@ -329,7 +331,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
       { id: "contacts", label: "Contacts", width: 100, minWidth: 88, sortValue: (account) => account.contactCount, cellClassName: "text-[13px] tabular-nums text-[var(--md-ink)]", cell: (account) => account.contactCount },
       openColumn,
     ]
-  }, [accountingSyncAccess, customerAccounts, financialAccess, language, singular, t])
+  }, [accountingSyncAccess, customerAccounts, financeAccounts, financialAccess, language, singular, t])
 
   function clearAccountFilters() {
     setQuery("")
@@ -448,14 +450,14 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
   ]
   const countryCodeIsValid = !draft.countryCode || /^[A-Z]{2}$/.test(draft.countryCode)
   const displayedSync = latestSync ?? syncOverview?.runs[0] ?? null
-  const restrictedFinancialDetail = t("Receivables permission required")
-  const summaryCards: Array<[string, string | number, string]> = customerAccounts ? [
-    [t("Open balance"), financialAccess && financeReady ? formatAccountMoney(financialSummary.balanceDue, financeCurrencyCode, language, true) : "—", financialAccess ? t("approved customer documents") : restrictedFinancialDetail],
+  const restrictedFinancialDetail = t(customerAccounts ? "Receivables permission required" : "Payables permission required")
+  const summaryCards: Array<[string, string | number, string]> = financeAccounts ? [
+    [t("Open balance"), financialAccess && financeReady ? formatAccountMoney(financialSummary.balanceDue, financeCurrencyCode, language, true) : "—", financialAccess ? t(customerAccounts ? "approved customer documents" : "approved supplier documents") : restrictedFinancialDetail],
     [t("Overdue"), financialAccess && financeReady ? formatAccountMoney(financialSummary.overdueAmount, financeCurrencyCode, language, true) : "—", financialAccess ? `${financialSummary.overdueInvoiceCount} ${t(financialSummary.overdueInvoiceCount === 1 ? "invoice" : "invoices")}` : restrictedFinancialDetail],
     [t("Open invoices"), financialAccess ? financialSummary.openInvoiceCount : "—", financialAccess ? t("with an amount still due") : restrictedFinancialDetail],
-    [t("Overdue customers"), financialAccess ? financialSummary.overdueCustomerCount : "—", financialAccess ? t("need collection attention") : restrictedFinancialDetail],
-    [t("Over credit limit"), financialAccess ? financialSummary.creditAttentionCount : "—", financialAccess ? t("accounts beyond their limit") : restrictedFinancialDetail],
-    [t("On hold"), financialAccess ? financialSummary.onHoldCount : "—", financialAccess ? t("credit-controlled accounts") : restrictedFinancialDetail],
+    [t(customerAccounts ? "Overdue customers" : "Overdue suppliers"), financialAccess ? (customerAccounts ? financialSummary.overdueCustomerCount : financialSummary.overdueSupplierCount ?? 0) : "—", financialAccess ? t(customerAccounts ? "need collection attention" : "need payment attention") : restrictedFinancialDetail],
+    ...(customerAccounts ? [[t("Over credit limit"), financialAccess ? financialSummary.creditAttentionCount : "—", financialAccess ? t("accounts beyond their limit") : restrictedFinancialDetail] as [string, string | number, string]] : []),
+    [t("On hold"), financialAccess ? financialSummary.onHoldCount : "—", financialAccess ? t(customerAccounts ? "credit-controlled accounts" : "payments held or blocked") : restrictedFinancialDetail],
   ] : [
     [t(`Total ${title.toLowerCase()}`), summary.accounts, t(`all ${singular} records`)],
     [t("Contacts"), contactTotal, t("recorded contacts")],
@@ -466,8 +468,8 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t(title)} className="md-page md-page-stack-compact">
-      <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(customerAccounts ? "Accounts receivable" : "Organisations")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(organisationType === "company" ? "Every company, its contacts and all operational roles kept in one place." : customerAccounts ? "Balances, overdue invoices, credit limits, payment terms and accounting status in one place." : "Supplier accounts, contacts and accounting-system status in one place.")}</p></div>
+      <header className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t(title)}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t(customerAccounts ? "Accounts receivable" : financeAccounts ? "Accounts payable" : "Organisations")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t(organisationType === "company" ? "Every company, its contacts and all operational roles kept in one place." : customerAccounts ? "Balances, overdue invoices, credit limits, payment terms and accounting status in one place." : "Balances, overdue invoices, payment terms and accounting status in one place.")}</p></div>
         <div className="flex flex-wrap gap-2">
           {organisationType !== "company" && canManageAccounting ? <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" onClick={() => { setLatestSync(null); setSyncOpen(true) }}><RefreshCw className="size-4" strokeWidth={1.4} />{t("Sync with accounting system")}</Button> : null}
           <DexterActionPill onClick={() => setDexterOpen(true)} label={t("Ask Dexter")} />
@@ -491,22 +493,22 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
       </div>
 
       <DataTable
-        key={customerAccounts ? "customer-accounts-receivable-v2" : `crm-${organisationType}-organisations-v1`}
-        ariaLabel={customerAccounts ? "Customer accounts receivable register" : `${title} directory`}
-        columnsButtonLabel={customerAccounts ? "Manage customer account columns" : `Manage ${singular} columns`}
-        storageKey={customerAccounts ? "customer-accounts-receivable-v2" : `crm-${organisationType}-organisations-v1`}
+        key={financeAccounts ? `${singular}-accounts-${customerAccounts ? "receivable" : "payable"}-v2` : `crm-${organisationType}-organisations-v1`}
+        ariaLabel={financeAccounts ? `${title} ${customerAccounts ? "receivable" : "payable"} register` : `${title} directory`}
+        columnsButtonLabel={financeAccounts ? `Manage ${singular} account columns` : `Manage ${singular} columns`}
+        storageKey={financeAccounts ? `${singular}-accounts-${customerAccounts ? "receivable" : "payable"}-v2` : `crm-${organisationType}-organisations-v1`}
         columns={accountColumns}
         rows={accounts}
         getRowKey={(account) => account.id}
-        rowAriaLabel={(account) => customerAccounts ? `${account.name}, ${financialAccess && account.financial?.balanceDue != null ? `${formatAccountMoney(account.financial.balanceDue, account.financial.baseCurrencyCode, language)} balance due` : "customer account"}` : account.name}
-        exportConfig={customerAccounts ? {
-          fileName: "customer-accounts-receivable",
-          recordCategory: "Customer account details",
+        rowAriaLabel={(account) => financeAccounts ? `${account.name}, ${financialAccess && account.financial?.balanceDue != null ? `${formatAccountMoney(account.financial.balanceDue, account.financial.baseCurrencyCode, language)} balance due` : `${singular} account`}` : account.name}
+        exportConfig={financeAccounts ? {
+          fileName: `${singular}-accounts-${customerAccounts ? "receivable" : "payable"}`,
+          recordCategory: `${customerAccounts ? "Customer" : "Supplier"} account details`,
           register: {
             dateLabel: "Oldest overdue date",
             dateValue: (account) => account.financial?.oldestOverdueDate,
             busy: query.trim() !== debouncedQuery,
-            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({ organisationType: "customer", search: debouncedQuery, marketingScope: "all", sort, ...page }, { forceRefresh: true }), (account) => account.id, signal),
+            loadAllRows: (signal) => collectExportPages((page) => listAccountsPage({ organisationType, search: debouncedQuery, marketingScope: "all", sort, ...page }, { forceRefresh: true }), (account) => account.id, signal),
           },
         } : {
           fileName: `crm-${title.toLowerCase()}`,
@@ -524,9 +526,9 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
         serverSorting={{ value: sort, onChange: (next) => { setSort(next ?? { id: "account", direction: "asc" }); setOffset(0) } }}
         pagination={{ offset, limit: accountPageSize, total, loading: state === "loading", onOffsetChange: setOffset, onLimitChange: setAccountPageSize, error: state === "error" }}
         compactToolbar
-        toolbarTabs={customerAccounts ? undefined : <RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel={`${singular[0].toUpperCase() + singular.slice(1)} ownership filter`} compact />}
+        toolbarTabs={financeAccounts ? undefined : <RegisterViewSwitch options={accountScopes} value={accountScope} onChange={setAccountScope} counts={{ All: accountScope === "All" ? summary.accounts : undefined, Mine: accountScope === "Mine" ? summary.accounts : undefined }} ariaLabel={`${singular[0].toUpperCase() + singular.slice(1)} ownership filter`} compact />}
         toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label={`Search ${title.toLowerCase()}`} placeholder={`Search ${title.toLowerCase()}…`} className="sm:w-[180px]" />}
-        toolbarFilters={customerAccounts ? undefined : <>
+        toolbarFilters={financeAccounts ? undefined : <>
           <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className="w-[132px]" />
           <RegisterFacetSelect label="Owner" allLabel="All owners" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter} className="w-[126px]" />
           <AdvancedFilterPopover
@@ -539,13 +541,13 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
             countMatches={countAdvancedMatches}
           />
         </>}
-        toolbarOptions={<><RegisterRevalidatingMark active={state === "loading" && accounts.length > 0} />{customerAccounts ? <RegisterRefreshButton pending={state === "loading"} onRefresh={() => setReloadToken((value) => value + 1)} /> : null}</>}
-        contentBeforeTable={customerAccounts && state !== "loading" && !financialAccess ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Receivables permission is required to view balances, overdue invoices and credit controls.")}</div> : customerAccounts && state !== "loading" && financialAccess && !financeReady ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_9%,var(--md-surface))] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("Complete the tenant base-currency setup in Finance before customer balances and available credit are compared.")}</div> : undefined}
+        toolbarOptions={<><RegisterRevalidatingMark active={state === "loading" && accounts.length > 0} />{financeAccounts ? <RegisterRefreshButton pending={state === "loading"} onRefresh={() => setReloadToken((value) => value + 1)} /> : null}</>}
+        contentBeforeTable={financeAccounts && state !== "loading" && !financialAccess ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t(customerAccounts ? "Receivables permission is required to view balances, overdue invoices and credit controls." : "Payables permission is required to view supplier balances, overdue invoices and payment terms.")}</div> : financeAccounts && state !== "loading" && financialAccess && !financeReady ? <div role="note" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_9%,var(--md-surface))] px-4 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t(customerAccounts ? "Complete the tenant base-currency setup in Finance before customer balances and available credit are compared." : "Complete the tenant base-currency setup in Finance before supplier balances are compared.")}</div> : undefined}
         emptyState={state === "loading"
           ? <RecordState icon={<DotGridLoader size="sm" decorative />} title={t(`Loading ${title.toLowerCase()}…`)} />
           : state === "error"
             ? <RecordState icon={<RefreshCw className="size-5" />} title={t(`${title} could not be loaded.`)} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
-            : customerAccounts ? <RecordState illustration="contacts" icon={<Building2 className="size-5" />} title={query ? t("No customer accounts match this search.") : t("No customer accounts yet.")} detail={query ? t("Clear the search or try another customer name or account code.") : t("Create the first customer before setting credit terms or raising an invoice.")} action={query ? <Button variant="outline" onClick={() => setQuery("")}>{t("Clear search")}</Button> : <Button onClick={openCreate}>{t("New customer")}</Button>} /> : <RecordState illustration="contacts" icon={<Building2 className="size-5" />} title={accountFiltersActive ? t(`No ${title.toLowerCase()} match these filters.`) : t(`No ${title.toLowerCase()} yet.`)} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t(`Create the first ${singular} to keep its contacts and operational roles together.`)} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t(`New ${singular}`)}</Button>} />}
+            : financeAccounts ? <RecordState illustration="contacts" icon={<Building2 className="size-5" />} title={query ? t(`No ${singular} accounts match this search.`) : t(`No ${singular} accounts yet.`)} detail={query ? t(`Clear the search or try another ${singular} name or account code.`) : t(customerAccounts ? "Create the first customer before setting credit terms or raising an invoice." : "Create the first supplier before setting payment terms or recording an invoice.")} action={query ? <Button variant="outline" onClick={() => setQuery("")}>{t("Clear search")}</Button> : <Button onClick={openCreate}>{t(`New ${singular}`)}</Button>} /> : <RecordState illustration="contacts" icon={<Building2 className="size-5" />} title={accountFiltersActive ? t(`No ${title.toLowerCase()} match these filters.`) : t(`No ${title.toLowerCase()} yet.`)} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t(`Create the first ${singular} to keep its contacts and operational roles together.`)} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t(`New ${singular}`)}</Button>} />}
       />
 
       {organisationType !== "company" ? (
@@ -633,7 +635,7 @@ export function CrmAccountsPage({ navigate, currentUser, organisationType = "com
                 disabled={referenceState === "loading" || referenceState === "error"}
                 className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 text-[16px] sm:text-[14px]"
               />
-              <span className="text-[12px] font-normal leading-5 text-[var(--md-text)]">{t("Choose one customer classification, then add every other role this company has.")}</span>
+              <span className="text-[12px] font-normal leading-5 text-[var(--md-text)]">{t(organisationType === "supplier" ? "The supplier role is required. Add any other roles this company has." : "Choose one customer classification, then add every other role this company has.")}</span>
               {referenceState === "error" ? (
                 <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] px-3 py-2.5 text-[12px] font-normal text-[var(--md-text)]">
                   <span>{t("Organisation types could not be loaded. Try again before creating this company.")}</span>

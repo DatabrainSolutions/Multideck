@@ -1,3 +1,5 @@
+import { useState } from "react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { quoteVersionSnapshot } from "@/lib/quote-version-presentation"
@@ -45,6 +47,7 @@ export function QuoteSubmittedDetails({
   chargesOnly?: boolean
 }) {
   const { t, language } = useLanguage()
+  const [supplierTabId, setSupplierTabId] = useState("all")
   const quote = quoteVersionSnapshot(version)
   if (!quote)
     return (
@@ -62,6 +65,15 @@ export function QuoteSubmittedDetails({
   const containers = savedList(facts.containerRequests)
   const suppliers = savedList(facts.supplierOptionsJson)
   const charges = savedList(quote.charges)
+  const supplierTabs = (suppliers ?? []).flatMap((supplier, index) => text(supplier.supplierName).trim() ? [{
+    id: text(supplier.id) || `saved-supplier-${index}`,
+    supplierId: text(supplier.supplierId),
+    name: text(supplier.supplierName),
+  }] : [])
+  const activeSupplier = supplierTabs.find((supplier) => supplier.id === supplierTabId)
+  const visibleCharges = activeSupplier
+    ? (charges ?? []).filter((line) => activeSupplier.supplierId && text(line.supplierId) === activeSupplier.supplierId)
+    : charges
   const date = (value: unknown) => {
     const raw = text(value)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
@@ -139,14 +151,20 @@ export function QuoteSubmittedDetails({
               "Amounts and exchange rates are fixed at submission. Costs and internal notes are for operators only.",
             )}
           </p>
+          <Tabs value={activeSupplier?.id ?? "all"} onValueChange={setSupplierTabId} className="min-w-0">
+            {supplierTabs.length ? <div className="max-w-full overflow-x-auto"><TabsList aria-label={t("Supplier pricing")} className="w-max">
+              <TabsTrigger value="all">{t("All pricing")}</TabsTrigger>
+              {supplierTabs.map((supplier) => <TabsTrigger key={supplier.id} value={supplier.id}><span data-i18n-skip>{supplier.name}</span></TabsTrigger>)}
+            </TabsList></div> : null}
+            <TabsContent value={activeSupplier?.id ?? "all"}>
           {charges === null ? (
             listError("Charge lines")
-          ) : charges.length ? (
+          ) : visibleCharges?.length ? (
             <ol className="space-y-8">
-              {charges.map((line, index) => (
-                <li key={`${index}:${text(line.id)}`} className="space-y-3">
+              {visibleCharges.map((line) => (
+                <li key={`${charges!.indexOf(line)}:${text(line.id)}`} className="space-y-3">
                   <h4 className="text-[13px] font-medium">
-                    {t("Charge line")} {index + 1}
+                    {t("Charge line")} {charges!.indexOf(line) + 1}
                   </h4>
                   <p
                     className="max-w-prose whitespace-pre-wrap break-words text-[13px] leading-relaxed [overflow-wrap:anywhere]"
@@ -173,8 +191,10 @@ export function QuoteSubmittedDetails({
               ))}
             </ol>
           ) : (
-            <p className="text-[13px] text-[var(--md-text)]">{t("No charge lines were recorded in this version.")}</p>
+            <p className="text-[13px] text-[var(--md-text)]">{t(activeSupplier ? "No charge lines linked to this supplier were recorded in this version." : "No charge lines were recorded in this version.")}</p>
           )}
+            </TabsContent>
+          </Tabs>
         </section>
       ) : overview ? (
         <>

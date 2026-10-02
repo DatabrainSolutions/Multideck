@@ -1298,7 +1298,7 @@ async function documentWorkspace(admin: any, current: any, selectedLedger: Ledge
       ? recordedTaxStatus
       : document.FINDoc_StatusCode === "draft" ? "pending" : "approved"
     const { FINDoc_MetadataJSON: _metadata, ...safeDocument } = document
-    return { ...safeDocument, FINDoc_TaxStatus: taxStatus, partyName: partyNames.get(document.FINDoc_PartyOrgID) ?? "Unknown organisation", jobReference: jobReferences.get(document.FINDoc_SourceJobID) ?? null }
+    return { ...safeDocument, approvalPolicyDecision: document.FINDoc_MetadataJSON?.approvalPolicyDecision ?? null, FINDoc_TaxStatus: taxStatus, partyName: partyNames.get(document.FINDoc_PartyOrgID) ?? "Unknown organisation", jobReference: jobReferences.get(document.FINDoc_SourceJobID) ?? null }
   }) }
   if (!draftOptions) return result
   const { data: offices, error: officeError } = await admin.from("cmp_Offices").select("Office_ID").eq("Company_ID", current.Company_ID)
@@ -1447,6 +1447,7 @@ async function documentDetail(admin: any, current: any, id: string) {
   return {
     document: {
       ...safeDocument,
+      approvalPolicyDecision: document.FINDoc_MetadataJSON?.approvalPolicyDecision ?? null,
       FINDoc_TaxStatus: taxStatus,
       partyName: partyResult.data?.Org_Name ?? "Unknown organisation",
       partyAccountCode: partyResult.data?.Org_AccCode ?? null,
@@ -2968,13 +2969,20 @@ Deno.serve(async (request) => {
       await requirePermission(admin, current.User_ID, "Finance.Configuration.Manage")
       if (!isUuid(parts[1])) throw new HttpError(404, "Legal entity not found.")
       await legalEntity(admin, current, parts[1])
-      const input = await body<{ mode?: string; maxAutoAmount?: number | null; maxVariancePercent?: number | null; reason?: string }>(request)
+      const input = await body<{ mode?: string; maxAutoAmount?: number | null; maxVariancePercent?: number | null; minExpectedMarginPercent?: number | null; reason?: string }>(request)
       const modes = ["always_review", "exception_review", "automatic"]
       if (!modes.includes(input.mode || "") || !clean(input.reason, 501) || clean(input.reason, 501).length > 500) {
         throw new HttpError(400, "Choose an approval mode and explain the change.")
       }
       const amount = input.maxAutoAmount
       const variance = input.maxVariancePercent
+      const margin = input.minExpectedMarginPercent
+      if (parts[2] === "receivables" && input.mode === "automatic") {
+        throw new HttpError(400, "Receivables use exception review or always review.")
+      }
+      if (margin != null && (parts[2] !== "receivables" || typeof margin !== "number" || !Number.isFinite(margin) || margin < 0 || margin > 100)) {
+        throw new HttpError(400, "Enter a minimum expected job margin from zero to 100 percent, for receivables only.")
+      }
       if (input.mode !== "always_review" && (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || amount >= 1e12)) {
         throw new HttpError(400, "Enter a finite base-currency automatic amount limit.")
       }
@@ -2986,6 +2994,7 @@ Deno.serve(async (request) => {
         p_workflow: parts[2], p_mode: input.mode, p_max_auto_amount: input.mode === "always_review" ? null : amount,
         p_max_variance_percent: input.mode === "always_review" ? null : variance ?? null,
         p_reason: clean(input.reason, 500),
+        p_min_expected_margin_percent: parts[2] === "receivables" ? margin ?? 0 : null,
       })
       rpcFailure(error, "Finance approval policy could not be saved.")
       const { data: policies, error: listError } = await admin.rpc("multideck_finance_list_approval_policies", {

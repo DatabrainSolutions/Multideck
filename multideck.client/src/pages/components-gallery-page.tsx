@@ -1995,7 +1995,7 @@ function CargoHandlingEditorPreview() {
 }
 
 function QuoteCargoEditorPreview() {
-  const [lines, setLines] = useState(() => [{ ...newQuoteCargoLine(), description: "Machine parts", packageQuantity: "2", packageType: "Crates", grossWeightKg: "120.5" }, { ...newQuoteCargoLine(), description: "Spare seals", packageQuantity: "4", packageType: "Cartons", grossWeightKg: "18" }])
+  const [lines, setLines] = useState(() => [{ ...newQuoteCargoLine(), description: "", packageQuantity: "10", packageType: "Pallets", length: "100", width: "120", height: "95" }, { ...newQuoteCargoLine(), description: "Spare seals", packageQuantity: "4", packageType: "Cartons", grossWeightKg: "18" }])
   const [editable, setEditable] = useState(true)
   return <div className="grid w-full gap-4"><Button variant="outline" onClick={() => setEditable(!editable)}>{editable ? "Preview submitted version" : "Return to draft"}</Button><QuoteCargoEditor lines={lines} editable={editable} onChange={setLines} /></div>
 }
@@ -2033,7 +2033,7 @@ function QuoteDetailControlsPreview() {
           <AmountCurrencyField label="Goods value" value={amount} currencies={["GBP", "EUR", "USD"]} onChange={setAmount} />
         </CompactFieldRow>
         <IncotermField value={incoterm} onValueChange={setIncoterm} namedLocation={namedPlace} onNamedLocationChange={setNamedPlace} />
-        <LocationFields label="Origin" value={location} options={locations} countries={locationCountries} onChange={setLocation} />
+        <LocationFields label="Origin" value={location} options={locations} countries={locationCountries} onChange={setLocation} codeRowContent={<CompactFieldShell label="Ready from date" width="short"><Input type="date" aria-label="Ready from date" /></CompactFieldShell>} />
         <RecurrenceBuilder value={recurrence} onChange={setRecurrence} />
         <Button variant="outline" aria-pressed={inheritedSafety} onClick={() => setInheritedSafety(value => !value)}>Preview flags from cargo lines</Button>
         <CargoCharacteristicsField value={characteristics} inherited={{ hazardous: inheritedSafety, temperatureControlled: inheritedSafety }} onChange={setCharacteristics} hazardousDetails={hazardous} onHazardousDetailsChange={setHazardous} />

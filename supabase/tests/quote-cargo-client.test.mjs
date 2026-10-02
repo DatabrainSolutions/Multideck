@@ -125,3 +125,42 @@ test('line safety is visible in shipment labels without becoming a sticky manual
   assert.equal(documentCargo.quoteDocumentHandling({}), 'No special handling recorded')
   assert.throws(() => documentCargo.quoteDocumentHandling({ cargoLines: [{ isHazardous: 'false' }] }))
 })
+
+
+test('carrier transit and service details round-trip separately for each supplier and saved version', () => {
+  const suppliers = [{ id: 'supplier-a', supplierName: 'Supplier A', carriers: [
+    { id: 'carrier-a', carrierName: 'Carrier A', transitDays: '7', via: 'Singapore', frequency: 'Weekly', serviceDetails: 'Consolidated service; no weekend departures' },
+    { id: 'carrier-b', carrierName: 'Carrier B', transitDays: '2', via: 'Direct', frequency: 'Daily', serviceDetails: 'Express service' },
+  ] }, { id: 'supplier-b', supplierName: 'Supplier B', carriers: [
+    { id: 'carrier-c', carrierName: 'Carrier C', transitDays: '', via: '', frequency: '', serviceDetails: '' },
+  ] }]
+  const encoded = JSON.stringify(suppliers)
+  const original = workspace({ supplierOptionsJson: encoded })
+  const loaded = mapping.quoteRecordFromWorkspace(original, null)
+  const payload = mapping.quoteSavePayload(loaded, [], null)
+  assert.equal(payload.shipmentFacts.supplierOptionsJson, encoded)
+  const savedVersion = mapping.quoteRecordFromWorkspace(workspace(payload.shipmentFacts), null)
+  assert.deepEqual(JSON.parse(savedVersion.supplierOptionsJson), suppliers)
+  assert.equal(original.quote.shipmentFacts.supplierOptionsJson, encoded, 'Historical evidence must remain unchanged')
+})
+
+
+test('requested cargo dates remain separate from route schedule and supplier email requires an explicit send', () => {
+  const original = workspace({ directServiceRequested: 'Yes', readyFromDate: '2026-10-10', requiredArrivalDate: '2026-10-20', estimatedDeparture: '2026-10-12', estimatedArrival: '2026-10-17', cargoLines: fixtureLines() })
+  const loaded = mapping.quoteRecordFromWorkspace(original, null)
+  const saved = mapping.quoteSavePayload(loaded, [], null).shipmentFacts
+  assert.equal(saved.directServiceRequested, 'Yes')
+  assert.equal(mapping.quoteRecordFromWorkspace(workspace(saved), null).directServiceRequested, 'Yes')
+  assert.equal(saved.readyFromDate, '2026-10-10')
+  assert.equal(saved.requiredArrivalDate, '2026-10-20')
+  assert.equal(saved.estimatedDeparture, '2026-10-12')
+  assert.equal(saved.estimatedArrival, '2026-10-17')
+  const draft = mapping.supplierRateRequestDraft({ ...loaded, profit: 'private-margin' }, { contact: 'rates@supplier.example', supplierName: 'Supplier A' })
+  assert.equal(draft.delivery.status, 'draft')
+  assert.equal(draft.mailboxId, null)
+  assert.equal(draft.to[0].address, 'rates@supplier.example')
+  assert.match(draft.bodyText, /Direct service requested: Yes/)
+  assert.match(draft.bodyText, /Ready from: 2026-10-10/)
+  assert.match(draft.bodyText, /Required arrival: 2026-10-20/)
+  assert.doesNotMatch(draft.bodyText, /private-margin|customer@example/)
+})

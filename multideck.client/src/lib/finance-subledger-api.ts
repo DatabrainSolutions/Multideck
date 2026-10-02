@@ -126,6 +126,7 @@ export type FinanceConfigurationPreview = {
 }
 
 export type FinanceDocument = {
+  approvalPolicyDecision?: import("@/lib/finance-approval-api").FinanceApprovalDecision | null
   FINDoc_ID: string
   FINDoc_Number: string | null
   FINDoc_TypeCode: FinanceDocumentType

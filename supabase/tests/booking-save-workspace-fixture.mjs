@@ -69,7 +69,7 @@ begin
   select jsonb_agg(to_jsonb(v) order by "CusQuoteVersion_ID") into before_quotes from public."CusQuote_Versions" v;
   foreach applied in array array[v1,v3,null::uuid] loop
     update public."Job_Header" set "Job_SourceQuoteVersionID"=applied,"Job_PendingQuoteVersionID"=case when applied=v1 then v2 else null end,
-      "Job_QuoteSyncStatus"=case when applied=v1 then 'pending' else 'synced' end where "Job_ID"=job;
+      "Job_QuoteSyncStatus"=case when applied=v1 then 'out_of_sync' else 'in_sync' end where "Job_ID"=job;
     for mode in 0..2 loop
       select "Job_UpdatedAt" into stamp from public."Job_Header" where "Job_ID"=job;
       payload:=case when mode=0 then '{}'::jsonb else
@@ -82,7 +82,7 @@ begin
         or saved->'cargoAllocationState' is null then raise exception 'Complete workspace metadata lost';end if;
       if applied=v1 and (saved#>>'{sourceQuote,appliedVersionNumber}' is distinct from '1'
         or saved#>>'{sourceQuote,pendingVersionNumber}' is distinct from '2'
-        or saved#>>'{sourceQuote,syncStatus}' is distinct from 'pending') then raise exception 'Original/pending state lost';end if;
+        or saved#>>'{sourceQuote,syncStatus}' is distinct from 'out_of_sync') then raise exception 'Original/pending state lost';end if;
       if applied=v3 and (saved#>>'{sourceQuote,appliedVersionNumber}' is distinct from '3'
         or saved#>>'{sourceQuote,pendingVersionNumber}' is not null) then raise exception 'Later version stale or lost';end if;
       if applied is null and saved->'sourceQuote' ? 'appliedVersionNumber' then raise exception 'Invented version on standalone Booking';end if;

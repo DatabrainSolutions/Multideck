@@ -4318,7 +4318,7 @@ begin
   end if;
   if mode_value = '' then missing := array_append(missing, 'Transport mode'); end if;
   if shipment_value = '' then missing := array_append(missing, 'Shipment / equipment type'); end if;
-  if nullif(btrim(coalesce(facts->>'knownCargo', facts->>'commodity')), '') is null then missing := array_append(missing, 'Goods description'); end if;
+
 
   if incoterm_value = '' then
     missing := array_append(missing, 'Incoterm or Not supplied / not applicable');
@@ -63926,39 +63926,35 @@ CREATE OR REPLACE FUNCTION "quote_api"."cargo_issue_missing"("lines" "jsonb", "m
     SET "search_path" TO ''
     AS $$
 declare
-  normalised jsonb; item jsonb; line_number integer := 0; label text;
-  missing text[] := '{}'; mode_value text := lower(coalesce(mode_code,''));
-  containerised boolean := lower(coalesce(shipment_type,'')) like '%fcl%'
+  normalised jsonb; item jsonb; line_number integer:=0; label text;
+  missing text[]:='{}'; dimension_count integer;
+  containerised boolean:=lower(coalesce(shipment_type,'')) like '%fcl%'
     or lower(coalesce(shipment_type,'')) like '%container%';
 begin
-  -- Incomplete values are allowed in a draft; issue returns actionable labels.
   begin
-    normalised := quote_api.normalise_cargo_lines(lines, false);
+    normalised:=quote_api.normalise_cargo_lines(lines,false);
   exception when invalid_parameter_value then
-    return array['Correct cargo line data: ' || sqlerrm];
+    return array['Correct cargo line data: '||sqlerrm];
   end;
+  -- Container quantity/type is enforced by the existing header equipment gate.
+  if containerised then return missing; end if;
   if jsonb_array_length(normalised)=0 then return array['At least one cargo line']; end if;
   for item in select value from jsonb_array_elements(normalised) loop
-    line_number := line_number + 1;
-
-
-    label := format('Cargo line %s: ',line_number);
-    if item->>'description' is null then missing := array_append(missing,label || 'goods description'); end if;
-    if not containerised then
-      if coalesce((item->>'packageQuantity')::numeric,0)<=0 then
-        missing := array_append(missing,label || 'positive package / piece quantity');
-      end if;
-      if item->>'packageType' is null then missing := array_append(missing,label || 'package type'); end if;
+    line_number:=line_number+1;
+    label:=format('Cargo line %s: ',line_number);
+    if coalesce((item->>'packageQuantity')::numeric,0)<=0 then
+      missing:=array_append(missing,label||'positive package / piece quantity');
     end if;
-    if mode_value in ('air','courier')
-       and coalesce((item->>'chargeableWeightKg')::numeric,0)<=0
-       and coalesce((item->>'grossWeightKg')::numeric,0)<=0 then
-      missing := array_append(missing,label || 'positive chargeable or gross weight');
-    end if;
-    if mode_value in ('sea','ocean','road','rail') and not containerised
-       and coalesce((item->>'volumeCbm')::numeric,0)<=0
-       and coalesce((item->>'grossWeightKg')::numeric,0)<=0 then
-      missing := array_append(missing,label || 'positive volume or gross weight');
+    if item->>'packageType' is null then missing:=array_append(missing,label||'package type'); end if;
+    select count(*) into dimension_count from unnest(array['length','width','height']) key
+      where coalesce((item->>key)::numeric,0)>0;
+    if dimension_count between 1 and 2 then
+      missing:=array_append(missing,label||'complete positive length, width and height');
+    elsif dimension_count=0
+      and coalesce((item->>'grossWeightKg')::numeric,0)<=0
+      and coalesce((item->>'chargeableWeightKg')::numeric,0)<=0
+      and coalesce((item->>'volumeCbm')::numeric,0)<=0 then
+      missing:=array_append(missing,label||'dimensions, weight or volume for pricing');
     end if;
   end loop;
   return missing;
@@ -64721,9 +64717,7 @@ begin
   if jsonb_array_length(lines) > 500 then
     raise exception 'A quote supports up to 500 cargo lines.' using errcode = '22023';
   end if;
-  if require_complete and jsonb_array_length(lines) = 0 then
-    raise exception 'Add at least one cargo line before submitting the quote.' using errcode = '22023';
-  end if;
+
   for item in select value from jsonb_array_elements(lines) loop
     if jsonb_typeof(item) <> 'object' then
       raise exception 'Each cargo line must be an object.' using errcode = '22023';
@@ -64759,9 +64753,7 @@ begin
       end if;
       normalised := normalised || jsonb_build_object(key, raw);
     end loop;
-    if require_complete and normalised->>'description' is null then
-      raise exception 'Describe every cargo line before submitting the quote.' using errcode = '22023';
-    end if;
+
     foreach key in array number_fields loop
       if item ? key and jsonb_typeof(item->key) not in ('string','number','null') then
         raise exception 'Cargo % must be a non-negative number.', key using errcode = '22023';
@@ -155865,5 +155857,341 @@ end; $$;
 create trigger zz_managed_quote_charge_codes after update of "Job_Status" on public."Job_Header"
 for each row execute function booking_api.attach_provisional_managed_charge_codes();
 revoke all on function booking_api.attach_provisional_managed_charge_codes() from public,anon,authenticated,service_role;
+
+commit;
+
+-- Read-only supplier-account finance projection for the accounts register.
+-- The Edge Function remains responsible for Suppliers.Read, payables and
+-- integration permission checks; this internal RPC is callable only by the
+-- service role and independently constrains every record to the tenant company.
+
+begin;
+
+create or replace function public.multideck_finance_supplier_account_snapshot(
+  p_company_id uuid,
+  p_account_ids uuid[],
+  p_include_accounting_sync boolean default false
+)
+returns jsonb
+language plpgsql
+stable
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_account_ids uuid[] := coalesce(p_account_ids, '{}'::uuid[]);
+  v_result jsonb;
+begin
+  if p_company_id is null then
+    raise exception 'Choose a tenant company before loading supplier accounts.' using errcode = '22023';
+  end if;
+
+  if cardinality(v_account_ids) > 100 then
+    raise exception 'Supplier account finance snapshots are limited to 100 requested accounts.' using errcode = '22023';
+  end if;
+
+  with tenant_entities as materialized (
+    -- Inactive legal entities remain in scope because historic debt does not
+    -- stop being due when the issuer is retired. Only active entities are used
+    -- below to discover the current accounting-system connections.
+    select
+      entity."LegalEntity_ID" as legal_entity_id,
+      entity."LegalEntity_IsActive" as is_active,
+      case
+        when upper(nullif(btrim(entity."LegalEntity_BaseCurrencyCodeSnapshot"), '')) ~ '^[A-Z]{3}$'
+          then upper(btrim(entity."LegalEntity_BaseCurrencyCodeSnapshot"))
+        else null
+      end as base_currency_code
+    from public."cmp_LegalEntities" entity
+    where entity."Company_ID" = p_company_id
+  ), currency_context as (
+    select
+      count(*)::integer as entity_count,
+      count(*) filter (where is_active)::integer as active_entity_count,
+      count(*) filter (where base_currency_code is null)::integer as invalid_currency_count,
+      count(distinct base_currency_code)::integer as distinct_currency_count,
+      min(base_currency_code) as candidate_currency_code
+    from tenant_entities
+  ), finance_context as materialized (
+    select
+      (
+        entity_count > 0
+        and active_entity_count = 1
+        and invalid_currency_count = 0
+        and distinct_currency_count = 1
+      ) as finance_ready,
+      case
+        when entity_count > 0
+          and active_entity_count = 1
+          and invalid_currency_count = 0
+          and distinct_currency_count = 1
+          then candidate_currency_code
+        else null
+      end as base_currency_code
+    from currency_context
+  ), supplier_accounts as materialized (
+    -- Match the current supplier register eligibility while retaining the
+    -- shared accessible-account boundary for the supplied company.
+    select distinct accessible.account_id
+    from public.multideck_crm_accessible_account_ids(p_company_id) accessible
+    join public."Org_Master" organisation
+      on organisation."Org_id" = accessible.account_id
+    where exists (
+         select 1
+         from public."Org_Master_Type" link
+         join public."Org_Types" organisation_type
+           on organisation_type."OrgType_ID" = link."OrgType_ID"
+         where link."Org_ID" = organisation."Org_id"
+           and lower(organisation_type."OrgType_Name") = 'supplier'
+       )
+  ), requested_accounts as materialized (
+    select distinct requested.account_id
+    from unnest(v_account_ids) requested(account_id)
+    join supplier_accounts accessible
+      on accessible.account_id = requested.account_id
+    where requested.account_id is not null
+  ), account_preferences as materialized (
+    select
+      account.account_id,
+      null::numeric as credit_limit,
+      null::text as credit_currency_code,
+      nullif(btrim(profile."CRMAccountOps_InvoicePreferencesJSON" ->> 'purchasePaymentTermCode'), '') as payment_terms_code,
+      case
+        when nullif(btrim(profile."CRMAccountOps_InvoicePreferencesJSON" ->> 'payableTermDays'), '')
+          ~ '^[0-9]+([.][0-9]{1,4})?$'
+          then (profile."CRMAccountOps_InvoicePreferencesJSON" ->> 'payableTermDays')::numeric
+        else null
+      end as payment_term_days,
+      case
+        when nullif(btrim(profile."CRMAccountOps_InvoicePreferencesJSON" ->> 'payableDueDay'), '')
+          ~ '^[0-9]+([.][0-9]{1,4})?$'
+          then (profile."CRMAccountOps_InvoicePreferencesJSON" ->> 'payableDueDay')::numeric
+        else null
+      end as payment_term_due_day,
+      lower(coalesce(profile."CRMAccountOps_InvoicePreferencesJSON" ->> 'payableEndOfMonth', 'false')) = 'true'
+        as payment_term_end_of_month,
+      false as credit_hold,
+      case
+        when nullif(btrim(profile."CRMAccountOps_InvoicePreferencesJSON" ->> 'supplierAccountingStatusCode'), '') = 'blocked'
+          then 'blocked'
+        when nullif(btrim(profile."CRMAccountOps_InvoicePreferencesJSON" ->> 'supplierAccountingStatusCode'), '') = 'on_hold'
+          then 'on_hold'
+        else 'active'
+      end as account_status
+    from supplier_accounts account
+    left join public."CRM_AccountOperationalProfiles" profile
+      on profile."CRMAccountOps_OrgID" = account.account_id
+     and profile."CRMAccountOps_CompanyID" = p_company_id
+  ), document_balances as materialized (
+    select
+      document."FINDoc_PartyOrgID" as account_id,
+      sum(document."FINDoc_LocalOutstandingAmount") as balance_due,
+      coalesce(sum(document."FINDoc_LocalOutstandingAmount") filter (
+        where document."FINDoc_TypeCode" = 'pl_invoice'
+          and document."FINDoc_OutstandingAmount" > 0
+          and document."FINDoc_DueDate" < current_date
+      ), 0) as overdue_amount,
+      count(*) filter (
+        where document."FINDoc_TypeCode" = 'pl_invoice'
+          and document."FINDoc_OutstandingAmount" > 0
+      )::integer as open_invoice_count,
+      count(*) filter (
+        where document."FINDoc_TypeCode" = 'pl_invoice'
+          and document."FINDoc_OutstandingAmount" > 0
+          and document."FINDoc_DueDate" < current_date
+      )::integer as overdue_invoice_count,
+      min(document."FINDoc_DueDate") filter (
+        where document."FINDoc_TypeCode" = 'pl_invoice'
+          and document."FINDoc_OutstandingAmount" > 0
+          and document."FINDoc_DueDate" < current_date
+      ) as oldest_overdue_date
+    from public."FIN_Documents" document
+    join tenant_entities entity
+      on entity.legal_entity_id = document."FINDoc_LegalEntityID"
+    join supplier_accounts account
+      on account.account_id = document."FINDoc_PartyOrgID"
+    where document."FINDoc_TypeCode" in ('pl_invoice', 'debit_note')
+      and document."FINDoc_PartyRole" = 'supplier'
+      and document."FINDoc_StatusCode" in ('approved', 'submitted')
+    group by document."FINDoc_PartyOrgID"
+  ), active_connections as materialized (
+    select connection."ACCIC_ID" as connection_id
+    from public."ACCI_Connections" connection
+    join tenant_entities entity
+      on entity.legal_entity_id = connection."ACCIC_LegalEntityID"
+     and entity.is_active
+    where p_include_accounting_sync
+      and connection."ACCIC_StatusCode" = 'active'
+  ), connection_count as materialized (
+    select count(*)::integer as value from active_connections
+  ), active_party_mappings as materialized (
+    select
+      mapping."ACCIPM_ConnectionID" as connection_id,
+      mapping."ACCIPM_OrgID" as account_id,
+      max(coalesce(mapping."ACCIPM_LastSyncedAt", mapping."ACCIPM_CreatedAt")) as mapping_effective_at,
+      max(mapping."ACCIPM_LastSyncedAt") as last_synced_at
+    from public."ACCI_PartyMappings" mapping
+    join active_connections connection
+      on connection.connection_id = mapping."ACCIPM_ConnectionID"
+    join supplier_accounts account
+      on account.account_id = mapping."ACCIPM_OrgID"
+    where p_include_accounting_sync
+      and mapping."ACCIPM_PartyType" in ('supplier', 'both')
+      and mapping."ACCIPM_IsActive"
+    group by mapping."ACCIPM_ConnectionID", mapping."ACCIPM_OrgID"
+  ), latest_party_events as materialized (
+    select distinct on (event."ACCISE_ConnectionID", event."ACCISE_LocalID")
+      event."ACCISE_ConnectionID" as connection_id,
+      event."ACCISE_LocalID" as account_id,
+      event."ACCISE_EventCode" as event_code,
+      event."ACCISE_Severity" as severity,
+      event."ACCISE_CreatedAt" as created_at
+    from public."ACCI_SyncEvents" event
+    join active_connections connection
+      on connection.connection_id = event."ACCISE_ConnectionID"
+    join supplier_accounts account
+      on account.account_id = event."ACCISE_LocalID"
+    where p_include_accounting_sync
+      and event."ACCISE_LocalTable" = 'Org_Master'
+      and event."ACCISE_EventCode" in ('party_account_synced', 'party_account_sync_failed')
+    order by event."ACCISE_ConnectionID", event."ACCISE_LocalID", event."ACCISE_CreatedAt" desc, event."ACCISE_ID" desc
+  ), connection_account_state as materialized (
+    select
+      account.account_id,
+      connection.connection_id,
+      mapping.connection_id is not null as is_mapped,
+      mapping.last_synced_at,
+      (event.event_code = 'party_account_sync_failed' or event.severity in ('error', 'critical'))
+        and event.created_at >= coalesce(mapping.mapping_effective_at, '-infinity'::timestamptz)
+        as has_later_failure
+    from supplier_accounts account
+    cross join active_connections connection
+    left join active_party_mappings mapping
+      on mapping.connection_id = connection.connection_id
+     and mapping.account_id = account.account_id
+    left join latest_party_events event
+      on event.connection_id = connection.connection_id
+     and event.account_id = account.account_id
+  ), account_connection_totals as materialized (
+    select
+      state.account_id,
+      count(*) filter (where state.is_mapped)::integer as mapped_connection_count,
+      coalesce(bool_or(state.has_later_failure), false) as has_later_failure,
+      max(state.last_synced_at) as last_synced_at
+    from connection_account_state state
+    group by state.account_id
+  ), account_sync_state as materialized (
+    select
+      account.account_id,
+      case
+        when connections.value = 0 then 'not_connected'
+        when coalesce(totals.has_later_failure, false) then 'failed'
+        when coalesce(totals.mapped_connection_count, 0) = connections.value then 'synced'
+        when coalesce(totals.mapped_connection_count, 0) > 0 then 'partial'
+        else 'not_synced'
+      end as sync_status,
+      totals.last_synced_at
+    from supplier_accounts account
+    cross join connection_count connections
+    left join account_connection_totals totals
+      on totals.account_id = account.account_id
+  ), row_payloads as materialized (
+    select
+      requested.account_id,
+      jsonb_build_object(
+        'organisationId', requested.account_id,
+        'financeReady', context.finance_ready,
+        'baseCurrencyCode', context.base_currency_code,
+        'balanceDue', case when context.finance_ready then coalesce(balance.balance_due, 0) else null end,
+        'overdueAmount', case when context.finance_ready then coalesce(balance.overdue_amount, 0) else null end,
+        'openInvoiceCount', coalesce(balance.open_invoice_count, 0),
+        'overdueInvoiceCount', coalesce(balance.overdue_invoice_count, 0),
+        'oldestOverdueDate', balance.oldest_overdue_date,
+        'creditLimit', preferences.credit_limit,
+        'creditCurrencyCode', preferences.credit_currency_code,
+        'availableCredit', case
+          when context.finance_ready
+            and preferences.credit_limit is not null
+            and preferences.credit_currency_code = context.base_currency_code
+            then preferences.credit_limit - greatest(coalesce(balance.balance_due, 0), 0)
+          else null
+        end,
+        'paymentTermsCode', preferences.payment_terms_code,
+        'paymentTermDays', preferences.payment_term_days,
+        'paymentTermDueDay', preferences.payment_term_due_day,
+        'paymentTermEndOfMonth', preferences.payment_term_end_of_month,
+        'accountStatus', preferences.account_status,
+        'creditHold', preferences.credit_hold
+      ) || case
+        when p_include_accounting_sync then jsonb_build_object(
+          'accountingSyncStatus', sync.sync_status,
+          'accountingLastSyncedAt', sync.last_synced_at
+        )
+        else '{}'::jsonb
+      end as value
+    from requested_accounts requested
+    cross join finance_context context
+    join account_preferences preferences
+      on preferences.account_id = requested.account_id
+    left join document_balances balance
+      on balance.account_id = requested.account_id
+    left join account_sync_state sync
+      on sync.account_id = requested.account_id
+  ), summary_payload as materialized (
+    select jsonb_build_object(
+      'balanceDue', case when context.finance_ready then coalesce(sum(balance.balance_due), 0) else null end,
+      'overdueAmount', case when context.finance_ready then coalesce(sum(balance.overdue_amount), 0) else null end,
+      'openInvoiceCount', coalesce(sum(balance.open_invoice_count), 0)::integer,
+      'overdueInvoiceCount', coalesce(sum(balance.overdue_invoice_count), 0)::integer,
+      'overdueSupplierCount', count(*) filter (where coalesce(balance.overdue_invoice_count, 0) > 0)::integer,
+      'creditAttentionCount', count(*) filter (
+        where context.finance_ready
+          and preferences.credit_limit is not null
+          and preferences.credit_currency_code = context.base_currency_code
+          and greatest(coalesce(balance.balance_due, 0), 0) > preferences.credit_limit
+      )::integer,
+      'onHoldCount', count(*) filter (where preferences.account_status in ('on_hold', 'blocked'))::integer,
+      'accountingAttentionCount', case
+        when p_include_accounting_sync
+          then count(*) filter (where sync.sync_status <> 'synced')::integer
+        else null
+      end
+    ) as value
+    from supplier_accounts account
+    cross join finance_context context
+    join account_preferences preferences
+      on preferences.account_id = account.account_id
+    left join document_balances balance
+      on balance.account_id = account.account_id
+    left join account_sync_state sync
+      on sync.account_id = account.account_id
+    group by context.finance_ready, context.base_currency_code
+  )
+  select jsonb_build_object(
+    'financeReady', context.finance_ready,
+    'baseCurrencyCode', context.base_currency_code,
+    'rows', coalesce((select jsonb_agg(row_payloads.value order by row_payloads.account_id) from row_payloads), '[]'::jsonb),
+    'summary', coalesce((select summary_payload.value from summary_payload), jsonb_build_object(
+      'balanceDue', case when context.finance_ready then 0 else null end,
+      'overdueAmount', case when context.finance_ready then 0 else null end,
+      'openInvoiceCount', 0,
+      'overdueInvoiceCount', 0,
+      'overdueSupplierCount', 0,
+      'creditAttentionCount', 0,
+      'onHoldCount', 0,
+      'accountingAttentionCount', case when p_include_accounting_sync then 0 else null end
+    ))
+  ) into v_result
+  from finance_context context;
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.multideck_finance_supplier_account_snapshot(uuid, uuid[], boolean) from public, anon, authenticated;
+grant execute on function public.multideck_finance_supplier_account_snapshot(uuid, uuid[], boolean) to service_role;
+
+comment on function public.multideck_finance_supplier_account_snapshot(uuid, uuid[], boolean) is
+  'Service-role-only, read-only supplier account projection. It emits no state or watch event; existing FIN_Documents, supplier invoice-preference and provider party-sync event adapters remain the lifecycle signals.';
 
 commit;

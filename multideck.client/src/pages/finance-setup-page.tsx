@@ -4257,7 +4257,8 @@ function ComplianceTab({
 }
 
 const approvalWorkflows: Array<{ code: FinanceApprovalWorkflow; label: string }> = [
-  { code: "document", label: "Invoices and credit notes" },
+  { code: "receivables", label: "Receivables: invoices and credit notes" },
+  { code: "document", label: "Payables and legacy document policy" },
   { code: "cash", label: "Receipts and payments" },
   { code: "payment_run", label: "Supplier payment runs" },
   { code: "purchase_order", label: "Supplier purchase orders" },
@@ -4274,43 +4275,52 @@ const approvalWorkflows: Array<{ code: FinanceApprovalWorkflow; label: string }>
 
 function ApprovalPolicyPanel({ entityId, baseCurrency, t }: { entityId: string; baseCurrency: string; t: (value: string) => string }) {
   const [policies, setPolicies] = useState<FinanceApprovalPolicy[]>([])
-  const [workflow, setWorkflow] = useState<FinanceApprovalWorkflow>("document")
+  const [workflow, setWorkflow] = useState<FinanceApprovalWorkflow>("receivables")
   const [mode, setMode] = useState<FinanceApprovalMode>("always_review")
   const [amount, setAmount] = useState("")
   const [variance, setVariance] = useState("")
+  const [margin, setMargin] = useState("0")
   const [reason, setReason] = useState("")
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const policy = policies.find((item) => item.workflow === workflow)
   const boundedAmount = /^\d+(?:\.\d{1,4})?$/.test(amount) && Number(amount) < 1e12
   const boundedVariance = !variance.trim() || (/^\d+(?:\.\d{1,4})?$/.test(variance) && Number(variance) <= 100)
+  const boundedMargin = /^\d+(?:\.\d{1,4})?$/.test(margin) && Number(margin) <= 100
+  const validLimits = boundedAmount && (workflow === "receivables" ? boundedMargin : boundedVariance)
 
   useEffect(() => {
     let current = true
+    setLoading(true)
+    setLoaded(false)
     getFinanceApprovalPolicies(entityId).then(({ policies: next }) => {
-      if (current) { setPolicies(next); setError(null); setLoading(false) }
+      if (current) { setPolicies(next); setLoaded(true); setError(null); setLoading(false) }
     }).catch((cause) => {
       if (current) { setError(cause instanceof Error ? cause.message : "Approval policies could not be loaded."); setLoading(false) }
     })
     return () => { current = false }
-  }, [entityId])
+  }, [entityId, loadAttempt])
   useEffect(() => {
-    setMode(policy?.mode || "always_review")
+    setMode(policy?.mode || (workflow === "receivables" ? "exception_review" : "always_review"))
     setAmount(policy?.maxAutoAmount == null ? "" : String(policy.maxAutoAmount))
     setVariance(policy?.maxVariancePercent == null ? "" : String(policy.maxVariancePercent))
+    setMargin(String(policy?.minExpectedMarginPercent ?? 0))
     setReason("")
   }, [workflow, policy?.policyId])
 
   const save = async () => {
-    if (busy || !reason.trim() || (mode !== "always_review" && (!boundedAmount || !boundedVariance))) return
+    if (busy || loading || !loaded || !reason.trim() || (mode !== "always_review" && !validLimits)) return
     setBusy(true)
     setError(null)
     try {
       const saved = await saveFinanceApprovalPolicy(entityId, workflow, {
         mode,
         maxAutoAmount: mode === "always_review" ? null : Number(amount),
-        maxVariancePercent: mode === "always_review" || !variance.trim() ? null : Number(variance),
+        maxVariancePercent: workflow === "receivables" || mode === "always_review" || !variance.trim() ? null : Number(variance),
+        minExpectedMarginPercent: workflow === "receivables" ? (mode === "always_review" ? 0 : Number(margin)) : null,
         reason: reason.trim(),
       })
       setPolicies((current) => [...current.filter((item) => item.workflow !== workflow), saved])
@@ -4322,39 +4332,44 @@ function ApprovalPolicyPanel({ entityId, baseCurrency, t }: { entityId: string; 
   }
   return <FinancePanel title={t("Workflow approval policies")} description={t("Choose when each legal entity workflow needs a person to review it. Every automatic decision is bounded and audited.")}>
     <div className="space-y-4 px-4 py-4">
-    {error ? <Notice tone="danger">{t(error)}</Notice> : null}
-    {loading ? <p className="text-sm text-[var(--md-subtle)]" role="status">{t("Loading approval policies…")}</p> : <div className="grid gap-4 @min-[760px]/finance:grid-cols-2">
+    {error ? <Notice tone="danger">{t(error)}{!loaded ? <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setLoadAttempt((value) => value + 1)}>{t("Retry")}</Button> : null}</Notice> : null}
+    {loading ? <p className="text-sm text-[var(--md-subtle)]" role="status">{t("Loading approval policies…")}</p> : <fieldset disabled={busy || !loaded} className="grid min-w-0 gap-4 @min-[760px]/finance:grid-cols-2">
       <SelectField id="approval-workflow" label={t("Workflow")} value={workflow} onChange={(value) => setWorkflow(value as FinanceApprovalWorkflow)}
         options={approvalWorkflows.map((item) => ({ value: item.code, label: t(item.label) }))} />
       <SelectField id="approval-mode" label={t("Approval mode")} value={mode} onChange={(value) => setMode(value as FinanceApprovalMode)} options={[
         { value: "always_review", label: t("Always review") },
         { value: "exception_review", label: t("Review exceptions") },
-        { value: "automatic", label: t("Automatic within limits") },
+        ...(workflow === "receivables" ? [] : [{ value: "automatic", label: t("Automatic within limits") }]),
       ]} />
       <p className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t(mode === "always_review"
         ? "Every submitted item waits for a person to review it."
         : mode === "exception_review"
-          ? "Source-verified items flow through within limits; advisory exceptions wait for review."
+          ? workflow === "receivables" ? "Invoices and customer credit notes within these limits proceed; exceptions wait for approval." : "Source-verified items flow through within limits; advisory exceptions wait for review."
           : "Items flow through within limits unless a hard control requires review.")}</p>
+      {workflow === "receivables" ? <p className="text-xs leading-5 text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t("The same rules apply to sales invoices and customer credit notes. Each linked job is checked against its whole-job expected sales and costs, excluding tax. Posted invoices and costs do not replace that benchmark. Missing expected costing requires review.")}</p> : null}
+      {workflow === "receivables" && !policy ? <p role="status" className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t("These receivables settings are not active until saved. The existing document policy applies in the meantime.")}</p> : null}
       {(["opening_balance", "opening_fx", "recognition_mandate", "vat_control", "period_close"] as FinanceApprovalWorkflow[]).includes(workflow) ?
         <p className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t("This control still needs an explicit operator action. An eligible policy can remove the second review step.")}</p> : null}
       {workflow === "bank_match" ?
         <p className="text-xs text-[var(--md-subtle)] @min-[760px]/finance:col-span-2">{t("Only unique exact bank matches can complete automatically. Statement verification remains a separate action.")}</p> : null}
       {mode !== "always_review" ? <>
         <div className="min-w-0 space-y-1"><FieldLabel htmlFor="approval-amount">{t("Maximum automatic amount")} · {baseCurrency}</FieldLabel>
-          <Input id="approval-amount" type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} data-i18n-skip dir="ltr" />
-          <p className="text-xs text-[var(--md-subtle)]">{t("Amounts above this limit require review.")}</p></div>
-        <div className="min-w-0 space-y-1"><FieldLabel htmlFor="approval-variance">{t("Maximum variance") } · % · {t("optional")}</FieldLabel>
+          <Input id="approval-amount" type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} aria-invalid={Boolean(amount) && !boundedAmount} aria-describedby="approval-amount-hint" data-i18n-skip dir="ltr" />
+          <p id="approval-amount-hint" className="text-xs text-[var(--md-subtle)]">{t(workflow === "receivables" ? "Document total including tax, in the legal entity base currency. Credit notes use their absolute value. Amounts above this limit require review." : "Amounts above this limit require review.")}</p></div>
+        {workflow === "receivables" ? <div className="min-w-0 space-y-1"><FieldLabel htmlFor="approval-margin">{t("Minimum expected job margin")} · %</FieldLabel>
+          <Input id="approval-margin" type="number" min="0" max="100" step="0.01" value={margin} onChange={(event) => setMargin(event.target.value)} aria-invalid={Boolean(margin) && !boundedMargin} aria-describedby="approval-margin-hint" data-i18n-skip dir="ltr" />
+          <p id="approval-margin-hint" className="text-xs text-[var(--md-subtle)]">{t(margin && !boundedMargin ? "Enter a minimum margin from 0% to 100%, with up to four decimal places." : "Set 0% to review loss-making jobs, or a higher percentage to review low margins. Margin = (expected sales − expected costs) ÷ expected sales × 100.")}</p>
+        </div> : <div className="min-w-0 space-y-1"><FieldLabel htmlFor="approval-variance">{t("Maximum variance") } · % · {t("optional")}</FieldLabel>
           <Input id="approval-variance" type="number" min="0" max="100" step="0.01" value={variance} onChange={(event) => setVariance(event.target.value)} data-i18n-skip dir="ltr" />
-          <p className="text-xs text-[var(--md-subtle)]">{t("If this workflow has no verified comparison amount, it will require review.")}</p></div>
+          <p className="text-xs text-[var(--md-subtle)]">{t("If this workflow has no verified comparison amount, it will require review.")}</p></div>}
       </> : null}
       <div className="min-w-0 space-y-1 @min-[760px]/finance:col-span-2"><FieldLabel htmlFor="approval-reason">{t("Reason for change")}</FieldLabel>
         <Input id="approval-reason" value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder={t("Explain this approval policy change")} /></div>
       <div className="flex flex-wrap items-center justify-between gap-3 @min-[760px]/finance:col-span-2">
-        <p className="text-xs text-[var(--md-subtle)]">{policy ? `${t("Revision")} ${policy.revision} · ${t("Last reason")}: ${policy.reason}` : t("Default: always review")}</p>
-        <Button type="button" disabled={busy || !reason.trim() || (mode !== "always_review" && (!boundedAmount || !boundedVariance))} onClick={() => void save()}>{t(busy ? "Saving…" : "Save approval policy")}</Button>
+        <p className="text-xs text-[var(--md-subtle)]">{policy ? `${t("Revision")} ${policy.revision} · ${t("Last reason")}: ${policy.reason}` : t(workflow === "receivables" ? "No receivables policy saved" : "Default: always review")}</p>
+        <Button type="button" disabled={busy || loading || !loaded || !reason.trim() || (mode !== "always_review" && !validLimits)} onClick={() => void save()}>{t(busy ? "Saving…" : "Save approval policy")}</Button>
       </div>
-    </div>}
+    </fieldset>}
     </div>
   </FinancePanel>
 }

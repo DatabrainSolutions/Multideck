@@ -23,13 +23,13 @@ function Checkbox({
       data-invalid-feedback={invalidFeedback}
       aria-invalid={ariaInvalid}
       className={cn(
-        "premium-stroke-soft peer grid size-5 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] text-[var(--md-accent-ink)] outline-none transition-[background-color,border-color,box-shadow,opacity,transform] duration-200 hover:bg-[var(--md-hover)] active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:ring-3 focus-visible:ring-[var(--md-accent-a18)] aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[state=checked]:bg-[var(--md-accent)] data-[state=checked]:shadow-[0_0_0_3px_var(--md-accent-a12)] disabled:cursor-not-allowed disabled:opacity-50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        "premium-stroke-soft peer grid size-5 shrink-0 place-items-center rounded-[var(--md-radius-sm)] border-[1.5px] border-[var(--md-subtle)] bg-[var(--md-surface)] text-[var(--md-accent-ink)] outline-none transition-[background-color,border-color,box-shadow,opacity,transform] duration-200 enabled:hover:border-[var(--md-accent)] data-[state=unchecked]:enabled:hover:bg-[var(--md-hover)] active:scale-[0.96] motion-reduce:active:scale-100 focus-visible:ring-3 focus-visible:ring-[var(--md-accent-a18)] aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[state=checked]:border-[var(--md-accent)] data-[state=checked]:bg-[var(--md-accent)] data-[state=checked]:shadow-[0_0_0_3px_var(--md-accent-a12)] disabled:cursor-not-allowed disabled:opacity-50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
         className,
       )}
       {...props}
     >
       <CheckboxPrimitive.Indicator data-slot="checkbox-indicator">
-        <Check className="size-3.5" strokeWidth={2} aria-hidden="true" />
+        <Check className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   )
