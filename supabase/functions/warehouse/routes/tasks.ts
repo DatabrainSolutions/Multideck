@@ -26,7 +26,7 @@ async function enrichTasks(admin, rows) {
     itemIds.length ? many(admin.from("WMS_Items").select("WMSItem_ID,WMSItem_SKU,WMSItem_Description").in("WMSItem_ID", itemIds)) : [],
     locationIds.length ? many(admin.from("WMS_Locations").select("WMSLocation_ID,WMSLocation_Code").in("WMSLocation_ID", locationIds)) : [],
     lotIds.length ? many(admin.from("WMS_InventoryLots").select("WMSLot_ID,WMSLot_LotNumber").in("WMSLot_ID", lotIds)) : [],
-    completedByIds.length ? many(admin.from("cmp_Users").select("User_ID,User_FirstName,User_LastName").in("User_ID", completedByIds)) : [],
+    completedByIds.length ? many(admin.from("cmp_Users").select("User_ID,User_Firstname,User_Lastname").in("User_ID", completedByIds)) : [],
   ]);
   const customerIds = [...new Set(orders.map((row) => row.WMSOrder_CustomerOrgID).filter(Boolean))];
   const customers = customerIds.length ? await many(admin.from("Org_Master").select("Org_id,Org_Name").in("Org_id", customerIds)) : [];
@@ -36,7 +36,7 @@ async function enrichTasks(admin, rows) {
   const locationMap = new Map(locations.map((row) => [row.WMSLocation_ID, row.WMSLocation_Code]));
   const lotMap = new Map(lots.map((row) => [row.WMSLot_ID, row.WMSLot_LotNumber]));
   const customerMap = new Map(customers.map((row) => [row.Org_id, row.Org_Name]));
-  const userMap = new Map(users.map((row) => [row.User_ID, [row.User_FirstName, row.User_LastName].filter(Boolean).join(" ")]));
+  const userMap = new Map(users.map((row) => [row.User_ID, [row.User_Firstname, row.User_Lastname].filter(Boolean).join(" ")]));
   return rows.map((row) => {
     const facility = facilityMap.get(row.WMSTask_FacilityID);
     const order = orderMap.get(row.WMSTask_OrderID);

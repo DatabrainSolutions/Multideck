@@ -19,14 +19,21 @@ test("one operational order is fetched directly without a broad compatibility co
 
 test("detail mapping reads only the selected order's supporting item and location rows", () => {
   assert.match(route, /const itemIds = \[\.\.\.new Set\(lines\.map/)
-  assert.match(route, /const locationIds = \[\.\.\.new Set\(lines\.flatMap/)
+  // Location codes come only from this order's own lines and putaway/pick tasks.
+  assert.match(route, /const locationIds = \[\.\.\.new Set\(\[\s*\.\.\.lines\.flatMap[\s\S]*?\.\.\.tasks\.flatMap/)
   assert.match(route, /\.in\("WMSItem_ID", missingItemIds\)/)
   assert.match(route, /\.in\("WMSLocation_ID", missingLocationIds\)/)
   assert.match(route, /\.eq\("WMSFacility_ID", row\.WMSOrder_FacilityID\)/)
   assert.match(route, /\.eq\("Org_id", row\.WMSOrder_CustomerOrgID\)/)
-  assert.match(route, /mapExactOrder\(admin, rows\[0\]\)/)
+  assert.match(route, /mapExactOrder\(admin, rows\[0\], actor\)/)
   assert.match(route, /loadExactOrderById/)
   assert.match(route, /const refreshed = await loadExactOrderById/)
+})
+
+test("order activity names staff only for the warehouse team's own company", () => {
+  assert.match(route, /const staffIds = context\.companyId \? \[/)
+  assert.match(route, /from\("cmp_Users"\)\s*\.select\("User_ID,User_Firstname,User_Lastname"\)\s*\.eq\("Company_ID", context\.companyId\)/)
+  assert.match(route, /companyId: actor\?\.companyId \?\? null/)
 })
 
 test("the detail screen uses the exact order endpoint and bounded location search", () => {

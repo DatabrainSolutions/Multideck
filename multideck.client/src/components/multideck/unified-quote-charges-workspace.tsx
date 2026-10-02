@@ -90,6 +90,9 @@ export interface UnifiedQuoteChargeRow {
   baseCost?: number
   baseSell?: number
   profit?: number
+  showToCustomer?: boolean
+  customerNotes?: string
+  internalNotes?: string
 }
 
 export interface CreateQuoteChargeRowContext {
@@ -110,7 +113,10 @@ export interface UnifiedQuoteChargesWorkspaceProps {
   createRow?: (context: CreateQuoteChargeRowContext) => UnifiedQuoteChargeRow
   chargeChoices?: readonly ChargeChoice[]
   readOnly?: boolean
+  /** Issued Quote evidence: use stored amounts and ROEs, never recalculate. */
+  savedValues?: boolean
   storageKey?: string
+  rowReadOnlyReason?: (rowId: string) => string | undefined
   className?: string
 }
 
@@ -676,14 +682,17 @@ export function UnifiedQuoteChargesWorkspace({
   onSelectedRowIdChange,
   createRow,
   chargeChoices,
-  readOnly = false,
+  readOnly: suppliedReadOnly = false,
+  savedValues = false,
+  rowReadOnlyReason,
   storageKey = "unified-quote-charges",
   className,
 }: UnifiedQuoteChargesWorkspaceProps) {
   const { direction, language, t } = useLanguage()
+  const readOnly = suppliedReadOnly || savedValues
   const parties = suppliedParties ?? DEFAULT_PARTIES
   const currencies = suppliedCurrencies?.length ? suppliedCurrencies : DEFAULT_CURRENCIES
-  const baseCurrency = currencies.some((currency) => currency.code === suppliedBaseCurrency)
+  const baseCurrency = savedValues ? suppliedBaseCurrency : currencies.some((currency) => currency.code === suppliedBaseCurrency)
     ? suppliedBaseCurrency
     : currencies[0]?.code ?? suppliedBaseCurrency
   const exchangeRates = suppliedExchangeRates ?? (suppliedCurrencies ? [] : DEFAULT_EXCHANGE_RATES)
@@ -719,6 +728,21 @@ export function UnifiedQuoteChargesWorkspace({
   }, [baseCurrency, rateRecordFor])
 
   const resolveRow = useCallback((row: UnifiedQuoteChargeRow): ResolvedQuoteChargeRow => {
+    if (savedValues) {
+      // Missing evidence stays missing, even when a current rate is available.
+      const baseCost = typeof row.baseCost === "number" && Number.isFinite(row.baseCost) ? row.baseCost : NaN
+      const baseSell = typeof row.baseSell === "number" && Number.isFinite(row.baseSell) ? row.baseSell : NaN
+      return {
+        ...row,
+        costRoe: row.costRoe ?? NaN,
+        sellRoe: row.sellRoe ?? NaN,
+        baseCost,
+        baseSell,
+        profit: baseSell - baseCost,
+        costRateAvailable: Number.isFinite(baseCost),
+        sellRateAvailable: Number.isFinite(baseSell),
+      }
+    }
     const costRate = rateFor(row.costCurrency, "cost")
     const sellRate = rateFor(row.sellCurrency, "sell")
     const manualCostRoe = row.costRoeSource === "manual" && typeof row.costRoe === "number" && Number.isFinite(row.costRoe) && row.costRoe > 0
@@ -743,7 +767,7 @@ export function UnifiedQuoteChargesWorkspace({
       costRateAvailable,
       sellRateAvailable,
     }
-  }, [rateFor])
+  }, [rateFor, savedValues])
 
   const resolvedRows = useMemo(() => rows.map(resolveRow), [resolveRow, rows])
   const selectedRow = resolvedRows.find((row) => row.id === activeSelectedRowId) ?? null
@@ -755,6 +779,7 @@ export function UnifiedQuoteChargesWorkspace({
   }, [onSelectedRowIdChange, selectedRowId])
 
   const updateRow = useCallback((rowId: string, patch: Partial<UnifiedQuoteChargeRow>) => {
+    if (readOnly || rowReadOnlyReason?.(rowId)) return
     onRowsChange(rows.map((row) => {
       if (row.id !== rowId) return row
       const next = resolveRow({ ...resolveRow(row), ...patch })
@@ -765,9 +790,10 @@ export function UnifiedQuoteChargesWorkspace({
         profit: next.profit,
       }
     }))
-  }, [onRowsChange, resolveRow, rows])
+  }, [onRowsChange, resolveRow, rows, readOnly, rowReadOnlyReason])
 
   const addRow = useCallback(() => {
+    if (readOnly) return
     const supplier = parties.find((party) => partyCanBe(party, "supplier"))
     const customer = parties.find((party) => partyCanBe(party, "customer"))
     const candidate = createRow?.({ baseCurrency, currencies, parties }) ?? {
@@ -791,16 +817,16 @@ export function UnifiedQuoteChargesWorkspace({
     const next = resolveRow(candidate)
     onRowsChange([...rows, next])
     selectRow(next.id)
-  }, [baseCurrency, createRow, currencies, onRowsChange, parties, resolveRow, rows, selectRow])
+  }, [baseCurrency, createRow, currencies, onRowsChange, parties, resolveRow, rows, selectRow, readOnly])
 
   const removeSelectedRow = useCallback(() => {
-    if (!activeSelectedRowId) return
+    if (!activeSelectedRowId || readOnly || rowReadOnlyReason?.(activeSelectedRowId)) return
     const selectedIndex = rows.findIndex((row) => row.id === activeSelectedRowId)
     const nextRows = rows.filter((row) => row.id !== activeSelectedRowId)
     onRowsChange([...nextRows])
     const nextSelection = nextRows[Math.min(Math.max(selectedIndex, 0), nextRows.length - 1)]?.id ?? null
     selectRow(nextSelection)
-  }, [activeSelectedRowId, onRowsChange, rows, selectRow])
+  }, [activeSelectedRowId, onRowsChange, rows, selectRow, readOnly, rowReadOnlyReason])
 
   const columns = useMemo<DataTableColumn<ResolvedQuoteChargeRow>[]>(() => [
     {
@@ -1080,23 +1106,38 @@ export function UnifiedQuoteChargesWorkspace({
 
   const selectedSupplier = selectedRow ? parties.find((party) => party.id === selectedRow.supplierId) : undefined
   const selectedCustomer = selectedRow ? parties.find((party) => party.id === selectedRow.customerId) : undefined
-  const selectedMargin = selectedRow && selectedRow.baseSell !== 0 ? selectedRow.profit / selectedRow.baseSell * 100 : 0
+  const selectedMargin = selectedRow && Number.isFinite(selectedRow.profit) && Number.isFinite(selectedRow.baseSell)
+    ? selectedRow.baseSell !== 0 ? selectedRow.profit / selectedRow.baseSell * 100 : 0
+    : NaN
   const calculatorRow = calculatorRowId ? resolvedRows.find((row) => row.id === calculatorRowId) ?? null : null
+
+  const displayColumns = savedValues ? columns.map(column => {
+    const numericFields: Record<string, keyof ResolvedQuoteChargeRow> = {
+      cost: "cost", sell: "sell", baseCost: "baseCost", baseSell: "baseSell", profit: "profit", costRoe: "costRoe", sellRoe: "sellRoe",
+    }
+    const field = numericFields[column.id]
+    if (!field) return column
+    return { ...column, cell: (row: ResolvedQuoteChargeRow) => {
+      const value = row[field]
+      const currency = column.id === "cost" ? currencyFor(row.costCurrency) : column.id === "sell" ? currencyFor(row.sellCurrency) : baseCurrencyDefinition
+      return <span data-i18n-skip dir="ltr" className="tabular-nums text-[var(--md-ink)]">{typeof value !== "number" || !Number.isFinite(value) ? "–" : column.id.endsWith("Roe") ? String(value) : moneyText(value, currency, language)}</span>
+    } }
+  }) : columns
 
   return (
     <div dir={direction} className={cn("grid min-w-0 gap-3", className)}>
       <DataTable
         ariaLabel="Unified quote charges"
         columnsButtonLabel="Manage quote charge columns"
-        columns={columns}
+        columns={rowReadOnlyReason ? displayColumns.map(column => ({ ...column, cell: (row: ResolvedQuoteChargeRow) => <fieldset disabled={Boolean(rowReadOnlyReason(row.id))} title={rowReadOnlyReason(row.id)} className="min-w-0 border-0 p-0">{column.cell(row)}</fieldset> })) : displayColumns}
         rows={resolvedRows}
         getRowKey={(row) => row.id}
         storageKey={storageKey}
         selectedRowKey={activeSelectedRowId}
         onRowClick={(row) => selectRow(row.id)}
         toolbarOptions={(
-          <div className="flex min-w-0 items-center justify-end gap-1.5">
-            <div
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+            {savedValues ? <span role="status" title={t("Prices and exchange rates are fixed at submission. Choose New version to revise.")} className="text-[11px] text-[var(--md-text)]">{t("Issued prices · Read-only")}</span> : <div
               title={t("Exchange-rate source and freshness")}
               aria-label={`${t(rateLabel)}${rateDetail ? `, ${rateDetail}` : ""}`}
               className="hidden h-8 min-w-0 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 shadow-[var(--md-shadow-line)] md:flex"
@@ -1104,12 +1145,12 @@ export function UnifiedQuoteChargesWorkspace({
               <span className={cn("size-1.5 shrink-0 rounded-full", rateSummary.status === "unavailable" ? "bg-[var(--md-red)]" : rateSummary.status === "stale" ? "bg-[var(--md-amber)]" : "bg-[var(--md-green)]")} aria-hidden="true" />
               <span className="shrink-0 text-[10px] font-medium text-[var(--md-ink)]">{t(rateLabel)}</span>
               {rateDetail ? <span data-i18n-skip dir="auto" className="max-w-40 truncate text-[10px] text-[var(--md-subtle)]">{rateDetail}</span> : null}
-            </div>
+            </div>}
             <Button type="button" variant="ghost" size="sm" onClick={addRow} disabled={readOnly || (chargeChoices !== undefined && chargeChoices.length === 0)} className="h-8 rounded-[var(--md-radius-md)] text-[10.5px] shadow-[var(--md-shadow-line)]">
               <Plus data-icon="inline-start" className="size-3.5" strokeWidth={1.5} />
               {t("Add")}
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={removeSelectedRow} disabled={readOnly || !selectedRow} className="h-8 rounded-[var(--md-radius-md)] text-[10.5px] shadow-[var(--md-shadow-line)]">
+            <Button type="button" variant="ghost" size="sm" onClick={removeSelectedRow} disabled={readOnly || !selectedRow || Boolean(selectedRow && rowReadOnlyReason?.(selectedRow.id))} className="h-8 rounded-[var(--md-radius-md)] text-[10.5px] shadow-[var(--md-shadow-line)]">
               <Trash2 data-icon="inline-start" className="size-3.5" strokeWidth={1.5} />
               {t("Remove")}
             </Button>
@@ -1138,7 +1179,7 @@ export function UnifiedQuoteChargesWorkspace({
               <ChargeCalculator
                 key={`${calculatorRow.id}-${calculatorRow.calculationBasis ?? "new"}`}
                 row={calculatorRow}
-                readOnly={readOnly}
+                readOnly={readOnly || Boolean(rowReadOnlyReason?.(calculatorRow.id))}
                 onApply={(patch) => {
                   updateRow(calculatorRow.id, patch)
                   setCalculatorRowId(null)
@@ -1153,8 +1194,9 @@ export function UnifiedQuoteChargesWorkspace({
           <SectionHeader
             title={t("Selected line details")}
           />
+          {selectedRow && rowReadOnlyReason?.(selectedRow.id) ? <p role="status" className="mt-2 text-[12px] text-[var(--md-text)]">{t(rowReadOnlyReason(selectedRow.id)!)}</p> : null}
           {selectedRow ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <fieldset disabled={Boolean(rowReadOnlyReason?.(selectedRow.id))} className="mt-3 grid min-w-0 gap-2 border-0 p-0 sm:grid-cols-2 lg:grid-cols-4">
               <DetailField label="Charge code">
                 <Input value={selectedRow.code} onChange={(event) => updateRow(selectedRow.id, { code: event.target.value })} disabled={readOnly} aria-label={t("Charge code")} dir="ltr" data-i18n-skip className={cn(textInputClass, "uppercase")} />
               </DetailField>
@@ -1162,7 +1204,7 @@ export function UnifiedQuoteChargesWorkspace({
                 <Input value={selectedRow.description} onChange={(event) => updateRow(selectedRow.id, { description: event.target.value })} disabled={readOnly} aria-label={t("Charge description")} dir="auto" data-i18n-skip className={textInputClass} />
               </DetailField>
               <DetailField label="Margin">
-                <div className="flex h-8 items-center justify-end px-2 text-[12px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">{decimalText(selectedMargin, language, 1)}%</div>
+                <div className="flex h-8 items-center justify-end px-2 text-[12px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">{Number.isFinite(selectedMargin) ? `${decimalText(selectedMargin, language, 1)}%` : "–"}</div>
               </DetailField>
               <DetailField label="Supplier">
                 <div data-i18n-skip dir="auto" className="flex h-8 min-w-0 items-center truncate text-[11px] text-[var(--md-ink)]">{selectedSupplier ? `${selectedSupplier.code} · ${selectedSupplier.name}` : "–"}</div>
@@ -1172,20 +1214,27 @@ export function UnifiedQuoteChargesWorkspace({
               </DetailField>
               <DetailField label="Base cost">
                 <div dir="ltr" className={cn("flex h-8 items-center justify-end font-medium", selectedRow.costRateAvailable ? "text-[12px] tabular-nums text-[var(--md-ink)]" : "text-[10px] text-[var(--md-red)]")}>
-                  {selectedRow.costRateAvailable ? <span data-i18n-skip>{moneyText(selectedRow.baseCost, baseCurrencyDefinition, language)}</span> : t("Rates unavailable")}
+                  {selectedRow.costRateAvailable ? <span data-i18n-skip>{moneyText(selectedRow.baseCost, baseCurrencyDefinition, language)}</span> : savedValues ? "–" : t("Rates unavailable")}
                 </div>
               </DetailField>
               <DetailField label="Base sell">
                 <div dir="ltr" className={cn("flex h-8 items-center justify-end font-medium", selectedRow.sellRateAvailable ? "text-[12px] tabular-nums text-[var(--md-ink)]" : "text-[10px] text-[var(--md-red)]")}>
-                  {selectedRow.sellRateAvailable ? <span data-i18n-skip>{moneyText(selectedRow.baseSell, baseCurrencyDefinition, language)}</span> : t("Rates unavailable")}
+                  {selectedRow.sellRateAvailable ? <span data-i18n-skip>{moneyText(selectedRow.baseSell, baseCurrencyDefinition, language)}</span> : savedValues ? "–" : t("Rates unavailable")}
                 </div>
               </DetailField>
-              <DetailField label="Profit" className="sm:col-start-2 lg:col-start-4">
+              <DetailField label="Profit" className={savedValues ? undefined : "sm:col-start-2 lg:col-start-4"}>
                 <div dir="ltr" className={cn("flex h-8 items-center justify-end font-medium", selectedRow.costRateAvailable && selectedRow.sellRateAvailable ? cn("text-[13px] tabular-nums", selectedRow.profit < 0 ? "text-[var(--md-red)]" : "text-[var(--md-green)]") : "text-[10px] text-[var(--md-red)]")}>
-                  {selectedRow.costRateAvailable && selectedRow.sellRateAvailable ? <span data-i18n-skip>{moneyText(selectedRow.profit, baseCurrencyDefinition, language)}</span> : t("Rates unavailable")}
+                  {selectedRow.costRateAvailable && selectedRow.sellRateAvailable ? <span data-i18n-skip>{moneyText(selectedRow.profit, baseCurrencyDefinition, language)}</span> : savedValues ? "–" : t("Rates unavailable")}
                 </div>
               </DetailField>
-            </div>
+              {savedValues ? <>
+                <DetailField label="Calculation basis"><span className="text-[11px]" data-i18n-skip>{selectedRow.calculationBasis || "–"}</span></DetailField>
+                <DetailField label="Quantity"><span className="text-[11px] tabular-nums" data-i18n-skip>{selectedRow.quantity ?? "–"}</span></DetailField>
+                <DetailField label="Shown to customer"><span className="text-[11px]">{selectedRow.showToCustomer === undefined ? "–" : t(selectedRow.showToCustomer ? "Yes" : "No")}</span></DetailField>
+                <DetailField label="Customer notes" className="sm:col-span-2"><span className="whitespace-pre-wrap break-words text-[11px]" data-i18n-skip>{selectedRow.customerNotes || "–"}</span></DetailField>
+                <DetailField label="Internal notes" className="sm:col-span-2"><span className="whitespace-pre-wrap break-words text-[11px]" data-i18n-skip>{selectedRow.internalNotes || "–"}</span></DetailField>
+              </> : null}
+            </fieldset>
           ) : (
             <div className="mt-3 grid min-h-28 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-4 text-center shadow-[var(--md-shadow-line)]">
               <p className="text-[11px] text-[var(--md-text)]">{t("Select a charge to view its details.")}</p>

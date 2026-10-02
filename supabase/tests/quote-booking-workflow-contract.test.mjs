@@ -37,7 +37,7 @@ test("the live details and overview do not inject the old quote demo values", ()
   const detailsPanelEnd = quotePage.indexOf("type QuoteChargeEditableField", livePanelEnd)
   const livePanels = quotePage.slice(livePanelStart, detailsPanelEnd)
   assert.doesNotMatch(livePanels, /SPQ-74218|HarbourWorks Safety|RIVERGATE WORKS|Nora Vale|KOBE DISTRIBUTION CENTRE/)
-  assert.match(livePanels, /Pricing and win-rate insights will appear here/)
+  assert.match(livePanels, /<ClientPricingIntelligence intelligence=\{intelligence\} unavailable=\{intelligenceUnavailable\} savedVersion=\{savedVersion\} \/>/)
 })
 
 test("blank quotes cannot save and references are allocated only during a meaningful save", () => {
@@ -73,11 +73,12 @@ test("accepted quotes have a protected operator conversion path", () => {
 })
 
 test("quote ETD and ETA are operational schedule fields rather than validity dates", () => {
-  assert.match(quotePage, /QuoteCompactDatePicker label="ETD" value=\{quote\.estimatedDeparture/u)
-  assert.match(quotePage, /QuoteCompactDatePicker label="ETA" value=\{quote\.estimatedArrival/u)
+  assert.match(quotePage, /QuoteCompactDatePicker label="ETD"[^\n]*value=\{quote\.estimatedDeparture \?\? ""\}/u)
+  assert.match(quotePage, /QuoteCompactDatePicker label="ETA"[^\n]*value=\{quote\.estimatedArrival \?\? ""\}/u)
   assert.match(quotePage, /estimatedDeparture: quote\.estimatedDeparture/u)
   assert.match(quotePage, /estimatedArrival: quote\.estimatedArrival/u)
-  assert.match(quotePage, /estimatedDeparture: fact\("estimatedDeparture"\)/u)
+  assert.match(quotePage, /estimatedDeparture: first\.estimatedDeparture/u)
+  assert.match(quotePage, /estimatedArrival: last\.estimatedArrival/u)
   assert.match(routeScheduleMigration, /schedule\.estimated_departure as "Estimated_Departure"/u)
   assert.match(routeScheduleMigration, /schedule\.estimated_arrival as "Estimated_Arrival"/u)
   assert.match(routeScheduleMigration, /operational ETD and ETA, separate commercial validity/u)

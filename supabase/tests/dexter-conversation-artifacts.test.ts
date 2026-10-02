@@ -6,7 +6,9 @@ test('a saved background draft regains its review control from the authorised ac
   const rows: Record<string, Record<string, unknown>[]> = {
     AI_Conversations: [{ AICNV_ID: 'conversation', AICNV_CompanyID: 'company', AICNV_OwnerUserID: 'owner' }],
     AI_Messages: [{ AIMSG_ID: 'message', AIMSG_ConversationID: 'conversation', AIMSG_ContentJSON: {
-      model: 'worker', metadata: { activities: [{ id: 'search', label: 'Searched Gmail', status: 'completed', providers: ['gmail'] }], pendingActions: [{ id: 'approval', emailDraftId: 'draft', title: 'Create draft' }] },
+      model: 'worker', metadata: { activities: [{ id: 'search', label: 'Searched Gmail', status: 'completed', providers: ['gmail'] }], pendingActions: [{ id: 'approval', emailDraftId: 'draft', title: 'Create draft' }],
+        recordTables: [{ id: 'first', domain: 'bookings', rows: ['job-a'] }, { id: 'leads', domain: 'leads', rows: ['lead-a'] },
+          { id: 'revised', domain: 'bookings', rows: ['job-a', 'job-b'] }] },
     } }],
     AI_DexterPreparedActions: [{ AIDexterPrepared_ID: 'approval', AIDexterPrepared_ConversationID: 'conversation',
       AIDexterPrepared_UserID: 'owner', AIDexterPrepared_CompanyID: 'company', AIDexterPrepared_Status: 'prepared',
@@ -30,6 +32,7 @@ test('a saved background draft regains its review control from the authorised ac
   const message = (result.messages as Record<string, unknown>[])[0]
   assert.deepEqual(message.activities, [{ id: 'search', label: 'Searched Gmail', status: 'completed', providers: ['gmail'] }])
   assert.deepEqual(message.pendingAction, { id: 'approval', emailDraftId: 'draft', title: 'Create draft', status: 'prepared' })
+  assert.deepEqual((message.recordTables as { id: string }[]).map(table => table.id), ['revised', 'leads'])
   rows.AI_DexterPreparedActions[0].AIDexterPrepared_Status = 'declined'
   const declined = await hydrateConversationArtifacts(admin, actor, conversation)
   assert.equal(((declined.messages as Record<string, unknown>[])[0].pendingAction as Record<string, unknown>).status, 'declined')

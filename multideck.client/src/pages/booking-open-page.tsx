@@ -5,7 +5,7 @@ import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useLanguage } from "@/i18n/language-provider"
-import { openBookingWorkflow, type BookingOpeningDirection } from "@/lib/booking-workflow-api"
+import { getBookingOpeningModes, openBookingWorkflow, type BookingOpeningDirection } from "@/lib/booking-workflow-api"
 
 function requestKey(requestStorageKey: string) {
   const saved = window.sessionStorage.getItem(requestStorageKey)
@@ -26,14 +26,24 @@ export function BookingOpenPage({ navigate, initialMode, onCancel, returnFocus }
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [direction, setDirection] = useState<BookingOpeningDirection | "">("")
+  const [mode, setMode] = useState(initialMode ?? "")
+  const [modes, setModes] = useState<{ code: string; name: string }[]>([])
+  const [modeError, setModeError] = useState(false)
   const [requestedDirection, setRequestedDirection] = useState<BookingOpeningDirection | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void getBookingOpeningModes().then(sources => { if (!cancelled) { setModes(sources.modes); setModeError(!sources.modes.length) } })
+      .catch(() => { if (!cancelled) setModeError(true) })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     if (!requestedDirection) return
     let cancelled = false
     const requestStorageKey = workspaceStorageKey(`multideck.booking.open-request${initialMode === "road" ? ".road" : ""}`)
     setError(null)
-    pending.current ??= Promise.resolve().then(() => openBookingWorkflow(requestKey(requestStorageKey), initialMode, requestedDirection))
+    pending.current ??= Promise.resolve().then(() => openBookingWorkflow(requestKey(requestStorageKey), initialMode, requestedDirection, mode))
     void pending.current.then((result) => {
       if (cancelled) return
       window.sessionStorage.removeItem(requestStorageKey)
@@ -43,7 +53,7 @@ export function BookingOpenPage({ navigate, initialMode, onCancel, returnFocus }
       setError(reason instanceof Error ? reason.message : t("The new booking could not be opened."))
     })
     return () => { cancelled = true }
-  }, [attempt, initialMode, navigate, requestedDirection, t])
+  }, [attempt, initialMode, mode, navigate, requestedDirection, t])
 
   function retry() {
     pending.current = null
@@ -66,15 +76,27 @@ export function BookingOpenPage({ navigate, initialMode, onCancel, returnFocus }
         <DialogHeader>
           <DialogTitle className="pr-8 text-[18px] font-medium">{t(initialMode === "road" ? "New road job" : "New booking")}</DialogTitle>
           <DialogDescription className="text-[13px] leading-6 text-[var(--md-text)]">
-            {t("Choose the direction for your office. The booking starts as Provisional; add the remaining details next.")}
+            {t("Choose the mode and direction for your office. The booking starts as Provisional; add the remaining details next.")}
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-5" onSubmit={event => {
           event.preventDefault()
-          if (!direction || creating) return
+          if (!mode || !direction || creating) return
           if (error) retry()
           else setRequestedDirection(direction)
         }}>
+          <div className="md-horizontal-field">
+            <label htmlFor="booking-opening-mode" className="text-[13px] font-medium">{t("Mode")}</label>
+            <Select value={mode} onValueChange={setMode} disabled={Boolean(requestedDirection) || initialMode === "road" || !modes.length}>
+              <SelectTrigger id="booking-opening-mode" aria-required="true" className="w-full">
+                <SelectValue placeholder={t(modeError ? "Modes unavailable" : modes.length ? "Choose mode" : "Loading…")} />
+              </SelectTrigger>
+              <SelectContent>
+                {modes.map(option => <SelectItem key={option.code || option.name} value={(option.code || option.name).toLowerCase()}>{t(option.name)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {modeError ? <p role="alert" className="text-[13px] leading-5 text-[var(--md-status-red-ink)]">{t("Modes could not be loaded. Close and reopen this dialog to try again.")}</p> : null}
           <div className="md-horizontal-field">
             <label htmlFor="booking-opening-direction" className="text-[13px] font-medium">{t("Direction")}</label>
             <Select value={direction} onValueChange={value => setDirection(value as BookingOpeningDirection)} disabled={Boolean(requestedDirection)}>
@@ -95,7 +117,7 @@ export function BookingOpenPage({ navigate, initialMode, onCancel, returnFocus }
           </div> : null}
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="ghost" disabled={creating} onClick={cancel}>{t("Cancel")}</Button>
-            <Button type="submit" disabled={!direction || creating} title={!direction ? t("Choose a direction first") : undefined}>
+            <Button type="submit" disabled={!mode || !direction || creating || !modes.length} title={!mode || !direction ? t("Choose a mode and direction first") : undefined}>
               {t(error ? "Try again" : creating ? "Creating…" : "Create provisional booking")}
             </Button>
           </div>

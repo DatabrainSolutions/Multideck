@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { stripTypeScriptTypes } from 'node:module'
 
 const source = readFileSync(new URL('../src/lib/booking-cargo-allocations.ts', import.meta.url), 'utf8')
-const { analyseCargoAllocations, remainingForAllocation, bookingCargoAllocationPayload, newBookingCargoAllocation } =
+const { analyseCargoAllocations, remainingForAllocation, bookingCargoAllocationPayload, cargoPackageSplitSummary, containerPackageSummary, newBookingCargoAllocation, quickCargoAssignmentElsewhere } =
   await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(source)).toString('base64')}`)
 const weightSource = readFileSync(new URL('../src/lib/booking-chargeable-weight.ts', import.meta.url), 'utf8')
 const { bookingChargeableWeightError } = await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(weightSource)).toString('base64')}`)
@@ -14,6 +14,28 @@ const equipment = [{ id: id(2), type: '40GP', verifiedGrossMassKg: '1700' }, { i
 const routes = [{ id: id(4) }, { id: id(5) }]
 const line = (change = {}) => ({ id: id(6), cargoId: id(1), containerId: id(2), routeId: null, packageQuantity: '6', grossWeightKg: '600.25', volumeCbm: '8.125', notes: null, archived: false, ...change })
 const analyse = lines => analyseCargoAllocations(cargo, equipment, routes, lines)
+
+test('quick assignment excludes cargo used by another container without undoing intentional splits', () => {
+  const first = line({ packageQuantity: null, grossWeightKg: null, volumeCbm: null })
+  assert.equal(quickCargoAssignmentElsewhere([first], id(1), id(3)), first)
+  assert.equal(quickCargoAssignmentElsewhere([first], id(1), id(2)), null)
+  assert.equal(quickCargoAssignmentElsewhere([first], id(99), id(3)), null)
+  assert.equal(quickCargoAssignmentElsewhere([first], null, id(3)), null)
+  const second = line({ id: id(7), containerId: id(3) })
+  assert.equal(quickCargoAssignmentElsewhere([first, second], id(1), id(3)), null)
+})
+
+test('container packages follow assigned cargo without treating cargo weight as loaded weight', () => {
+  const goods = [{ ...cargo[0], packageType: 'Cartons', packageQuantity: '6.500000' }, { id: id(8), packageType: 'Cartons', packageQuantity: '3' }]
+  const first = line({ packageQuantity: null, grossWeightKg: null, volumeCbm: null })
+  assert.deepEqual(containerPackageSummary(goods, [first], id(2)), { packages: '6.5', packageType: 'Cartons' })
+  assert.deepEqual(containerPackageSummary(goods, [first, line({ id: id(9), cargoId: id(8), packageQuantity: null })], id(2)), { packages: '9.5', packageType: 'Cartons' })
+  assert.equal(containerPackageSummary([{ ...goods[0], packageType: 'Crates' }, goods[1]], [first, line({ id: id(9), cargoId: id(8) })], id(2)), null)
+  assert.equal(containerPackageSummary(goods, [first, line({ id: id(9), containerId: id(3) })], id(2)), null)
+  assert.deepEqual(containerPackageSummary(goods, [line({ packageQuantity: '2.25' }), line({ id: id(9), containerId: id(3), packageQuantity: '4.25' })], id(2)), { packages: '2.25', packageType: 'Cartons' })
+  assert.equal(containerPackageSummary(goods, [line({ routeId: id(4) })], id(2)), null)
+  assert.equal(containerPackageSummary(goods, [line({ packageQuantity: null })], id(3)), null)
+})
 
 test('split cargo: explicit remaining quantities preserve exact decimals and do not mutate source data', () => {
   const first = line(), second = line({ id: id(7), containerId: id(3), packageQuantity: null, grossWeightKg: null, volumeCbm: null })
@@ -25,6 +47,29 @@ test('split cargo: explicit remaining quantities preserve exact decimals and do 
   assert.equal(filled.volumeCbm, '6.125')
   assert.deepEqual(analyse([first, filled]).balances[0].remaining, { packageQuantity: '0', grossWeightKg: '0', volumeCbm: '0' })
   assert.deepEqual({ cargo, equipment, first, second }, before)
+})
+
+test('cargo-first load plan shows exact split progress without assigning weight', () => {
+  const goods = { ...cargo[0], packageQuantity: '40.000000' }
+  const first = line({ packageQuantity: '20.000000', grossWeightKg: '400000.00' })
+  const second = line({ id: id(7), containerId: id(3), packageQuantity: '20.000000', grossWeightKg: '0.00' })
+  assert.deepEqual(cargoPackageSplitSummary(goods, [first, second]), {
+    total: '40', knownAllocated: '40', remaining: '0', unknownCount: 0, invalid: false, over: false, complete: true, percent: 100,
+  })
+  assert.equal(cargoPackageSplitSummary(goods, [first, { ...second, packageQuantity: '15' }]).remaining, '5')
+  assert.equal(cargoPackageSplitSummary(goods, [first, { ...second, packageQuantity: null }]).unknownCount, 1)
+  assert.equal(cargoPackageSplitSummary(goods, [first, { ...second, packageQuantity: '25' }]).over, true)
+  assert.equal(cargoPackageSplitSummary(goods, [first, { ...second, packageQuantity: '20.0000001' }]).invalid, true)
+  assert.equal(first.grossWeightKg, '400000.00')
+  assert.equal(second.grossWeightKg, '0.00')
+})
+
+test('ten cargo lines may link to one container without guessing quantities', () => {
+  const tenCargo = Array.from({ length: 10 }, (_, index) => ({ id: id(index + 20), description: `Car ${index + 1}` }))
+  const links = tenCargo.map((item, index) => ({ ...newBookingCargoAllocation(), id: id(index + 40), cargoId: item.id, containerId: id(2) }))
+  assert.equal(analyseCargoAllocations(tenCargo, equipment, routes, links).issues.length, 0)
+  assert.equal(new Set(links.map(item => item.containerId)).size, 1)
+  assert.equal(bookingCargoAllocationPayload({ booking: { jobId: id(10) }, cargoAllocationState: { jobId: id(10), allocations: links } }, { booking: { jobId: id(10), updatedAt: '2026-09-06T10:00:00Z' }, cargoAllocationState: { jobId: id(10), allocations: [] } }).cargoAllocations.length, 10)
 })
 
 test('unknown source/other allocation quantities cannot erase an operator-entered value', () => {
@@ -87,6 +132,25 @@ test('save payload distinguishes missing capability, empty plan and explicit rem
 })
 
 const parentSource = readFileSync(new URL('../src/components/multideck/booking-components.tsx', import.meta.url), 'utf8')
+const overrideStart = parentSource.indexOf('function bookingContainerHasPackageOverride(')
+const overrideSource = stripTypeScriptTypes(parentSource.slice(overrideStart, parentSource.indexOf('function bookingContainerVehicleIdentifiers(', overrideStart)))
+const containerUpdateStart = parentSource.indexOf('  function updateDraftContainer(')
+const containerUpdateSource = stripTypeScriptTypes(parentSource.slice(containerUpdateStart, parentSource.indexOf('  function addDraftContainer(', containerUpdateStart)))
+
+test('editing a calculated package count retains its type and does not supply container weight', () => {
+  let draft = { cargo: [{ ...cargo[0], packageType: 'Cartons', packageQuantity: '10' }],
+    containers: [{ ...equipment[0], grossWeightKg: null, data: {} }],
+    cargoAllocationState: { allocations: [line({ packageQuantity: null })] } }
+  const update = new Function('deps', `const {setDraftWorkspace,asRecord,containerPackageSummary}=deps; ${overrideSource}; ${containerUpdateSource}; return updateDraftContainer`)({
+    setDraftWorkspace: apply => { draft = apply(draft) }, asRecord: value => value && typeof value === 'object' ? value : {}, containerPackageSummary,
+  })
+  update(0, 'packages', '8')
+  assert.equal(draft.containers[0].packages, '8')
+  assert.equal(draft.containers[0].packageType, 'Cartons')
+  assert.equal(draft.containers[0].data.packageType, 'Cartons')
+  assert.equal(draft.containers[0].grossWeightKg, null)
+})
+
 const saveStart = parentSource.indexOf('  async function saveDetails() {')
 assert.ok(saveStart > 0)
 const saveSource = stripTypeScriptTypes(parentSource.slice(saveStart, parentSource.indexOf('  async function sendToCustoms()', saveStart)))

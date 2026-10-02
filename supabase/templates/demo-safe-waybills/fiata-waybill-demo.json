@@ -1,0 +1,15 @@
+{
+  "waybill": {
+    "shipper": {"name": "Example Manufacturing Ltd", "line1": "1 Example Lane", "line2": "Demo Business Park", "city": "Exampletown", "country": "UNITED KINGDOM DEMO 1AA"},
+    "consignee": {"name": "Example Trading Ltd", "line1": "2 Sample Street", "line2": "Demo Industrial Park", "city": "Sample City", "country": "JAPAN DEMO 2BB"},
+    "notify": {"name": "Example Trading Ltd", "line1": "2 Sample Street", "line2": "Demo Industrial Park", "city": "Sample City", "country": "JAPAN DEMO 2BB"},
+    "customsReference": "DEMO-CUSTOMS-001", "shipperReference": "DEMO-SHIPPER-001", "billNumber": "DEMO-FBL-001", "forwarderReference": "DEMO-JOB-001",
+    "departureDate": "20-Oct-26", "arrivalDate": "20-Nov-26", "bookingReference": "DEMO-BOOKING-001", "carrierName": "Example Demo Line",
+    "placeOfReceipt": "Exampletown", "portOfLoading": "Example Loading Port", "vesselVoyage": "EXAMPLE VESSEL / DEMO001", "portOfDischarge": "Example Arrival Port", "destination": "Sample City", "billType": "Waybill",
+    "containerNumber": "DEMO-CONT-001", "seal": "DEMO-001", "equipmentType": "40HC", "grossWeight": "1000 kg", "volume": "10 m3", "packages": "20 Pallets",
+    "marks": "DEMO-CARGO-001", "packageDescription": "20 demonstration pallets", "goodsLine1": "FICTIONAL MACHINE COMPONENTS", "goodsLine2": "DEMONSTRATION GOODS ONLY", "goodsLine3": "NOT A SHIPPING DOCUMENT",
+    "serviceMode": "MODE: DOOR/CY", "totalPackages": "Total Packages: 20 Pallets", "onBoardDate": "20-Oct-26", "originals": "Waybill", "freightTerms": "Freight Collect", "issuePlaceDate": "Exampletown 01/10/2026",
+    "deliveryAgent": {"name": "Example Destination Agent", "line1": "4 Fictional Road", "line2": "Demo Office 1", "city": "Sample City", "country": "JAPAN DEMO 4DD"},
+    "issuerName": "Example Freight Company Ltd", "signingNote": "DEMO ONLY - NO SIGNATURE"
+  }
+}

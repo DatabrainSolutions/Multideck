@@ -39,7 +39,7 @@ import { defaultPaginationPageSize } from "@/lib/pagination"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { useTheme } from "@/lib/theme-provider"
-import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, PackageCheck, Pen01, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, UserRound, Zap } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, BarChart3, Bell, BrainCircuit, Check, Clipboard, ClipboardCheck, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, MessageCircle, Moon02, PackageCheck, Pen01, Pencil, Pin, Search, Settings2, Ship, Star, Trash2, TriangleAlert, UserRound, Zap } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -53,6 +53,7 @@ import { BookingCustomerPanel, type BookingCustomer } from "@/components/multide
 import { CargoHandlingEditor } from "@/components/multideck/quote-details/cargo-handling-editor"
 import { QuoteCargoEditor } from "@/components/multideck/quote-details/quote-cargo-editor"
 import { CargoAllocationEditor } from "@/components/multideck/cargo-allocation-editor"
+import { BookingCargoLoadPlanSheet } from "@/components/multideck/booking-cargo-load-plan-sheet"
 import { BookingRouteMilestones } from "@/components/multideck/booking-route-milestones"
 import { BookingDangerousGoodsEditor } from "@/components/multideck/booking-dangerous-goods"
 import { BookingSecurityEvidenceEditor } from "@/components/multideck/booking-security-evidence"
@@ -108,11 +109,9 @@ import {
   ContactProfileModule,
   CustomerAvatar,
   CustomerActivityPanel,
-  CustomerDetailHero,
   CustomerFootprintMap,
   CustomerListTable,
   CustomerMetricCard,
-  CustomerMetricsGrid,
   customerViewOptions,
   type CustomerViewMode,
   LaneMixPanel,
@@ -177,6 +176,10 @@ import { DashboardPerformancePanel } from "@/components/multideck/dashboard-perf
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { DashboardCoveragePanel } from "@/components/multideck/dashboard-coverage-panel"
 import { DashboardBreakdownPanel } from "@/components/multideck/dashboard-breakdown-panel"
+import { DashboardColumnChart } from "@/components/multideck/dashboard-column-chart"
+import { DashboardForecastChart } from "@/components/multideck/dashboard-forecast-chart"
+import { FinanceProfitLossPanel } from "@/components/multideck/finance-profit-loss-panel"
+import { FinanceWorkingCapitalPanel } from "@/components/multideck/finance-working-capital-panel"
 import type { DashboardKpi, DashboardPriorityItem, DashboardTrendPoint } from "@/lib/dashboard-live-data"
 import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingSearchFieldOptions, bookingViewModes, bookingViewOptions, type BookingViewMode } from "@/components/multideck/booking-components"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
@@ -208,7 +211,8 @@ import {
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
 import { HomeDexterLauncher } from "@/components/multideck/home-dexter-launcher"
-import { HomePromptRail, type HomePromptSuggestion } from "@/components/multideck/home-prompt-rail"
+import { DexterPromptPresets, type DexterPromptPreset } from "@/components/multideck/dexter-prompt-presets"
+import { DexterGreeting } from "@/components/multideck/dexter-greeting"
 import {
   HomeDeckAction,
   HomeDeckPanel,
@@ -219,6 +223,8 @@ import {
 import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
 import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
 import { ScoreExplanationPopover } from "@/components/multideck/score-explanation-popover"
+import { RecordProfileHeader, RecordProfileStat } from "@/components/multideck/record-profile-header"
+import { companyCovers } from "@/lib/company-covers"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
 import { AiPromptMorph } from "@/components/multideck/ai-prompt-morph"
@@ -442,12 +448,12 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "ai-prompt-morph", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-greeting", "dexter-prompt-composer", "dexter-prompt-presets", "dexter-inline-citation", "dexter-email-attachment-card", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-record-table", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-model-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Home",
-    helper: "The launcher, its prompts, and the deck beneath it",
-    ids: ["home-dexter-launcher", "home-prompt-rail", "home-deck-panel"],
+    helper: "The launcher and the deck beneath it",
+    ids: ["home-dexter-launcher", "home-deck-panel"],
   },
   {
     label: "Support",
@@ -543,10 +549,12 @@ function GalleryRsvpFields() {
   )
 }
 
-const previewHomeSuggestions: HomePromptSuggestion[] = [
-  { id: "triage", title: "Work through what is due before cutoff", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
-  { id: "quotes", title: "Send the quotes that are ready", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
-  { id: "risk", title: "Review the bookings most at risk", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
+const previewHomeSuggestions: DexterPromptPreset[] = [
+  { id: "triage", title: "Clear today's cutoffs", prompt: "Take my queue for today in deadline order and tell me exactly what to do on each one.", meta: "4 due", icon: Zap, specialistId: "ops" },
+  { id: "lead", title: "Pick up MD-22455", prompt: "Review MD-22455 for Northwind GmbH – release the customs hold. Tell me the next action and draft it.", meta: "Northwind GmbH · On hold", icon: TriangleAlert, specialistId: "ops" },
+  { id: "quotes", title: "Send ready quotes", prompt: "Show me every quote that is ready to send, check each one, and draft the covering email.", meta: "2 ready", icon: PackageCheck, specialistId: "sales" },
+  { id: "risk", title: "At-risk bookings", prompt: "Show me the bookings most at risk right now and what I should do next on each.", icon: BarChart3, specialistId: "analytics" },
+  { id: "update", title: "Overdue customer update", prompt: "Draft an update for the customer who most needs one today.", icon: MessageCircle, specialistId: "customer" },
 ]
 
 function DealWorkflowPreview({ loss = false }: { loss?: boolean }) {
@@ -682,6 +690,12 @@ const previewPriorityItems: DashboardPriorityItem[] = [
   { id: "p4", kind: "quote-progress", reference: "Q-1051", task: "Progress carrier pricing", customer: "Bright Harbour Ltd", context: "SGSIN → NLRTM", status: "In progress", owner: "Tomas Berg", dueAt: previewNow + 5 * 60 * 60_000, dueKind: "cutoff", tone: "blue", quoteReference: "Q-1051" },
   { id: "p5", kind: "quote-progress", reference: "Q-1058", task: "Progress customer approval", customer: "Aster Components", context: "CNSHA → GBSOU", status: "Awaiting customer", owner: "Tomas Berg", dueAt: previewNow + 3 * 24 * 60 * 60_000, dueKind: "departure", tone: "neutral", quoteReference: "Q-1058" },
 ]
+
+const previewMoney = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 })
+const previewMoneyCompact = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", notation: "compact", maximumFractionDigits: 1 })
+const previewFinanceMonths = ["Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
+const previewFinanceRevenue = [362000, 388000, 402000, 351000, 372000, 391000, 418000, 409000, 426000, 431000, 447000, 428000, 212000]
+const previewFinanceCosts = [331000, 352000, 361000, 334000, 340000, 352000, 371000, 368000, 380000, 387000, 396000, 381000, 191000]
 
 const previewPerformanceKpis: DashboardKpi[] = [
   { label: "Active jobs", value: "24", change: "3 need action", detail: "3 need action", tone: "amber", series: [18, 19, 21, 20, 22, 23, 22, 24, 23, 24], delta: { direction: "up", text: "+33%", caption: "vs start of period" } },
@@ -1968,6 +1982,25 @@ function CargoAllocationEditorPreview() {
   </div>
 }
 
+function BookingCargoLoadPlanSheetPreview() {
+  const cargoId = "00000000-0000-4000-8000-000000000101"
+  const firstId = "00000000-0000-4000-8000-000000000102"
+  const secondId = "00000000-0000-4000-8000-000000000103"
+  const cargo = { id: cargoId, description: "Car parts", packageQuantity: "40", packageType: "Pallets", grossWeightKg: "40000" }
+  const equipment = [{ id: firstId, type: "40GP", equipmentKind: "container" }, { id: secondId, type: "40GP", equipmentKind: "container" }]
+  const [open, setOpen] = useState(false)
+  const [allocations, setAllocations] = useState<BookingCargoAllocation[]>([
+    { id: "00000000-0000-4000-8000-000000000104", cargoId, containerId: firstId, routeId: null, packageQuantity: "20", grossWeightKg: null, volumeCbm: null, notes: null, archived: false },
+    { id: "00000000-0000-4000-8000-000000000105", cargoId, containerId: secondId, routeId: null, packageQuantity: "20", grossWeightKg: null, volumeCbm: null, notes: null, archived: false },
+  ])
+  return <div className="grid gap-3">
+    <p className="text-[13px]">Car parts · {allocations.map(line => line.packageQuantity || "?").join(" + ")} pallets in 2 containers</p>
+    <Button className="w-fit" onClick={() => setOpen(true)}>Open load plan</Button>
+    {open ? <BookingCargoLoadPlanSheet cargo={cargo} cargoIndex={0} cargoLines={[cargo]} equipment={equipment} routes={[]}
+      allocations={allocations} editable onClose={() => setOpen(false)} onSave={setAllocations} /> : null}
+  </div>
+}
+
 const previewCustomer: BookingCustomer = {
   id: "preview-customer", name: "Northstar Engineering", accountCode: "NORTH01", metadata: {},
   address: { id: "preview-address", line1: null, line2: null, townCity: "Leeds", countyState: null, postZipCode: null, countryCode: "GB", mainEmail: "logistics@example.com", mainPhone: "+44 113 555 0100" },
@@ -2248,6 +2281,7 @@ function ComponentPreview({ id }: { id: string }) {
   }
   const [previewDictionaryTerms, setPreviewDictionaryTerms] = useState(["Multideck", "Jenkar", "UN/LOCODE", "Incoterms"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
+  const [previewIssuedCharges, setPreviewIssuedCharges] = useState(false)
   const previewNow = useLiveNow()
   const countPreviewBookingMatches = useCallback((query: FilterQuery) => (
     bookings.filter((booking) => matchesFilterQuery(booking, query, previewBookingFilterValue)).length
@@ -2510,7 +2544,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "app-breadcrumbs" ? (
-        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <AppBreadcrumbs
             route="/crm/leads/northstar-components/convert"
             leafLabel="Northstar Components"
@@ -2593,6 +2627,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "quote-cargo-editor" ? <QuoteCargoEditorPreview /> : null}
       {id === "cargo-handling-editor" ? <CargoHandlingEditorPreview /> : null}
       {id === "cargo-allocation-editor" ? <CargoAllocationEditorPreview /> : null}
+      {id === "booking-cargo-load-plan-sheet" ? <BookingCargoLoadPlanSheetPreview /> : null}
       {id === "booking-route-milestones" ? <BookingRouteMilestonesPreview /> : null}
       {id === "booking-customer-panel" ? <BookingCustomerPanelPreview /> : null}
       {id === "booking-dangerous-goods" ? <BookingDangerousGoodsPreview /> : null}
@@ -3039,20 +3074,15 @@ function ComponentPreview({ id }: { id: string }) {
           </div>
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
             <SidebarNavItem item={{ label: "Agent Dexter", icon: AiBrain }} accent="dexter" onClick={() => undefined} />
-            <div className="mb-3 flex items-center gap-2 px-2 text-[12px] font-medium text-[var(--md-subtle)]">
-              <ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.2} />
-              <span>Operations</span>
-            </div>
-            <SidebarNavItem
-              item={{ label: "Bookings & jobs", icon: Ship }}
-              onClick={() => undefined}
-              expanded
-              affordance="group"
-            />
-            <div className="mt-1 ps-4">
-              <div className="rounded-[var(--md-radius-lg)] bg-white/40 p-1 shadow-[var(--md-shadow-line)]">
-                <SidebarNavItem item={{ label: "Bookings overview", value: "7", icon: Ship }} isActive onClick={() => undefined} nested />
-                <SidebarNavItem item={{ label: "New booking", icon: FileText }} onClick={() => undefined} nested />
+            <header className="px-2.5 pb-4 pt-5">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]">Current area</p>
+              <h2 className="text-[22px] font-medium leading-tight tracking-[-0.02em] text-[var(--md-ink)]">Operations</h2>
+            </header>
+            <div className="md-sidebar-dropdown-group" data-expanded="true">
+              <SidebarNavItem item={{ label: "Bookings & jobs", icon: Ship }} onClick={() => undefined} expanded affordance="group" />
+              <div className="md-sidebar-expanded-options flex flex-col gap-1 px-1 pb-1">
+                <SidebarNavItem item={{ label: "Bookings overview", icon: Ship }} isActive onClick={() => undefined} nested />
+                <SidebarNavItem item={{ label: "Provisional bookings", icon: FileText }} onClick={() => undefined} nested />
               </div>
             </div>
           </div>
@@ -3589,6 +3619,15 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "table" ? (
+        <div className="w-full max-w-[920px] max-h-[360px] overflow-auto">
+          <Table aria-label="Customer balances preview" className="min-w-[1000px]">
+            <thead><tr>{["Company", "Balance due", "Overdue", "Credit limit", "Payment terms", "Account status"].map(label => <th key={label}>{label}</th>)}</tr></thead>
+            <tbody>{Array.from({ length: 12 }, (_, index) => <tr key={index}><td>Example customer {index + 1}</td><td>£1,240.00</td><td>£240.00</td><td>£5,000.00</td><td>30 days</td><td>Active</td></tr>)}</tbody>
+          </Table>
+        </div>
+      ) : null}
+
       {id === "data-table" || id === "table-export" ? (
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <DataTable
@@ -3611,8 +3650,12 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "unified-quote-charges-workspace" ? (
-        <div className="w-full max-w-[1320px]">
-          <UnifiedQuoteChargesWorkspace rows={previewUnifiedChargeRows} onRowsChange={setPreviewUnifiedChargeRows} storageKey="gallery-unified-quote-charges" />
+        <div className="grid w-full max-w-[1320px] gap-3">
+          <SegmentedControl options={["Working draft", "Issued version"]} value={previewIssuedCharges ? "Issued version" : "Working draft"} onChange={value => setPreviewIssuedCharges(value === "Issued version")} ariaLabel="Charge preview state" />
+          <UnifiedQuoteChargesWorkspace
+            rows={previewIssuedCharges ? previewUnifiedChargeRowsSeed.map(row => ({ ...row, baseCost: row.cost / (row.costRoe ?? 1), baseSell: row.sell / (row.sellRoe ?? 1), showToCustomer: true, calculationBasis: "fixed", quantity: 1 })) : previewUnifiedChargeRows}
+            onRowsChange={setPreviewUnifiedChargeRows} storageKey="gallery-unified-quote-charges" savedValues={previewIssuedCharges}
+            rowReadOnlyReason={previewIssuedCharges ? undefined : rowId => rowId === previewUnifiedChargeRows[0]?.id ? "Example protected line: financial evidence prevents changes." : undefined} />
         </div>
       ) : null}
 
@@ -3711,8 +3754,22 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "record-header" ? (
         <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <CustomerDetailHero />
-          <CustomerMetricsGrid />
+          <RecordProfileHeader
+            back={{ label: "Companies", onClick: () => undefined }}
+            avatar={<CustomerAvatar initials="MA" tone="teal" className="size-full text-[22px] sm:text-[26px]" />}
+            title={<h3 className="text-[22px] font-medium leading-7 tracking-[-0.015em] text-[var(--md-ink)]">Marlow Apparel Ltd</h3>}
+            badges={<StatusPill kind="status" indicator={false} tone="blue">Key Account</StatusPill>}
+            meta={<><span className="font-medium text-[var(--md-ink)]">Customer, Consignee</span><span className="text-[var(--md-subtle)]">·</span><span>Apparel</span><span className="text-[var(--md-subtle)]">·</span><span>Leeds, GB</span></>}
+            actions={<><Button variant="outline" className="h-8 text-[12.5px]">Email</Button><Button variant="outline" className="h-8 text-[12.5px]">Call</Button></>}
+            bannerLabel="Ocean · Shanghai to Felixstowe"
+            bannerImageUrl={companyCovers[0]?.url}
+            stats={<>
+              <RecordProfileStat label="Active shipments" value={6} detail={<span className="text-[var(--md-amber)]">1 open exception</span>} />
+              <RecordProfileStat label="Balance due" value="£18,420" detail="Nothing overdue" />
+              <RecordProfileStat label="Credit available" value="£31,580" detail="of £50,000 limit" />
+              <RecordProfileStat label="Last contact" value="Yesterday" detail="Next action 2 Oct 2026" />
+            </>}
+          />
         </div>
       ) : null}
 
@@ -3802,6 +3859,16 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "breakdown-panel" ? (
         <div className="grid w-full max-w-[720px] gap-[var(--md-gap-lg)] sm:grid-cols-2">
           <DashboardBreakdownPanel
+            title="Shipping modes"
+            subtitle="Sales on jobs · Jun – Aug 2026"
+            variant="figures"
+            slices={[
+              { label: "Ocean", value: 24000, color: "var(--md-accent)", meta: "24% margin" },
+              { label: "Air", value: 12000, color: "var(--md-accent)", meta: "18% margin" },
+            ]}
+            formatValue={(value) => `£${value.toLocaleString("en-GB")}`}
+          />
+          <DashboardBreakdownPanel
             title="Mode mix"
             subtitle="Live bookings by transport mode"
             slices={[
@@ -3822,6 +3889,78 @@ function ComponentPreview({ id }: { id: string }) {
               { label: "Drafting", value: 1, color: "var(--md-blue)" },
             ]}
             variant="columns"
+          />
+        </div>
+      ) : null}
+
+      {id === "column-chart" ? (
+        <div className="md-finance-scope w-full max-w-[760px] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
+          <DashboardColumnChart
+            labels={previewFinanceMonths}
+            series={[
+              { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", values: previewFinanceRevenue },
+              { key: "costs", label: "Costs", color: "var(--md-fin-out)", values: previewFinanceCosts },
+            ]}
+            emphasis={previewFinanceMonths.map((_, index) => index >= 9 && index <= 11)}
+            partialIndex={12}
+            formatValue={(value) => previewMoney.format(value)}
+            formatAxis={(value) => previewMoneyCompact.format(value)}
+            tooltipExtra={(index) => ({ label: "Net profit", value: previewMoney.format(previewFinanceRevenue[index] - previewFinanceCosts[index]) })}
+            ariaLabel="Revenue and costs, last twelve months"
+          />
+        </div>
+      ) : null}
+
+      {id === "forecast-chart" ? (
+        <div className="md-finance-scope w-full max-w-[760px] rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
+          <DashboardForecastChart
+            labels={[...previewFinanceMonths.slice(3, 12), "Sep", "Oct", "Nov"]}
+            series={[
+              { key: "revenue", label: "Revenue", color: "var(--md-fin-in)", actual: previewFinanceRevenue.slice(3, 12), projected: [{ value: 452000, low: 418000, high: 486000 }, { value: 461000, low: 424000, high: 498000 }, { value: 470000, low: 429000, high: 511000 }] },
+              { key: "net", label: "Net profit", color: "var(--md-blue)", actual: previewFinanceRevenue.slice(3, 12).map((value, index) => value - previewFinanceCosts[index + 3]), projected: [{ value: 41000, low: 29000, high: 53000 }, { value: 43000, low: 30000, high: 56000 }, { value: 45000, low: 31000, high: 59000 }] },
+            ]}
+            formatValue={(value) => previewMoney.format(value)}
+            formatAxis={(value) => previewMoneyCompact.format(value)}
+            ariaLabel="Revenue and net profit, recorded and projected"
+          />
+        </div>
+      ) : null}
+
+      {id === "profit-loss-panel" ? (
+        <div className="md-finance-scope w-full max-w-[380px]">
+          <FinanceProfitLossPanel
+            title="Profit and loss"
+            subtitle="Jun – Aug 2026"
+            figures={{ revenue: 1306000, directCost: 1018000, overheads: 162000 }}
+            overheadAccounts={[
+              { code: "7000", name: "Salaries", amount: 104000 },
+              { code: "7100", name: "Office rent", amount: 27000 },
+              { code: "7300", name: "Software", amount: 14000 },
+            ]}
+            formatMoney={(value) => previewMoney.format(value)}
+            formatPercent={(value) => (value === null ? null : new Intl.NumberFormat("en-GB", { style: "percent" }).format(value))}
+          />
+        </div>
+      ) : null}
+
+      {id === "working-capital-panel" ? (
+        <div className="md-finance-scope grid w-full max-w-[800px] gap-5 xl:grid-cols-2">
+          <FinanceWorkingCapitalPanel
+            title="Cash and working capital"
+            subtitle="Today, across every open invoice and bill"
+            cashAtBank={286400}
+            receivables={{ total: 612000, buckets: [{ key: "current", amount: 402000 }, { key: "1-30", amount: 128000 }, { key: "31-60", amount: 54000 }, { key: "61-90", amount: 18000 }, { key: "90+", amount: 10000 }] }}
+            payables={{ total: 388000, buckets: [{ key: "current", amount: 341000 }, { key: "1-30", amount: 47000 }] }}
+            debtorDays={43}
+            formatMoney={(value) => previewMoney.format(value)}
+          />
+          <FinanceWorkingCapitalPanel
+            title="No outstanding balances"
+            subtitle="An account with no unpaid invoices or bills"
+            cashAtBank={null}
+            receivables={{ total: 0, buckets: [] }}
+            payables={{ total: 0, buckets: [] }}
+            formatMoney={(value) => previewMoney.format(value)}
           />
         </div>
       ) : null}
@@ -4123,7 +4262,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "swatch-picker" ? <SwatchPickerGallery /> : null}
       {id === "email-signature-control" ? <SignatureControlGallery /> : null}
       {id === "contact-email-action" ? <div className="w-full max-w-md p-6"><p className="text-[14px] font-medium">Alex Morgan</p><p className="mb-3 text-[12px] text-[var(--md-subtle)]">Operations manager</p><ContactEmailAction email="alex@example.test" name="Alex Morgan" preview /></div> : null}
-      {id === "contact-preferences-popover" ? <ContactPreferencesPopover contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /> : null}
+      {id === "contact-preferences-popover" ? <div className="flex items-center gap-3"><ContactPreferencesPopover contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /><ContactPreferencesPopover compact contactId="gallery-contact" name="Alex Morgan" previewContact={{ id: "gallery-contact", editVersion: 1, accountId: "gallery-company", accountName: "Northstar Freight", firstName: "Alex", lastName: "Morgan", name: "Alex Morgan", initials: "AM", email: "alex@example.test", phone: "+44 20 7946 0958", jobTitle: "Operations manager", department: "Operations", location: "London", role: "decision_maker", influenceLevel: "high", relationshipStrength: 80, preferredChannel: "email", preferredLanguage: "en-GB", consentSalesContact: true, consentMarketing: false, marketingConsentSource: null, marketingConsentUpdatedAt: null, lastContactAt: null, notes: null, trainingAllowed: false, metadata: {}, consentHistory: [], activities: [], recentEmails: { available: false, items: [] }, employmentHistory: [], emailHistory: [] }} /></div> : null}
 
       {id === "dexter-email-compose-card" ? (
         <div className="w-full max-w-[720px]">
@@ -4171,16 +4310,28 @@ function ComponentPreview({ id }: { id: string }) {
             onAccessModeChange={setPreviewDexterAccessMode}
             onRemoveAttachment={togglePreviewDexterAttachment}
             onSend={() => toast.success("Dexter conversation started")}
+            presets={<DexterPromptPresets presets={previewHomeSuggestions} onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })} />}
           />
         </div>
       ) : null}
 
-      {id === "home-prompt-rail" ? (
-        <div className="w-full max-w-[620px]">
-          <HomePromptRail
-            suggestions={previewHomeSuggestions}
-            onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })}
-          />
+      {id === "dexter-prompt-presets" ? (
+        <div className="w-full max-w-[760px] overflow-hidden rounded-[26px] md-composer-bloom relative">
+          <span aria-hidden="true" className="md-composer-bloom__effect">
+            <span className="md-composer-bloom__contrast" />
+          </span>
+          <div className="relative z-[2] flex h-[46px] items-center overflow-x-auto px-2.5">
+            <DexterPromptPresets
+              presets={previewHomeSuggestions}
+              onPick={(prompt) => toast.success("Prompt handed to Dexter", { description: prompt })}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {id === "dexter-greeting" ? (
+        <div className="w-full max-w-[760px]">
+          <DexterGreeting title="Good afternoon, Harry" standfirst="Three jobs need you before today's cutoff." />
         </div>
       ) : null}
 

@@ -51,9 +51,11 @@ test("change requests and attachments are returned to the quote workspace", () =
 
 test("accepted quotes rely on the header status unless the customer added useful content", () => {
   assert.match(quotePage, /function shouldShowQuoteCustomerResponse/)
+  assert.match(quotePage, /lifecycle === "accepted" && response\.decision !== "accepted"/)
+  assert.match(quotePage, /Date\.parse\(response\.respondedAt\) < Date\.parse\(latestIssueCreatedAt\)/)
   assert.match(quotePage, /response\.decision !== "accepted"/)
   assert.match(quotePage, /response\.message\?\.trim\(\) \|\| response\.attachment/)
-  assert.match(quotePage, /shouldShowQuoteCustomerResponse\(workspace\?\.customerResponse \?\? null\) && workspace\?\.customerResponse/)
+  assert.match(quotePage, /shouldShowQuoteCustomerResponse\(workspace\?\.customerResponse \?\? null, lifecycle, workspace\?\.latestIssue\?\.createdAt\)/)
 })
 
 test("Dexter can read the latest customer response with source evidence", () => {

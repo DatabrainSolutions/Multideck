@@ -1,3 +1,4 @@
+import { createChargeRow } from "./quote-cargo-client-fixture.mjs"
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
@@ -83,7 +84,14 @@ test('clearing and choosing suppliers round-trip through the actual update and s
 
 test('real page supplies explicit creation and live lookup bindings and does not copy metadata by shifted row position', () => {
   const page = readFileSync(new URL('../../multideck.client/src/pages/quotes-page.tsx', import.meta.url), 'utf8')
-  assert.match(page, /createRow=\{\(\) => newQuoteChargeRow\(quote\)\}/)
+  const blank = createChargeRow({ quote })
+  assert.equal(blank.supplierId, null)
+  const selected = createChargeRow({ quote, activeSupplier: { id: 'selected' }, activeSupplierId: supplierId, chargeChoices: [{ code: 'FRT', description: 'Freight' }] })
+  assert.equal(selected.supplierId, supplierId)
+  assert.equal(selected.code, 'FRT')
+  assert.equal(selected.description, 'Freight')
+  const multiple = createChargeRow({ quote, chargeChoices: [{ code: 'A' }, { code: 'B' }] })
+  assert.equal(multiple.code, blank.code)
   assert.match(page, /quoteChargeParties\(quote, charges, lookups\)/)
   assert.match(page, /const current = charges\[rows\.findIndex\(\(original\) => original\.id === row\.id\)\]/)
   assert.doesNotMatch(page, /const quoteChargeSupplierParties/)

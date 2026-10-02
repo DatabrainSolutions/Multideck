@@ -8,7 +8,9 @@ test("booking rows show one status treatment without duplicate exception text", 
   const statusColumn = source.slice(source.indexOf('id: "status"'), source.indexOf('id: "booking"'))
 
   assert.match(statusColumn, /label: t\("Status"\)/u)
-  assert.match(statusColumn, /cell: \(booking\) => <BookingStatusPill status=\{booking\.status\} \/>/u)
+  assert.match(statusColumn, /booking\.lifecycleStatus\s*\? <StatusPill[^\n]*bookingLifecycleLabel\(booking\.lifecycleStatus\)/u)
+  assert.match(statusColumn, /: <BookingStatusPill status=\{booking\.status\} \/>/u)
+  assert.match(source.slice(source.indexOf('id: "trackingStatus"'), source.indexOf('id: "booking"')), /<BookingStatusPill status=\{booking\.status\} \/>/u)
   assert.doesNotMatch(statusColumn, /getBookingExceptionSummary\(booking\).*<p/u)
 })
 

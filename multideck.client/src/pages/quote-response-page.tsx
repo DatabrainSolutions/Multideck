@@ -265,13 +265,14 @@ function QuotePdfPreview({ document, reference, version }: { document: Extract<Q
     const controller = new AbortController()
     let received: RenderedPdfPage[] = []
     let objectUrl = ""
-    setLoading(true); setError(""); setPages([])
+    setLoading(true); setError(""); setPages([]); setBlobUrl("")
     void fetch(document.url, { signal: controller.signal, cache: "no-store" }).then(async (response) => {
       if (!response.ok) throw new Error("The quote PDF could not be opened.")
       const blob = await response.blob()
       objectUrl = URL.createObjectURL(blob)
       setBlobUrl(objectUrl)
-      await renderPdfPageImages(blob, { signal: controller.signal, onPage: (page) => { received = [...received, page]; setPages(received) } })
+      const rendered = await renderPdfPageImages(blob, { signal: controller.signal, onPage: (page) => { received = [...received, page]; setPages(received) } })
+      if (!controller.signal.aborted && rendered.length === 0) throw new Error("The PDF preview could not be displayed. You can still open or download the original PDF.")
     }).catch((cause: unknown) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "The quote PDF could not be opened.") }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => { controller.abort(); releasePdfPageImages(received); if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [document.url])

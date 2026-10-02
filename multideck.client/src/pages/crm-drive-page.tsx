@@ -5,7 +5,6 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Surface } from "@/components/multideck/surface"
 import {
   DriveBreadcrumbRail,
   DriveEmptyState,
@@ -680,9 +679,8 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
       /> : null}
 
       <DriveSurfaceContextMenu canEdit={canWriteDrive} onCreateFolder={startCreateFolder} onUpload={() => fileInputRef.current?.click()}>
-        <Surface
-          padding="none"
-          className="md-drive-dropzone overflow-hidden rounded-[var(--md-radius-2xl)]"
+        <section
+          className="md-drive-dropzone min-w-0"
           data-dragging={dragging ? "true" : undefined}
           onDragEnter={canWriteDrive ? onDragEnter : undefined}
           onDragOver={canWriteDrive ? onDragOver : undefined}
@@ -690,7 +688,7 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
           onDrop={canWriteDrive ? onDrop : undefined}
         >
           {path.length > 0 || dragging ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               {path.length > 0 ? <DriveBreadcrumbRail path={path} onNavigate={navigateToId} /> : null}
               <AnimatePresence initial={false}>
                 {dragging ? (
@@ -708,7 +706,7 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
             </div>
           ) : null}
 
-          <div className="grid gap-5 p-4">
+          <div className="grid gap-5">
             {loading ? (
               <DriveSkeletonGrid />
             ) : loadError ? (
@@ -755,7 +753,7 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
                 {childFolders.length > 0 ? (
                   <section className="grid gap-2">
                     <DriveSectionLabel count={folderPage?.totalCount ?? childFolders.length}>{t("Folders")}</DriveSectionLabel>
-                    <div className="md-drive-grid">
+                    <div className="md-drive-grid md-drive-folder-grid">
                       <AnimatePresence initial={false} mode="popLayout">
                         {childFolders.map((folder, index) => (
                           <DriveGridItem key={folder.id} revealDelay={entryDelay(index)}>
@@ -863,7 +861,7 @@ export function CrmDrivePage({ currentUser }: { currentUser: AuthUserSummary | n
               </>
             )}
           </div>
-        </Surface>
+        </section>
       </DriveSurfaceContextMenu>
 
       {folderEditor ? (

@@ -1,5 +1,6 @@
 import { parseDexterActivities } from "../../../shared/dexter-activity.ts"
 import { createDeferredWork } from "./deferred-work.ts"
+import { latestRecordTables } from "./record-tables.ts"
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import type { DexterActor } from "./security.ts"
 
@@ -36,7 +37,8 @@ export async function hydrateConversationArtifacts(admin: SupabaseClient, actor:
       continuationMessageId: typeof saved.continuationMessageId === "string" ? saved.continuationMessageId : undefined,
       deferredWork: object(saved.deferredWork) ? createDeferredWork({label: saved.deferredWork.label, request: saved.deferredWork.request, after_action_ids: saved.deferredWork.afterActionIds}, pendingActions, "approve") : null,
       activities: parseDexterActivities(saved.activities),
-      recordTables: Array.isArray(saved.recordTables) ? saved.recordTables : [],
+      recordTables: Array.isArray(saved.recordTables) ? latestRecordTables(saved.recordTables.filter(object)
+        .filter((table): table is Json & { domain: string } => typeof table.domain === "string")) : [],
       steeringInputs: Array.isArray(saved.steeringInputs) ? saved.steeringInputs.filter(object)
         .filter((item: Json) => typeof item.input === "string" && typeof item.responseId === "string") : [],
     }

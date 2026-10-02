@@ -1,9 +1,42 @@
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
+import { createRequire } from "node:module"
+import vm from "node:vm"
 import test from "node:test"
 
 const root = new URL("../../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
+
+test("draft previews retain PDF and Office source filenames in the actual request", async () => {
+  const api = await read("multideck.client/src/lib/document-builder-api.ts")
+  const requireClient = createRequire(new URL("multideck.client/package.json", root))
+  const ts = requireClient("typescript")
+  const start = api.indexOf("export async function previewDraftDocumentStudioTemplate(")
+  const end = api.indexOf("export async function renderDocument(", start)
+  assert.ok(start >= 0 && end > start)
+  const compiled = ts.transpile(api.slice(start, end).replace("export ", ""), { target: ts.ScriptTarget.ES2022 })
+  const requests = []
+  const context = vm.createContext({
+    requireDocumentClient() {},
+    getSupabaseSession: async () => ({ access_token: "fictional-test-token" }),
+    supabaseFunctionsUrl: "https://example.invalid/functions/v1",
+    supabasePublicApiKey: "fictional-test-key",
+    fetch: async (_url, request) => {
+      requests.push(JSON.parse(request.body))
+      return { ok: true, blob: async () => new Blob(["%PDF-fictional-preview"]) }
+    },
+    Blob,
+  })
+  vm.runInContext(compiled, context)
+  for (const fileName of ["fiata.pdf", "booking.docx", "manifest.xlsx"]) {
+    const preview = await context.previewDraftDocumentStudioTemplate("fictional-template", "fictional-source", {}, fileName)
+    assert.equal(requests.at(-1).templateFileName, fileName)
+    assert.equal(requests.at(-1).action, "preview-draft")
+    assert.ok((await preview.text()).startsWith("%PDF-"))
+  }
+  await context.previewDraftDocumentStudioTemplate("fictional-template", "fictional-source", {})
+  assert.equal(requests.at(-1).templateFileName, "template.docx")
+})
 
 test("Carbone Studio component remains authenticated and server-hosted", async () => {
   const [edge, client, page, config] = await Promise.all([
@@ -52,7 +85,7 @@ test("template saves are authorised, versioned, and keep published templates cur
   const [edge, migration, replacementPublishing] = await Promise.all([
     read("supabase/functions/document-studio/index.ts"),
     read("supabase/migrations/20260805123825_document_template_authoring_workflow.sql"),
-    read("supabase/migrations/20260806083120_keep_published_template_saves_current.sql"),
+    read("supabase/migrations/20261001132349_template_source_uploads_require_review.sql"),
   ])
 
   assert.match(edge, /payload\.action === "save"/)
@@ -65,15 +98,17 @@ test("template saves are authorised, versioned, and keep published templates cur
   assert.match(edge, /\.from\(templateSourcesBucket\)/)
   assert.match(edge, /payload\.action === "bootstrap"/)
   assert.match(edge, /payload\.action === "approve"/)
-  assert.match(edge, /approve_studio_template_version/)
+  assert.match(edge, /approve_reviewed_template_version/)
+  assert.match(edge, /reviewed_version_no: reviewedVersion/)
+  assert.match(edge, /reviewed_source_sha256: reviewedSourceSha256/)
   assert.match(edge, /providerTemplateId[\s\S]+\^\[0-9\]\{1,20\}\$/)
   assert.match(migration, /Documents\.Manage/)
   assert.match(migration, /'draft'/)
   assert.match(migration, /revoke all on function document_api\.register_studio_template_version/)
   assert.match(migration, /grant execute on function document_api\.register_studio_template_version[\s\S]+to service_role/)
-  assert.match(replacementPublishing, /when selected_template\."DOCBT_StatusCode" = 'published' then 'published'/)
-  assert.match(replacementPublishing, /"DOCBT_CurrentVersionNo" = case/)
-  assert.match(replacementPublishing, /when saved_status = 'published' then next_version_no/)
+  assert.match(replacementPublishing, /saved_status := 'draft'/)
+  assert.match(replacementPublishing, /saved_status := matching_version\."DOCBTV_StatusCode"/)
+  assert.doesNotMatch(replacementPublishing, /"DOCBT_CurrentVersionNo"\s*=/)
 })
 
 test("template sources are privately owned by each tenant and catalogued before use", async () => {
@@ -88,22 +123,18 @@ test("template sources are privately owned by each tenant and catalogued before 
   assert.match(migration, /grant execute on function document_api\.record_template_source[\s\S]+to service_role/)
 })
 
-test("published template thumbnails render the blank approved source", async () => {
+test("template thumbnails cannot borrow customer PDFs or Job datasets", async () => {
   const page = await read("multideck.client/src/pages/documents-page.tsx")
-
-  assert.match(page, /getDocumentStudioSession\(request\)/)
-  assert.match(page, /renderDocumentStudioPreview\(\{ \.\.\.request, templateBase64: session\.templateBase64, sampleData: \{\} \}\)/)
-  assert.match(page, /renderPdfPageImages/)
-  assert.match(page, /aspect-\[210\/297\]/)
-  assert.match(page, /pathLength="1"/)
-  assert.match(page, /stroke-dashoffset:1/)
-  assert.match(page, /text-center/)
-  assert.match(page, /document\.status === "ready" && document\.templateCode === template\.code/)
-  assert.match(page, /\?\? workspace\?\.generatedDocuments\.find\(\(document\) => document\.status === "ready"\)/)
-  assert.match(page, /document\.targetReference\.slice\(separatorIndex \+ 1\)/)
+  const thumbnails = page.slice(page.indexOf("function loadTemplatePreview("), page.indexOf("async function startSignedDownload"))
+  assert.doesNotMatch(thumbnails, /getGeneratedDocumentDownload|fetchSignedDocument|getDocumentStudioSession|renderDocumentStudioPreview|jobNumber/)
+  assert.match(thumbnails, /source\?\.previewSafe/)
+  assert.match(thumbnails, /source\.previewSampleData/)
+  assert.match(thumbnails, /getDocumentStudioTemplateSource/)
+  assert.match(page, /fictional-v1:/)
+  assert.doesNotMatch(page, /function currentPreviewDocument|function previewJobNumber/)
 })
 
-test("draft templates stay out of the customer template row", async () => {
+test("managers edit library layouts consistently while document creation remains published-only", async () => {
   const [migration, page] = await Promise.all([
     read("supabase/migrations/20260805152605_expose_review_templates_to_managers.sql"),
     read("multideck.client/src/pages/documents-page.tsx"),
@@ -113,7 +144,15 @@ test("draft templates stay out of the customer template row", async () => {
   assert.match(migration, /template\."DOCBT_StatusCode" = 'published'/)
   assert.doesNotMatch(page, /Templates in review/)
   assert.doesNotMatch(page, /Carrier review/)
-  assert.match(page, /templates=\{workspace\.templates\.filter\(\(template\) => template\.status === "published"\)\}/)
+  assert.match(page, /const publishedTemplates = workspace\?\.templates\.filter\(\(template\) => template\.status === "published"\) \?\? \[\]/)
+  assert.match(page, /templates=\{publishedTemplates\}/)
+  assert.match(page, /workspace\.permissions\.canManageTemplates && template\.status === "draft"/)
+  assert.match(page, /libraryTemplates\.map/)
+  assert.match(page, /workspace\?\.permissions\.canManageTemplates \? openManage\(template\.code\) : openCreate\(template\.code\)/)
+  assert.match(page, /workspace\?\.permissions\.canManageTemplates \? "Edit template" : "Use template"/)
+  assert.match(page, /getDocumentStudioDraftSource\(template\.id\)/)
+  assert.match(page, /template\.id, source\.templateBase64, source\.previewSampleData, source\.templateFileName/)
+  assert.match(page, /IntersectionObserver/)
 })
 
 test("the full-height documents route owns a constrained page scroll area", async () => {

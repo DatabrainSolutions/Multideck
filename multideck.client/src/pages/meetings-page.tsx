@@ -119,9 +119,9 @@ export function MeetingsPage({ navigate, view }: { navigate: (path: string) => v
     </header>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--md-line)] pb-4">
       <SegmentedControl options={["Appointments", "Booking links"] as const} value={view} ariaLabel="Meetings view" onChange={(next) => { setSelection(null); navigate(next === "Appointments" ? "/calendar/meetings" : "/calendar/booking-links") }} renderOption={(option) => <>{option === "Appointments" ? <Users className="size-3.5" /> : <Link2 className="size-3.5" />}{option}</>} className="h-9 p-0.5 [&>button]:h-8 [&>button]:text-[12px]" />
-      <div className={cn("flex items-center gap-2", view !== "Appointments" && "invisible")} aria-hidden={view !== "Appointments" || undefined} inert={view !== "Appointments" || undefined}>
+      {view === "Appointments" ? <div className="flex items-center gap-2">
         <SegmentedControl options={["Upcoming", "Past"] as const} value={period} onChange={changePeriod} ariaLabel="Appointment period" className="h-8 p-0.5 [&>button]:h-7 [&>button]:text-[12px]" />
-      </div>
+      </div> : null}
     </div>
     <section hidden={view !== "Appointments"} aria-label={`${period} appointments`} className="meetings-panel min-h-[480px]">
       <div className="mb-5 flex min-h-8 flex-wrap items-center justify-between gap-2">

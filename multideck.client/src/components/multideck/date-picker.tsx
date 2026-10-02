@@ -203,6 +203,8 @@ export function MultideckDateRangePicker({
   disabled,
   missing,
   allowClear = false,
+  showTriggerClear = true,
+  resetValue,
   className,
   triggerClassName,
   popoverClassName,
@@ -228,6 +230,10 @@ export function MultideckDateRangePicker({
   disabled?: boolean
   missing?: boolean
   allowClear?: boolean
+  /** Keep Clear dates in the calendar footer without showing it inside the trigger. */
+  showTriggerClear?: boolean
+  /** Range restored by Reset; defaults to the shared seven-day range. */
+  resetValue?: MultideckDateRange
   className?: string
   triggerClassName?: string
   popoverClassName?: string
@@ -346,7 +352,7 @@ export function MultideckDateRangePicker({
       return
     }
 
-    const nextRange = getDefaultDateRange()
+    const nextRange = resetValue ?? getDefaultDateRange()
     onChange(nextRange)
     setVisibleMonth(startOfMonth(parseDateKey(nextRange.start) ?? new Date()))
   }
@@ -378,7 +384,7 @@ export function MultideckDateRangePicker({
               {triggerText}
             </span>
           </span>
-          {allowClear && hasAnyDate ? (
+          {allowClear && showTriggerClear && hasAnyDate ? (
             <span
               role="button"
               tabIndex={-1}
@@ -573,6 +579,7 @@ export function MultideckDateRangePicker({
             ) : null}
           </div>
           <div className="flex shrink-0 gap-2">
+            {allowClear && hasAnyDate ? <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]" onClick={() => { clearRange(); updateOpen(false) }}>{t("Clear dates")}</Button> : null}
             <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]" onClick={resetRange}>
               {t("Reset")}
             </Button>

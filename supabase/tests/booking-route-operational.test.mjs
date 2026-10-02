@@ -151,7 +151,19 @@ test('PostgreSQL: real route save and workspace projection round-trip per-mode f
     const modeRegression=spawnSync(join(bin,'psql'),args,{input:routeModeAssertions,encoding:'utf8',timeout:30_000})
     assert.notEqual(modeRegression.status,0,'Mode evidence regression must fail without the new trigger')
     assert.match(modeRegression.stderr,/Original mode evidence or actor lost/)
-    run('psql',args,read('20260905183528_booking_route_mode_reference_history.sql')+routeModeAssertions)
+    run('psql',args,read('20260905183528_booking_route_mode_reference_history.sql')+read('20260922120140_route_reference_json_operator_precedence.sql')+routeModeAssertions+`
+      update public."Job_Routing" set "JobRoute_RouteJSON"="JobRoute_RouteJSON" || '{"routeData":{"source":"accepted_quote","kept":"evidence"}}'::jsonb
+        where "JobRoute_ID"='10000000-0000-4000-8000-000000000044';
+      update public."Job_Routing" set "JobRoute_MasterTransportReference"='NESTED-REF'
+        where "JobRoute_ID"='10000000-0000-4000-8000-000000000044';
+      do $$begin
+        if not exists(select 1 from public."Job_Routing" where "JobRoute_ID"='10000000-0000-4000-8000-000000000044'
+          and "JobRoute_RouteJSON"#>>'{routeData,masterTransportReference}'='NESTED-REF'
+          and "JobRoute_RouteJSON"#>>'{routeData,kept}'='evidence') then
+          raise exception 'Nested route update lost reference or unrelated evidence';
+        end if;
+      end $$;
+    `)
   } finally {
     if(started)run('pg_ctl',['-D',data,'-m','immediate','-w','stop'])
     rmSync(directory,{recursive:true,force:true})

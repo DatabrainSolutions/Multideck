@@ -38,11 +38,13 @@ function closedLabel(event: CompanyEvent, t: (text: string) => string) {
 
 function TicketCard({ event, priority, saving, imageFrameStatus, onRetryImage, onOpen, onRsvp }: { event: CompanyEvent; priority: boolean; saving: boolean; imageFrameStatus: RefineFrameStatus | null; onRetryImage: () => void; onOpen: () => void; onRsvp: (status: RsvpStatus) => void }) {
   const { t } = useLanguage()
-  const imageUrl = useEventImage(event.imagePath)
+  const [failedTransformPath, setFailedTransformPath] = useState<string | null>(null)
+  const usingOriginal = failedTransformPath === event.imagePath
+  const imageUrl = useEventImage(event.imagePath, usingOriginal ? "full" : "ticket")
   return (
     <EventTicket
       title={event.title} startsAt={event.startsAt} endsAt={event.endsAt} timezone={event.timezone} location={event.location}
-      imageUrl={imageUrl} imagePriority={priority} imageFrameStatus={imageFrameStatus} onRetryImage={onRetryImage} goingCount={event.goingCount} closedLabel={closedLabel(event, t)} cancelled={event.status === "cancelled"} muted={event.status !== "draft" && isEventOver(event)}
+      imageUrl={imageUrl} imagePriority={priority} onImageError={usingOriginal ? undefined : () => setFailedTransformPath(event.imagePath)} imageFrameStatus={imageFrameStatus} onRetryImage={onRetryImage} goingCount={event.goingCount} closedLabel={closedLabel(event, t)} cancelled={event.status === "cancelled"} muted={event.status !== "draft" && isEventOver(event)}
       rsvp={saving ? "saving" : event.myRsvp?.status ?? "none"}
       onOpen={onOpen} onRsvp={onRsvp}
     />

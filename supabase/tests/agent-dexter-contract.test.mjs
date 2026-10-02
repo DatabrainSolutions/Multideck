@@ -33,6 +33,46 @@ const edgeFunction = read(
   "supabase/functions/agent-dexter/index.ts",
 )
 
+test("Word layout authoring has explicit chat and watch unsupported boundaries", () => {
+  assert.match(edgeFunction, /Word template-source downloads, layout edits, preview approval and template publication are manual authoring controls/)
+  assert.match(edgeFunction, /Template-source reads and layout-editing activity watches are unsupported\. Choose status=unsupported/)
+  assert.match(edgeFunction, /direct an authorised template manager to Documents > Templates/)
+})
+
+test("accepted Quote PDF access has explicit chat and watch unsupported boundaries", () => {
+  assert.match(edgeFunction, /Accepted Quote PDF and Booking invoice\/packing-list binary retrieval and private download links are not exposed through Dexter chat/)
+  assert.match(edgeFunction, /Direct the operator to Booking > Documents > Open PDF/)
+  assert.match(edgeFunction, /Quote PDF-open\/download, Booking attachment-open\/download, declaration source-document-open\/download and retained-original invoice upload activity watches are unsupported/)
+  assert.match(edgeFunction, /never approximate them with status or updatedAt watches/)
+})
+
+test("Customs readiness is mandatory for handover without invented read or watch support", () => {
+  assert.match(edgeFunction, /Customs handover currently requires a commodity code and positive net weight on every active cargo line/)
+  assert.match(edgeFunction, /Incomplete drafts may be saved but must not be handed over/)
+  assert.match(edgeFunction, /complete readiness checklist is not exposed as a Dexter read domain/)
+  assert.match(edgeFunction, /Customs readiness-completion watches are unsupported/)
+})
+
+test("Customs local save and source document chat/watch boundaries remain explicit", () => {
+  assert.match(edgeFunction, /Saving a Multideck Customs draft does not create or update an iCustoms draft/)
+  assert.match(edgeFunction, /source-file links and binary reads are also unsupported in chat/)
+  assert.match(edgeFunction, /declaration source-document-open\/download and retained-original invoice upload activity watches are unsupported/)
+})
+
+test("operational charge changes have explicit chat and watch unsupported boundaries", () => {
+  assert.match(edgeFunction, /Operational Booking charge-line inspection, edits and individual accepted Quote charge decisions are not exposed/)
+  assert.match(edgeFunction, /Never use generic Booking updates or Finance draft actions to replace these charges/)
+  assert.match(edgeFunction, /Individual operational Booking charge-line changes and accepted Quote charge-decision watches are unsupported/)
+})
+
+test("manual planning charges have explicit chat and watch unsupported boundaries", () => {
+  assert.match(edgeFunction, /I cannot read, change or watch manual planning charges yet/)
+  assert.match(edgeFunction, /Do not infer these charges from an accepted Quote/)
+  assert.match(edgeFunction, /Manual Provisional planning-charge watches are unsupported\.[^\n]*choose status=unsupported/)
+  assert.match(edgeFunction, /Do not substitute a Booking status, updatedAt, Quote-change or operational-finance watch/)
+  assert.doesNotMatch(edgeFunction, /admin\.rpc\("booking_planning_charges_save"/)
+})
+
 test("finance edge dispatch has an explicit defined allowlist without capturing other operational actions", () => {
   const declarations = edgeFunction.match(/const CREATE_FINANCE_DOCUMENT_DRAFT_ACTION = [\s\S]*?const FINANCE_EDGE_ACTIONS = new Set\(\[[\s\S]*?\]\)/)?.[0]
   assert.ok(declarations, "The finance dispatch constants must exist together")
@@ -112,7 +152,7 @@ const modelGateway = read("supabase/functions/_shared/model-gateway.ts")
 const dexterDocumentOcr = read("supabase/functions/_shared/dexter-document-ocr.ts")
 const dexterDocumentOcrMigration = read("supabase/migrations/20260810141116_dexter_mistral_document_ocr.sql")
 const customerApi = read("multideck.client/src/lib/customer-api.ts")
-const customerPage = read("multideck.client/src/pages/customer-detail-page.tsx")
+const customerPage = read("multideck.client/src/components/multideck/account-operations-workspace.tsx")
 const emailWatchWorker = read(
   "supabase/functions/email-watch-worker/index.ts",
 )
@@ -664,7 +704,7 @@ test("customer documents list and open only through the authenticated Supabase E
   assert.match(customerDocumentsRuntime, /createSignedUrl/)
   assert.match(customerApi, /supabaseFunctionsUrl}\/customer-documents/)
   assert.doesNotMatch(customerApi, /api\/v1\/customers\/.*documents/)
-  assert.match(customerPage, /<CustomerDocuments customerId=\{customer\.id\}/)
+  assert.match(customerPage, /listCustomerDocuments\(account\.id, \{ limit: documentPageSize/)
 })
 
 test("Approve and Deny stay explicit, single-submit, and recoverable", () => {
@@ -728,7 +768,7 @@ test("Dexter attaches clickable inline citations only to records returned by its
   assert.match(edgeFunction, /\/crm\/leads\/\$\{encodeURIComponent\(recordId\)\}/)
   assert.match(edgeFunction, /\/crm\/deals\?record=/)
   assert.match(edgeFunction, /\/quotes\?search=/)
-  assert.match(edgeFunction, /\/customers\/\$\{encodeURIComponent\(recordId\)\}/)
+  assert.match(edgeFunction, /\/crm\/accounts\/\$\{encodeURIComponent\(recordId\)\}`, "Company record"/)
   assert.match(edgeFunction, /\/warehouse\/orders\?/)
   assert.match(edgeFunction, /\/warehouse\/inventory\?search=/)
   assert.match(edgeFunction, /domain === "warehouse_reference"/)

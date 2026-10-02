@@ -23,7 +23,7 @@ const ast = ts.createSourceFile('quotes-page.tsx', source, ts.ScriptTarget.Lates
 // React tree or replacing any cargo/direction/date transformation with a mock.
 const names = ['supplierRateRequestDraft', 'newQuoteDraft', 'quoteUuidPattern', 'millisecondsPerCalendarDay', 'uuidOrNull',
   'quoteContainerRequests', 'quoteRoutingLegs', 'compactQuoteFacts', 'quoteDirectionForSave',
-  'calculatedDirectionForQuote', 'quoteSavePayload', 'quoteRecordFromWorkspace',
+  'calculatedDirectionForQuote', 'quoteSavePayload', 'quoteRecordFromWorkspace', 'quoteChargesFromWorkspace',
   'quoteLifecyclePresentation', 'quoteTransitDays', 'quoteDateInputValue', 'getDateInputValue', 'salesRepresentativeValue',
   'quoteChargeSupplierIdentity', 'quoteChargeParties', 'newQuoteChargeRow']
 const statements = names.map(name => {
@@ -33,10 +33,12 @@ const statements = names.map(name => {
   assert.ok(node, `Production mapping ${name} must exist`)
   return node.getText(ast)
 })
-export const mapping = evaluate(`${statements.join('\n')}\nexport { supplierRateRequestDraft, newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace, salesRepresentativeValue, quoteChargeSupplierIdentity, quoteChargeParties, newQuoteChargeRow, uuidOrNull };`, { ...cargo, ...freight, ...billing, salesRepresentativeOptions: ['AM1 - Maya Stone'] })
+export const mapping = evaluate(`${statements.join('\n')}\nexport { supplierRateRequestDraft, newQuoteDraft, quoteSavePayload, quoteRecordFromWorkspace, quoteChargesFromWorkspace, salesRepresentativeValue, quoteChargeSupplierIdentity, quoteChargeParties, newQuoteChargeRow, uuidOrNull };`, { ...cargo, ...freight, ...billing, salesRepresentativeOptions: ['AM1 - Maya Stone'] })
 let openingExpression
 let chargeUpdateFunction
+let createChargeExpression
 function visit(node) {
+  if (ts.isJsxAttribute(node) && node.name.text === "createRow" && node.initializer && ts.isJsxExpression(node.initializer)) createChargeExpression = node.initializer.expression.getText(ast)
   if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'openedQuote') openingExpression = node.initializer.getText(ast)
   if (ts.isFunctionDeclaration(node) && node.name?.text === 'updateCharges') chargeUpdateFunction = node.getText(ast)
   ts.forEachChild(node, visit)
@@ -59,4 +61,9 @@ export function fixtureLines() {
     { ...cargo.newQuoteCargoLine(), description: 'Machinery\nKeep upright', commodity: 'Machine parts', packageQuantity: '2', packageType: 'Crates', grossWeightKg: '100.10', netWeightKg: '90.005', volumeCbm: '0.000001', length: '120', width: '80', height: '90', hsCode: '847990', countryOfOrigin: 'GB' },
     { ...cargo.newQuoteCargoLine(), description: 'Spare parts', commodity: 'Machine parts', packageQuantity: '3', packageType: 'Cartons', grossWeightKg: '0.20', volumeCbm: '0.000002', isHazardous: true, isTemperatureControlled: true },
   ]
+}
+
+export function createChargeRow({ quote, activeSupplier = null, activeSupplierId = "", chargeChoices = [] }) {
+  assert.ok(createChargeExpression, "Real charge editor must bind row creation")
+  return evaluate(`export const row = (${createChargeExpression})()`, { quote, activeSupplier, activeSupplierId, chargeChoices, newQuoteChargeRow: mapping.newQuoteChargeRow }).row
 }

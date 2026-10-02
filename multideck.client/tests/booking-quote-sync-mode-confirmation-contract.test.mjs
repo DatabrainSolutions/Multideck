@@ -25,7 +25,9 @@ test("mode changes are not preselected and show a dedicated confirmation dialog"
   assert.match(bookingComponents, /Apply mode change\?/u)
   assert.match(bookingComponents, /Keep current booking/u)
   assert.match(bookingComponents, /onApply\(pendingModeFields, true\)/u)
-  assert.match(bookingComponents, /requestApply\(remainingDifferences\.map/u)
+  assert.match(bookingComponents, /availableDifferences = remainingDifferences\.filter\(\(difference\) => !difference\.blockedReason\)/u)
+  assert.match(bookingComponents, /requestApply\(availableDifferences\.map/u)
+  assert.match(bookingComponents, /pendingModeReviewToken\.current !== review\.reviewToken/u)
 })
 
 test("the booking header and review identify the applied and proposed quote versions", () => {
@@ -40,6 +42,7 @@ test("the client and Edge Function carry and validate explicit mode confirmation
   assert.match(bookingApi, /confirmModeChange,/u)
   assert.match(edgeCore, /parseModeChangeConfirmation/u)
   assert.match(edgeIndex, /fields\.includes\("mode"\) && !confirmModeChange/u)
-  assert.match(edgeIndex, /booking_workflow_apply_quote_sync_confirmed/u)
+  assert.match(edgeIndex, /booking_workflow_apply_quote_sync_v2/u)
+  assert.match(edgeIndex, /expected_review_token:/u)
   assert.match(edgeIndex, /confirm_mode_change: confirmModeChange/u)
 })

@@ -9,6 +9,7 @@ export function createNotificationStore(dependencies: {
   load: () => Promise<Notifications | NotificationFeed>
   connect: (changed: () => void, revalidate: () => void) => () => void
   onError: (error: unknown, operation: "load" | "save") => void
+  onNew?: (notification: WorkspaceNotification) => void
 }) {
   let notifications: Notifications = []
   const emptyState: FeedState = { loading: false, loaded: false, error: null, pending: false, unreadCount: 0, total: 0 }
@@ -37,11 +38,17 @@ export function createNotificationStore(dependencies: {
       .then((result) => {
         if (requestGeneration !== generation || needsRefresh || mutations) return
         const feed = Array.isArray(result) ? { notifications: result, unreadCount: unread(result), total: result.length } : result as NotificationFeed
+        const knownIds = new Set(notifications.map((notification) => notification.id))
+        const latestKnownAt = Math.max(...notifications.map((notification) => Date.parse(notification.createdAt)).filter(Number.isFinite), -Infinity)
+        const newlyArrived = state.loaded ? feed.notifications.filter((notification) =>
+          notification.status === "unread" && !knownIds.has(notification.id) && Date.parse(notification.createdAt) > latestKnownAt,
+        ) : []
         const rowsChanged = !sameRows(feed.notifications)
         const stateChanged = !state.loaded || state.error !== null || state.unreadCount !== feed.unreadCount || state.total !== feed.total
         if (rowsChanged) notifications = feed.notifications
         if (stateChanged) state = { ...state, loaded: true, error: null, unreadCount: feed.unreadCount, total: feed.total }
         if (rowsChanged || stateChanged) emit()
+        for (const notification of newlyArrived) dependencies.onNew?.(notification)
       })
       .catch((error) => {
         if (requestGeneration !== generation) return

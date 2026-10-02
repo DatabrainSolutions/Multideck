@@ -24,7 +24,7 @@ import { draftQuoteReferenceRule, getQuoteBranding, getQuoteFollowUpSettings, ge
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
 import { adminHubForRoute, adminHubs } from "@/data/navigation-data"
-import { AdminDashboard, AdminHubPage } from "@/pages/admin-hub-page"
+import { AdminHubPage } from "@/pages/admin-hub-page"
 import { useDockedAdminSections } from "@/lib/admin-explorer-state"
 import { Switch } from "@/components/ui/switch"
 import { EventsApiError, getEventsSettings, setEventsEnabled } from "@/lib/company-events-api"
@@ -161,7 +161,7 @@ function referencePatternError(pattern: string, target: ReferenceRuleTarget, com
   return null
 }
 
-export type AdminRoute = "/admin" | "/admin/settings" | "/admin/finance" | "/admin/sales-crm" | "/admin/users" | "/admin/usage" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/branding" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
+export type AdminRoute = "/admin" | "/admin/settings" | "/admin/finance" | "/admin/sales-crm" | "/admin/operations" | "/admin/warehouse" | "/admin/general-reporting" | "/admin/documents-storage" | "/admin/customs-compliance" | "/admin/users" | "/admin/usage" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/branding" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
 type AuditCategory = "all" | "authentication" | "application"
 const auditRefreshIntervalMs = 60_000
 
@@ -976,7 +976,6 @@ export function AdminPage({ route, currentUser, navigate }: { route: AdminRoute;
     document.title = `${route === "/admin" ? "Dashboard" : hub?.label ?? adminRouteTitles[route as keyof typeof adminRouteTitles] ?? "Admin"} · Admin · Multideck`
   }, [hub, route])
 
-  if (route === "/admin") return <AdminDashboard navigate={navigate} />
   if (hub) return <AdminHubPage hub={hub} navigate={navigate} />
 
   const content = route === "/admin/users"

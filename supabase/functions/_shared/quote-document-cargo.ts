@@ -109,6 +109,16 @@ export function quoteDocumentHandling(facts: Record<string, unknown>) {
       if (Object.hasOwn(line, key) && typeof line[key] !== 'boolean') throw new Error('Invalid saved cargo safety flag')
       if (line[key] === true) selected.add(label)
     }
+    const rawDetails = line.handlingDetailsJson
+    if (rawDetails !== null && rawDetails !== undefined && rawDetails !== '') {
+      if (typeof rawDetails !== 'string') throw new Error('Invalid saved cargo handling details')
+      let details: unknown
+      try { details = JSON.parse(rawDetails) } catch { throw new Error('Invalid saved cargo handling details') }
+      if (!details || typeof details !== 'object' || Array.isArray(details)) throw new Error('Invalid saved cargo handling details')
+      for (const [key, label] of [['hazardous', 'hazardous'], ['temperatureControlled', 'temperature controlled'], ['oversized', 'oversized'], ['fragile', 'fragile'], ['foodGrade', 'food grade']]) {
+        if (Object.hasOwn(details, key)) selected.add(label)
+      }
+    }
   }
   return ['Hazardous', 'Oversized', 'Temperature controlled', 'Fragile', 'Food grade']
     .filter(label => selected.has(label.toLowerCase())).join('; ') || 'No special handling recorded'

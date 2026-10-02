@@ -1106,11 +1106,11 @@ Deno.serve(async (request) => {
         if (error) throw new HttpError(error.code === "42501" ? 403 : 500, error.message)
         const payload = objectValue(data)
         const ids = Array.isArray(payload.ids) ? payload.ids.filter((value): value is string => typeof value === "string") : []
-        const rows = await customerRows(admin, current.Company_ID, null, null, false, ids, undefined, "any")
         const { financialAccess, accountingSyncAccess } = accountFinanceAccess(organisationType, permissions)
-        const financials = financialAccess
-          ? await customerAccountFinancials(admin, current, ids, accountingSyncAccess, organisationType === "supplier" ? "supplier" : "customer")
-          : null
+        const [rows, financials] = await Promise.all([
+          customerRows(admin, current.Company_ID, null, null, false, ids, undefined, "any"),
+          financialAccess ? customerAccountFinancials(admin, current, ids, accountingSyncAccess, organisationType === "supplier" ? "supplier" : "customer") : Promise.resolve(null),
+        ])
         const rowMap = new Map(rows.map((row: Row) => [row.id, row]))
         return json(request, {
           ...payload,

@@ -15,10 +15,10 @@ export const routeSaveFixture = `
   create table public."sys_JobStatuses" ("JS_Code" text, "JS_IsActive" boolean);
   insert into public."sys_JobStatuses" values ('draft',true),('open',true);
   alter table public."Job_Header"
-    add column "Job_BookingReference" text, add column "Job_CustomerDeadline" date,
-    add column "Job_IncotermsCode" text, add column "Job_IncotermsLocation" text,
-    add column "Job_FreightChargeAmount" numeric, add column "Job_FreightChargeCurrencyCode" text,
-    add column "Job_CollectionAddress" text, add column "Job_DeliveryAddress" text;
+    add column if not exists "Job_BookingReference" text, add column if not exists "Job_CustomerDeadline" date,
+    add column if not exists "Job_IncotermsCode" text, add column if not exists "Job_IncotermsLocation" text,
+    add column if not exists "Job_FreightChargeAmount" numeric, add column if not exists "Job_FreightChargeCurrencyCode" text,
+    add column if not exists "Job_CollectionAddress" text, add column if not exists "Job_DeliveryAddress" text;
   create table booking_api.events (company_id uuid, job_id uuid, event_type text, summary text, metadata jsonb, actor_user_id uuid);
   create function booking_api.normalise_direction(text) returns text language sql as $$select lower($1)$$;
   create function quote_api.jsonb_has_content(jsonb) returns boolean language sql as $$select $1 <> '{}'::jsonb$$;

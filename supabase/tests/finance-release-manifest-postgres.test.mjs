@@ -91,12 +91,47 @@ test('Finance 1–4 post-snapshot migrations install together on the tenant base
       '20260925104100_finance_daily_approval_policy.sql',
       '20260925104200_finance_approval_dexter_parity.sql',
       '20260926095252_finance_approval_decision_entity_lock.sql',
+      '20260928090000_finance_director_dashboard.sql',
+      '20260928120000_finance_customer_register_requires_customer_type.sql',
       '20260929135845_receivables_exception_approvals.sql',
       '20260929153900_supplier_account_finance_register.sql',
     ]
+    // The freight branch has its own Quote/Booking/document release. Keep its
+    // exact files outside the Finance installer, not a blanket booking/quote
+    // exclusion: every future migration must still trigger this review gate.
+    const operationalMigrations = new Set([
+      '20261001113338_quote_minimum_cargo_optional_goods.sql',
+      '20260925095733_stop_quote_cargo_weight_copy_to_container.sql',
+      '20260925123314_review_document_templates.sql',
+      '20260925123316_read_document_template_draft.sql',
+      '20260928131554_booking_customs_importer_party.sql',
+      '20260928132500_booking_confirmation_parties.sql',
+      '20260928155945_quote_response_notify_sender.sql',
+      '20260928160003_quote_default_current_operator.sql',
+      '20260929095630_booking_confirmation_equipment_mode.sql',
+      '20260929103059_quote_acceptance_charge_source_line.sql',
+      '20260929130600_booking_confirmation_shipment_type_source.sql',
+      '20260929132713_quote_party_contact_handoff.sql',
+      '20260929144212_booking_confirmation_template_choices.sql',
+      '20261001093644_read_published_template_layout_source.sql',
+      '20261001100836_document_template_library_controls.sql',
+      '20261001132349_template_source_uploads_require_review.sql',
+      '20261001145513_booking_document_issue_markings.sql',
+      '20261001161514_transport_document_draft_mapping.sql',
+      '20261001171457_booking_document_final_readiness.sql',
+      '20261001171500_document_template_review_identity.sql',
+      '20261001175904_booking_confirmation_price_label.sql',
+      '20261001180929_document_template_version_sources.sql',
+      '20261001185549_house_transport_review_layouts.sql',
+    ])
+    for (const migration of operationalMigrations) {
+      assert.ok(readFileSync(new URL(`migrations/${migration}`, root), 'utf8').trim(),
+        `${migration} must remain an explicit operational release file`)
+    }
     const laterMigrations = readdirSync(new URL('migrations/', root))
       .filter(name => name >= '20260925070431' && name.endsWith('.sql')
-        && !/_(?:uk_vat|hmrc|company_event|gpt_6_luna|remove_google_group_mailbox)/.test(name))
+        && !operationalMigrations.has(name)
+        && !/_(?:uk_vat|hmrc|company_event|gpt_6_luna|remove_google_group_mailbox|warehouse_report_sources|warehouse_billing)/.test(name))
       .sort()
     assert.deepEqual(migrations, laterMigrations,
       'Review every new post-snapshot migration for this release and update its ordered manifest.')

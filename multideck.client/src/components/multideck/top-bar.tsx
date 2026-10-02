@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
-import { ChevronDown, MapPinOff, Menu, MoreHorizontal, PackagePlus, Plus, Upload, UserRoundPlus } from "@/components/icons/hugeicons"
-import { toast } from "sonner"
+import { ChevronDown, MapPinOff, Menu, PackagePlus, Plus, Upload, UserRoundPlus } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
@@ -42,6 +41,8 @@ type CrmCreateAction = {
 const crmCreateActions: Partial<Record<string, CrmCreateAction>> = {
   "/crm/leads": { label: "New lead", eventName: topBarActionEvents.createCrmLead },
   "/crm/accounts": { label: "New company", eventName: topBarActionEvents.createCrmAccount },
+  "/customers": { label: "New customer", eventName: topBarActionEvents.createCrmAccount },
+  "/suppliers": { label: "New supplier", eventName: topBarActionEvents.createCrmAccount },
   "/crm/contacts": { label: "New contact", eventName: topBarActionEvents.createCrmContact },
   "/crm/contact-cards": { label: "New business card", eventName: topBarActionEvents.createCrmContactCard },
   "/crm/deals": { label: "New deal", eventName: topBarActionEvents.createCrmDeal },
@@ -189,12 +190,7 @@ export function TopBar({
   navigate: (path: string) => void
   currentUser?: AuthUserSummary | null
 }) {
-  const partyRegisterType = route === "/customers" ? "customer" : route === "/suppliers" ? "supplier" : null
-  const isPartyRegister = partyRegisterType !== null
-  const isCustomerDetail = route.startsWith("/customers/")
-  const isSupplierDetail = route.startsWith("/suppliers/")
-  const isPartyDetail = isCustomerDetail || isSupplierDetail
-  const isCrmRoute = route.startsWith("/crm")
+  const isCrmRoute = route.startsWith("/crm") || route === "/customers" || route === "/suppliers"
   const isCrmLeadDetail = /^\/crm\/leads\/[^/]+$/.test(route)
   const isCrmAccountDetail = /^\/crm\/accounts\/[^/]+$/.test(route)
   const isCrmLeadConversion = /^\/crm\/leads\/[^/]+\/convert$/.test(route)
@@ -236,10 +232,9 @@ export function TopBar({
       }
 
       const accountMatch = route.match(/^\/crm\/accounts\/([^/]+)$/)
-      const customerMatch = route.match(/^\/(?:customers|suppliers)\/([^/]+)$/)
-      if (accountMatch || customerMatch) {
+      if (accountMatch) {
         const { getCustomer } = await import("@/lib/customer-api")
-        return (await getCustomer((accountMatch ?? customerMatch)![1])).name
+        return (await getCustomer(accountMatch[1])).name
       }
 
       const contactMatch = route.match(/^\/crm\/contacts\/([^/]+)$/)
@@ -266,7 +261,7 @@ export function TopBar({
   }, [route])
 
   return (
-    <header className="md-topbar sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] flex-wrap items-center gap-2 bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl sm:gap-[var(--md-gap-lg)]">
+    <header className="md-topbar">
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetTrigger asChild>
           <Button
@@ -284,6 +279,9 @@ export function TopBar({
           side={direction === "rtl" ? "right" : "left"}
           showCloseButton={false}
           className="gap-0 border-0 bg-[var(--md-sidebar-bg)] p-0 shadow-[var(--md-shadow-lift)] data-[side=left]:w-[min(var(--md-sidebar-width),calc(100vw-24px))] data-[side=left]:max-w-[var(--md-sidebar-width)] data-[side=right]:w-[min(var(--md-sidebar-width),calc(100vw-24px))] data-[side=right]:max-w-[var(--md-sidebar-width)]"
+          onEscapeKeyDown={(event) => {
+            if (event.target instanceof Element && event.target.closest('[data-sidebar-searching="true"]')) event.preventDefault()
+          }}
         >
           <SheetTitle className="sr-only">{t("Multideck navigation")}</SheetTitle>
           <SheetDescription className="sr-only">{t("Mobile navigation for Multideck")}</SheetDescription>
@@ -299,38 +297,11 @@ export function TopBar({
         </SheetContent>
       </Sheet>
 
-      {isPartyDetail ? (
-        <>
-          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
-          <div className="md-topbar-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              className={topBarGhostActionClass}
-              onClick={() =>
-                toast.success("Share link copied", {
-                  description: `${currentRecordName ?? (isSupplierDetail ? "Supplier" : "Customer")}'s account link is ready to send.`,
-                })
-              }
-            >
-              Share
-            </Button>
-            <Button variant="ghost" size="icon" className={topBarIconActionClass}>
-              <MoreHorizontal data-icon="inline-start" strokeWidth={1.2} />
-            </Button>
-            {isCustomerDetail ? <Button
-              className={topBarPrimaryActionClass}
-              onClick={() => navigate("/bookings/new")}
-            >
-              <span className="hidden sm:inline">{currentRecordName ? `New booking for ${currentRecordName}` : "New booking"}</span>
-              <span className="sm:hidden">New booking</span>
-            </Button> : null}
-          </div>
-        </>
-      ) : isCrmLeadConversion ? (
-        <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 md:min-w-[210px]" />
+      {isCrmLeadConversion ? (
+        <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="md-topbar-breadcrumbs" />
       ) : isCrmLeadDetail ? (
         <>
-          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="md-topbar-breadcrumbs" />
           {currentRecordName ? <div className="md-topbar-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Button
               variant="ghost"
@@ -349,7 +320,7 @@ export function TopBar({
         </>
       ) : isCrmAccountDetail ? (
         <>
-          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="md-topbar-breadcrumbs" />
           {currentRecordName ? <div className="md-topbar-actions ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
             <Button
               className={topBarPrimaryActionClass}
@@ -361,8 +332,8 @@ export function TopBar({
         </>
       ) : (
         <>
-          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="hidden min-w-[210px] md:block" />
-          <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="md-topbar-breadcrumbs" />
+          <div className="md-topbar-search ml-auto min-w-0 flex-1 md:max-w-[560px]">
             <CommandInput placeholder={t("Search jobs, quotes, companies, contacts and more…")} onNavigate={navigate} />
           </div>
           {isEvents ? (
@@ -423,16 +394,6 @@ export function TopBar({
                 <span className="hidden sm:inline">New booking</span>
               </Button>
             </>
-          ) : isPartyRegister && canWriteCrm ? (
-            <Button
-              aria-label={`New ${partyRegisterType}`}
-              title={`New ${partyRegisterType}`}
-              className={topBarPrimaryActionClass}
-              onClick={() => dispatchTopBarAction(topBarActionEvents.createCrmAccount)}
-            >
-              <Plus data-icon="inline-start" strokeWidth={1.2} />
-              <span className="hidden sm:inline">New {partyRegisterType}</span>
-            </Button>
           ) : route === "/crm/trips" && currentUser?.actorType === "internal" ? (
             <Button className={topBarPrimaryActionClass} onClick={() => navigate("/crm/trips/new")}><Plus data-icon="inline-start" />New trip</Button>
           ) : isCrmRoute && crmCreateAction && canWriteCrm ? (

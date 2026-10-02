@@ -109,6 +109,7 @@ export function SettingsPageHeader({
   actions,
   icon: Icon,
   descriptionPlacement = "aside",
+  titleClassName,
 }: {
   eyebrow?: string
   title: string
@@ -116,12 +117,13 @@ export function SettingsPageHeader({
   actions?: ReactNode
   icon?: LucideIcon
   descriptionPlacement?: "aside" | "under-title"
+  titleClassName?: string
 }) {
   if (descriptionPlacement === "under-title") {
     return (
       <header className="grid gap-3 py-1 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-[var(--md-page-section-gap)]">
         <div className="min-w-0">
-          <h1 className="flex items-center gap-2.5 text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]">
+          <h1 className={cn("flex items-center gap-2.5 text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]", titleClassName)}>
             {Icon ? <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><Icon className="size-4" strokeWidth={1.4} aria-hidden="true" /></span> : null}
             <span>{title}</span>
           </h1>
@@ -134,7 +136,7 @@ export function SettingsPageHeader({
 
   return (
     <header className={cn("grid gap-3 py-1 lg:items-end", (description || actions) && "lg:grid-cols-[minmax(0,1fr)_minmax(320px,560px)] lg:gap-[var(--md-page-section-gap)]")}>
-      <h1 className="flex items-center gap-2.5 text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]">
+      <h1 className={cn("flex items-center gap-2.5 text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]", titleClassName)}>
         {Icon ? <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><Icon className="size-4" strokeWidth={1.4} aria-hidden="true" /></span> : null}
         <span>{title}</span>
       </h1>

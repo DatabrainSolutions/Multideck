@@ -35,6 +35,14 @@ export function dexterArtifactReferences(content: string, hasRecordTable: boolea
   return content.replace(/\b(tables?)\s+above\b/gi, "$1 below")
 }
 
+/** Older saved replies can contain repeated snapshots for one record type. */
+export function latestDexterRecordTables<T extends { domain: string }>(tables: T[] | undefined): T[] {
+  if (!tables) return []
+  const latest = new Map<string, T>()
+  for (const table of tables) latest.set(table.domain, table)
+  return [...latest.values()]
+}
+
 /** Recover explicit, semicolon-separated agendas without rewriting their evidence. */
 export function structureDexterMeetingBrief(content: string) {
   // Code and existing structured Markdown are authored content, not repair targets.

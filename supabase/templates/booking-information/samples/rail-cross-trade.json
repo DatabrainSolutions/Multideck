@@ -1,0 +1,112 @@
+{
+  "meta": {
+    "schemaVersion": 2
+  },
+  "customer": {
+    "name": "Example Customer Ltd"
+  },
+  "bookingConfirmation": {
+    "bookingReference": "DEMO-RAIL-CROSS-TRADE",
+    "direction": "Cross-trade",
+    "mode": "Rail",
+    "shipmentType": "FULL_WAGON",
+    "incoterm": "FCA Sample Place",
+    "customerReference": "PO-RAIL-001",
+    "preparedBy": "Demo Operator",
+    "provisional": false,
+    "shipper": {
+      "name": "Example Shipper Ltd",
+      "address": "1 Sample Road, Example City"
+    },
+    "consignee": {
+      "name": "Example Receiver Ltd",
+      "address": "2 Sample Street, Destination City"
+    },
+    "scope": {
+      "collection": true,
+      "mainTransport": true,
+      "delivery": true
+    },
+    "collection": {
+      "address": "1 Sample Road, Example City",
+      "plannedAtLabel": "07 Oct 2026",
+      "remarks": "Collect during normal opening hours."
+    },
+    "mainTransport": [
+      {
+        "mode": "RAIL",
+        "origin": "Warsaw terminal",
+        "destination": "Berlin terminal",
+        "plannedDepartureAt": "2026-10-08T09:00:00Z",
+        "plannedArrivalAt": "2026-10-09T14:00:00Z",
+        "details": "Carrier: Example Rail · Booking ref: RAIL-BOOK-01 · Rail service: EX-R1 · CIM / SMGS: CIM-001"
+      },
+      {
+        "mode": "RAIL",
+        "origin": "Berlin terminal",
+        "destination": "Rotterdam terminal",
+        "plannedDepartureAt": "2026-10-09T09:00:00Z",
+        "plannedArrivalAt": "2026-10-10T14:00:00Z",
+        "details": "Carrier: Example Rail · Booking ref: RAIL-BOOK-01 · Rail service: EX-R1 · CIM / SMGS: CIM-001"
+      }
+    ],
+    "equipment": [
+      {
+        "kind": "Wagon",
+        "number": "EX-WGN-123",
+        "type": "Covered"
+      }
+    ],
+    "hasEquipment": true,
+    "delivery": {
+      "address": "2 Sample Street, Destination City",
+      "plannedAtLabel": "12 Oct 2026",
+      "remarks": "Book a delivery slot."
+    },
+    "cargo": [
+      {
+        "description": "Demo machinery parts",
+        "marksAndNumbers": "DEMO-01",
+        "packages": 3,
+        "packageType": "Cartons",
+        "grossWeightKg": 245.5
+      },
+      {
+        "description": "Demo spare components",
+        "marksAndNumbers": "DEMO-02",
+        "packages": 2,
+        "packageType": "Pallets",
+        "grossWeightKg": 180
+      }
+    ],
+    "specialInstructions": "This is fictional preview data; do not dispatch.",
+    "priceStatus": "confirmed",
+    "chargeLines": [
+      {
+        "description": "Freight",
+        "currency": "GBP",
+        "sellAmount": 1250
+      },
+      {
+        "description": "Handling",
+        "currency": "GBP",
+        "sellAmount": 85
+      },
+      {
+        "description": "Destination service",
+        "currency": "EUR",
+        "sellAmount": 110
+      }
+    ],
+    "chargeTotals": [
+      {
+        "currency": "EUR",
+        "amount": 110
+      },
+      {
+        "currency": "GBP",
+        "amount": 1335
+      }
+    ]
+  }
+}

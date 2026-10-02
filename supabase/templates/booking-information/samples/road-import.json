@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "schemaVersion": 2
+  },
+  "customer": {
+    "name": "Example Customer Ltd"
+  },
+  "bookingConfirmation": {
+    "bookingReference": "DEMO-ROAD-IMPORT",
+    "direction": "Import",
+    "mode": "Road",
+    "shipmentType": "FTL",
+    "incoterm": "FCA Sample Place",
+    "customerReference": "PO-ROAD-001",
+    "preparedBy": "Demo Operator",
+    "provisional": false,
+    "shipper": {
+      "name": "Example Shipper Ltd",
+      "address": "1 Sample Road, Example City"
+    },
+    "consignee": {
+      "name": "Example Receiver Ltd",
+      "address": "2 Sample Street, Destination City"
+    },
+    "scope": {
+      "collection": true,
+      "mainTransport": true,
+      "delivery": true
+    },
+    "collection": {
+      "address": "1 Sample Road, Example City",
+      "plannedAtLabel": "07 Oct 2026",
+      "remarks": "Collect during normal opening hours."
+    },
+    "mainTransport": [
+      {
+        "mode": "ROAD",
+        "origin": "Lyon",
+        "destination": "Birmingham",
+        "plannedDepartureAt": "2026-10-08T09:00:00Z",
+        "plannedArrivalAt": "2026-10-09T14:00:00Z",
+        "details": "Carrier: Example Haulage · Booking ref: ROAD-BOOK-01 · Vehicle: EX12 ABC · Trailer: TR-45 · CMR: CMR-001"
+      }
+    ],
+    "equipment": [
+      {
+        "kind": "Vehicle",
+        "number": "EX12 ABC",
+        "type": "Articulated"
+      }
+    ],
+    "hasEquipment": true,
+    "delivery": {
+      "address": "2 Sample Street, Destination City",
+      "plannedAtLabel": "12 Oct 2026",
+      "remarks": "Book a delivery slot."
+    },
+    "cargo": [
+      {
+        "description": "Demo machinery parts",
+        "marksAndNumbers": "DEMO-01",
+        "packages": 3,
+        "packageType": "Cartons",
+        "grossWeightKg": 245.5
+      },
+      {
+        "description": "Demo spare components",
+        "marksAndNumbers": "DEMO-02",
+        "packages": 2,
+        "packageType": "Pallets",
+        "grossWeightKg": 180
+      }
+    ],
+    "specialInstructions": "This is fictional preview data; do not dispatch.",
+    "priceStatus": "confirmed",
+    "chargeLines": [
+      {
+        "description": "Freight",
+        "currency": "GBP",
+        "sellAmount": 1250
+      },
+      {
+        "description": "Handling",
+        "currency": "GBP",
+        "sellAmount": 85
+      },
+      {
+        "description": "Destination service",
+        "currency": "EUR",
+        "sellAmount": 110
+      }
+    ],
+    "chargeTotals": [
+      {
+        "currency": "EUR",
+        "amount": 110
+      },
+      {
+        "currency": "GBP",
+        "amount": 1335
+      }
+    ]
+  }
+}

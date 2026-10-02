@@ -9,7 +9,7 @@ import {
   toFunctionError,
 } from "../_shared/document-functions.ts"
 
-type DownloadRequest = { generatedDocumentId?: string }
+type DownloadRequest = { generatedDocumentId?: string; preview?: boolean }
 type AuthorisedDownload = { bucket: string; path: string; fileName: string }
 
 Deno.serve(async (request) => {
@@ -21,6 +21,9 @@ Deno.serve(async (request) => {
     const payload = await request.json() as DownloadRequest
     if (!isUuid(payload.generatedDocumentId)) {
       throw new FunctionError(400, "Choose a valid document.", "Generated document UUID validation failed")
+    }
+    if (payload.preview !== undefined && typeof payload.preview !== "boolean") {
+      throw new FunctionError(400, "Choose a valid document preview.", "Preview flag validation failed")
     }
 
     const { data, error } = await admin
@@ -34,7 +37,7 @@ Deno.serve(async (request) => {
     const authorised = data as AuthorisedDownload
     const { data: signed, error: signedError } = await admin.storage
       .from(authorised.bucket)
-      .createSignedUrl(authorised.path, signedUrlLifetimeSeconds, { download: authorised.fileName })
+      .createSignedUrl(authorised.path, signedUrlLifetimeSeconds, payload.preview ? undefined : { download: authorised.fileName })
     if (signedError || !signed?.signedUrl) {
       throw new FunctionError(500, "A secure download link could not be created.", "Supabase signed URL creation failed")
     }

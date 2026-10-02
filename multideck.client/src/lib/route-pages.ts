@@ -11,7 +11,6 @@ export const AgentDexterPage = lazyPage(() => import("@/pages/agent-dexter-page"
 export const AuthFlowPage = lazyPage(() => import("@/pages/auth-flow-page").then((module) => ({ default: module.AuthFlowPage })))
 export const AccountOnboardingPage = lazyPage(() => import("@/pages/account-onboarding-page").then((module) => ({ default: module.AccountOnboardingPage })))
 export const ComponentsGalleryPage = lazyPage(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
-export const CustomerDetailPage = lazyPage(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
 export const SignatureTeamPage = lazyPage(() => import("@/pages/signature-team-page").then(module => ({ default: module.SignatureTeamPage })))
 export const EmailSignaturesPage = lazyPage(() => import("@/pages/email-signatures-page").then(module => ({ default: module.EmailSignaturesPage })))
 export const InboxPage = lazyPage(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
@@ -55,6 +54,7 @@ export const ContactCardDetailPage = lazyPage(() => import("@/pages/contact-card
 export const ContactCardPublicPage = lazyPage(() => import("@/pages/contact-card-public-page").then((module) => ({ default: module.ContactCardPublicPage })))
 export const QuoteResponsePage = lazyPage(() => import("@/pages/quote-response-page").then((module) => ({ default: module.QuoteResponsePage })))
 export const MileagePage = lazyPage(() => import("@/pages/mileage-page").then((module) => ({ default: module.MileagePage })))
+export const FinanceDirectorDashboardPage = lazyPage(() => import("@/pages/finance-director-dashboard-page").then((module) => ({ default: module.FinanceDirectorDashboardPage })))
 export const FinancePage = lazyPage(() => import("@/pages/finance-page").then((module) => ({ default: module.FinancePage })))
 
 const destinations = {
@@ -65,13 +65,12 @@ const destinations = {
   "/bookings": BookingsPage, "/bookings/new": BookingOpenPage, "/bookings/provisional": BookingsPage,
   "/road-control": RoadControlPage, "/road-control/new": BookingOpenPage,
   "/crm": CrmOverviewPage, "/crm/accounts": CrmAccountsPage,
-  "/customers": CrmAccountsPage, "/suppliers": CrmAccountsPage,
   "/crm/contacts": CrmContactsPage, "/crm/leads": CrmLeadsPage, "/crm/deals": CrmDealsPage,
   "/crm/phone-calls": CrmPhoneCallsPage, "/crm/drive": CrmDrivePage,
   "/crm/settings": CrmSettingsPage, "/crm/contact-cards": ContactCardsPage,
   "/settings": SettingsPage, "/components": ComponentsGalleryPage,
   "/inbox/signatures": EmailSignaturesPage, "/admin/email-signatures": EmailSignaturesPage,
-  "/admin/email-signatures/team": SignatureTeamPage, "/compliance/screening": ScreeningPage,
+  "/admin/email-signatures/team": SignatureTeamPage, "/admin": FinanceDirectorDashboardPage, "/admin/finance-dashboard": FinanceDirectorDashboardPage, "/compliance/screening": ScreeningPage,
 }
 const families = [
   ["/quotes/", QuoteDetailPage], ["/bookings/", BookingDetailPage],
@@ -79,7 +78,7 @@ const families = [
   ["/crm/accounts/", CrmAccountDetailPage], ["/crm/contacts/", CrmContactDetailPage],
   ["/crm/leads/", CrmLeadDetailPage], ["/crm/deals/", CrmDealDetailPage],
   ["/crm/contact-cards/", ContactCardDetailPage], ["/crm/phone-calls/", CrmPhoneCallsPage],
-  ["/customers/", CustomerDetailPage], ["/crm/trips", MileagePage], ["/finance/mileage", MileagePage],
+  ["/crm/trips", MileagePage], ["/finance/mileage", MileagePage],
   ["/documents", DocumentsPage], ["/customs/", CustomsDeclarationsPage],
   ["/warehouse", WarehousePage], ["/rates", RatesPage], ["/reports", ReportsPage],
   ["/finance/", FinancePage], ["/admin", AdminPage],

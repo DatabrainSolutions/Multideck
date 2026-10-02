@@ -5,6 +5,8 @@ import { authenticatedAccessChangedEvent, getSupabaseSession, supabase } from "@
 import { captureAuthenticatedScope } from "@/lib/crm-read-cache"
 import { createNotificationStore } from "@/lib/notification-store"
 import { dismissAllWorkspaceNotifications, dismissWorkspaceNotification, loadWorkspaceNotificationFeed, markAllWorkspaceNotificationsRead, markWorkspaceNotificationRead, markWorkspaceNotificationUnread } from "@/lib/notification-api"
+import { workspaceNotificationDestination } from "@/lib/notification-destination"
+import { notificationPreviewText } from "@/lib/notification-preview"
 
 let connectionSequence = 0
 let visibleLimit = 20
@@ -41,6 +43,22 @@ const store = createNotificationStore({
     return () => { stopRefresh(); void client.removeChannel(channel) }
   },
   onError(error, operation) { if (operation === "save" && !(error instanceof Error && error.name === "AbortError")) toast.error("Notifications could not be updated. Please try again.") },
+  onNew(notification) {
+    if (notification.metadata.event_type !== "quote_response") return
+    const destination = workspaceNotificationDestination(notification, window.location.origin)
+    toast.info(notification.title, {
+      description: notificationPreviewText(notification.body),
+      duration: 6_000,
+      closeButton: true,
+      action: destination ? {
+        label: "Open quote",
+        onClick: () => {
+          window.history.pushState({}, "", destination)
+          window.dispatchEvent(new PopStateEvent("popstate"))
+        },
+      } : undefined,
+    })
+  },
 })
 
 if (typeof window !== "undefined") window.addEventListener(authenticatedAccessChangedEvent, (event) => {

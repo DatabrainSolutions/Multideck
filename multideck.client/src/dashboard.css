@@ -919,6 +919,44 @@
     color: var(--md-subtle);
   }
 
+  .md-mini-split {
+    display: block;
+    width: 100%;
+    height: 3px;
+    margin-top: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+  }
+
+  .md-mini-split > span {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    transform-origin: left center;
+    transition: transform 180ms ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .md-mini-split > span { transition: none; }
+  }
+
+  .md-breakdown-panel-figures .md-breakdown-row-head {
+    align-items: center;
+    margin-bottom: 0;
+    gap: 6px;
+  }
+
+  .md-breakdown-panel-figures .md-breakdown-row-value,
+  .md-breakdown-panel-figures .md-breakdown-row-share {
+    padding: 6px 8px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-tint);
+    text-align: end;
+    white-space: nowrap;
+  }
+
   .md-breakdown-track {
     display: block;
     height: 6px;

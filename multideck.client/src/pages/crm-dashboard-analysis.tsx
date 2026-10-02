@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowRight, ChartLine, CheckCircle2, Info, RefreshCw, Workflow } from "@/components/icons/hugeicons"
@@ -541,14 +542,14 @@ function DrawerBody({
     return <div className="crm-sa-drawer-stack">
       <p className="crm-sa-drawer-note">Recorded events each week, using the current pipeline and owner. Weeks use UTC.</p>
       <div className="crm-sa-table-wrap">
-        <table className="crm-sa-table">
+        <Table className="crm-sa-table">
           <thead><tr><th scope="col">Week</th><th scope="col">Won</th><th scope="col">Lost</th><th scope="col">New</th><th scope="col">Entered</th><th scope="col"><span className="sr-only">Deals</span></th></tr></thead>
           <tbody>{buckets.map((row) => <tr key={row.start}>
             <th scope="row">{date(row.start)}{row.isPartial ? <span> · partial</span> : null}</th>
             <td>{number(row.won)}</td><td>{number(row.lost)}</td><td>{number(row.created)}</td><td>{number(row.entered)}</td>
             <td><button type="button" disabled={!row.dealIds.length} onClick={() => onOpenWeek(row)}>Deals</button></td>
           </tr>)}</tbody>
-        </table>
+        </Table>
       </div>
     </div>
   }

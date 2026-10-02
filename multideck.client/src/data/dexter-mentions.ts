@@ -134,7 +134,7 @@ export const defaultDexterMentionItems: DexterMentionItem[] = uniqueById([
     title: customer.name,
     meta: `${customer.location} · ${customer.status}`,
     keywords: `${customer.industry} ${customer.owner} ${customer.status}`,
-    route: `/customers/${customer.id}`,
+    route: `/crm/accounts/${customer.id}`,
     icon: Building2,
   })),
   ...quoteRegisterRecords.map((quote) => ({
@@ -172,7 +172,7 @@ export function customerMentionItems(items: ApiCustomer[]): DexterMentionItem[] 
     title: customer.name,
     meta: [customer.location, customer.status, customer.industry].filter(Boolean).join(" · "),
     keywords: customer.types.join(" "),
-    route: `/customers/${customer.id}`,
+    route: `/crm/accounts/${customer.id}`,
     icon: Building2,
   }))
 }

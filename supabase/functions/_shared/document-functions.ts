@@ -127,6 +127,10 @@ export function toFunctionError(error: unknown) {
   if (code === "MD409") {
     return new FunctionError(409, "More than one authorised job uses that number.", "Job number resolution was ambiguous")
   }
+  const message = typeof error === "object" && error && "message" in error ? String(error.message) : ""
+  if (code === "22023" && message.startsWith("Complete before approval:")) {
+    return new FunctionError(400, message.slice(0, 2000), "Required document facts were missing")
+  }
   return new FunctionError(500, "The secure document service could not complete the request.", "Unexpected document function failure")
 }
 

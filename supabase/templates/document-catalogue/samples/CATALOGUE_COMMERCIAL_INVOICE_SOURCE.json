@@ -1,0 +1,75 @@
+{
+  "document": {
+    "issuer": {
+      "name": "Example Exporter",
+      "address": "Fictional seller address",
+      "email": "seller@example.test",
+      "phone": "Not recorded"
+    },
+    "reference": "DEMO-001",
+    "issuedAt": "30 Sep 2026",
+    "fields": {
+      "tradeInvoiceReference": "DEMO-001",
+      "invoiceDate": "30 Oct 2026",
+      "purchaseOrder": "Not recorded",
+      "currency": "GBP",
+      "incoterms": "FOB",
+      "countryOfExport": "Not recorded",
+      "countryOfDestination": "Not recorded"
+    },
+    "instructions": "Working draft for customer approval; not evidence of a customer-issued commercial invoice.",
+    "handling": "Fragile",
+    "terms": "Not recorded",
+    "totals": {
+      "net": "GBP 8,000.00",
+      "tax": "GBP 0.00",
+      "total": "GBP 8,000.00"
+    },
+    "paymentInstructions": "Use the verified Finance payment instructions",
+    "preparedBy": "Example Operator",
+    "customer": {
+      "name": "Example Importer",
+      "address": "Fictional buyer address",
+      "registration": "Not recorded"
+    },
+    "shipper": {
+      "name": "Example Exporter",
+      "address": "Fictional address for template review",
+      "registration": "Not recorded"
+    },
+    "consignee": {
+      "name": "Example Importer",
+      "address": "Fictional address for template review",
+      "registration": "Not recorded"
+    },
+    "notify": {
+      "name": "Example Agent",
+      "address": "Fictional address for template review",
+      "registration": "Not recorded"
+    },
+    "collection": {
+      "address": "Explicit fictional collection location",
+      "date": "30 Oct 2026"
+    },
+    "delivery": {
+      "address": "Explicit fictional delivery location",
+      "date": "28 Nov 2026"
+    },
+    "route": {
+      "origin": "GBFXT",
+      "destination": "INNSA",
+      "mode": "Sea"
+    },
+    "tradeLines": [
+      {
+        "description": "Fictional machine components",
+        "quantity": "40",
+        "unit": "Pallets",
+        "originCountry": "GB",
+        "commodity": "Not recorded",
+        "unitPrice": "GBP 200.00",
+        "amount": "GBP 8,000.00"
+      }
+    ]
+  }
+}

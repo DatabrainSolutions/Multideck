@@ -20,6 +20,7 @@ export function CustomsReadinessReview({
   emptyTitle,
   headline,
   issues,
+  fixActionLabel,
   onBack,
   percent,
   renderFix,
@@ -37,6 +38,7 @@ export function CustomsReadinessReview({
   emptyTitle: string
   headline?: string
   issues: CustomsReadinessReviewIssue[]
+  fixActionLabel?: (issue: CustomsReadinessReviewIssue) => string
   onBack?: () => void
   percent: number
   renderFix: (issue: CustomsReadinessReviewIssue, close: () => void) => ReactNode
@@ -100,8 +102,8 @@ export function CustomsReadinessReview({
                     {issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{t(issue.label)}
                     {issue.section ? <span className="ms-2 text-[10px] font-medium uppercase tracking-[0.04em] text-[var(--md-subtle)]">{t(issue.section)}</span> : null}
                   </span>
-                  <Button type="button" variant="outline" size="sm" aria-expanded={expanded} aria-controls={`customs-readiness-fix-${issue.key}`} className="min-w-[64px] rounded-[var(--md-radius-md)]" onClick={() => expanded ? setOpenFixKey(null) : openFix(issue.key)}>
-                    {t("Fix")}<ChevronDown className={cn("size-3.5 transition-transform duration-200 motion-reduce:transition-none", expanded && "rotate-180")} />
+                  <Button type="button" variant="outline" size="sm" aria-expanded={expanded} aria-controls={`customs-readiness-fix-${issue.key}`} className="min-w-[64px] rounded-[var(--md-radius-md)] text-[var(--md-accent)]" onClick={() => expanded ? setOpenFixKey(null) : openFix(issue.key)}>
+                    {t(fixActionLabel?.(issue) ?? "Fix")}<ChevronDown className={cn("size-3.5 transition-transform duration-200 motion-reduce:transition-none", expanded && "rotate-180")} />
                   </Button>
                 </div>
                 <AnimatePresence initial={false}>

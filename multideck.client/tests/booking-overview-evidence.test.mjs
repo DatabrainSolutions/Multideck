@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { routeScheduleParts } from '../src/lib/booking-route-schedule.ts'
 import { bookingRecordAvailability } from '../src/lib/booking-record-availability.ts'
+import { bookingOwnerLabel } from '../src/lib/booking-owner.ts'
 
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { transformSync } = require('esbuild')
@@ -17,7 +18,7 @@ test('workspace summary uses saved journey endpoints and only explicit planned d
   const mocks = {
     asRecord: value => value ?? {}, bookingQuoteHandoff: () => ({ quote: {}, facts: {} }),
     bookingParty: () => null, recordText: (record, key) => record[key] ?? '',
-    bookingWorkspaceMode: value => value, bookingWorkspaceDirection: value => value,
+    bookingWorkspaceMode: value => value, bookingWorkspaceDirection: value => value, bookingOwnerLabel,
   }
   const project = new Function(...Object.keys(mocks), `${code};return bookingWorkspaceRecord`)(...Object.values(mocks))
   const workspace = { booking: { bookingReference: 'INTERNAL-QA', origin: 'Stale header origin', destination: 'Stale header destination',

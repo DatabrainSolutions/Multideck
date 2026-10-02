@@ -148,9 +148,11 @@ test('CRM legacy closures, timezone task dates, replacement and won handover rem
  select test_assert(multideck_crm_get_deal_essential(fid(1))->'nextAction'->>'taskScheduledDate'='2026-10-02','local task day retained across UTC midnight');
  select multideck_todo_update((multideck_crm_get_deal_essential(fid(1))->'nextAction'->>'taskId')::uuid,'{"scheduledDate":"2026-10-03","title":"Rescheduled local follow-up"}');
  select test_assert((multideck_crm_get_deal_essential(fid(1))->'nextAction'->>'dueAt')::timestamptz='2026-10-02T21:15:00Z'::timestamptz,'To Do reschedule preserves due time');
+ select set_config('test.retired_task_id', multideck_crm_get_deal_essential(fid(1))->'nextAction'->>'taskId', false);
  select multideck_crm_set_deal_next_action(fid(1),deal_version(1),jsonb_build_object('title','Updated next step','type','meeting','ownerId','00000000-0000-0000-0000-000000000002','dueAt',now()+interval '1 day'));
  select test_assert(jsonb_array_length(multideck_crm_get_deal_essential(fid(1))->'actionHistory')=2,'replacement preserves action history');
- select test_assert(jsonb_array_length(multideck_todo_list('2026-10-03'))=0,'superseded task retired');
+ -- The replacement can also land on 3 October; assert the old task identity, not an empty day.
+ select test_assert(not exists(select 1 from jsonb_array_elements(multideck_todo_list('2026-10-03')) task where task->>'id'=current_setting('test.retired_task_id')),'superseded task retired');
  select expect_denied($q$select multideck_crm_set_deal_next_action(fid(2),deal_version(2),jsonb_build_object('title','Bad owner','type','call','ownerId','00000000-0000-0000-0000-000000000003','dueAt',now()))$q$,'22023');
  select multideck_crm_win_deal(fid(1),fid(212),'Customer agreed the proposal');
  select test_assert((multideck_crm_get_deal_essential(fid(1))->>'isWon')::boolean,'native won activation succeeds');

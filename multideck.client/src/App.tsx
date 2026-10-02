@@ -20,7 +20,7 @@ import { defaultLanguage, isLanguageCode } from "@/i18n/languages"
 import { translateText } from "@/i18n/translate"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
-import { isTenantAdministrator, summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
+import { hasPermission, isTenantAdministrator, summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
 import { recordWorkspacePresence } from "@/lib/admin-audit-api"
 import { getApiAuthSession } from "@/lib/api"
 import {
@@ -42,7 +42,6 @@ import {
   AuthFlowPage,
   AccountOnboardingPage,
   ComponentsGalleryPage,
-  CustomerDetailPage,
   SignatureTeamPage,
   EmailSignaturesPage,
   InboxPage,
@@ -87,6 +86,7 @@ import {
   QuoteResponsePage,
   MileagePage,
   FinancePage,
+  FinanceDirectorDashboardPage,
 } from "@/lib/route-pages"
 
 type AuthStatus = "checking" | "authenticated" | "unauthenticated"
@@ -113,6 +113,13 @@ function preloadImage(url: string) {
   })
 }
 
+/** Admin is for tenant administrators; Finance Directors may open its dashboard. */
+function canOpenAdminRoute(user: AuthUserSummary | null, route: string) {
+  if (route === "/admin" || route === "/admin/finance-dashboard") return hasPermission(user, "Finance.Director.Dashboard.View")
+  if (isTenantAdministrator(user)) return true
+  return ["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) && hasPermission(user, "Email.Signatures.Manage")
+}
+
 const validRoutes = new Set([
   "/onboarding",
   "/",
@@ -120,6 +127,11 @@ const validRoutes = new Set([
   "/admin",
   "/admin/settings",
   "/admin/sales-crm",
+  "/admin/operations",
+  "/admin/warehouse",
+  "/admin/general-reporting",
+  "/admin/documents-storage",
+  "/admin/customs-compliance",
   "/admin/users",
   "/admin/usage",
   "/admin/finance",
@@ -129,6 +141,7 @@ const validRoutes = new Set([
   "/admin/branding",
   "/admin/email-signatures",
   "/admin/email-signatures/team",
+  "/admin/finance-dashboard",
   "/inbox/signatures",
   "/admin/system-preferences",
   "/admin/activity",
@@ -138,14 +151,14 @@ const validRoutes = new Set([
   "/crm",
   "/crm/phone-calls",
   "/crm/accounts",
+  "/customers",
+  "/suppliers",
   "/crm/contact-cards",
   "/crm/contacts",
   "/crm/deals",
   "/crm/leads",
   "/crm/drive",
   "/crm/settings",
-  "/customers",
-  "/suppliers",
   "/inbox",
   "/to-do",
   "/events",
@@ -212,6 +225,8 @@ const validRoutes = new Set([
   "/warehouse",
   "/warehouse/calendar",
   "/warehouse/pricing",
+  "/warehouse/billing",
+  "/warehouse/charges",
   "/warehouse/facilities",
   "/warehouse/goods-in",
   "/warehouse/goods-out",
@@ -267,11 +282,26 @@ function getLegacyCrmRoute(path: string, search = "") {
   if (path === "/crm/accounts" && new URLSearchParams(search).get("view") === "suppliers") return "/suppliers"
   if (path === "/crm/insights") return "/crm"
   if (path === "/crm/marketing") return "/crm/drive"
+  if (path === "/crm/accounts" && new URLSearchParams(search).get("view") === "customers") return "/customers"
   if (path === "/crm/suppliers") return "/suppliers"
-  const supplierDetail = path.match(/^\/crm\/suppliers\/([^/]+)$/)
-  if (supplierDetail) return `/suppliers/${supplierDetail[1]}`
+  const partyDetail = path.match(/^\/(?:customers|suppliers|crm\/suppliers)\/([^/]+)$/)
+  if (partyDetail) return `/crm/accounts/${partyDetail[1]}`
   return null
 }
+
+/** The full address a legacy CRM link lands on, keeping its query and selecting the matching register view. */
+function getLegacyCrmUrl(pathname: string, search: string) {
+  const route = getLegacyCrmRoute(pathname, search)
+  if (!route) return null
+  const params = new URLSearchParams(search)
+  const view = /^\/customers$/.test(pathname) ? "customers" : /^\/(suppliers|crm\/suppliers)$/.test(pathname) ? "suppliers" : null
+  if (view && !params.has("view")) params.set("view", view)
+  const query = params.toString()
+  return `${route}${query ? `?${query}` : ""}`
+}
+
+/** Routes that keep their view in the query string, so Back and in-app links must carry it. */
+const queryViewRoutes = new Set(["/crm/accounts"])
 
 const unavailableCrmRoutePrefixes = [
   "/crm/activity",
@@ -348,10 +378,6 @@ function isCrmLeadConversionRoute(path: string) {
   return /^\/crm\/leads\/[^/]+\/convert$/.test(path)
 }
 
-function isCustomerDetailRoute(path: string) {
-  return /^\/(customers|suppliers)\/[^/]+$/.test(path)
-}
-
 function getRoute() {
   if (window.location.pathname === "/app" || window.location.pathname === "/app/") return "/"
   // Home lives at the workspace root. `/home` is the address people type, so it
@@ -374,7 +400,6 @@ function getRoute() {
   if (isWarehouseOrderDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehousePurchaseOrderDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehouseItemDetailRoute(window.location.pathname)) return window.location.pathname
-  if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmAccountDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmPhoneCallDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmContactDetailRoute(window.location.pathname)) return window.location.pathname
@@ -602,7 +627,7 @@ export default function App() {
       const destination = getRoute()
       // Settings keeps its active panel in the query/hash. Preserve it when
       // the sidebar dispatches popstate, before panel listeners read the URL.
-      const destinationUrl = ['/agent-dexter','/to-do','/settings'].includes(destination) && window.location.pathname === destination
+      const destinationUrl = (['/agent-dexter','/to-do','/settings'].includes(destination) || queryViewRoutes.has(destination)) && window.location.pathname === destination
         ? `${destination}${window.location.search}${window.location.hash}` : destination
       const proceed = () => {
         window.history.replaceState(window.history.state, "", destinationUrl)
@@ -779,9 +804,11 @@ export default function App() {
   }, [authStatus, currentUser?.actorType, eventsResolved, eventsSettings, isEventsRoute])
 
   useEffect(() => {
-    if (authStatus !== "authenticated" || !route.startsWith("/admin") || isTenantAdministrator(currentUser) || (["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) && currentUser?.permissions.includes("Email.Signatures.Manage"))) return
-    window.history.replaceState({}, "", "/app")
-    startTransition(() => setRoute("/"))
+    if (authStatus !== "authenticated" || !route.startsWith("/admin") || canOpenAdminRoute(currentUser, route)) return
+    // An administrator without the Finance Director role goes back to Admin.
+    const fallback = isTenantAdministrator(currentUser) ? "/admin/settings" : "/"
+    window.history.replaceState({}, "", fallback === "/" ? "/app" : fallback)
+    startTransition(() => setRoute(fallback))
   }, [authStatus, currentUser, route])
 
   useEffect(() => {
@@ -801,17 +828,22 @@ export default function App() {
   // Old and prototype-only CRM bookmarks are rewritten in place, so the address
   // bar only shows routes that operators can genuinely use.
   useEffect(() => {
-    if (window.location.pathname === "/finance/setup" || getLegacyCrmRoute(window.location.pathname, window.location.search) || getUnavailableCrmRoute(window.location.pathname)) {
+    const legacyCrmUrl = getLegacyCrmUrl(window.location.pathname, window.location.search)
+    if (legacyCrmUrl) {
+      window.history.replaceState(window.history.state, "", legacyCrmUrl)
+    } else if (window.location.pathname === "/finance/setup" || getUnavailableCrmRoute(window.location.pathname)) {
       window.history.replaceState(window.history.state, "", `${route}${window.location.search}`)
     }
   }, [route])
 
   function navigate(path: string) {
     path = getUnavailableCrmRoute(path) ?? path
+    const [requestedPath, requestedQuery = ""] = path.split("?", 2)
+    path = getLegacyCrmUrl(requestedPath, requestedQuery) ?? path
     if (currentUser?.actorType === "customer" && !canCustomerOpenRoute(currentUser, path)) {
       path = currentUser.landingPath
     }
-    if (path.startsWith("/admin") && !isTenantAdministrator(currentUser) && !(["/admin/email-signatures", "/admin/email-signatures/team"].includes(path) && currentUser?.permissions.includes("Email.Signatures.Manage"))) path = "/"
+    if (path.startsWith("/admin") && !canOpenAdminRoute(currentUser, path.split(/[?#]/, 1)[0])) path = isTenantAdministrator(currentUser) ? "/admin/settings" : "/"
     if (path !== route && !window.dispatchEvent(new CustomEvent("multideck:before-navigate", { cancelable: true, detail: { proceed: () => navigate(path) } }))) return
     if (path === "/bookings/new" || path === "/bookings/provisional" || path === "/road-control/new") {
       bookingCreationTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -819,10 +851,13 @@ export default function App() {
       return
     }
     setBookingCreation(null)
-    if (path === route) return
+    const sameQueryView = queryViewRoutes.has(route) && path.split("?", 1)[0] === route
+    if (sameQueryView ? path === `${window.location.pathname}${window.location.search}` : path === route) return
     rememberRecentWorkContext(route)
     window.history.pushState({}, "", path === "/" ? "/app" : path)
     startTransition(() => setRoute(getRoute()))
+    // The route itself is unchanged, so let the register re-read its view from the address.
+    if (sameQueryView) window.dispatchEvent(new PopStateEvent("popstate"))
   }
 
   return (
@@ -894,7 +929,7 @@ export default function App() {
                   {route === "/crm" ? <CrmOverviewPage navigate={navigate} /> : null}
                   {route === "/crm/phone-calls" ? <CrmPhoneCallsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmPhoneCallDetailRoute(route) ? <CrmPhoneCallsPage callId={route.split("/").at(-1) ?? ""} navigate={navigate} currentUser={currentUser} /> : null}
-                  {route === "/crm/accounts" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} /> : null}
+                  {["/crm/accounts", "/customers", "/suppliers"].includes(route) ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmAccountDetailRoute(route) ? <CrmAccountDetailPage accountId={route.split("/").at(-1) ?? ""} navigate={navigate} currentUser={currentUser} /> : null}
                   {route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isCrmLeadConversionRoute(route) ? <LeadConversionPage navigate={navigate} leadId={route.split("/").at(-2) ?? ""} /> : null}
@@ -907,9 +942,6 @@ export default function App() {
                   {isCrmDealDetailRoute(route) ? <CrmDealDetailPage key={route} dealId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
                   {route === "/crm/drive" ? <CrmDrivePage currentUser={currentUser} /> : null}
                   {route === "/crm/settings" ? <CrmSettingsPage currentUser={currentUser} /> : null}
-                  {route === "/customers" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} organisationType="customer" /> : null}
-                  {route === "/suppliers" ? <CrmAccountsPage key={route} navigate={navigate} currentUser={currentUser} organisationType="supplier" /> : null}
-                  {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
                   {route === "/inbox/signatures" ? <EmailSignaturesPage personal navigate={navigate} /> : null}
                   {route === "/admin/email-signatures/team" ? <SignatureTeamPage navigate={navigate} /> : null}
@@ -940,7 +972,8 @@ export default function App() {
                       onCoverPhotoChange={handleCoverPhotoChange}
                     />
                   ) : null}
-                  {route.startsWith("/admin") && !["/admin/email-signatures", "/admin/email-signatures/team"].includes(route) ? <AdminPage route={route as AdminRoute} currentUser={currentUser} navigate={navigate} /> : null}
+                  {(route === "/admin" || route === "/admin/finance-dashboard") && canOpenAdminRoute(currentUser, route) ? <FinanceDirectorDashboardPage /> : null}
+                  {route.startsWith("/admin") && !["/admin", "/admin/email-signatures", "/admin/email-signatures/team", "/admin/finance-dashboard"].includes(route) ? <AdminPage route={route as AdminRoute} currentUser={currentUser} navigate={navigate} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
                   {route === "/bookings" || route === "/bookings/new" || route === "/bookings/provisional" ? <BookingsPage navigate={navigate} currentUser={currentUser} /> : null}
                   {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} currentUser={currentUser} /> : null}

@@ -1,3 +1,4 @@
+import { Table } from "@/components/ui/table"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Copy, FileSpreadsheet, ListPlus, Plus, Printer, RefreshCcw, Trash2, Upload } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
@@ -226,7 +227,7 @@ export function FinanceDocumentLineEditor({
       </div>
 
       <div className={cn("overflow-x-auto", appearance === "document" && "rounded-t-[var(--md-radius-xl)]")}>
-        <table className={cn("w-full table-fixed border-separate border-spacing-0 text-[12px]", showQuantity ? "min-w-[1160px]" : "min-w-[1080px]")}>
+        <Table className={cn("w-full table-fixed border-separate border-spacing-0 text-[12px]", showQuantity ? "min-w-[1160px]" : "min-w-[1080px]")}>
           <thead>
             <tr className="bg-[var(--md-surface-soft)] text-start text-[var(--md-subtle)] shadow-[inset_0_-1px_0_var(--md-line-strong)]">
               <th scope="col" className="w-11 px-2 py-2.5 text-center font-medium">{t("Line")}</th>
@@ -287,7 +288,7 @@ export function FinanceDocumentLineEditor({
               )
             })}
           </tbody>
-        </table>
+        </Table>
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-x-7 gap-y-2 px-4 py-3 text-[13px]">

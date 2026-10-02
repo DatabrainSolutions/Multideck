@@ -1,4 +1,5 @@
 import { WarehousePricingWorkspace } from "@/components/multideck/warehouse-pricing-workspace"
+import { WarehouseBillingSettingsWorkspace, WarehouseChargesWorkspace } from "@/components/multideck/warehouse-billing-workspace"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { RefreshCw } from "@/components/icons/hugeicons"
@@ -23,9 +24,9 @@ import { mdMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getWarehouseHeaderActions, getWarehouseWorkspaceData, rescheduleOperationalWarehouseOrder, type WarehouseHeaderAction, type WarehouseWorkspaceData } from "@/lib/warehouse"
 import { toast } from "sonner"
-import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
+import { CustomerWarehouseAccess } from "@/pages/warehouse-customer-access"
 
-type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Warehouse orders" | "Expected receipts" | "Calendar" | "Users" | "Default pricing"
+type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Warehouse orders" | "Expected receipts" | "Calendar" | "Users" | "Default pricing" | "Billing settings" | "Charges"
 
 /**
  * The grid works in local wall-clock minutes; the order stores an instant. The slot
@@ -66,6 +67,8 @@ const warehouseSectionDescriptions: Record<WarehouseSection, string | null> = {
   "Expected receipts": "Goods and quantities the customer expects to arrive, usually from a customer PO, ASN, transfer or return. No stock is booked until goods are received.",
   Users: null,
   "Default pricing": null,
+  "Billing settings": null,
+  Charges: null,
 }
 
 export function WarehousePage({ route, currentUser, navigate }: { route: string; currentUser?: AuthUserSummary | null; navigate?: (path: string) => void }) {
@@ -109,6 +112,8 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
     && activeSection !== "Calendar"
     && activeSection !== "Goods out"
     && activeSection !== "Default pricing"
+    && activeSection !== "Billing settings"
+    && activeSection !== "Charges"
 
   useEffect(() => {
     if (!needsRegisterHeader) return
@@ -218,6 +223,8 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   // navigation and its own actions, so the register header above it would only
   // repeat the area name and push the record further down.
   if (activeSection === "Default pricing" && !isCustomer) return <main className="md-page md-page-stack"><WarehousePricingWorkspace navigate={navigate} /></main>
+  if (activeSection === "Billing settings" && !isCustomer) return <main className="md-page md-page-stack"><WarehouseBillingSettingsWorkspace navigate={navigate} /></main>
+  if (activeSection === "Charges" && !isCustomer) return <main className="md-page md-page-stack"><WarehouseChargesWorkspace navigate={navigate} /></main>
 
   if (detailItemSku) {
     return (

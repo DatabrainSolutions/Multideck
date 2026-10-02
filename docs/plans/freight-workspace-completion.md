@@ -1,5 +1,113 @@
 # Freight workspace completion
 
+## Current prototype queue — 23 September 2026
+
+This queue reflects Lee's latest Quote → Booking → declaration-ready scope and
+supersedes older next-step/release instructions below. Historical work remains
+recorded, not discarded. Latest verification is in
+`docs/release/2026-09-22-freight-flow-verification.md`.
+
+- [x] **Mode-aware Quote PDF labels.** Air: Departure airport / Arrival
+  airport. Sea: Port of loading / Port of discharge. Check Road/Rail/Other for
+  appropriate neutral or mode-specific wording. Apply only to newly generated
+  PDFs; never overwrite issued versions. Lee requested this be tracked on
+  23 September. Local implementation now complete: Air airport labels, Sea/Ocean
+  port labels, neutral Origin/Destination for Road/Rail/Other/mixed/unknown.
+  Seventeen PDF dataset/renderer/contract tests pass, including 40 mode/direction
+  combinations and unchanged source snapshots. Shared backend release and a
+  freshly generated PDF check remain pending; the checkbox stays open until then.
+  This is presentation-only: no new Dexter read/write/watch capability, schema,
+  permissions, branding or document replacement. No push or deployment performed.
+  Follow-up verification: 20/20 focused dataset/renderer/customer-preview tests
+  passed. Read-only retrieval confirms development quotes-workflow v92 still
+  uses fixed port labels. Compared all 16 deployed bundle files with the local
+  checkout: index.ts plus inbox-api/signatures.ts, quote-intelligence/core.ts
+  and _shared/quote-document-cargo.ts differ. Do not deploy the whole local
+  bundle for this fix. Prepare only the label patch against fresh deployed
+  source, preserve every unrelated deployed file, and obtain scoped release
+  confirmation before the hosted generation check. No release/test email made.
+  Subsequently approved and released the label-only change on 23 September:
+  development quotes-workflow v92 → v93, JWT verification retained. Fresh
+  retrieval confirms all 16 files exactly match the intended deployed-source
+  bundle, with all 15 supporting files preserved. Twenty focused tests passed.
+  Fresh provider PDF rendering is still pending: the available generation path
+  is Quote issue, which also sends email. Request approval for one internal test
+  send to Lee before exercising it. No issued document was replaced, no database
+  migration, GitHub push or frontend deployment was performed.
+  Hosted generation verified after Lee approved one internal email: JQ20032 V2
+  copied from V1 through the normal version flow, issued from lee.wright@jenkar.com
+  to lee@databrain.solutions with subject INTERNAL TEST ONLY - Air PDF labels
+  JQ20032 V2. UI confirmed sent; Documents lists V1 and V2 separately. Downloaded
+  V2 is 82,116 bytes; rendered page and extracted text confirm Departure airport /
+  Arrival airport, PKKHI → GBLHR and GBP275. No port labels remain in this Air PDF.
+  No customer acceptance or Booking conversion performed. Deferred broken PDF
+  logo remains visible; this sign-off covers mode labels, not overall PDF design
+  or recipient-inbox delivery. Next: remaining mode/direction flow coverage.
+- [ ] Complete final mode/direction coverage across Quote fields, new PDF,
+  conversion and Booking/Customs mapping. Existing successful Sea and Air
+  journeys do not certify every combination; fix newly found blocking gaps.
+  23 September automated checkpoint: 28/28 tests pass across field policy,
+  branch-relative direction, overall/per-leg mode review and Quote-sync
+  confirmation. Added 60 core service/direction/stage combinations (Sea FCL/LCL,
+  Air, Road and Rail × four directions × draft/submitted/Booking), including
+  domestic Customs visibility, equipment, HBL and chargeable-weight rules.
+  Corrected two obsolete static test expectations to the current filtered
+  available-differences action and token-bound sync_v2 endpoint, retaining mode
+  confirmation assertions and adding blocked-field/stale-token checks. No
+  production implementation or shared data changed. These are executable policy
+  and source-contract checks, not a browser/API conversion or Customs handover
+  for every combination. Road/Rail and direction-specific handover verification
+  remain open; do not tick the parent item yet.
+  Subsequent live development verification: rollback-only JE0991148 checks pass
+  for Road/Rail across all four directions (8 scenarios), 4 actual rejected
+  Domestic/Cross-trade handover calls, and 2 missing-reference blocks. Header and
+  routing fingerprints match before/after. Branch-relative direction enforcement
+  is retained. This does not prove a fresh Road/Rail declaration or browser journey.
+  Next pass: four fresh Road/Rail Import/Export declarations successfully created
+  inside rolled-back development transactions. Verified mode/reference mapping,
+  cargo HS/net/gross values, invoice links, review flag, initiator access,
+  anonymous denial and same/new-key retries. Original JE0991148 draft remains
+  active and header/routes fingerprint unchanged. Declaration sequence numbers
+  were consumed; no records/notifications persisted. Browser coverage remains open.
+  Browser follow-up: local Chrome JD0991136 confirms Rail service, CIM/SMGS and
+  Wagon controls; adding a draft second leg carries forward the previous endpoint;
+  Road selection requires confirmation and exposes Vehicle registration while
+  the original Rail service remains. Missing destination blocks autosave visibly.
+  Discard and reload restore the original single Rail step and unchanged timestamp.
+  Domestic handover is disabled and readiness explains it is not required, but
+  still displays 26% plus missing-field prompts: presentation follow-up needed.
+  This is field/guard coverage, not a complete persisted Road/Rail browser handover.
+- [ ] Reconcile the two outdated OCR automated checks without weakening their
+  underlying guarantees, then broaden invoice-format testing. One synthetic
+  two-line invoice has passed extraction, review, save/reopen and original
+  retention; this is not unrestricted OCR sign-off.
+  Test maintenance completed: 12/12 focused OCR tests now pass. The allegedly
+  removed export was present; the failure was the Node CommonJS/Edge TypeScript
+  module boundary. Tests now bundle the real modules in memory. Updated obsolete
+  purchase-order copy assertions while retaining review/auth/privacy checks.
+  Broader real invoice-format coverage remains open.
+  Broader preparation suite now passes 12/12 with Deno type-checking enabled:
+  13 accepted extensions, visible/hidden workbook sheets, Unicode, CSV quoting,
+  wide/merged cells, Word fallback, macros/encryption and provider-error handling.
+  Test helper now returns an explicitly allocated byte array and awaits rejection
+  assertions. Conversion responses are mocked: this is not live multi-format
+  OCR accuracy or visual-rendering sign-off. No dependency/lockfile changes.
+- [ ] Consolidate prototype acceptance evidence and give Lee a short final
+  operator walkthrough: Quote/versioned docs → accepted Booking; manual
+  Provisional → charge keep/discard/cancel/reopen → In progress; required-data
+  blocking and declaration-ready handover with retained documents/audit.
+- [ ] After user acceptance, prepare the reviewed release and obtain separate
+  permission for GitHub push and frontend deployment; verify hosted persistence.
+
+Already evidenced: revised Quote PDFs and safe Booking charge review; manual
+Booking handover; Provisional charge/cancel/reopen audit tests; customer inline
+PDF preview restored (local dependency-cache problem); original invoice retained.
+Keep supplier decisions, charge-code catalogue, tracking and PDF-logo work
+separate/deferred. Cancellation of In-progress jobs still needs the agreed
+business rule. No external iCustoms submission is authorised. This checklist
+update itself authorises no deployment, new email or implementation.
+
+
 8 September local mixed-leg UI verification on saved synthetic JD0991136:
 adding a second draft step carries the Rail destination into its origin; changing
 that new step to Road requires the mode-change confirmation. Confirming exposes

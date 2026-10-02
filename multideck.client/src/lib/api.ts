@@ -153,6 +153,7 @@ export type CreateTeamUserRequest = {
   officeId?: string | null
   roleTitle?: string | null
   roleId?: string | null
+  roleIds?: string[]
   departmentIds?: string[]
   invitationExpiry: ApiInvitationExpiry
 }
@@ -172,7 +173,7 @@ export type UpdateTeamUserRequest = {
   firstName: string
   lastName: string
   jobTitle: string | null
-  officeId: string
+  officeId?: string
   roleIds: string[]
   departmentIds?: string[]
 }

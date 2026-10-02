@@ -1,6 +1,16 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { dexterArtifactReferences, retainDexterRenderKeys, structureDexterMeetingBrief } from "../src/lib/dexter-response-presentation.ts"
+import { dexterArtifactReferences, latestDexterRecordTables, retainDexterRenderKeys, structureDexterMeetingBrief } from "../src/lib/dexter-response-presentation.ts"
+
+test("saved duplicate snapshots show only the latest table per record type", () => {
+  const tables = [
+    { id: "first", domain: "bookings", rows: ["job-a"] },
+    { id: "leads", domain: "leads", rows: ["lead-a"] },
+    { id: "revised", domain: "bookings", rows: ["job-a", "job-b"] },
+  ]
+  assert.deepEqual(latestDexterRecordTables(tables), [tables[2], tables[1]])
+  assert.deepEqual(latestDexterRecordTables(undefined), [])
+})
 
 test("saved flat meeting briefs become an agenda with separate context and unchanged source URLs", () => {
   const text = 'Brief for Tuesday, BST. Meetings found: 09:30-10:00 Brainstormer, accepted: [Brainstormer](/calendar?date=2026-09-15 "Brainstormer"); 10:00-10:30 UCN Meeting, response needed: [UCN Meeting](/calendar?date=2026-09-15 "UCN Meeting"); 12:00-13:00 GTM, response needed: [GTM](/calendar?date=2026-09-15 "GTM"). There is a 12:15-12:45 overlap. Focus blocks were excluded. CRM searches found no match. No changes made.'

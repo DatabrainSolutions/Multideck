@@ -135,6 +135,83 @@ function Code({ children }: { children: ReactNode }) {
   return <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{children}</span>
 }
 
+type OrderActivityEntry = {
+  id: string
+  at: string
+  kind: "created" | "receipt" | "dispatch" | "putaway" | "pick" | "cancelled"
+  title: string
+  code?: string
+  detail?: string | null
+  by?: string | null
+}
+
+/**
+ * The order's audit trail: creation, each confirmed putaway or pick, each receipt
+ * and dispatch, and cancellation, with the colleague who recorded it. Staff names
+ * arrive only for the warehouse team; customers see what happened and when.
+ */
+function OrderActivity({ order, dateTime }: { order: WarehouseOperationalOrder; dateTime: Intl.DateTimeFormat }) {
+  const { language, t } = useLanguage()
+  const quantity = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 3 }), [language])
+  const entries = useMemo<OrderActivityEntry[]>(() => {
+    const list: OrderActivityEntry[] = [{ id: `created-${order.id}`, at: order.createdAt, kind: "created", title: "Order created", detail: order.sourceReference ?? null, by: order.createdByName ?? null }]
+    for (const task of order.tasks ?? []) {
+      if (task.statusCode !== "complete" || !task.completedAt) continue
+      const amount = `${quantity.format(Number(task.completedQuantity || task.quantity))} ${task.uomCode}${task.sku ? ` ${task.sku}` : ""}`
+      list.push({
+        id: task.id,
+        at: task.completedAt,
+        kind: task.type,
+        title: task.type === "putaway" ? "Put away" : "Picked",
+        detail: task.type === "putaway"
+          ? `${amount}${task.targetLocationCode ? ` → ${task.targetLocationCode}` : ""}`
+          : `${amount}${task.sourceLocationCode ? ` ${t("from")} ${task.sourceLocationCode}` : ""}`,
+        by: task.completedByName ?? null,
+      })
+    }
+    for (const receipt of order.receipts) {
+      if (!receipt.receivedAt) continue
+      list.push({ id: receipt.id, at: receipt.receivedAt, kind: "receipt", title: "Received", code: receipt.receiptNumber, detail: receipt.hasDiscrepancy ? t("Discrepancy recorded") : null, by: receipt.receivedByName ?? null })
+    }
+    for (const dispatch of order.dispatches) {
+      if (!dispatch.dispatchedAt) continue
+      list.push({ id: dispatch.id, at: dispatch.dispatchedAt, kind: "dispatch", title: "Dispatched", code: dispatch.dispatchNumber, detail: dispatch.vehicleReg ? `${t("Vehicle")} ${dispatch.vehicleReg}` : null, by: dispatch.dispatchedByName ?? null })
+    }
+    if (order.statusCode === "cancelled") list.push({ id: `cancelled-${order.id}`, at: order.updatedAt, kind: "cancelled", title: "Order cancelled" })
+    return list.sort((first, second) => second.at.localeCompare(first.at))
+  }, [order, quantity, t])
+
+  return (
+    <ol className="grid gap-0">
+      {entries.map((entry) => {
+        const inbound = entry.kind === "receipt" || entry.kind === "putaway"
+        const outbound = entry.kind === "dispatch" || entry.kind === "pick"
+        return (
+          <li key={entry.id} className="flex items-start gap-2.5 py-2 first:pt-0 last:pb-0">
+            <span className={cn(
+              "mt-0.5 grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] shadow-[var(--md-shadow-line)]",
+              inbound ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]"
+                : outbound ? "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]"
+                : entry.kind === "cancelled" ? "bg-[var(--md-surface-soft)] text-[var(--md-red)]"
+                : "bg-[var(--md-surface-soft)] text-[var(--md-text)]",
+            )}>
+              {inbound ? <ArrowDownToLine className="size-3.5" strokeWidth={1.4} />
+                : outbound ? <ArrowUpFromLine className="size-3.5" strokeWidth={1.4} />
+                : entry.kind === "cancelled" ? <XCircle className="size-3.5" strokeWidth={1.4} />
+                : <FileText className="size-3.5" strokeWidth={1.4} />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12.5px] text-[var(--md-ink)]">{t(entry.title)}{entry.code ? <> <Code>{entry.code}</Code></> : null}</p>
+              {entry.detail ? <p data-i18n-skip className="truncate text-[11.5px] leading-4 text-[var(--md-text)]">{entry.detail}</p> : null}
+              <p className="text-[11px] leading-4 text-[var(--md-subtle)]">{dateTime.format(new Date(entry.at))}{entry.by ? ` · ${entry.by}` : ""}</p>
+            </div>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 /** A page section. One shell for every block, so the page scans at one rhythm. */
 function OrderSection({ index, title, meta, action, children }: { index: number; title: string; meta?: string; action?: ReactNode; children: ReactNode }) {
   const { t } = useLanguage()
@@ -963,29 +1040,8 @@ export function WarehouseOrderDetailView({
             )}
           </OrderSection>
 
-          <OrderSection index={4} title="Activity" meta="Every receipt and dispatch posted against this order.">
-            {order.receipts.length || order.dispatches.length ? (
-              <ol className="grid gap-0">
-                {[
-                  ...order.receipts.map((receipt) => ({ id: receipt.id, code: receipt.receiptNumber, at: receipt.receivedAt, status: receipt.statusCode, kind: "receipt" as const })),
-                  ...order.dispatches.map((dispatch) => ({ id: dispatch.id, code: dispatch.dispatchNumber, at: dispatch.dispatchedAt, status: dispatch.statusCode, kind: "dispatch" as const })),
-                ]
-                  .sort((first, second) => (second.at ?? "").localeCompare(first.at ?? ""))
-                  .map((entry) => (
-                    <li key={entry.id} className="flex items-center gap-2.5 py-2 first:pt-0 last:pb-0">
-                      <span className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] shadow-[var(--md-shadow-line)]", entry.kind === "receipt" ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
-                        {entry.kind === "receipt" ? <ArrowDownToLine className="size-3.5" strokeWidth={1.4} /> : <ArrowUpFromLine className="size-3.5" strokeWidth={1.4} />}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px]"><Code>{entry.code}</Code></p>
-                        <p className="text-[11px] leading-4 text-[var(--md-subtle)]">{entry.at ? dateTime.format(new Date(entry.at)) : t(entry.status)}</p>
-                      </div>
-                    </li>
-                  ))}
-              </ol>
-            ) : (
-              <p className="py-4 text-center text-[12px] text-[var(--md-text)]">{t(order.typeCode === "inbound" ? "Nothing has been received yet." : "Nothing has been dispatched yet.")}</p>
-            )}
+          <OrderSection index={4} title="Activity" meta={canOperate ? "Who recorded each step on this order, newest first." : "Each step recorded on this order, newest first."}>
+            <OrderActivity order={order} dateTime={dateTime} />
           </OrderSection>
         </div>
       </div>

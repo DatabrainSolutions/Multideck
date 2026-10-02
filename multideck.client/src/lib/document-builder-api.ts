@@ -2,7 +2,27 @@
 import { getSupabaseSession, supabase, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 
 export type DocumentOutputFormat = "pdf" | "docx"
+export const isBookingConfirmationTemplateCode = (code: string) => /^JOB_CONFIRMATION(?:_[A-Z0-9]+)*$/.test(code)
 export type DocumentTemplateStatus = "draft" | "published" | "retired"
+export type TemplateLibrarySettings = {
+  order: string[]
+  removedTemplates: { id: string; code: string; name: string; removedAt: string }[]
+}
+
+export async function updateTemplateLibrary(action: "read" | "reorder" | "remove" | "restore" = "read", templateId?: string, order?: string[]): Promise<TemplateLibrarySettings> {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new Error("Sign in to manage your template library.")
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey ?? "", "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "library", libraryAction: action, multideckTemplateId: templateId, templateOrder: order }),
+  })
+  const data = await response.json() as TemplateLibrarySettings & { error?: string }
+  if (!response.ok) throw new Error(data.error === "Choose a valid document template."
+    ? "Template library controls need a document-service update. Ask an administrator to update the service, then try again."
+    : data.error || "The template library could not be updated.")
+  return data
+}
 export type DocumentRenderStatus = "queued" | "rendering" | "ready" | "failed"
 export type DocumentContentSectionCode = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
@@ -83,6 +103,52 @@ export type RenderDocumentRequest = {
   contentSections: DocumentContentSectionCode[]
   reason?: string
   studioTemplateBase64?: string
+  bookingReviewToken?: string
+  confirmCustomerPrices?: boolean
+  documentIssueStatus?: "draft" | "final"
+  transportReviewToken?: string
+  confirmTransportReview?: boolean
+  expectedTemplateVersion?: number
+}
+
+export type BookingDocumentIssueOptions = {
+  protocolVersion: 1 | 2
+  bookingIssueStatuses: ("draft" | "final")[]
+  transportGenerationReady: boolean
+  originalIssuanceEnabled: boolean
+  transportDraftTemplateCodes?: string[]
+}
+
+export async function getBookingDocumentIssueOptions(jobId: string): Promise<BookingDocumentIssueOptions> {
+  const { data, error } = await requireDocumentClient().functions.invoke<BookingDocumentIssueOptions>("render-document", {
+    method: "POST", body: { action: "booking-issue-options", jobId },
+  })
+  if (error || !data || ![1, 2].includes(data.protocolVersion)) {
+    throw new Error("Document markings are awaiting their backend release. No document has been created.")
+  }
+  return data
+}
+
+export type TransportDraftReview = {
+  protocolVersion: 2
+  reviewToken: string
+  bookingReference: string
+  family: "sea" | "air"
+  parties: Array<{ role: string; name: string; fullAddress: string }>
+  route: { origin: { name: string; unlocode: string }; destination: { name: string; unlocode: string }; carrierName: string; masterTransportReference: string; houseTransportReference: string }
+  cargo: Array<{ lineNumber: string; description: string; packageQuantity: string; packageType: string; grossWeight: string }>
+  equipment: Array<{ number: string; type: string; seal: string }>
+  allocations: Array<{ cargoLine: string; equipmentNumber: string; equipmentType: string; packages: string; grossWeight: string; volume: string }>
+  gaps: Array<{ label: string }>
+}
+
+export async function getTransportDraftReview(jobId: string, templateCode: string): Promise<TransportDraftReview> {
+  const { data, error } = await requireDocumentClient().functions.invoke<TransportDraftReview>("render-document", {
+    method: "POST", body: { action: "transport-draft-review", jobId, templateCode },
+  })
+  if (error) throw await toFunctionError(error, "Transport Draft review is unavailable. No document has been created.")
+  if (data?.protocolVersion !== 2) throw new Error("Transport Draft review is unavailable. No document has been created.")
+  return data
 }
 
 export type DocumentStudioSession = {
@@ -114,6 +180,7 @@ export type DocumentStudioRequest = {
 }
 
 export type SaveDocumentStudioTemplateResponse = {
+  sourceSha256?: string
   multideckTemplateId: string
   templateCode: string
   carboneTemplateId: string
@@ -126,6 +193,14 @@ export type ApproveDocumentStudioTemplateResponse = {
   templateCode: string
   templateVersion: number
   status: "published"
+}
+
+export type CreateDocumentStudioTemplateResponse = {
+  multideckTemplateId: string
+  templateCode: string
+  templateName: string
+  multideckVersion: number
+  status: "draft"
 }
 
 export type RenderDocumentResponse = {
@@ -231,6 +306,46 @@ export async function getGeneratedDocumentsPage(options: GeneratedDocumentPageRe
   if ("rows" in data && Array.isArray(data.rows)) return data
 
   throw new Error("Paged document history is still being prepared. Try again shortly.")
+}
+
+export async function createDocumentStudioTemplate(code: string, name: string): Promise<CreateDocumentStudioTemplateResponse> {
+  const client = requireDocumentClient()
+  const { data, error } = await client.functions.invoke<CreateDocumentStudioTemplateResponse>("document-studio", {
+    method: "POST",
+    body: { action: "create", templateCode: code, templateName: name },
+  })
+  if (error) throw await toFunctionError(error, "The template could not be created.")
+  if (!data) throw new Error("The template service returned no record.")
+  return data
+}
+
+export async function duplicateBookingConfirmationTemplate(sourceTemplateId: string, code: string, name: string): Promise<SaveDocumentStudioTemplateResponse> {
+  const client = requireDocumentClient()
+  const { data, error } = await client.functions.invoke<SaveDocumentStudioTemplateResponse>("document-studio", {
+    method: "POST",
+    body: { action: "duplicate-booking", sourceTemplateId, templateCode: code, templateName: name },
+  })
+  if (error) throw await toFunctionError(error, "The Booking template could not be copied.")
+  if (!data) throw new Error("The template service returned no draft.")
+  return data
+}
+
+export async function previewDraftDocumentStudioTemplate(templateId: string, templateBase64: string, sampleData: Record<string, unknown>, templateFileName = "template.docx"): Promise<Blob> {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in again to preview this template.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "preview-draft", multideckTemplateId: templateId, templateBase64, templateFileName, sampleData }),
+  })
+  if (!response.ok) {
+    let message = "The draft preview could not be created."
+    try { const payload = await response.json() as { error?: string }; if (payload.error) message = payload.error } catch { /* Keep safe fallback. */ }
+    throw new Error(message)
+  }
+  return response.blob()
 }
 
 export async function renderDocument(request: RenderDocumentRequest): Promise<RenderDocumentResponse> {
@@ -392,7 +507,48 @@ export async function bootstrapDocumentStudioTemplate(templateId: string, templa
   return response.json() as Promise<SaveDocumentStudioTemplateResponse>
 }
 
-export async function approveDocumentStudioTemplate(templateId: string) {
+type DocumentStudioTemplateSource = SaveDocumentStudioTemplateResponse & {
+  templateBase64: string
+  templateFileName: string
+  templateMimeType: string
+  previewSafe?: boolean
+  previewSampleData?: Record<string, unknown> | null
+}
+
+export function getDocumentStudioDraftSource(templateId: string) {
+  return readDocumentStudioTemplateSource(templateId, "draft-source")
+}
+
+export function getDocumentStudioTemplateSource(templateId: string) {
+  return readDocumentStudioTemplateSource(templateId, "template-source")
+}
+
+async function readDocumentStudioTemplateSource(templateId: string, action: "draft-source" | "template-source"): Promise<DocumentStudioTemplateSource | null> {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in to manage templates.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabasePublicApiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ action, multideckTemplateId: templateId }),
+  })
+  if (!response.ok) {
+    let message = "The saved template source could not be opened."
+    try {
+      const payload = await response.json() as { error?: string }
+      if (payload.error) message = payload.error
+    } catch { /* Keep the safe fallback. */ }
+    throw new Error(message)
+  }
+  const result = await response.json() as { draft: DocumentStudioTemplateSource | null }
+  return result.draft
+}
+
+export async function approveDocumentStudioTemplate(templateId: string, reviewedVersion: number, reviewedSourceSha256: string) {
+  if (!Number.isInteger(reviewedVersion) || reviewedVersion < 1 || !/^[a-f0-9]{64}$/.test(reviewedSourceSha256)) {
+    throw new Error("Preview the latest saved draft before publishing it.")
+  }
   requireDocumentClient()
   const session = await getSupabaseSession()
   if (!session) throw new Error("Sign in to manage templates.")
@@ -404,7 +560,7 @@ export async function approveDocumentStudioTemplate(templateId: string) {
       apikey: supabasePublicApiKey,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ action: "approve", multideckTemplateId: templateId }),
+    body: JSON.stringify({ action: "approve", multideckTemplateId: templateId, reviewedVersion, reviewedSourceSha256 }),
   })
   if (!response.ok) {
     let message = "The template could not be approved."
@@ -419,11 +575,11 @@ export async function approveDocumentStudioTemplate(templateId: string) {
   return response.json() as Promise<ApproveDocumentStudioTemplateResponse>
 }
 
-export async function getGeneratedDocumentDownload(generatedDocumentId: string): Promise<DocumentDownloadResponse> {
+export async function getGeneratedDocumentDownload(generatedDocumentId: string, preview = false): Promise<DocumentDownloadResponse> {
   const client = requireDocumentClient()
   const { data, error } = await client.functions.invoke<DocumentDownloadResponse>("document-download", {
     method: "POST",
-    body: { generatedDocumentId },
+    body: { generatedDocumentId, preview },
   })
 
   if (error) throw await toFunctionError(error, "A secure download link could not be created.")

@@ -51,9 +51,9 @@ test('PostgreSQL: precise cargo/equipment allocations, leg scope, canonical save
       create table public."sys_JobStatuses" ("JS_Code" text,"JS_IsActive" boolean);
       ${table('Job_Header')}
       alter table public."Job_Header" add primary key("Job_ID"),
-        add "Job_BookingReference" text, add "Job_CustomerDeadline" date, add "Job_IncotermsCode" text,
-        add "Job_IncotermsLocation" text, add "Job_FreightChargeAmount" numeric, add "Job_FreightChargeCurrencyCode" text,
-        add "Job_CollectionAddress" text, add "Job_DeliveryAddress" text, add "Job_SourceSnapshotJSON" jsonb;
+        add column if not exists "Job_BookingReference" text, add column if not exists "Job_CustomerDeadline" date, add column if not exists "Job_IncotermsCode" text,
+        add column if not exists "Job_IncotermsLocation" text, add column if not exists "Job_FreightChargeAmount" numeric, add column if not exists "Job_FreightChargeCurrencyCode" text,
+        add column if not exists "Job_CollectionAddress" text, add column if not exists "Job_DeliveryAddress" text, add column if not exists "Job_SourceSnapshotJSON" jsonb;
       ${table('Job_Cargo')}
       ${table('Job_Containers')}
       ${table('Job_Routing')}
@@ -116,12 +116,14 @@ test('PostgreSQL: precise cargo/equipment allocations, leg scope, canonical save
       begin
         result:=booking_api.cargo_allocation_state(actor,job);
         if result->'allocations'<>'[]' or jsonb_array_length(result->'legacyUnquantifiedLinks')<>1 then raise exception 'Legacy link was lost or guessed';end if;
-        line:=jsonb_build_object('id',a,'cargoId',cargo,'containerId',first,'packageQuantity','40','grossWeightKg','400.01','volumeCbm','4.123456');
-        lines:=jsonb_build_array(line,jsonb_build_object('id',b,'cargoId',cargo,'containerId',second,'packageQuantity','60','grossWeightKg','599.99','volumeCbm','5.876544'));
+        line:=jsonb_build_object('id',a,'cargoId',cargo,'containerId',first,'packageQuantity','40','grossWeightKg','400.01','volumeCbm','4.123456','notes','Keep dry in first container');
+        lines:=jsonb_build_array(line,jsonb_build_object('id',b,'cargoId',cargo,'containerId',second,'packageQuantity','60','grossWeightKg','599.99','volumeCbm','5.876544','notes','Fragile loading in second container'));
         result:=booking_api.test_save(lines);prior:=result;
         if not(result->>'changed')::boolean or result#>>'{balances,0,remainingPackages}'<>'0.000000'
           or result#>>'{balances,0,remainingGrossWeightKg}'<>'0.00' or result#>>'{balances,0,remainingVolumeCbm}'<>'0.000000'
-          or result#>>'{allocations,0,volumeCbm}'<>'4.123456' then raise exception 'Exact allocation/read failed: %',result;end if;
+          or result#>>'{allocations,0,volumeCbm}'<>'4.123456'
+          or result#>>'{allocations,0,notes}'<>'Keep dry in first container'
+          or result#>>'{allocations,1,notes}'<>'Fragile loading in second container' then raise exception 'Exact allocation/read failed: %',result;end if;
         result:=booking_api.test_save(jsonb_build_array(line||jsonb_build_object('containerId',second),lines->1||jsonb_build_object('containerId',first)));
         if result#>>'{allocations,0,id}'<>a::text or result#>>'{allocations,0,containerId}'<>second::text then raise exception 'Atomic equipment swap changed identity';end if;
         prior:=booking_api.test_save(lines);

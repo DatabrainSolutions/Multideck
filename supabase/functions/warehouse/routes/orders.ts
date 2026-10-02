@@ -32,7 +32,10 @@ async function mapOrders(admin, rows, context) {
     many(admin.from("WMS_Tasks").select("*").in("WMSTask_OrderID", ids).in("WMSTask_TypeCode", ["putaway", "pick"]).order("WMSTask_CreatedAt"))
   ]);
   const itemIds = [...new Set(lines.map((line)=>line.WMSOrderLine_ItemID).filter(Boolean))];
-  const locationIds = [...new Set(lines.flatMap((line)=>[line.WMSOrderLine_SourceLocationID, line.WMSOrderLine_TargetLocationID]).filter(Boolean))];
+  const locationIds = [...new Set([
+    ...lines.flatMap((line)=>[line.WMSOrderLine_SourceLocationID, line.WMSOrderLine_TargetLocationID]),
+    ...tasks.flatMap((task)=>[task.WMSTask_SourceLocationID, task.WMSTask_TargetLocationID])
+  ].filter(Boolean))];
   const contextItems = context.items ?? [], contextLocations = context.locations ?? [];
   const contextItemIds = new Set(contextItems.map((row)=>row.WMSItem_ID));
   const contextLocationIds = new Set(contextLocations.map((row)=>row.WMSLocation_ID));
@@ -49,6 +52,20 @@ async function mapOrders(admin, rows, context) {
       .eq("WMSLocation_IsDeleted", false)) : Promise.resolve([])
   ]);
   const scopedItems = [...contextItems, ...missingItems], scopedLocations = [...contextLocations, ...missingLocations];
+  // Staff names are audit evidence for the warehouse team only. Customer portal
+  // users see when something happened, not which colleague recorded it.
+  const staffIds = context.companyId ? [...new Set([
+    ...rows.map((row)=>row.WMSOrder_CreatedBy),
+    ...receipts.map((row)=>row.WMSReceipt_ReceivedBy),
+    ...dispatches.map((row)=>row.WMSDispatch_DispatchedBy),
+    ...tasks.map((row)=>row.WMSTask_CompletedBy)
+  ].filter(Boolean))] : [];
+  const staff = staffIds.length ? await many(admin.from("cmp_Users")
+    .select("User_ID,User_Firstname,User_Lastname")
+    .eq("Company_ID", context.companyId)
+    .in("User_ID", staffIds)) : [];
+  const staffName = new Map(staff.map((row)=>[row.User_ID, [row.User_Firstname, row.User_Lastname].filter(Boolean).join(" ") || null]));
+  const nameOf = (userId)=>userId ? staffName.get(userId) ?? null : null;
   const fm = new Map(context.facilities.map((r)=>[
       r.WMSFacility_ID,
       r
@@ -97,6 +114,7 @@ async function mapOrders(admin, rows, context) {
       sealNumber: r.WMSOrder_SealNumber,
       instructions: r.WMSOrder_Instructions,
       createdAt: r.WMSOrder_CreatedAt,
+      createdByName: nameOf(r.WMSOrder_CreatedBy),
       updatedAt: r.WMSOrder_UpdatedAt,
       lines: orderLines.map((l)=>{
         const item = im.get(l.WMSOrderLine_ItemID), progressed = r.WMSOrder_TypeCode === "inbound" ? Number(l.WMSOrderLine_ReceivedQuantity) : Number(l.WMSOrderLine_DispatchedQuantity);
@@ -132,6 +150,7 @@ async function mapOrders(admin, rows, context) {
           receiptNumber: x.WMSReceipt_ReceiptNumber,
           statusCode: x.WMSReceipt_StatusCode,
           receivedAt: x.WMSReceipt_ReceivedAt,
+          receivedByName: nameOf(x.WMSReceipt_ReceivedBy),
           hasDiscrepancy: x.WMSReceipt_HasDiscrepancy,
           notes: x.WMSReceipt_Notes
         })),
@@ -140,6 +159,7 @@ async function mapOrders(admin, rows, context) {
           dispatchNumber: x.WMSDispatch_DispatchNumber,
           statusCode: x.WMSDispatch_StatusCode,
           dispatchedAt: x.WMSDispatch_DispatchedAt,
+          dispatchedByName: nameOf(x.WMSDispatch_DispatchedBy),
           vehicleReg: x.WMSDispatch_VehicleReg,
           containerNumber: x.WMSDispatch_ContainerNumber,
           sealNumber: x.WMSDispatch_SealNumber
@@ -154,15 +174,19 @@ async function mapOrders(admin, rows, context) {
           completedQuantity: x.WMSTask_CompletedQuantity ?? 0,
           uomCode: x.WMSTask_UOMCode,
           sourceBalanceId: x.WMSTask_BalanceID,
+          sku: im.get(x.WMSTask_ItemID)?.WMSItem_SKU ?? "",
           sourceLocationId: x.WMSTask_SourceLocationID,
+          sourceLocationCode: lm.get(x.WMSTask_SourceLocationID) ?? null,
           targetLocationId: x.WMSTask_TargetLocationID,
+          targetLocationCode: lm.get(x.WMSTask_TargetLocationID) ?? null,
           createdAt: x.WMSTask_CreatedAt,
-          completedAt: x.WMSTask_CompletedAt
+          completedAt: x.WMSTask_CompletedAt,
+          completedByName: nameOf(x.WMSTask_CompletedBy)
         }))
     };
   });
 }
-async function exactOrderContext(admin, row) {
+async function exactOrderContext(admin, row, actor) {
   const [facilities, orgs, types, statuses] = await Promise.all([
     many(admin.from("WMS_Facilities")
       .select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name")
@@ -182,11 +206,11 @@ async function exactOrderContext(admin, row) {
       .eq("WMSOrderStatus_Code", row.WMSOrder_StatusCode)
       .limit(1))
   ]);
-  return { facilities, orgs, items: [], locations: [], types, statuses };
+  return { facilities, orgs, items: [], locations: [], types, statuses, companyId: actor?.companyId ?? null };
 }
 
-async function mapExactOrder(admin, row) {
-  return (await mapOrders(admin, [row], await exactOrderContext(admin, row)))[0];
+async function mapExactOrder(admin, row, actor) {
+  return (await mapOrders(admin, [row], await exactOrderContext(admin, row, actor)))[0];
 }
 
 async function loadExactOrderById(admin, actor, facilityIds, orderId) {
@@ -387,7 +411,7 @@ export async function handleOrders(request, path, url, admin, actor) {
     if (!actor.companyId) query = query.in("WMSOrder_CustomerOrgID", [...actor.organisationIds]);
     const rows = await many(query);
     if (!rows.length) throw new HttpError(404, "This warehouse order does not exist in your workspace.");
-    return await mapExactOrder(admin, rows[0]);
+    return await mapExactOrder(admin, rows[0], actor);
   }
   const boundedList = request.method === "GET" && !path[1] && url.searchParams.has("limit");
   if (boundedList) {
@@ -426,7 +450,7 @@ export async function handleOrders(request, path, url, admin, actor) {
     const facilityIds = await companyFacilityIds(admin, actor);
     const found = await loadExactOrderById(admin, actor, facilityIds, orderId);
     if (!found) throw new HttpError(404, "This warehouse order does not exist in your workspace.");
-    return await mapExactOrder(admin, found);
+    return await mapExactOrder(admin, found, actor);
   }
   if (request.method === "GET") {
     throw new HttpError(404, "Warehouse endpoint not found.");
@@ -505,5 +529,5 @@ export async function handleOrders(request, path, url, admin, actor) {
   }
   const refreshed = await loadExactOrderById(admin, actor, facilityIds, data);
   if (!refreshed) throw new HttpError(404, "The updated warehouse order could not be reloaded.");
-  return await mapExactOrder(admin, refreshed);
+  return await mapExactOrder(admin, refreshed, actor);
 }

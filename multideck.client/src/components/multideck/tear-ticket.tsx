@@ -27,6 +27,7 @@ export interface TearTicketProps {
   imageAlt?: string;
   imageLoading?: "eager" | "lazy";
   imagePriority?: "high" | "low" | "auto";
+  onImageError?: () => void;
   scrim?: boolean;
   imageRadius?: number;
   orientation?: TearTicketOrientation;
@@ -221,6 +222,7 @@ const TearTicket: React.FC<TearTicketProps> = ({
   imageAlt = '',
   imageLoading = 'eager',
   imagePriority = 'auto',
+  onImageError,
   scrim = true,
   imageRadius = 8,
   orientation = 'horizontal',
@@ -709,6 +711,7 @@ const TearTicket: React.FC<TearTicketProps> = ({
                     alt={imageAlt}
                     loading={imageLoading}
                     fetchPriority={imagePriority}
+                    onError={onImageError}
                     decoding="async"
                     draggable={false}
                     style={reduce ? undefined : { transform: art }}

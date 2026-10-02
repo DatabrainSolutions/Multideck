@@ -11,6 +11,7 @@
     "npm:@supabase/supabase-js@2.108.2": "2.108.2",
     "npm:exceljs@4.4.0": "4.4.0",
     "npm:fast-xml-parser@5.11.1": "5.11.1",
+    "npm:fflate@0.8.3": "0.8.3",
     "npm:openai@^4.52.5": "4.104.0_ws@8.18.3",
     "npm:pdf-lib@1.17.1": "1.17.1",
     "npm:pdf-lib@^1.17.1": "1.17.1",
@@ -471,6 +472,9 @@
       "dependencies": [
         "pend"
       ]
+    },
+    "fflate@0.8.3": {
+      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA=="
     },
     "form-data-encoder@1.7.2": {
       "integrity": "sha512-qfqtYan3rxrnCk1VYaA4H+Ms9xdpPqvLZa6xmMgFvhO32x7/3J/ExcTd6qpxM0vH2GdMI+poehyBZvqfMTto8A=="
